@@ -1,0 +1,646 @@
+import { getToken } from "@/lib/session";
+import React, { useEffect, useRef, useState } from 'react';
+import { useParams } from 'next/navigation';
+import {
+  Calendar, Clock, Lock, Bell,
+  ChevronUp, ChevronDown, Check, ShieldCheck, AlertCircle,
+} from 'lucide-react';
+import { D, FONT } from '../shared/tokens';
+import { InfoTooltip } from '../shared/UIComponents';
+import { fetchApprovalHierarchy, type ApprovalStep } from '@/apiServices/userService';
+
+// ── Props ────────────────────────────────────────────────────────────────────
+// Loose types intentionally — the parent ExerciseSettings.tsx treats
+// formData.schedule as `any` in most places, and we mirror that here so the
+// extraction is purely structural (no behaviour change, no type tightening).
+interface ScheduleStepProps {
+  formData: any;
+  setFormData: React.Dispatch<React.SetStateAction<any>>;
+  validationErrors: any;
+  setValidationErrors: React.Dispatch<React.SetStateAction<any>>;
+  touchedFields: Set<string>;
+  isEditing: boolean;
+  courseId?: string;
+}
+
+// ── Types / helpers ─────────────────────────────────────────────────────────
+type DV = { day: number; month: number; year: number; hour: number; minute: number };
+const EMPTY_DV: DV = { day: 0, month: 0, year: 0, hour: 0, minute: 0 };
+const hasDate = (v: DV) => v.day > 0 && v.month > 0 && v.year > 0;
+const dvToDate = (v: DV): Date | null =>
+  hasDate(v) ? new Date(v.year, v.month - 1, v.day, v.hour, v.minute) : null;
+const dateToDV = (d: Date): DV => ({
+  day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear(),
+  hour: d.getHours(), minute: d.getMinutes(),
+});
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+const fmtDateTime = (v: DV) => {
+  if (!hasDate(v)) return '';
+  const h = v.hour, m = v.minute;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return `${MONTHS_SHORT[v.month - 1]} ${v.day}, ${v.year}, ${String(hh).padStart(2,'0')}:${String(m).padStart(2,'0')} ${ampm}`;
+};
+
+const buildCalendarDays = (year: number, month: number) => {
+  const dim = new Date(year, month, 0).getDate();
+  const fd = new Date(year, month - 1, 1).getDay();
+  const days: (number | null)[] = [];
+  for (let i = 0; i < fd; i++) days.push(null);
+  for (let i = 1; i <= dim; i++) days.push(i);
+  return days;
+};
+
+// ── SegInput: editable DD/MM/YYYY/HH/MM segment ─────────────────────────────
+const SegInput: React.FC<{
+  value: number; placeholder: string; min: number; max: number; onChange: (v: number) => void;
+}> = ({ value, placeholder, min, max, onChange }) => {
+  const pad = placeholder.length;
+  const [raw, setRaw] = useState(value > 0 ? String(value).padStart(pad, '0') : '');
+  useEffect(() => { setRaw(value > 0 ? String(value).padStart(pad, '0') : ''); }, [value, pad]);
+  return (
+    <input
+      type="text" inputMode="numeric" value={raw} placeholder={placeholder} maxLength={pad}
+      onChange={e => {
+        const v = e.target.value.replace(/\D/g, '').slice(0, pad);
+        setRaw(v);
+        const n = parseInt(v, 10);
+        if (!isNaN(n)) onChange(Math.min(n, max));
+      }}
+      onBlur={() => {
+        const n = parseInt(raw, 10);
+        if (isNaN(n) || n < min) { setRaw(''); onChange(0); }
+        else {
+          const c = Math.min(Math.max(n, min), max);
+          setRaw(String(c).padStart(pad, '0'));
+          onChange(c);
+        }
+      }}
+      className="text-center font-semibold bg-white rounded-md outline-none transition-colors"
+      style={{
+        width: pad === 4 ? 42 : 26, height: 24, fontSize: 11,
+        border: `1.5px solid ${D.border}`, color: D.textMain, fontFamily: FONT,
+      }}
+      onFocus={e => (e.target.style.borderColor = D.orange)}
+      onBlurCapture={e => (e.target.style.borderColor = D.border)}
+    />
+  );
+};
+
+// ── Spinner (up/down + value in orange circle) ──────────────────────────────
+const Spinner: React.FC<{ value: number; max: number; onChange: (v: number) => void }> = ({ value, max, onChange }) => (
+  <div className="flex flex-col items-center gap-0.5">
+    <button type="button"
+      onClick={() => onChange(value >= max ? 0 : value + 1)}
+      className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 transition-colors">
+      <ChevronUp size={12} style={{ color: D.orange }} />
+    </button>
+    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold"
+      style={{ background: D.orange, fontSize: 12 }}>
+      {String(value).padStart(2, '0')}
+    </div>
+    <button type="button"
+      onClick={() => onChange(value <= 0 ? max : value - 1)}
+      className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 transition-colors">
+      <ChevronDown size={12} style={{ color: D.orange }} />
+    </button>
+  </div>
+);
+
+// ── Calendar popup ──────────────────────────────────────────────────────────
+const CalendarPopup: React.FC<{
+  fieldLabel: string; value: DV; onConfirm: (v: DV) => void; onClose: () => void;
+  minDate?: Date; anchorEl: HTMLElement | null;
+}> = ({ fieldLabel, value, onConfirm, onClose, minDate, anchorEl }) => {
+  const [calMonth, setCalMonth]   = useState(hasDate(value) ? value.month : new Date().getMonth() + 1);
+  const [calYear, setCalYear]     = useState(hasDate(value) ? value.year  : new Date().getFullYear());
+  const [selDay, setSelDay]       = useState(hasDate(value) ? value.day   : 0);
+  const [selMonth, setSelMonth]   = useState(hasDate(value) ? value.month : 0);
+  const [selYear, setSelYear]     = useState(hasDate(value) ? value.year  : 0);
+  const [hour, setHour]           = useState(value.hour);
+  const [minute, setMinute]       = useState(value.minute);
+  const popRef                    = useRef<HTMLDivElement>(null);
+  const [pos, setPos]             = useState<React.CSSProperties>({ position: 'fixed', top: -9999, left: -9999, zIndex: 9999, visibility: 'hidden' });
+
+  useEffect(() => {
+    if (!anchorEl || !popRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (!anchorEl || !popRef.current) return;
+      const r  = anchorEl.getBoundingClientRect();
+      const pw = 360;
+      const ph = popRef.current.offsetHeight || 360;
+      let left = r.right + 8;
+      if (left + pw > window.innerWidth - 8) left = r.left - pw - 8;
+      left = Math.max(8, left);
+      let top = r.top;
+      top = Math.max(8, Math.min(top, window.innerHeight - ph - 8));
+      setPos({ position: 'fixed', top, left, zIndex: 9999, visibility: 'visible' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [anchorEl]);
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      if (anchorEl?.contains(e.target as Node)) return;
+      onClose();
+    };
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
+  }, [anchorEl, onClose]);
+
+  const isDisabled = (day: number) => {
+    if (!minDate) return false;
+    const d = new Date(calYear, calMonth - 1, day); d.setHours(0,0,0,0);
+    const m = new Date(minDate); m.setHours(0,0,0,0);
+    return d < m;
+  };
+
+  const prevMonth = () => calMonth === 1 ? (setCalMonth(12), setCalYear(y => y - 1)) : setCalMonth(m => m - 1);
+  const nextMonth = () => calMonth === 12 ? (setCalMonth(1), setCalYear(y => y + 1)) : setCalMonth(m => m + 1);
+
+  const today = new Date();
+  const days = buildCalendarDays(calYear, calMonth);
+
+  const selectDay = (day: number) => {
+    if (isDisabled(day)) return;
+    setSelDay(day); setSelMonth(calMonth); setSelYear(calYear);
+  };
+
+  const setNow = () => {
+    const n = new Date();
+    if (minDate && n < minDate) return;
+    setSelDay(n.getDate()); setSelMonth(n.getMonth() + 1); setSelYear(n.getFullYear());
+    setCalMonth(n.getMonth() + 1); setCalYear(n.getFullYear());
+    setHour(n.getHours()); setMinute(n.getMinutes());
+  };
+
+  const confirm = () => {
+    if (!selDay) return;
+    onConfirm({ day: selDay, month: selMonth, year: selYear, hour, minute });
+    onClose();
+  };
+
+  const selVal: DV = { day: selDay, month: selMonth, year: selYear, hour, minute };
+
+  return (
+    <div ref={popRef} style={pos}
+      className="bg-white rounded-xl shadow-2xl w-[360px] overflow-hidden select-none">
+      <div style={{ borderTop: `1px solid ${D.border}`, borderLeft: `1px solid ${D.border}`, borderRight: `1px solid ${D.border}`, borderBottom: 'none' }} />
+      {/* Header */}
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b" style={{ borderColor: D.border }}>
+        <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: D.orangeLight }}>
+          <Calendar size={11} style={{ color: D.orange }} />
+        </div>
+        <span className="text-xs font-semibold" style={{ color: D.textMuted }}>Setting:</span>
+        <span className="text-xs font-bold truncate" style={{ color: D.orange }}>{fieldLabel}</span>
+      </div>
+      {/* Body */}
+      <div className="flex" style={{ borderBottom: `1px solid ${D.border}` }}>
+        <div className="flex-1 px-3 py-2" style={{ borderRight: `1px solid ${D.border}` }}>
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-2">
+            <button onClick={prevMonth} className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-sm font-bold" style={{ color: D.textMuted }}>‹</button>
+            <span className="text-xs font-bold" style={{ color: D.textMain }}>{MONTHS_FULL[calMonth - 1]} {calYear}</span>
+            <button onClick={nextMonth} className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-gray-100 text-sm font-bold" style={{ color: D.textMuted }}>›</button>
+          </div>
+          {/* Day headers */}
+          <div className="grid grid-cols-7 mb-0.5">
+            {DAY_NAMES.map(d => (
+              <div key={d} className="text-center py-0.5" style={{ fontSize: 9, fontWeight: 700, color: D.textMuted }}>{d}</div>
+            ))}
+          </div>
+          {/* Days */}
+          <div className="grid grid-cols-7">
+            {days.map((day, idx) => {
+              if (!day) return <div key={idx} />;
+              const disabled = isDisabled(day);
+              const isSelected = selDay === day && selMonth === calMonth && selYear === calYear;
+              const isToday = day === today.getDate() && calMonth === today.getMonth() + 1 && calYear === today.getFullYear();
+              return (
+                <button key={idx} onClick={() => selectDay(day)} disabled={disabled}
+                  className="h-7 w-7 rounded-lg flex items-center justify-center mx-auto transition-all"
+                  style={{
+                    fontSize: 10,
+                    background: isSelected ? D.orange : 'transparent',
+                    color: isSelected ? '#fff' : disabled ? '#d1d5db' : D.textMain,
+                    fontWeight: isToday && !isSelected ? 700 : 400,
+                    outline: isToday && !isSelected ? `2px solid ${D.orange}` : 'none',
+                    outlineOffset: '-2px',
+                    cursor: disabled ? 'default' : 'pointer',
+                  }}>
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="w-24 flex flex-col items-center justify-center gap-2 px-2 py-2">
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: D.textMuted }}>TIME</span>
+          <div className="flex items-center gap-1">
+            <Spinner value={hour}   max={23} onChange={setHour} />
+            <span className="text-sm font-bold" style={{ color: D.orange }}>:</span>
+            <Spinner value={minute} max={59} onChange={setMinute} />
+          </div>
+        </div>
+      </div>
+      {/* Selected banner */}
+      <div className="mx-3 my-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: D.orangeLight }}>
+        <Check size={11} style={{ color: D.orange }} />
+        <span className="text-xs font-semibold truncate" style={{ color: D.orange }}>
+          {selDay ? fmtDateTime(selVal) : 'No date selected'}
+        </span>
+      </div>
+      {/* Footer */}
+      <div className="flex items-center justify-between px-3 pb-2.5">
+        <button onClick={setNow} className="text-xs font-semibold" style={{ color: D.orange }}>Now</button>
+        <button onClick={onClose} className="text-xs font-semibold" style={{ color: D.textMuted }}>Cancel</button>
+        <button onClick={confirm} disabled={!selDay}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-all"
+          style={{ background: selDay ? D.orange : '#d1d5db' }}>
+          Confirm
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ── Quick-offset presets ─────────────────────────────────────────────────────
+const QUICK_OFFSETS = [
+  { label: '+30m', ms: 30 * 60 * 1000 },
+  { label: '+1h',  ms: 60 * 60 * 1000 },
+  { label: '+2h',  ms: 2 * 60 * 60 * 1000 },
+  { label: '+1d',  ms: 24 * 60 * 60 * 1000 },
+  { label: '+1w',  ms: 7 * 24 * 60 * 60 * 1000 },
+];
+
+// ── ScheduleStep ─────────────────────────────────────────────────────────────
+export const ScheduleStep: React.FC<ScheduleStepProps> = ({
+  formData, setFormData, validationErrors, setValidationErrors, touchedFields, isEditing, courseId,
+}) => {
+  const [openField, setOpenField] = useState<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const approvalOn = !!(formData.schedule as any).requiresAdminApproval;
+  const params = useParams() as any;
+  const routeCourseId = typeof params?.id === 'string' ? params.id : null;
+  const effectiveCourseId = courseId || (formData as any).courseId || routeCourseId || null;
+  const [approvalSteps, setApprovalSteps] = useState<ApprovalStep[] | null>(null);
+  const [approvalLoading, setApprovalLoading] = useState(false);
+
+  useEffect(() => {
+    if (!approvalOn || !effectiveCourseId) {
+      setApprovalSteps(null);
+      return;
+    }
+    const token = getToken();
+    const institutionId = localStorage.getItem('smartcliff_institution');
+    if (!token || !institutionId) return;
+    let cancelled = false;
+    setApprovalLoading(true);
+    fetchApprovalHierarchy(effectiveCourseId, institutionId, token)
+      .then((data) => { if (!cancelled) setApprovalSteps(data.steps || []); })
+      .catch(() => { if (!cancelled) setApprovalSteps([]); })
+      .finally(() => { if (!cancelled) setApprovalLoading(false); });
+    return () => { cancelled = true; };
+  }, [approvalOn, effectiveCourseId]);
+
+  // Surface "no hierarchy configured" as a validation error so the parent
+  // wizard can block Save. Clear it when toggle goes off or hierarchy fills.
+  useEffect(() => {
+    setValidationErrors((prev: any) => {
+      const n = { ...prev };
+      const empty = approvalOn && !approvalLoading && Array.isArray(approvalSteps) && approvalSteps.length === 0;
+      if (empty) (n as any).approvalHierarchy = 'Course has no Approval Hierarchy configured.';
+      else delete (n as any).approvalHierarchy;
+      return n;
+    });
+  }, [approvalOn, approvalLoading, approvalSteps, setValidationErrors]);
+
+  const getDV = (key: string): DV => (formData.schedule as any)[key] || EMPTY_DV;
+
+  const setDV = (key: string, val: DV) => {
+    setFormData((prev: any) => ({ ...prev, schedule: { ...prev.schedule, [key]: val } }));
+    setValidationErrors((prev: any) => {
+      const n = { ...prev };
+      if (key === 'startDate')       delete n.startDate;
+      if (key === 'endDate')         delete n.endDate;
+      if (key === 'cutOffDate')      delete (n as any).cutOffDate;
+      if (key === 'gracePeriodDate') delete n.gracePeriod;
+      return n;
+    });
+  };
+
+  const toggleField = (enabledKey: string) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      schedule: { ...prev.schedule, [enabledKey]: !(prev.schedule as any)[enabledKey] },
+    }));
+  };
+
+  const getMinDateFor = (key: string): Date | undefined => {
+    const now = new Date();
+    if (key === 'startDate') return isEditing ? undefined : now;
+    if (key === 'endDate') {
+      const s = getDV('startDate');
+      // End must be at least 30 minutes after Start.
+      return hasDate(s)
+        ? new Date(s.year, s.month - 1, s.day, s.hour, s.minute + 30)
+        : (isEditing ? undefined : now);
+    }
+    if (key === 'cutOffDate') {
+      const e = getDV('endDate');
+      return hasDate(e) ? new Date(e.year, e.month - 1, e.day, e.hour, e.minute) : undefined;
+    }
+    if (key === 'gracePeriodDate' || key === 'remindGradeBy') {
+      const c = getDV('cutOffDate');
+      if (hasDate(c) && (formData.schedule as any).cutOffEnabled)
+        return new Date(c.year, c.month - 1, c.day, c.hour, c.minute);
+      const e = getDV('endDate');
+      return hasDate(e) ? new Date(e.year, e.month - 1, e.day, e.hour, e.minute) : undefined;
+    }
+    return undefined;
+  };
+
+  const getOffsetBase = (key: string): Date | null => {
+    if (key === 'endDate')         return dvToDate(getDV('startDate'));
+    if (key === 'cutOffDate')      return dvToDate(getDV('endDate'));
+    if (key === 'gracePeriodDate' || key === 'remindGradeBy') {
+      const co = (formData.schedule as any).cutOffEnabled ? dvToDate(getDV('cutOffDate')) : null;
+      return co ?? dvToDate(getDV('endDate'));
+    }
+    return null;
+  };
+
+  const applyOffset = (key: string, ms: number) => {
+    const base = getOffsetBase(key);
+    if (!base) return;
+    setDV(key, dateToDV(new Date(base.getTime() + ms)));
+  };
+
+  const getError = (key: string) => {
+    if (key === 'startDate')       return validationErrors.startDate;
+    if (key === 'endDate')         return validationErrors.endDate;
+    if (key === 'cutOffDate')      return (validationErrors as any).cutOffDate;
+    if (key === 'gracePeriodDate') return validationErrors.gracePeriod;
+    return undefined;
+  };
+
+  const isTouched = (key: string) =>
+    touchedFields.has(key === 'gracePeriodDate' ? 'gracePeriod' : key);
+
+  const FIELDS: Array<{
+    label: string; fieldKey: string; icon: React.ReactNode; iconColor: string; iconBg: string;
+    toggleable: boolean; enabledKey: string; required: boolean; tooltip: string; showOffsets: boolean;
+  }> = [
+    { label: 'Start Date & Time',    fieldKey: 'startDate',     icon: <Calendar size={15} />, iconColor: D.emerald, iconBg: 'rgba(16,185,129,0.10)',  toggleable: false, enabledKey: '',                     required: true,  tooltip: 'The date from which students can start submitting.',         showOffsets: false },
+    { label: 'End Date & Time',      fieldKey: 'endDate',       icon: <Clock size={15} />,    iconColor: D.amber,   iconBg: 'rgba(245,158,11,0.10)',  toggleable: false, enabledKey: '',                     required: true,  tooltip: 'The submission deadline. Quick-add fills time after start.', showOffsets: true  },
+    { label: 'Cut-off Date & Time',  fieldKey: 'cutOffDate',    icon: <Lock size={15} />,     iconColor: D.red,     iconBg: 'rgba(239,68,68,0.10)',   toggleable: true,  enabledKey: 'cutOffEnabled',         required: false, tooltip: 'Optional hard late boundary after end date.',                showOffsets: true  },
+    { label: 'Remind Me to Mark By', fieldKey: 'remindGradeBy', icon: <Bell size={15} />,     iconColor: D.purple,  iconBg: 'rgba(139,92,246,0.10)',  toggleable: true,  enabledKey: 'remindGradeByEnabled',  required: false, tooltip: 'Reminder to finish grading by this date.',                   showOffsets: true  },
+  ];
+
+  return (
+    <div className="px-10 pt-4 pb-6">
+      <div className="divide-y" style={{ borderColor: D.border }}>
+        {/* Approval — visibility gate. Students only see the exercise after every approver in the course's Approval Hierarchy approves. */}
+        <div
+          className="flex flex-col gap-2 py-3 relative"
+          style={{ borderColor: D.border }}
+        >
+          <div className="flex items-center gap-3 flex-wrap">
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(251,146,60,0.10)', color: '#fb923c' }}
+            >
+              <ShieldCheck size={15} />
+            </div>
+            <div className="flex items-center gap-1 w-40 flex-shrink-0">
+              <span className="text-xs font-semibold" style={{ color: D.textMain }}>
+                Requires Approval
+              </span>
+              <InfoTooltip
+                content="When ON, students see this exercise only after every approver in the course's Approval Hierarchy approves."
+                side="right"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleField('requiresAdminApproval')}
+                className="relative inline-flex items-center h-5 w-9 flex-shrink-0 rounded-full p-[2px] transition-colors duration-200"
+                style={{ background: approvalOn ? D.orange : '#e2e3e8' }}
+              >
+                <span
+                  className={`inline-block h-[13px] w-[13px] rounded-full bg-white shadow transition-transform duration-200 ${approvalOn ? 'translate-x-[17px]' : 'translate-x-0'}`}
+                />
+              </button>
+              <span className="text-xs font-semibold" style={{ color: approvalOn ? D.orange : D.textMuted }}>
+                {approvalOn ? 'Yes' : 'No'}
+              </span>
+            </div>
+          </div>
+
+          {approvalOn && (
+            <div className="ml-11 space-y-2">
+              {approvalLoading && (
+                <span className="text-xs" style={{ color: D.textMuted }}>Loading approvers…</span>
+              )}
+              {!approvalLoading && approvalSteps && approvalSteps.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {approvalSteps.map((s: any, i: number) => (
+                    <React.Fragment key={s.roleId || i}>
+                      {i > 0 && <span className="text-xs" style={{ color: D.textHint }}>→</span>}
+                      <span
+                        className="px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+                        style={{ background: '#eef2ff', borderColor: '#c7d2fe', color: '#4338ca' }}
+                      >
+                        {i + 1}. {s.roleName}
+                      </span>
+                    </React.Fragment>
+                  ))}
+                  <span className="text-[11px] ml-1" style={{ color: D.textMuted }}>
+                    → Students
+                  </span>
+                </div>
+              )}
+              {!approvalLoading && Array.isArray(approvalSteps) && approvalSteps.length === 0 && (
+                <div
+                  className="flex items-start gap-1.5 text-xs px-2 py-1.5 rounded-md"
+                  style={{ background: 'rgba(239,68,68,0.08)', color: D.red }}
+                >
+                  <AlertCircle size={12} className="mt-[1px] flex-shrink-0" />
+                  <span>
+                    Course has no Approval Hierarchy configured. Configure it on the course participants page first.
+                  </span>
+                </div>
+              )}
+
+              {/* Approval scope */}
+              <div className="pt-1">
+                <div className="text-[11px] font-semibold mb-1" style={{ color: D.textMuted }}>
+                  What should approvers review?
+                </div>
+                <div className="flex flex-col gap-1">
+                  {([
+                    { val: 'settings', label: 'Settings only', hint: 'Schedule, grade, notifications, security, etc.' },
+                    { val: 'settings_and_questions', label: 'Settings + Questions', hint: 'Everything above plus the actual question content.' },
+                  ] as const).map(({ val, label, hint }) => {
+                    const selected = ((formData.schedule as any).approvalScope || 'settings') === val;
+                    return (
+                      <label
+                        key={val}
+                        className="flex items-start gap-2 cursor-pointer p-1.5 rounded-md hover:bg-gray-50 transition-colors"
+                      >
+                        <input
+                          type="radio"
+                          name="approvalScope"
+                          checked={selected}
+                          onChange={() => setFormData((prev: any) => ({
+                            ...prev,
+                            schedule: { ...prev.schedule, approvalScope: val },
+                          }))}
+                          className="mt-[2px]"
+                          style={{ accentColor: D.orange }}
+                        />
+                        <span>
+                          <span className="text-xs font-semibold" style={{ color: D.textMain }}>{label}</span>
+                          <span className="block text-[11px]" style={{ color: D.textMuted }}>{hint}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        {FIELDS.map(({ label, fieldKey, icon, iconColor, iconBg, toggleable, enabledKey, required, tooltip, showOffsets }) => {
+          const enabled  = !toggleable || !!(formData.schedule as any)[enabledKey];
+          const val      = getDV(fieldKey);
+          const error    = getError(fieldKey);
+          const touched  = isTouched(fieldKey);
+          const isOpen   = openField === fieldKey;
+          const minDate  = getMinDateFor(fieldKey);
+          const offsetBase = showOffsets ? getOffsetBase(fieldKey) : null;
+          const canOffset = showOffsets && enabled && !!offsetBase;
+
+          return (
+            <div
+              key={fieldKey}
+              ref={el => { rowRefs.current[fieldKey] = el; }}
+              className="flex items-center gap-3 py-3 relative flex-wrap"
+              style={{ borderColor: D.border }}
+            >
+              {/* Icon */}
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: iconBg, color: iconColor }}>
+                {icon}
+              </div>
+
+              {/* Label */}
+              <div className="flex items-center gap-1 w-40 flex-shrink-0">
+                <span className="text-xs font-semibold" style={{ color: D.textMain }}>{label}</span>
+                {required && <span className="text-xs font-bold" style={{ color: D.orange }}>*</span>}
+                {tooltip && <InfoTooltip content={tooltip} side="right" />}
+              </div>
+
+              {/* Toggle */}
+              {toggleable && (
+                <button
+                  type="button"
+                  onClick={() => toggleField(enabledKey)}
+                  className="relative inline-flex items-center h-5 w-9 flex-shrink-0 rounded-full p-[2px] transition-colors duration-200"
+                  style={{ background: enabled ? D.orange : '#e2e3e8' }}
+                >
+                  <span className={`inline-block h-[13px] w-[13px] rounded-full bg-white shadow transition-transform duration-200 ${enabled ? 'translate-x-[17px]' : 'translate-x-0'}`} />
+                </button>
+              )}
+
+              {/* Date/time row */}
+              {enabled ? (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="inline-flex items-center gap-1">
+                    <SegInput value={val.day}   placeholder="DD"   min={1}    max={31}   onChange={d => setDV(fieldKey, { ...val, day: d })} />
+                    <span className="text-xs font-bold" style={{ color: D.textHint }}>/</span>
+                    <SegInput value={val.month} placeholder="MM"   min={1}    max={12}   onChange={m => setDV(fieldKey, { ...val, month: m })} />
+                    <span className="text-xs font-bold" style={{ color: D.textHint }}>/</span>
+                    <SegInput value={val.year}  placeholder="YYYY" min={2020} max={2099} onChange={y => setDV(fieldKey, { ...val, year: y })} />
+                  </span>
+                  <span className="inline-flex items-center gap-1 ml-2">
+                    <SegInput value={val.hour}   placeholder="HH" min={0} max={23} onChange={h => setDV(fieldKey, { ...val, hour: h })} />
+                    <span className="text-xs font-bold" style={{ color: D.textHint }}>:</span>
+                    <SegInput value={val.minute} placeholder="MM" min={0} max={59} onChange={m => setDV(fieldKey, { ...val, minute: m })} />
+                  </span>
+                  <button
+                    ref={el => { rowRefs.current[fieldKey + '_btn'] = el as HTMLDivElement | null; }}
+                    type="button"
+                    onClick={() => setOpenField(isOpen ? null : fieldKey)}
+                    className="ml-2 w-8 h-8 rounded-xl flex items-center justify-center border transition-all flex-shrink-0"
+                    style={{
+                      background: isOpen ? D.orange : D.surface2,
+                      color: isOpen ? '#fff' : D.textMuted,
+                      borderColor: isOpen ? D.orange : D.border,
+                    }}
+                  >
+                    <Calendar size={14} />
+                  </button>
+
+                  {/* Quick-offset chips */}
+                  {showOffsets && (
+                    <div className="ml-2 flex items-center gap-1 flex-wrap">
+                      {QUICK_OFFSETS.map(o => (
+                        <button
+                          key={o.label}
+                          type="button"
+                          disabled={!canOffset}
+                          onClick={() => applyOffset(fieldKey, o.ms)}
+                          title={offsetBase
+                            ? `Set to ${o.label} after ${fmtDateTime(dateToDV(offsetBase))}`
+                            : 'Fill the previous date first'}
+                          className="px-1.5 h-5 rounded-md border font-semibold transition-all"
+                          style={{
+                            fontSize: 10,
+                            background: canOffset ? '#fff' : D.surface,
+                            color: canOffset ? iconColor : D.textHint,
+                            borderColor: canOffset ? iconColor + '55' : D.border,
+                            cursor: canOffset ? 'pointer' : 'not-allowed',
+                            fontFamily: FONT,
+                          }}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs" style={{ color: D.textMuted }}>
+                  <Lock size={12} />
+                  <span>Disabled</span>
+                </div>
+              )}
+
+              {/* Error */}
+              {error && touched && (
+                <span className="text-xs ml-1" style={{ color: D.red }}>{error}</span>
+              )}
+
+              {/* Popup */}
+              {isOpen && enabled && (
+                <CalendarPopup
+                  fieldLabel={label}
+                  value={val}
+                  onConfirm={v => { setDV(fieldKey, v); setOpenField(null); }}
+                  onClose={() => setOpenField(null)}
+                  minDate={minDate}
+                  anchorEl={rowRefs.current[fieldKey + '_btn']}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

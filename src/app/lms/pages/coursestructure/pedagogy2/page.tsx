@@ -1,0 +1,10 @@
+"use client"
+
+/* Route wrapper. The screen itself lives beside this file so other shells
+   (the L&D console) can host it — Next allows no extra named exports from
+   a page module. */
+import PedagogyManagementContent from "./PedagogyManagementContent"
+
+export default function PedagogyManagementPage() {
+    return <PedagogyManagementContent />
+}

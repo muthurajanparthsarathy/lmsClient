@@ -1,0 +1,755 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  --font-inter: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  /* Was var(--font-geist-mono), which is defined NOWHERE in this project — so
+     all 253 uses of font-mono silently fell back to the UA default. Real stack. */
+  --font-mono: ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ───────────────────────────────────────────────────────────────────────────
+   Tailwind v4: this file IS the config. `tailwind.config.js` at the client
+   root is NOT loaded — v4 only reads it via an `@config` directive, and there
+   isn't one — so anything added there is inert. Add tokens HERE.
+
+   The palette is DERIVED from what the codebase already uses, not invented:
+   every value below was measured by frequency across src/**. The app had 2171
+   hardcoded hex classes across 138 distinct values, while the semantic tokens
+   (bg-primary, bg-card, border-border) were used ~31 times in total. So the
+   brand was real but untokenised, and these names simply give it a home.
+
+   Frequency evidence for the brand ramp (occurrences in src/**):
+     #F97316 x211  #FFF3EA x125  #C2540F x87  #FFE4D0 x68
+     #FFD9BC x50   #FB8C3C x41   #F0701F x40
+   and for the neutrals: #111827 x73, #6B7280 x70, #9CA3AF x66 — which are
+   Tailwind's cool grays, so `ink-*` matches them exactly rather than shifting
+   to a warm scale that would clash with the modules not yet converted.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@theme {
+  /* ── Brand ──────────────────────────────────────────────────────────────
+     CONTRAST NOTE, and the reason there are two "brand" colours in play:
+     #F97316 on white is only 2.80:1. That FAILS WCAG AA for text (needs
+     4.5:1), so it must never be a filled button behind white label text.
+     #C2540F measures 4.65:1 and passes. Hence:
+       brand-500 = IDENTITY  — icons, active bars, focus rings, tints, borders
+                               (non-text UI only needs 3:1)
+       brand-700 = ACTION    — filled surfaces that carry white text
+     Reach for 700 the moment text sits on top of the colour. */
+  --color-brand-50: #fff7f0;
+  --color-brand-100: #fff3ea;
+  --color-brand-200: #ffe4d0;
+  --color-brand-300: #ffd9bc;
+  --color-brand-400: #fb8c3c;
+  --color-brand-500: #f97316;
+  --color-brand-600: #f0701f;
+  --color-brand-700: #c2540f;
+  --color-brand-800: #9a4310;
+  --color-brand-900: #7c3609;
+
+  /* ── Neutrals ───────────────────────────────────────────────────────────
+     Replaces the ad-hoc greys in the codebase (#d5d5d5, #cccccc, #333333,
+     #2d2d2d, #666666, #f0efee) with one ordered ramp. */
+  --color-ink-50: #f9fafb;
+  --color-ink-100: #f3f4f6;
+  --color-ink-200: #e5e7eb;
+  --color-ink-300: #d1d5db;
+  --color-ink-400: #9ca3af;
+  --color-ink-500: #6b7280;
+  --color-ink-600: #4b5563;
+  --color-ink-700: #374151;
+  --color-ink-800: #1f2937;
+  --color-ink-900: #111827;
+
+  /* ── Status ─────────────────────────────────────────────────────────────
+     Each has a tint (surface), a mid (icon/border) and a deep (text) so a
+     status chip never has to guess which shade is legible on which ground.
+     Warning is pulled toward YELLOW on purpose: an amber warning sits too
+     close to the orange brand to be told apart at a glance. */
+  --color-success-50: #f0fdf4;
+  --color-success-500: #22c55e;
+  --color-success-700: #15803d;
+
+  --color-warn-50: #fefce8;
+  --color-warn-500: #ca8a04;
+  --color-warn-700: #a16207;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-500: #ef4444;
+  --color-danger-700: #b91c1c;
+
+  --color-info-50: #eff6ff;
+  --color-info-500: #3b82f6;
+  --color-info-700: #1d4ed8;
+
+  /* ── Type scale ─────────────────────────────────────────────────────────
+     Collapses 25 distinct hardcoded px sizes (4705 occurrences of
+     text-[NNpx]) into one ramp. The odd half-steps the codebase leans on
+     (11.5, 12.5, 13.5) round into the nearest step here on purpose — that
+     spread is noise, not hierarchy. */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-base: 14px;
+  --text-base--line-height: 20px;
+  --text-md: 15px;
+  --text-md--line-height: 22px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
+  --text-xl: 18px;
+  --text-xl--line-height: 26px;
+  --text-2xl: 20px;
+  --text-2xl--line-height: 28px;
+  --text-3xl: 24px;
+  --text-3xl--line-height: 32px;
+  --text-4xl: 30px;
+  --text-4xl--line-height: 38px;
+
+  /* ── Elevation ──────────────────────────────────────────────────────────
+     Layered and low-alpha. Enterprise depth comes from a tight border plus a
+     soft shadow, never from one heavy drop shadow. */
+  --shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.04);
+  --shadow-sm: 0 1px 3px 0 rgb(16 24 40 / 0.06), 0 1px 2px -1px rgb(16 24 40 / 0.04);
+  --shadow-md: 0 4px 8px -2px rgb(16 24 40 / 0.08), 0 2px 4px -2px rgb(16 24 40 / 0.04);
+  --shadow-lg: 0 12px 16px -4px rgb(16 24 40 / 0.08), 0 4px 6px -2px rgb(16 24 40 / 0.03);
+  --shadow-xl: 0 20px 24px -4px rgb(16 24 40 / 0.10), 0 8px 8px -4px rgb(16 24 40 / 0.04);
+
+  /* ── Motion ─────────────────────────────────────────────────────────────
+     Three durations, one easing. Anything slower than 240ms reads as lag in
+     a dense admin UI. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+
+  /* ── Chrome (COOL) ──────────────────────────────────────────────────────
+     Re-tuned for the app-wide floating-workspace re-theme (2026-08): every
+     shell now sits on ONE continuous cool-gray canvas (#F5F6F8) with white
+     rounded workspace panels floating on it, so the chrome family moved from
+     the old warm ramp (#F0EFEE/#FCFBFA) to cool grays that match the canvas.
+     Text still reads from the ink ramp; chrome reads from line and canvas.
+     These values intentionally equal the ones the L&D console shell
+     (LDLayout) declares in its scoped .ldx block. */
+  --color-line: #eaecf0;
+  --color-line-strong: #dfe3e8;
+  --color-line-hover: #cbd1d9;
+  --color-line-muted: #b4bbc6;
+  --color-canvas: #f5f6f8;
+  --color-row-hover: #f2f4f7;
+
+  /* Brand washes the controls use for their active/hover state. */
+  --color-brand-wash: #fff7f1;
+  --color-brand-wash-hover: #ffefe3;
+
+  /* ── Control radii ──────────────────────────────────────────────────────
+     The kit's real radius language, currently spelled as rounded-[8px] /
+     [9px] / [10px]. Named so the intent survives: a chip, a control and a
+     tile are different things, not three arbitrary pixel counts. */
+  --radius-chip: 8px;
+  --radius-control: 9px;
+  --radius-tile: 10px;
+
+  /* ── Brand elevation ────────────────────────────────────────────────────
+     One glow for the gradient CTA. There were FOUR competing recipes for the
+     same button — shadow-[0_6px_16px_rgba(240,112,31,0.28)] (PageHeader),
+     shadow-orange-500/20 (DataTable), /30 (modal footers) and
+     shadow-[0_3px_8px_rgba(240,112,31,0.3)] (TableFooter). This is brand-600
+     at 28%, so it is derived from the palette rather than eyeballed. */
+  --shadow-brand: 0 6px 16px rgb(240 112 31 / 0.28);
+}
+
+/* Semantic aliases resolved through :root/.dark below, so every one of these
+   flips with the theme. Utilities: bg-surface, text-body, border-hairline … */
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-strong: var(--brand-strong);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-heading: var(--heading);
+  --color-body: var(--body);
+  --color-subtle: var(--subtle);
+  --color-faint: var(--faint);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  /* Re-pointed from the stock shadcn near-black to the brand's ACTION shade.
+     Before this, the ~24 places using bg-primary/text-primary rendered black
+     while the other 2171 hardcoded classes rendered orange — the single
+     biggest reason the product read as two different apps. brand-700 (not
+     500) because white label text sits on it; see the contrast note above. */
+  --primary: #c2540f;
+  --primary-foreground: #ffffff;
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  /* Updated sidebar colors - white background with orange accents for icons and notifications */
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.2 0 0);
+  --sidebar-primary: oklch(0.65 0.2 45);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.2 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0.65 0.2 45);
+
+  /* ── Semantic aliases (light) ────────────────────────────────────────────
+     Components reference THESE, never a raw ramp step. That indirection is
+     what makes dark mode a variable swap instead of a per-component rewrite,
+     and it is why `bg-surface` is correct where `bg-white` is not. */
+  --brand: var(--color-brand-500);
+  --brand-soft: var(--color-brand-100);
+  --brand-strong: var(--color-brand-700);
+
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  /* Warm, not ink-50 — see the chrome note in @theme. */
+  --surface-sunken: var(--color-canvas);
+  --hairline: var(--color-line);
+  --hairline-strong: var(--color-line-strong);
+
+  --heading: var(--color-ink-900);
+  --body: var(--color-ink-700);
+  --subtle: var(--color-ink-500);
+  --faint: var(--color-ink-400);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  /* Dark mode lifts the action colour to brand-500: on a dark ground the deep
+     700 loses contrast, while 500 reads at 5.6:1 against the #171717 surface.
+     Dark text on it rather than white — orange is a LIGHT colour, and white
+     on #F97316 is the same 2.8:1 failure it is in light mode. */
+  --primary: #f97316;
+  --primary-foreground: #1c1917;
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  /* Updated dark mode sidebar colors - dark background with orange accents */
+  --sidebar: oklch(0.15 0 0);
+  --sidebar-foreground: oklch(0.9 0 0);
+  --sidebar-primary: oklch(0.7 0.25 45);
+  --sidebar-primary-foreground: oklch(0.1 0 0);
+  --sidebar-accent: oklch(0.25 0 0);
+  --sidebar-accent-foreground: oklch(0.85 0 0);
+  --sidebar-border: oklch(0.3 0 0);
+  --sidebar-ring: oklch(0.7 0.25 45);
+
+  /* ── Semantic aliases (dark) ─────────────────────────────────────────────
+     Same names, swapped values — every component styled against these flips
+     with no dark: variant of its own. The ink ramp INVERTS here: what was the
+     900 heading in light becomes the 50, and the surfaces step UP in
+     lightness as they come forward, which is how depth reads on a dark UI. */
+  --brand: var(--color-brand-500);
+  --brand-soft: color-mix(in oklab, var(--color-brand-500) 16%, transparent);
+  --brand-strong: var(--color-brand-400);
+
+  --surface: #171717;
+  --surface-raised: #1f1f1f;
+  --surface-sunken: #0f0f0f;
+  --hairline: color-mix(in oklab, #ffffff 12%, transparent);
+  --hairline-strong: color-mix(in oklab, #ffffff 18%, transparent);
+
+  --heading: var(--color-ink-50);
+  --body: var(--color-ink-300);
+  --subtle: var(--color-ink-400);
+  --faint: var(--color-ink-500);
+}
+
+/* Workspace-panel scrollbar for the floating-workspace shells (admin, staff,
+   student, superadmin): slim, trackless, and inset from the panel's rounded
+   corners so the thumb never cuts across the radius. */
+.sc-panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-hover) transparent;
+}
+.sc-panel-scroll::-webkit-scrollbar { width: 8px; }
+.sc-panel-scroll::-webkit-scrollbar-track { background: transparent; margin: 18px 0; }
+.sc-panel-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-line-hover);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.sc-panel-scroll::-webkit-scrollbar-thumb:hover { background: var(--color-line-muted); background-clip: padding-box; }
+.dark .sc-panel-scroll { scrollbar-color: #3a3e46 transparent; }
+.dark .sc-panel-scroll::-webkit-scrollbar-thumb { background: #3a3e46; background-clip: padding-box; }
+.dark .sc-panel-scroll::-webkit-scrollbar-thumb:hover { background: #4a4f58; background-clip: padding-box; }
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, "Fira Sans",
+      "Droid Sans", "Helvetica Neue", sans-serif;
+  }
+}
+@layer base {
+  /* Tailwind preflight strips cursor:pointer from buttons — restore it. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  /* Default scrollbar — wide enough to grab, light track, mid-grey thumb */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 5px;
+    border: 2px solid #f1f5f9;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
+  .dark {
+    scrollbar-color: #475569 #1e293b;
+  }
+  .dark ::-webkit-scrollbar-track {
+    background: #1e293b;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: #475569;
+    border: 2px solid #1e293b;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+  }
+
+  /* Visible dark scrollbar for data tables / scrollable panels */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #475569 #e5e7eb;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #e5e7eb;
+    border-radius: 5px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 5px;
+    border: 2px solid #e5e7eb;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #1e293b;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slide-in 0.5s ease-out forwards;
+}
+
+/* Add these CSS animations to your stylesheet or in a <style> tag */
+
+/* Circulating border animation */
+@keyframes circulatingBorder {
+  0% {
+    border-left-color: #f97316;
+    /* red */
+    border-right-color: #f97316;
+  }
+
+  25% {
+    border-left-color: rgb(254, 215, 170);
+    /* red */
+    border-right-color: rgb(254, 215, 170);
+  }
+
+  50% {
+    border-left-color: #f97316;
+    /* red */
+    border-right-color: #f97316;
+  }
+
+  75% {
+    border-left-color: rgb(254, 215, 170);
+    /* red */
+    border-right-color: rgb(254, 215, 170);
+    /* box-shadow: 0 0 5px #ef4444; */
+  }
+
+  100% {
+    border-left-color: #f97316;
+    /* red */
+    border-right-color: #f97316;
+  }
+}
+
+@keyframes circulatingBorder2 {
+  0% {
+    border-color: #fb923c;
+  }
+
+  25% {
+    border-color: rgb(254, 215, 170);
+  }
+
+  50% {
+    border-color: #fb923c;
+  }
+
+  75% {
+    border-color: rgb(254, 215, 170);
+  }
+
+  100% {
+    border-color: #fb923c;
+    /* red */
+  }
+}
+
+/* Class to apply the animation */
+.pedagogy-highlight {
+  animation: circulatingBorder2 1.5s infinite linear;
+  border-width: 1px !important;
+}
+
+@keyframes borderFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 300% 50%;
+  }
+}
+
+/* Alternative circulating effect */
+.pedagogy-highlight-circulating {
+  animation: circulatingBorder 1.5s infinite linear;
+  border-width: 1px 2px !important;
+}
+
+
+
+/* Add this to your existing style block */
+.dropdown-container {
+  position: relative;
+  overflow: visible !important;
+}
+
+.overflow-visible {
+  overflow: visible !important;
+}
+
+/* Add to your existing styles */
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+/* Smooth transitions for all interactive elements */
+.file-grid-item {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.file-grid-item:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+}
+
+/* Glass morphism effect */
+.glass-effect {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Gradient text */
+.gradient-text {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Shimmer loading effect */
+.shimmer {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+
+/* Add this to your global CSS or in a style tag */
+.tiptap ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.tiptap ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.tiptap li {
+  display: list-item;
+  margin: 0.25rem 0;
+}
+
+.tiptap ul li::marker {
+  color: #4b5563;
+}
+
+.tiptap ol li::marker {
+  color: #4b5563;
+}
+
+/* Ensure proper list rendering in the editor */
+.ProseMirror ul, 
+.ProseMirror ol {
+  padding-left: 1.5rem;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.ProseMirror li {
+  display: list-item;
+}
+
+
+
+.dropdown-container[data-position="up"] .dropdown-menu {
+    bottom: 100%;
+    top: auto;
+}
+
+.dropdown-container[data-position="down"] .dropdown-menu {
+    top: 100%;
+    bottom: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STACKING LAYERS
+   ───────────────────────────────────────────────────────────────────────────
+   What used to sit here were hand-written copies of .relative, .absolute,
+   .z-20 and .z-50. They were declared OUTSIDE any @layer, which in Tailwind v4
+   means they beat every layered utility no matter the source order — so an
+   element carrying both `z-50` and `z-[100]` rendered at 50, and any attempt
+   to raise it "did nothing". That is the cause of the six hand-picked z-values
+   (z-50, z-[60], z-[70], z-[90], z-[100], z-[120]) scattered through the
+   modals: people escalated around a bug rather than fixing it.
+
+   Deleting them changes no rendering — Tailwind ships .relative, .absolute,
+   .z-20 and .z-50 with identical declarations — it only returns them to the
+   utilities layer where later utilities can win.
+
+   Named layers replace the guesswork. v4 has no --z-* namespace, so these are
+   plain custom properties surfaced through @utility. */
+:root {
+  --z-base: 1;
+  --z-sticky: 20;
+  --z-dropdown: 1000;
+  --z-overlay: 1100;
+  --z-modal: 1200;
+  --z-popover: 1300;
+  --z-toast: 1400;
+}
+
+@utility z-sticky {
+  z-index: var(--z-sticky);
+}
+@utility z-dropdown {
+  z-index: var(--z-dropdown);
+}
+@utility z-overlay {
+  z-index: var(--z-overlay);
+}
+@utility z-modal {
+  z-index: var(--z-modal);
+}
+@utility z-popover {
+  z-index: var(--z-popover);
+}
+@utility z-toast {
+  z-index: var(--z-toast);
+}
+
+
+
