@@ -42,6 +42,8 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  CartesianGrid,
+  LabelList,
 } from 'recharts';
 import { format } from 'date-fns';
 import DashboardLayout from '../../../../../component/layout';
@@ -637,18 +639,26 @@ const GeneratedReportBody: React.FC<{
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={perfData} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+                <BarChart
+                  data={perfData}
+                  margin={{ top: 18, right: 8, bottom: 0, left: -12 }}
+                  barCategoryGap={2}
+                  barGap={2}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
                   <XAxis
                     dataKey="code"
                     interval={0}
                     tick={{ fontSize: 10.5, fill: '#6b7280', fontWeight: 600 }}
-                    stroke="#e5e7eb"
+                    tickLine={false}
+                    axisLine={{ stroke: '#e5e7eb' }}
                   />
                   <YAxis
                     type="number"
                     domain={[0, 100]}
                     tick={{ fontSize: 10, fill: '#9ca3af' }}
-                    stroke="#e5e7eb"
+                    tickLine={false}
+                    axisLine={false}
                   />
                   <Tooltip
                     cursor={{ fill: 'rgba(99,102,241,0.06)' }}
@@ -656,10 +666,25 @@ const GeneratedReportBody: React.FC<{
                     formatter={(v: any) => [`${v}%`, 'Score']}
                     labelFormatter={(_, payload: any) => payload?.[0]?.payload?.full ?? ''}
                   />
-                  <Bar dataKey="pct" radius={[4, 4, 0, 0]} barSize={30}>
+                  <Bar
+                    dataKey="pct"
+                    radius={[3, 3, 0, 0]}
+                    barSize={16}
+                    minPointSize={2}
+                    isAnimationActive={false}
+                  >
                     {perfData.map((d) => (
-                      <Cell key={d.code} fill={d.color} />
+                      <Cell
+                        key={d.code}
+                        fill={d.pct >= 80 ? '#16a34a' : d.pct >= 60 ? '#f59e0b' : '#ef4444'}
+                      />
                     ))}
+                    <LabelList
+                      dataKey="pct"
+                      position="top"
+                      formatter={(v: any) => (typeof v === 'number' ? `${v.toFixed(0)}%` : v)}
+                      style={{ fontSize: 10, fill: '#374151', fontWeight: 600 }}
+                    />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

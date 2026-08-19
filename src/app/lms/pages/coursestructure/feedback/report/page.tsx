@@ -32,11 +32,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
 } from 'recharts';
 import DashboardLayout from '../../../../component/layout';
 import { StaffLayout } from '../../../../component/stafflayout/staff-layout';
@@ -54,6 +49,12 @@ import {
   FeedbackSheet,
   PARAM_COLORS,
 } from './workbookShared';
+import {
+  FeedbackCategoryCharts,
+  shortLabelsFor,
+  type CategoryGroup,
+  type QuestionBar,
+} from '@/features/feedback/components/FeedbackCategoryCharts';
 
 const poppins = Poppins({
   subsets: ['latin'],
@@ -501,6 +502,57 @@ const ReportBody: React.FC<{
     { label: 'Students Responded', value: stats.distinctStudents, tone: STAT_TONES[4] },
   ];
 
+  // Small-multiples input: one CategoryGroup per parameter, questions kept in
+  // form order, each on its own scale. When the form has no categories the
+  // fallback "Other" bucket becomes a single wide card — matches the user's
+  // "single chart with questions on X-axis" rule.
+  const perCategoryGroups = useMemo<CategoryGroup[]>(() => {
+    const cats = new Map<
+      string,
+      { question: string; avg: number; n: number; scale: number }[]
+    >();
+    stats.perQuestionAvg.forEach((r) => {
+      if (r.avg <= 0) return;
+      const key = r.category || 'Other';
+      const list = cats.get(key) ?? [];
+      list.push({
+        question: r.question,
+        avg: Math.round(r.avg * 100) / 100,
+        n: r.n,
+        scale: r.max || stats.ratingScale,
+      });
+      cats.set(key, list);
+    });
+
+    const groups: CategoryGroup[] = [];
+    cats.forEach((rows, category) => {
+      if (rows.length === 0) return;
+      const shorts = shortLabelsFor(rows.map((r) => r.question));
+      const questions: QuestionBar[] = rows.map((r, i) => ({
+        question: r.question,
+        short: shorts[i],
+        avg: r.avg,
+        n: r.n,
+        scale: r.scale,
+      }));
+      const scale = Math.max(...questions.map((q) => q.scale));
+      const scaleMixed = new Set(questions.map((q) => q.scale)).size > 1;
+      const totalN = questions.reduce((s, q) => s + q.n, 0);
+      const weightedAvg = totalN
+        ? Math.round(
+            (questions.reduce((s, q) => s + q.avg * q.n, 0) / totalN) * 100
+          ) / 100
+        : 0;
+      groups.push({ category, scale, scaleMixed, weightedAvg, totalN, questions });
+    });
+    // "Other" (the catch-all) sinks to the end so named parameters lead.
+    return groups.sort((a, b) => {
+      if (a.category === 'Other' && b.category !== 'Other') return 1;
+      if (b.category === 'Other' && a.category !== 'Other') return -1;
+      return a.category.localeCompare(b.category);
+    });
+  }, [stats.perQuestionAvg, stats.ratingScale]);
+
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
       {/* Stat cards */}
@@ -523,220 +575,36 @@ const ReportBody: React.FC<{
         ))}
       </div>
 
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {/* Overview by Parameter OR by Question (fallback when there aren't
-            enough distinct categories to make a radar readable — ≥ 3). */}
-        {(() => {
-          const useCategoryView = stats.distinctCategoryCount >= 3;
-          const answeredRatings = stats.perQuestionAvg.filter((r) => r.avg > 0);
-          // Sorted worst → best so the bars visually rank performance.
-          const sortedQuestions = [...answeredRatings].sort((a, b) => a.avg - b.avg);
+      {/* Feedback overview — one compact chart per parameter (or a single card
+          named "Other" when the form has no categories). Questions live on the
+          X-axis of each card, averages on the Y-axis of that card's own scale
+          (4 or 5). Replaces the old wide-bar Parameter / Question chart. */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
+            Feedback Overview by Parameter
+          </h3>
+          {stats.overallAvg > 0 && (
+            <span className="text-[10px] text-gray-500">
+              Overall{' '}
+              <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
+                {stats.overallAvg.toFixed(2)} / {stats.ratingScale}
+              </span>
+            </span>
+          )}
+        </div>
+        <FeedbackCategoryCharts
+          groups={perCategoryGroups}
+          emptyLabel="No rating data yet"
+        />
+        <p className="text-[10px] text-gray-400 mt-3">
+          Rating scale: 1 (Very Poor) – {stats.ratingScale} (Excellent) · bars coloured green ≥ 80%, amber ≥ 60%, red below · dashed line marks the 70% passing threshold
+        </p>
+      </div>
 
-          return (
-            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[12px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                  {useCategoryView
-                    ? 'Feedback Overview by Parameter'
-                    : 'Feedback Overview by Question'}
-                </h3>
-                {stats.overallAvg > 0 && (
-                  <span className="text-[10px] text-gray-500">
-                    Overall{' '}
-                    <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                      {stats.overallAvg.toFixed(2)} / {stats.ratingScale}
-                    </span>
-                  </span>
-                )}
-              </div>
-
-              {useCategoryView ? (
-                // ── Category bar chart + parameter list ──────────────────
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={stats.parameterAverages.map((p, i) => ({
-                          category:
-                            p.category.length > 14
-                              ? p.category.slice(0, 14) + '…'
-                              : p.category,
-                          full: p.category,
-                          value: Number(p.avg.toFixed(2)),
-                          color: PARAM_COLORS[i % PARAM_COLORS.length],
-                        }))}
-                        margin={{ top: 18, right: 8, bottom: 4, left: -24 }}
-                      >
-                        <XAxis
-                          dataKey="category"
-                          interval={0}
-                          tick={{ fontSize: 10, fill: '#6b7280' }}
-                          stroke="#e5e7eb"
-                        />
-                        <YAxis
-                          type="number"
-                          domain={[0, stats.ratingScale]}
-                          tick={{ fontSize: 9, fill: '#9ca3af' }}
-                          stroke="#e5e7eb"
-                        />
-                        <Tooltip
-                          cursor={{ fill: 'rgba(99,102,241,0.06)' }}
-                          contentStyle={{
-                            fontSize: 11,
-                            padding: 6,
-                            border: '1px solid #e5e7eb',
-                            borderRadius: 4,
-                          }}
-                          formatter={(v: any) => [`${v} / ${stats.ratingScale}`, 'Avg']}
-                          labelFormatter={(_, payload: any) =>
-                            payload?.[0]?.payload?.full ?? ''
-                          }
-                        />
-                        <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={34}>
-                          {stats.parameterAverages.map((p, i) => (
-                            <Cell
-                              key={p.category}
-                              fill={PARAM_COLORS[i % PARAM_COLORS.length]}
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div>
-                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 text-[12px]">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                        Parameter
-                      </div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 text-right">
-                        Avg
-                      </div>
-                      <div />
-                      {stats.parameterAverages.map((p, i) => (
-                        <React.Fragment key={p.category}>
-                          <span className="inline-flex items-center gap-1.5 text-gray-700 dark:text-gray-300">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{ background: PARAM_COLORS[i % PARAM_COLORS.length] }}
-                            />
-                            {p.category}
-                          </span>
-                          <span className="text-right font-semibold text-gray-900 dark:text-white tabular-nums">
-                            {p.avg.toFixed(2)}
-                          </span>
-                          <StarRow value={p.avg} max={stats.ratingScale} />
-                        </React.Fragment>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-3">
-                      Rating scale: 1 (Very Poor) – {stats.ratingScale} (Excellent)
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                // ── Fallback: per-question bar chart + question list ─────
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-                  <div
-                    className="w-full"
-                    style={{
-                      height: Math.max(180, sortedQuestions.length * 30 + 30),
-                    }}
-                  >
-                    {sortedQuestions.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-[12px] text-gray-400">
-                        No rating data yet
-                      </div>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={sortedQuestions.map((q) => ({
-                            name:
-                              q.question.length > 24
-                                ? q.question.slice(0, 24) + '…'
-                                : q.question,
-                            full: q.question,
-                            avg: Number(q.avg.toFixed(2)),
-                          }))}
-                          layout="vertical"
-                          margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
-                        >
-                          <XAxis
-                            type="number"
-                            domain={[0, stats.ratingScale]}
-                            tick={{ fontSize: 9, fill: '#9ca3af' }}
-                            stroke="#e5e7eb"
-                          />
-                          <YAxis
-                            type="category"
-                            dataKey="name"
-                            width={130}
-                            tick={{ fontSize: 10, fill: '#6b7280' }}
-                            stroke="#e5e7eb"
-                          />
-                          <Tooltip
-                            cursor={{ fill: 'rgba(99,102,241,0.06)' }}
-                            contentStyle={{
-                              fontSize: 11,
-                              padding: 6,
-                              border: '1px solid #e5e7eb',
-                              borderRadius: 4,
-                            }}
-                            formatter={(v: any) => [`${v} / ${stats.ratingScale}`, 'Avg']}
-                            labelFormatter={(_, payload: any) =>
-                              payload?.[0]?.payload?.full ?? ''
-                            }
-                          />
-                          <Bar
-                            dataKey="avg"
-                            fill="#6366f1"
-                            radius={[0, 4, 4, 0]}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
-                  <div>
-                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 text-[12px]">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                        Question
-                      </div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 text-right">
-                        Avg
-                      </div>
-                      <div />
-                      {answeredRatings.length === 0 ? (
-                        <div className="col-span-3 text-[12px] text-gray-400">
-                          No data
-                        </div>
-                      ) : (
-                        answeredRatings.map((q, i) => (
-                          <React.Fragment key={i}>
-                            <span
-                              className="inline-flex items-center gap-1.5 text-gray-700 dark:text-gray-300 truncate"
-                              title={q.question}
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                              <span className="truncate">{q.question}</span>
-                            </span>
-                            <span className="text-right font-semibold text-gray-900 dark:text-white tabular-nums">
-                              {q.avg.toFixed(2)}
-                            </span>
-                            <StarRow value={q.avg} max={stats.ratingScale} />
-                          </React.Fragment>
-                        ))
-                      )}
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-3">
-                      Rating scale: 1 (Very Poor) – {stats.ratingScale} (Excellent)
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
+      {/* Distribution row on its own — the parameter section above wants
+          full width so the small multiples grid can breathe. */}
+      <div>
         {/* Donut + distribution */}
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md p-4">
           <h3 className="text-[12px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-3">

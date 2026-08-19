@@ -18,6 +18,12 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+    FeedbackCategoryCharts,
+    shortLabelsFor,
+    type CategoryGroup,
+    type QuestionBar,
+} from "@/features/feedback/components/FeedbackCategoryCharts";
+import {
     BarChart3,
     ChevronDown,
     ChevronsLeft,
@@ -607,6 +613,101 @@ export default function FeedbackReportDesignerModal({
             .filter((r) => r.avg > 0)
             .sort((a, b) => b.avg - a.avg);
     }, [workingResponses]);
+
+    // Per-category per-question rollup for the new small-multiples chart.
+    // Walks raw form payloads (not the pooled per-response perCategory maps,
+    // which have already collapsed the questionText dimension) and honours the
+    // modal's filters by keeping only responses that survived into
+    // workingResponses. Groups are keyed by (category, questionText, scale) so
+    // 4-scale and 5-scale questions with identical wording stay separate — the
+    // trap the audit flagged.
+    const perCategoryQuestions = useMemo<CategoryGroup[]>(() => {
+        const keep = new Set<string>();
+        for (const r of workingResponses) {
+            keep.add(`${r.formId}::${r.studentId}::${r.submittedAt}`);
+        }
+        const cats = new Map<
+            string,
+            Map<string, { question: string; sum: number; count: number; scale: number }>
+        >();
+
+        for (const f of workingForms) {
+            const raw: any = f.raw || {};
+            const questions: any[] = Array.isArray(raw.questions) ? raw.questions : [];
+            const catByQ = new Map<string, string>();
+            const scaleByQ = new Map<string, number>();
+            for (const q of questions) {
+                if (q?.questionType !== "rating" || !q?.questionText) continue;
+                const cat = (q.category || "").toString().trim() || "Other";
+                const scale =
+                    Number(q?.ratingConfig?.maxRating) > 0
+                        ? Number(q.ratingConfig.maxRating)
+                        : 5;
+                catByQ.set(q.questionText, cat);
+                scaleByQ.set(q.questionText, scale);
+            }
+            for (const r of raw.studentResponses || []) {
+                const key = `${f.id}::${r?.studentId || ""}::${r?.submittedAt || ""}`;
+                if (!keep.has(key)) continue;
+                for (const a of r?.answers || []) {
+                    if (a?.questionType !== "rating") continue;
+                    const v = Number(a?.answer);
+                    if (!Number.isFinite(v) || v <= 0) continue;
+                    const cat = catByQ.get(a.questionText);
+                    const scale = scaleByQ.get(a.questionText);
+                    if (!cat || !scale) continue;
+                    const perQ =
+                        cats.get(cat) ??
+                        new Map<
+                            string,
+                            { question: string; sum: number; count: number; scale: number }
+                        >();
+                    // Composite key keeps same-text-different-scale rows apart.
+                    const qKey = `${a.questionText}|${scale}`;
+                    const cell =
+                        perQ.get(qKey) ??
+                        { question: a.questionText, sum: 0, count: 0, scale };
+                    cell.sum += v;
+                    cell.count += 1;
+                    perQ.set(qKey, cell);
+                    cats.set(cat, perQ);
+                }
+            }
+        }
+
+        const out: CategoryGroup[] = [];
+        for (const [category, perQ] of cats) {
+            const rows: QuestionBar[] = [];
+            for (const { question, sum, count, scale } of perQ.values()) {
+                if (count === 0) continue;
+                rows.push({
+                    question,
+                    short: "", // assigned below via shortLabelsFor
+                    avg: Math.round((sum / count) * 100) / 100,
+                    n: count,
+                    scale,
+                });
+            }
+            if (rows.length === 0) continue;
+            const shorts = shortLabelsFor(rows.map((r) => r.question));
+            rows.forEach((r, i) => (r.short = shorts[i]));
+            const scale = Math.max(...rows.map((r) => r.scale));
+            const scaleMixed = new Set(rows.map((r) => r.scale)).size > 1;
+            const totalN = rows.reduce((s, r) => s + r.n, 0);
+            const weightedAvg = totalN
+                ? Math.round(
+                      (rows.reduce((s, r) => s + r.avg * r.n, 0) / totalN) * 100
+                  ) / 100
+                : 0;
+            out.push({ category, scale, scaleMixed, weightedAvg, totalN, questions: rows });
+        }
+        // "Other" (catch-all) sorts last so real categories lead the grid.
+        return out.sort((a, b) => {
+            if (a.category === "Other" && b.category !== "Other") return 1;
+            if (b.category === "Other" && a.category !== "Other") return -1;
+            return a.category.localeCompare(b.category);
+        });
+    }, [workingForms, workingResponses]);
 
     const trainerAverages = useMemo(() => {
         const acc = new Map<string, { sum: number; count: number }>();
@@ -1521,46 +1622,12 @@ export default function FeedbackReportDesignerModal({
                                     <Sec id="paramBars">
                                         <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
                                             <h3 className="text-xs font-semibold text-heading">Parameter averages</h3>
-                                            <span className="text-[10px] text-subtle">avg / 5 · weighted by rating answers</span>
+                                            <span className="text-[10px] text-subtle">
+                                                one card per parameter · questions on X · avg on Y
+                                            </span>
                                         </header>
-                                        <div className="h-72">
-                                            {parameterAverages.length === 0 ? (
-                                                <div className="flex h-full items-center justify-center text-xs text-subtle">
-                                                    No parameter data in the selection.
-                                                </div>
-                                            ) : (
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <BarChart
-                                                        data={parameterAverages.map((p) => ({
-                                                            name: p.category,
-                                                            avg: p.avg,
-                                                            color: p.color,
-                                                        }))}
-                                                        margin={{ top: 8, right: 16, left: 0, bottom: 60 }}
-                                                    >
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                                                        <XAxis
-                                                            dataKey="name"
-                                                            tick={{ fontSize: 10 }}
-                                                            angle={-20}
-                                                            textAnchor="end"
-                                                            interval={0}
-                                                            height={70}
-                                                        />
-                                                        <YAxis
-                                                            tick={{ fontSize: 10 }}
-                                                            domain={[0, 5]}
-                                                            tickFormatter={(v) => `${v}`}
-                                                        />
-                                                        <RTooltip formatter={((v: number) => `${v}/5`) as any} />
-                                                        <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
-                                                            {parameterAverages.map((p, i) => (
-                                                                <Cell key={i} fill={p.color} />
-                                                            ))}
-                                                        </Bar>
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-                                            )}
+                                        <div className="p-3">
+                                            <FeedbackCategoryCharts groups={perCategoryQuestions} />
                                         </div>
                                     </Sec>
                                 ) : null}
@@ -1580,9 +1647,11 @@ export default function FeedbackReportDesignerModal({
                                                 <ResponsiveContainer width="100%" height="100%">
                                                     <BarChart
                                                         data={trainerAverages.map((t) => ({ name: t.trainer, avg: t.avg }))}
-                                                        margin={{ top: 8, right: 16, left: 0, bottom: 60 }}
+                                                        margin={{ top: 18, right: 16, left: 0, bottom: 60 }}
+                                                        barCategoryGap={2}
+                                                        barGap={2}
                                                     >
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
                                                         <XAxis
                                                             dataKey="name"
                                                             tick={{ fontSize: 10 }}
@@ -1590,25 +1659,32 @@ export default function FeedbackReportDesignerModal({
                                                             textAnchor="end"
                                                             interval={0}
                                                             height={70}
+                                                            tickLine={false}
                                                         />
                                                         <YAxis
                                                             tick={{ fontSize: 10 }}
                                                             domain={[0, 5]}
                                                             tickFormatter={(v) => `${v}`}
+                                                            tickLine={false}
+                                                            axisLine={false}
                                                         />
                                                         <RTooltip formatter={((v: number) => `${v}/5`) as any} />
-                                                        <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
+                                                        <Bar
+                                                            dataKey="avg"
+                                                            radius={[3, 3, 0, 0]}
+                                                            barSize={16}
+                                                            minPointSize={2}
+                                                            isAnimationActive={false}
+                                                        >
                                                             {trainerAverages.map((t, i) => (
                                                                 <Cell
                                                                     key={i}
                                                                     fill={
                                                                         t.avg >= 4
-                                                                            ? "#10b981"
+                                                                            ? "#16a34a"
                                                                             : t.avg >= 3
-                                                                                ? "#3b82f6"
-                                                                                : t.avg >= 2
-                                                                                    ? "#f59e0b"
-                                                                                    : "#ef4444"
+                                                                                ? "#f59e0b"
+                                                                                : "#ef4444"
                                                                     }
                                                                 />
                                                             ))}
