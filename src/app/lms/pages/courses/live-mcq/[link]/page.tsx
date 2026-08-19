@@ -57,7 +57,7 @@ interface SubmitResult {
 
 type PageState = "loading" | "error" | "active" | "submitting" | "completed";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getToken = () =>

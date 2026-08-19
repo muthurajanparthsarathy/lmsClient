@@ -6,7 +6,7 @@
 import axios from 'axios';
 import { getToken } from '@/lib/session';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
 
 const authHeaders = () => ({
   Authorization: `Bearer ${getToken()}`,

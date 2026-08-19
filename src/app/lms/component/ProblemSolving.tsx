@@ -3128,7 +3128,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
       const ids = exerciseList.map(e => e._id).join(',');
       const params = new URLSearchParams({ courseId, tabType: activeTab, subcategory, exerciseIds: ids });
       const resp = await fetch(
-        `http://localhost:5533/analytics/exercise-submission-status?${params}`,
+        `https://lmsserver-yeve.onrender.com/analytics/exercise-submission-status?${params}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!resp.ok) return;

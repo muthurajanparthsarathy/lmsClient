@@ -1761,17 +1761,46 @@ export default function ProgramCalendarContent(
                                 the sessions around this course's client holidays. Lives HERE,
                                 not in Session Details, so the flow reads: build the template,
                                 come here, pick a date, watch it fill in. */}
-                            <div ref={tourStartRef} className="bg-gradient-to-r from-brand-50 to-white border border-brand-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+                            {/* flex-nowrap + overflow-x-auto keep the whole start-date
+                                strip on ONE row: label · date · Save · → ends · working
+                                days · holidays · lock chip all live in a single line.
+                                Very narrow viewports scroll horizontally instead of
+                                wrapping onto multiple rows.
+                                Background and border stripped — the strip now reads as
+                                inline text, not a highlighted card. */}
+                            <div ref={tourStartRef} className="px-1 py-2 flex items-center gap-2 flex-nowrap overflow-x-auto">
                                 <span className="h-9 w-9 rounded-lg bg-brand-700 flex items-center justify-center shrink-0">
                                     <CalendarDays className="h-4.5 w-4.5 text-white"/>
                                 </span>
-                                <div>
-                                    <p className="text-[11px] font-bold text-brand-800 leading-none">Program start date</p>
-                                    <p className="text-[10px] text-brand-500 mt-0.5">Pick a date and the schedule builds itself.</p>
-                                </div>
-                                <Input type="date" value={startDate} disabled={!startDateEditable}
-                                    onChange={e=>{ setStartDate(e.target.value); setStartDateDirty(true) }}
-                                    className={`h-9 text-[13px] font-bold text-brand-700 w-44 border border-brand-200 bg-white ${!startDateEditable ? 'opacity-60 cursor-not-allowed' : ''}`}/>
+                                <p className="text-[12px] font-bold text-brand-800 leading-none whitespace-nowrap">Program start date</p>
+                                {/* Lock message shared by the disabled input, the
+                                    icon beside it, and the aria-label — one string,
+                                    three surfaces, so hovering the date input or the
+                                    lock badge both surface the reason. */}
+                                {(() => {
+                                    const lockMsg = evidenceLock
+                                        ? (hasAttendance
+                                            ? 'Program calendar locked due to attendance marked'
+                                            : `Locked — ${deviations.length} deviation${deviations.length > 1 ? 's' : ''} recorded`)
+                                        : undefined
+                                    return (
+                                        <>
+                                            <Input type="date" value={startDate} disabled={!startDateEditable}
+                                                onChange={e=>{ setStartDate(e.target.value); setStartDateDirty(true) }}
+                                                title={lockMsg}
+                                                className={`h-9 text-[13px] font-bold text-brand-700 w-44 border border-brand-200 bg-white ${!startDateEditable ? 'opacity-60 cursor-not-allowed' : ''}`}/>
+                                            {evidenceLock && (
+                                                <span
+                                                    title={lockMsg}
+                                                    aria-label={lockMsg}
+                                                    className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-danger-50 border border-danger-500/30 text-danger-700 cursor-help"
+                                                >
+                                                    🔒
+                                                </span>
+                                            )}
+                                        </>
+                                    )
+                                })()}
                                 {/* Save lives WHERE the date is chosen. Once the
                                     lock derives from evidence, both the input and
                                     this button give way to the reason pill. */}
@@ -1797,22 +1826,22 @@ export default function ProgramCalendarContent(
                                         ) : null
                                     }
                                     return (
-                                        <span className="flex items-baseline gap-2 flex-wrap"
+                                        <span className="flex items-baseline gap-2 flex-nowrap whitespace-nowrap"
                                             title="Computed: start + course hours over working days, minus holidays">
                                             <span className="text-[13px] font-bold text-brand-700">
-                                                <span className="text-brand-400 font-normal">→ ends </span>{fmtDateLong(endObj)}
+                                                <span className="text-brand-400 font-normal">ends at </span>{fmtDateLong(endObj)}
                                             </span>
                                             <span className="text-[11px] font-medium text-ink-400">
                                                 · <button
                                                     type="button"
                                                     onClick={() => setShowWorkingDaysModal(true)}
-                                                    className="text-brand-700 font-semibold underline underline-offset-2 decoration-brand-300 hover:decoration-brand-700 hover:text-brand-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30 rounded-sm"
+                                                    className="text-info-700 font-semibold underline underline-offset-2 decoration-info-500/40 hover:decoration-info-700 hover:text-info-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info-500/30 rounded-sm"
                                                 >
                                                     {workDays} working day{workDays === 1 ? '' : 's'}
                                                 </button> · <button
                                                     type="button"
                                                     onClick={() => setShowHolidaysModal(true)}
-                                                    className="text-brand-700 font-semibold underline underline-offset-2 decoration-brand-300 hover:decoration-brand-700 hover:text-brand-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30 rounded-sm"
+                                                    className="text-info-700 font-semibold underline underline-offset-2 decoration-info-500/40 hover:decoration-info-700 hover:text-info-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info-500/30 rounded-sm"
                                                 >
                                                     {totalHols} holiday{totalHols === 1 ? '' : 's'}
                                                 </button>
@@ -1820,13 +1849,8 @@ export default function ProgramCalendarContent(
                                         </span>
                                     )
                                 })()}
-                                {evidenceLock && (
-                                    <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-danger-50 border border-danger-500/30 text-[11px] font-semibold text-danger-700">
-                                        🔒 {hasAttendance
-                                            ? 'Program calendar locked due to attendance marked'
-                                            : `Locked — ${deviations.length} deviation${deviations.length > 1 ? 's' : ''} recorded`}
-                                    </span>
-                                )}
+                                {/* Lock chip moved up next to the date input so the
+                                    reason is right beside the control it disables. */}
                                 {!evidenceLock && startPassed && (
                                     <span className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] font-semibold border ${
                                         isAdmin
@@ -2602,7 +2626,7 @@ export default function ProgramCalendarContent(
                                             type Cmp = { row: GenRow; hours: number; pStart?: Date; pEnd?: Date; aStart?: Date; aEnd?: Date }
                                             const byKey: Record<string, Cmp> = {}
                                             const order: string[] = []
-                                            const keyOf = (r: GenRow) => `${r.module}|${r.subModule}|${r.topic}|${r.subTopic}|${r.activity}|${r.type}`
+                                            const keyOf = (r: GenRow) => `${r.module}|${r.subModule}|${r.topic}|${r.subTopic}`
                                             generated.forEach(r => {
                                                 const k = keyOf(r)
                                                 if (!byKey[k]) { byKey[k] = { row: r, hours: 0 }; order.push(k) }
@@ -2619,19 +2643,44 @@ export default function ProgramCalendarContent(
                                                 if (!c.aEnd   || r.date > c.aEnd)   c.aEnd   = new Date(r.date)
                                             })
                                             const fmt = (d?: Date) => d ? d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
+                                            // Merge the Module cell across consecutive rows that share the
+                                            // same module name — matches the Planned/Actual view where the
+                                            // module column is common to all its topics (no repeated cell
+                                            // per row). The topic column stays one-per-row.
+                                            const modSpans = new Array(order.length).fill(0)
+                                            {
+                                                let a = 0
+                                                while (a < order.length) {
+                                                    const mName = byKey[order[a]].row.module || '—'
+                                                    let b = a
+                                                    while (b < order.length && (byKey[order[b]].row.module || '—') === mName) b++
+                                                    modSpans[a] = b - a
+                                                    a = b
+                                                }
+                                            }
                                             return (
                                                 <table className="w-full text-[11px] border-collapse">
                                                     <thead className="sticky top-0 z-10">
+                                                        {/* Row 1: hierarchy + grouped date headers.
+                                                            Palette mirrors the Planned/Actual view: dark
+                                                            navy for identity cols, amber for hours, blue
+                                                            for Planned dates, green for Actual dates,
+                                                            dark red for Deviation. */}
                                                         <tr>
-                                                            {['#','Module / Topic','Activity','Type','Hours',
-                                                              'Planned Start Date','Planned End Date',
-                                                              'Actual Start Date','Actual End Date',
-                                                              'Deviation'].map((h, i) => (
-                                                                <th key={h} style={{background:'#1E293B',color:'white'}}
-                                                                    className={`border border-ink-700 px-2.5 py-2 text-center font-bold whitespace-nowrap ${i===1?'min-w-[160px] text-left':''}`}>
-                                                                    {h}
-                                                                </th>
-                                                            ))}
+                                                            <th rowSpan={2} style={{background:'#1E293B',color:'white'}} className="border border-ink-700 px-2.5 py-1.5 text-center font-bold align-middle whitespace-nowrap min-w-[40px]">#</th>
+                                                            <th rowSpan={2} style={{background:'#1E293B',color:'white'}} className="border border-ink-700 px-2.5 py-1.5 text-center font-bold align-middle min-w-[130px]">Module</th>
+                                                            <th rowSpan={2} style={{background:'#1E293B',color:'white'}} className="border border-ink-700 px-2.5 py-1.5 text-center font-bold align-middle min-w-[140px]">Topic</th>
+                                                            <th rowSpan={2} style={{background:'#B45309',color:'white'}} className="border border-warn-700 px-2.5 py-1.5 text-center font-bold align-middle whitespace-nowrap">Total Hours</th>
+                                                            <th colSpan={2} style={{background:'#0369A1',color:'white'}} className="border border-info-700 px-2.5 py-1.5 text-center font-bold whitespace-nowrap">Planned</th>
+                                                            <th colSpan={2} style={{background:'#15803D',color:'white'}} className="border border-success-700 px-2.5 py-1.5 text-center font-bold whitespace-nowrap">Actual</th>
+                                                            <th rowSpan={2} style={{background:'#991B1B',color:'white'}} className="border border-danger-700 px-2.5 py-1.5 text-center font-bold align-middle whitespace-nowrap min-w-[120px]">Deviation</th>
+                                                        </tr>
+                                                        {/* Row 2: Start / End sub-headers per date group */}
+                                                        <tr>
+                                                            <th style={{background:'#DBEAFE',color:'#075985'}} className="border border-info-700 px-2 py-1 text-center font-semibold text-[10px] whitespace-nowrap">Start Date</th>
+                                                            <th style={{background:'#DBEAFE',color:'#075985'}} className="border border-info-700 px-2 py-1 text-center font-semibold text-[10px] whitespace-nowrap">End Date</th>
+                                                            <th style={{background:'#DCFCE7',color:'#166534'}} className="border border-success-700 px-2 py-1 text-center font-semibold text-[10px] whitespace-nowrap">Start Date</th>
+                                                            <th style={{background:'#DCFCE7',color:'#166534'}} className="border border-success-700 px-2 py-1 text-center font-semibold text-[10px] whitespace-nowrap">End Date</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -2640,34 +2689,60 @@ export default function ProgramCalendarContent(
                                                             const status = (!aStart && pStart) ? 'cancelled'
                                                                 : (pStart && aStart && (isoDate(pStart) !== isoDate(aStart) || isoDate(pEnd!) !== isoDate(aEnd!))) ? 'rescheduled'
                                                                 : 'on-track'
-                                                            // Deviations that hit this item's planned window AND
-                                                            // apply to the batch being viewed.
                                                             const rowDevs = (pStart && pEnd)
                                                                 ? deviations.filter(d => devInActualView(d) && d.date >= isoDate(pStart) && d.date <= isoDate(pEnd))
                                                                 : []
-                                                            const statusBg = status==='on-track' ? 'bg-white' : status==='rescheduled' ? 'bg-warn-50/60' : 'bg-danger-50/60'
-                                                            const plannedCls = status!=='on-track' ? 'text-danger-700 line-through opacity-60' : 'text-success-700'
-                                                            const actualCls  = status==='rescheduled' ? 'text-warn-700' : status==='cancelled' ? 'text-ink-300' : 'text-success-700'
+                                                            // Sub-topic still tucks under the Topic cell.
+                                                            const topicLabel = row.topic && row.topic !== '-'
+                                                                ? (row.subTopic && row.subTopic !== '-' ? `${row.topic} › ${row.subTopic}` : row.topic)
+                                                                : (row.subTopic && row.subTopic !== '-' ? row.subTopic : '—')
+                                                            const stripe = i%2===0 ? '#ffffff' : '#FFF7ED'
+                                                            // Date pill colors mirror the Actual view:
+                                                            // - Planned dates keep their info/brand tint;
+                                                            //   when the actual has slipped they gain a
+                                                            //   struck line so the drift reads instantly.
+                                                            // - Actual dates take amber on rescheduled,
+                                                            //   ink-300 on cancelled, else the matching
+                                                            //   green (start) / purple (end) pill.
+                                                            const plannedStartPill = status!=='on-track'
+                                                                ? 'text-info-700 bg-info-50 border border-info-200 line-through opacity-70'
+                                                                : 'text-info-700 bg-info-50 border border-info-200'
+                                                            const plannedEndPill = plannedStartPill
+                                                            const actualStartPill = status==='rescheduled'
+                                                                ? 'text-warn-700 bg-warn-50 border border-warn-500/30'
+                                                                : status==='cancelled'
+                                                                    ? 'text-ink-400 bg-ink-50 border border-ink-200'
+                                                                    : 'text-success-700 bg-success-50 border border-success-500/30'
+                                                            const actualEndPill = status==='rescheduled'
+                                                                ? 'text-warn-700 bg-warn-50 border border-warn-500/30'
+                                                                : status==='cancelled'
+                                                                    ? 'text-ink-400 bg-ink-50 border border-ink-200'
+                                                                    : 'text-brand-700 bg-brand-50 border border-brand-200'
                                                             return (
-                                                                <tr key={k} className={`${statusBg} ${i%2===0?'':'brightness-[0.98]'}`}>
-                                                                    <td className="border border-ink-200 px-2 py-1.5 text-center text-ink-400">{i+1}</td>
-                                                                    <td className="border border-ink-200 px-2.5 py-1.5 text-left">
-                                                                        <span className="font-semibold text-ink-800">{row.module}</span>
-                                                                        {row.topic && row.topic!=='-' && <span className="text-ink-400"> › {row.topic}</span>}
-                                                                        {row.subTopic && row.subTopic!=='-' && <span className="text-ink-400"> › {row.subTopic}</span>}
+                                                                <tr key={k} style={{background: stripe}} className="hover:brightness-95 transition-all">
+                                                                    <td className="border border-ink-200 px-2 py-1.5 text-center text-ink-400 align-middle">{i+1}</td>
+                                                                    {modSpans[i] > 0 && (
+                                                                        <td rowSpan={modSpans[i]} style={{background:'#FFEDD5'}} className="border border-ink-900 px-2.5 py-1.5 font-bold text-info-700 text-center align-middle">
+                                                                            {row.module && row.module !== '-' ? row.module : '—'}
+                                                                        </td>
+                                                                    )}
+                                                                    <td className="border border-ink-900 px-2.5 py-1.5 text-left text-ink-700 align-middle" style={{background:'#F8FAFC'}} title={topicLabel !== '—' ? topicLabel : undefined}>{topicLabel}</td>
+                                                                    <td className="border border-ink-200 px-2 py-1.5 text-center align-middle" style={hours>0?{background:'#FEF3C7'}:{}}>
+                                                                        {hours>0 ? <span className="font-bold text-warn-700">{hours}</span> : <span className="text-ink-200">—</span>}
                                                                     </td>
-                                                                    <td className="border border-ink-200 px-2 py-1.5 text-center text-ink-600">{row.activity}</td>
-                                                                    <td className="border border-ink-200 px-2 py-1.5 text-center">
-                                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${row.type==='iDo'?'bg-brand-100 text-brand-700':row.type==='weDo'?'bg-brand-100 text-brand-700':'bg-success-50 text-success-700'}`}>
-                                                                            {row.type==='iDo'?'I Do':row.type==='weDo'?'We Do':'Assessment'}
-                                                                        </span>
+                                                                    <td className="border border-ink-900 px-2 py-1.5 text-center whitespace-nowrap align-middle" style={{background:'#F0F9FF'}}>
+                                                                        {pStart ? <span className={`inline-block font-semibold rounded px-1.5 py-0.5 text-[10px] ${plannedStartPill}`}>{fmt(pStart)}</span> : <span className="text-ink-300">—</span>}
                                                                     </td>
-                                                                    <td className="border border-ink-200 px-2 py-1.5 text-center font-bold text-warn-700">{hours}h</td>
-                                                                    <td className={`border border-ink-200 px-2.5 py-1.5 text-center font-semibold whitespace-nowrap ${plannedCls}`}>{fmt(pStart)}</td>
-                                                                    <td className={`border border-ink-200 px-2.5 py-1.5 text-center font-semibold whitespace-nowrap ${plannedCls}`}>{fmt(pEnd)}</td>
-                                                                    <td className={`border border-ink-200 px-2.5 py-1.5 text-center font-semibold whitespace-nowrap ${actualCls}`}>{fmt(aStart)}</td>
-                                                                    <td className={`border border-ink-200 px-2.5 py-1.5 text-center font-semibold whitespace-nowrap ${actualCls}`}>{fmt(aEnd)}</td>
-                                                                    <td className="border border-ink-200 px-2.5 py-1.5 text-center">
+                                                                    <td className="border border-ink-900 px-2 py-1.5 text-center whitespace-nowrap align-middle" style={{background:'#F0F9FF'}}>
+                                                                        {pEnd ? <span className={`inline-block font-semibold rounded px-1.5 py-0.5 text-[10px] ${plannedEndPill}`}>{fmt(pEnd)}</span> : <span className="text-ink-300">—</span>}
+                                                                    </td>
+                                                                    <td className="border border-ink-900 px-2 py-1.5 text-center whitespace-nowrap align-middle" style={{background:'#ECFDF5'}}>
+                                                                        {aStart ? <span className={`inline-block font-semibold rounded px-1.5 py-0.5 text-[10px] ${actualStartPill}`}>{fmt(aStart)}</span> : <span className="text-ink-300">—</span>}
+                                                                    </td>
+                                                                    <td className="border border-ink-900 px-2 py-1.5 text-center whitespace-nowrap align-middle" style={{background:'#ECFDF5'}}>
+                                                                        {aEnd ? <span className={`inline-block font-semibold rounded px-1.5 py-0.5 text-[10px] ${actualEndPill}`}>{fmt(aEnd)}</span> : <span className="text-ink-300">—</span>}
+                                                                    </td>
+                                                                    <td className="border border-danger-500/30 px-2 py-1.5 text-center align-middle" style={{background: rowDevs.length>0 ? '#FFF1F2' : '#FAFAFA'}}>
                                                                         {rowDevs.length ? rowDevs.map(dv => (
                                                                             <div key={dv.id} className="text-[10px] whitespace-nowrap">
                                                                                 <span className="font-bold text-danger-500">{new Date(dv.date+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</span>

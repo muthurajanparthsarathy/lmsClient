@@ -348,7 +348,7 @@ export default function QuestionBankPage() {
 
   // ── MCQ save (FormData path) ──
   // Routed through questionBankService instead of a bare fetch: the two
-  // endpoints were hardcoded to http://localhost:5533, so this save could only
+  // endpoints were hardcoded to https://lmsserver-yeve.onrender.com, so this save could only
   // ever work against a local server. The service already wraps the exact same
   // POST/PUT multipart calls behind NEXT_PUBLIC_API_URL.
   const handleMCQSave = async (formData: FormData) => {

@@ -223,7 +223,7 @@ const SidebarNavItem = ({ item, onNavigate, expandable, expanded, onToggle, chil
         )}
 
         <span className={cn(
-          "flex-1 text-[13px] transition-colors truncate",
+          "flex-1 text-sm transition-colors truncate",
           item.isActive ? "font-semibold text-[#F97316] dark:text-orange-300" : "font-medium"
         )}>
           {item.label}
@@ -520,7 +520,7 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     )
     if (embedded) return <div className="h-full w-full flex flex-col bg-white dark:bg-gray-950 overflow-hidden">{skeleton}</div>
     return (
-      <aside className="fixed left-0 top-0 z-50 flex h-screen w-[224px] flex-col border-r border-gray-100 bg-white md:static md:z-auto md:shrink-0 md:border-r-0 md:bg-transparent dark:border-gray-800 dark:bg-gray-950 md:dark:bg-transparent">
+      <aside className="fixed left-0 top-0 z-50 flex h-screen w-[268px] flex-col border-r border-gray-100 bg-white md:static md:z-auto md:shrink-0 md:border-r-0 md:bg-transparent dark:border-gray-800 dark:bg-gray-950 md:dark:bg-transparent">
         {skeleton}
       </aside>
     )
@@ -586,7 +586,7 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
         className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-[10px] text-gray-500 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 transition-colors"
       >
         <LogOut className="w-[17px] h-[17px] flex-shrink-0" strokeWidth={2} />
-        <span className="text-[13px] font-medium">Logout</span>
+        <span className="text-sm font-medium">Logout</span>
       </button>
     </div>
   ) : (
@@ -714,8 +714,10 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
         // Mobile: overlay drawer with a solid surface. Desktop (md+): static
         // and FLAT on the gray canvas — no card, no border — so the gray
         // flows uninterrupted from the rail around the white workspace panel.
-        "fixed left-0 top-0 z-50 h-screen w-[224px]",
-        railCollapsed && "md:w-[76px]",
+        // Widths bumped to match the admin sidebar (EXPANDED_W = 268,
+        // COLLAPSED_W = 64) so the two shells feel the same.
+        "fixed left-0 top-0 z-50 h-screen w-[268px]",
+        railCollapsed && "md:w-[64px]",
         "flex flex-col transform transition-all duration-300 ease-out",
         "bg-white dark:bg-gray-950 border-r border-gray-100 dark:border-gray-800",
         "md:static md:z-auto md:shrink-0 md:transform-none md:border-r-0 md:bg-transparent md:dark:bg-transparent",

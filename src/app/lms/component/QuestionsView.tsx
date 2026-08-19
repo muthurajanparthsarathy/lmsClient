@@ -96,7 +96,7 @@ interface QuestionsProps {
   breadcrumbs?: any[];
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
 const stripHtml = (html: string) => (html || '').replace(/<[^>]*>/g, '');
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -150,6 +150,114 @@ const Questions: React.FC<QuestionsProps> = ({
   const [editingMode, setEditingMode]                       = useState<'edit'|'add'>('add');
 const [showDocumentUpload, setShowDocumentUpload] = useState(false);
   const [showGenerateAI, setShowGenerateAI] = useState(false);
+
+  // ── AI / Other Platform close-trap (mirror of QuestionsTest.tsx) ────────────
+  // A slot's designated source (AI or Other Platform) must not be silently
+  // bypassed by closing an empty dialog. Both refs flip to `true` at the
+  // moment the dialog produces content (AI onSave / Bank onSelect); onClose
+  // reads the ref and, if false AND the picker was opened as OP / AI (not
+  // internal Bank), refuses to close — flashing a red viewport ring, playing
+  // a Windows-style ding, and firing a toast that names the reason + offers
+  // "Change source" as the explicit escape. Internal Bank + manual close
+  // freely; only the two sources that cannot be silently re-designated get
+  // trapped. Same behavior wired in QuestionsTest.tsx (You Do flow).
+  const aiHasContentRef = useRef(false);
+  const qbHasContentRef = useRef(false);
+  const [trapFlash, setTrapFlash] = useState(0);
+  const trapDingRef = useRef<AudioContext | null>(null);
+  const playTrapDing = useCallback(() => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      if (!trapDingRef.current) trapDingRef.current = new Ctx();
+      const ctx = trapDingRef.current!;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.18);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.24);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.26);
+    } catch { /* audio blocked — silent fail */ }
+  }, []);
+  const flashViewport = useCallback(() => {
+    setTrapFlash((n) => n + 1);
+  }, []);
+  const trapCloseAttempt = useCallback((source: 'ai' | 'thirdParty') => {
+    playTrapDing();
+    flashViewport();
+    const isAI = source === 'ai';
+    const label = isAI ? 'AI' : 'Other Platform';
+    const action = isAI ? 'generate a question' : 'pick a question';
+    toast.custom((t) => (
+      <div
+        style={{
+          background: '#fef2f2',
+          border: '1.5px solid #ef4444',
+          borderRadius: 10,
+          padding: '10px 14px',
+          minWidth: 340,
+          maxWidth: 460,
+          boxShadow: '0 8px 24px rgba(239,68,68,0.18)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          fontSize: 13,
+          color: '#7f1d1d',
+          fontWeight: 500,
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>Cannot close — slot is designated for {label}</div>
+          <div style={{ fontSize: 12, color: '#991b1b' }}>
+            This slot must be filled from {label}. {isAI ? 'Generate a question' : 'Pick a question'} or use&nbsp;
+            <b>Change source</b> to switch away from {label}.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => {
+                // Explicit source change — allowed. Flip flags so we don't
+                // trap again, dismiss both sibling modals, and drop back at
+                // the AddQuestionOptions chooser so the trainer can re-pick.
+                aiHasContentRef.current = true;
+                qbHasContentRef.current = true;
+                setShowGenerateAI(false);
+                setShowQuestionBank(false);
+                setQbankFromMCQOpts(false);
+                setShowAddOption(true);
+                toast.dismiss(t.id);
+              }}
+              style={{
+                height: 26, padding: '0 10px', borderRadius: 6,
+                border: '1px solid #b91c1c', background: '#ffffff',
+                color: '#991b1b', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Change source
+            </button>
+            <button
+              type="button"
+              onClick={() => toast.dismiss(t.id)}
+              style={{
+                height: 26, padding: '0 10px', borderRadius: 6,
+                border: '1px solid #ef4444', background: '#ef4444',
+                color: '#ffffff', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              {action}
+            </button>
+          </div>
+        </div>
+      </div>
+    ), { duration: 5000, position: 'top-center' });
+  }, [playTrapDing, flashViewport]);
   // Programming upload-via-document: parsed questions awaiting the trainer's
   // quota-capped selection (DocQuestionPicker). MCQ keeps its own
   // AddQuestionViaDocument flow, which has a server-backed selection stage.
@@ -604,6 +712,10 @@ const handleAction = async (type: string, q: Question) => {
 
  const handleBankSelect = async (selected: Question[]) => {
   if (!selected.length) return;
+  // Content picked — flip the close-trap flag so the natural close after
+  // selection passes through cleanly (the picker calls onClose right after
+  // onSelect returns).
+  qbHasContentRef.current = true;
   
   // Accept every supported question type — MCQ plus the programming family
   // (core programming, frontend and database). The bank selector already filters
@@ -1040,7 +1152,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
   //
   // Reads (fullExData ?? exercise) for questionSource / customSources so the
   // autoIntent stays in sync with `allowedSources` above after a settings edit.
-  const routeAddQuestion = React.useCallback(() => {
+  const routeAddQuestion = useCallback(() => {
     if (addBtnDisabled) return;
     // Combined exercises open the form directly; it handles its own MCQ /
     // Programming tabs and its source gating lives inside AddQuestionForm.
@@ -1095,11 +1207,13 @@ const addBtnDisabled = isAddingQuestions || (() => {
         // Pure Programming AI lives inside the question form — open the
         // form with the AI generator auto-opened (never a blank editor).
         if (isPureProg) { setNextFormAutoOpen('ai'); setShowAddQuestion(true); }
-        else setShowGenerateAI(true);
+        // Reset close-trap flag so a fresh open starts clean.
+        else { aiHasContentRef.current = false; setShowGenerateAI(true); }
       }
       else if (usableOther) {
         // Other Platform alone → straight to the bank picker; imports
         // are stamped thirdParty and the teacher only chooses from it.
+        qbHasContentRef.current = false;
         setBankSourceTag('thirdParty'); setQbankFromMCQOpts(true); setShowQuestionBank(true);
       }
       else if (usableDoc) openDocFlow();
@@ -1260,7 +1374,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
             {allowedSources.thirdParty && (isPureMCQ || isPureProg || isCombined) && (() => { const full = srcQuotaFull.thirdParty; return (
               <Row
                 full={full}
-                onClick={() => { setBankSourceTag('thirdParty'); setQbankFromMCQOpts(true); setShowAddOption(false); setShowQuestionBank(true); }}
+                onClick={() => { qbHasContentRef.current = false; setBankSourceTag('thirdParty'); setQbankFromMCQOpts(true); setShowAddOption(false); setShowQuestionBank(true); }}
                 accent="#0d9488"
                 iconBg="rgba(13,148,136,0.08)"
                 icon={<Database size={14} style={{ color: '#0d9488' }} />}
@@ -1280,7 +1394,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
                 onClick={() => {
                   setShowAddOption(false);
                   if (isPureProg) { setNextFormAutoOpen('ai'); setShowAddQuestion(true); }
-                  else setShowGenerateAI(true);
+                  else { aiHasContentRef.current = false; setShowGenerateAI(true); }
                 }}
                 accent="#6366f1"
                 iconBg="linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.12))"
@@ -2005,8 +2119,23 @@ const addBtnDisabled = isAddingQuestions || (() => {
       exerciseType: exercise.exerciseType,
     }}
     tabType={tabType}
-    onClose={() => { setShowQuestionBank(false); setQbankFromMCQOpts(false); }}
-    onBack={qbankFromMCQOpts ? () => { setShowQuestionBank(false); setQbankFromMCQOpts(false); setShowAddOption(true); } : undefined}
+    onClose={() => {
+      // Other Platform slot cannot be silently bypassed — if the trainer
+      // opened the picker as OP (bankSourceTag === 'thirdParty') and clicks
+      // X without picking anything, refuse to close, run the trap.
+      // Internal Bank (scratch-bank / ai / scratch-manual) closes freely —
+      // only OP is the "source can't be silently switched" case.
+      if (bankSourceTag === 'thirdParty' && !qbHasContentRef.current) {
+        trapCloseAttempt('thirdParty');
+        return;
+      }
+      setShowQuestionBank(false); setQbankFromMCQOpts(false);
+    }}
+    onBack={qbankFromMCQOpts ? () => {
+      // Back is an explicit "change source" — allowed even when empty.
+      qbHasContentRef.current = true;
+      setShowQuestionBank(false); setQbankFromMCQOpts(false); setShowAddOption(true);
+    } : undefined}
     onSelect={handleBankSelect}
     existingQuestionIds={questions.flatMap(q => [q._id, q.bankQuestionId]).filter(Boolean) as string[]}
     existingQuestions={questions}
@@ -2056,8 +2185,22 @@ const addBtnDisabled = isAddingQuestions || (() => {
               .reduce((s, q) => s + (q.mcqQuestionScore || 0), 0);
             return Math.max(0, (mc.mcqTotalMarks || 0) - used);
           })()}
-          onClose={() => setShowGenerateAI(false)}
+          onClose={() => {
+            // AI slot cannot be silently bypassed. If the trainer opened AI
+            // and clicks X without generating anything, run the trap. The
+            // onSave path flips the flag first, so a real save closes
+            // cleanly on its follow-up onClose.
+            if (!aiHasContentRef.current) {
+              trapCloseAttempt('ai');
+              return;
+            }
+            setShowGenerateAI(false);
+          }}
           onSave={(aiQuestions) => {
+            // Content produced — the follow-up onClose (fired by the modal
+            // right after onSave per GenerateMCQAIQuestion.handleSave) will
+            // now pass through unchallenged.
+            aiHasContentRef.current = (aiQuestions?.length || 0) > 0;
             const mapped: Question[] = (aiQuestions || []).map((q: any, i: number) => {
               // For true-false, synthesize the two options from trueFalseAnswer.
               let rawOptions: { text: string; isCorrect: boolean; id?: string }[] = [];
@@ -2362,6 +2505,29 @@ const addBtnDisabled = isAddingQuestions || (() => {
     sectionData={null}
   />
 )}
+      {/* ── Close-trap viewport flash (mirror of QuestionsTest.tsx) ────────
+          Painted whenever `trapFlash` bumps; a keyed div forces a fresh
+          mount + animation on each attempt, so mashing X keeps firing the
+          flash. pointer-events-none so the sibling modal stays clickable. */}
+      {trapFlash > 0 && (
+        <div
+          key={trapFlash}
+          aria-hidden
+          className="qview-trap-flash"
+          style={{
+            position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 2147483000,
+            boxShadow: 'inset 0 0 0 4px rgba(239,68,68,0.75), inset 0 0 40px rgba(239,68,68,0.35)',
+            animation: 'qviewTrapFlash 480ms ease-out forwards',
+          }}
+        />
+      )}
+      <style>{`
+        @keyframes qviewTrapFlash {
+          0%   { opacity: 0; }
+          15%  { opacity: 1; }
+          100% { opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 };

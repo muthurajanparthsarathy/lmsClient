@@ -504,7 +504,7 @@ export default function PDFViewer({
   onNotesClick, showNotesPanel, onNotesStateChange,
   onBreadcrumbNavigate,
   fileId, entityType, entityId, tabType, subcategory, folderPath = [],
-  apiBaseUrl = "http://localhost:5533", courseId,
+  apiBaseUrl = "https://lmsserver-yeve.onrender.com", courseId,
 }: PDFViewerProps) {
   // ── Viewer state
   const [isFullscreen, setIsFullscreen] = useState(false)

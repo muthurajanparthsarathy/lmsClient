@@ -10,6 +10,9 @@ import {
     UserCircle,
     Settings,
 } from "lucide-react";
+// Value import, but `features/poc/nav` imports only the SidebarItem TYPE back
+// from here — type imports are erased, so there is no runtime cycle.
+import { POC_NAV_ITEMS } from "@/features/poc/nav";
 import * as LucideIcons from "lucide-react";
 
 // Define types for permissions
@@ -322,6 +325,36 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
     return items;
 };
 
+/**
+ * Mirror of `isAdminRole` for the Point-of-Contact role.
+ *
+ * Exact matches only — no substring test. A role literally named "POC Manager"
+ * is not necessarily this role, and the loose `.includes('poc')` used by a few
+ * older call sites is a bug we are not propagating here.
+ */
+export const isPocRole = (userData: UserData | null): boolean => {
+    const r = userData?.role;
+    if (!r) return false;
+    return [r.roleValue, r.originalRole, r.renameRole]
+        .map(v => (v || "").toLowerCase().replace(/[\s\-_]/g, ""))
+        .some(v => v === "poc" || v === "pointofcontact");
+};
+
+/**
+ * The nav for a STORED user — what the shells that read localStorage (Sidebar,
+ * CommandPalette) should call instead of `buildSidebarItems` directly.
+ *
+ * A role with a dedicated static console returns that console's nav. POC is the
+ * case this exists for: its permission documents still carry admin keys, so the
+ * permission-derived path would hand it the entire admin rail — and the command
+ * palette, which shares this derivation, would offer the very routes the rail
+ * is hiding.
+ */
+export const buildNavForStoredUser = (userData: UserData | null): SidebarItem[] => {
+    if (isPocRole(userData)) return POC_NAV_ITEMS;
+    return buildSidebarItems(userData?.permissions || [], isAdminRole(userData));
+};
+
 /* ── Grouping (design-brief §4) ──────────────────────────────────────────────
    OVERVIEW / MANAGEMENT / LEARNING / SYSTEM by permissionKey; any key not in
    the map lands in WORKSPACE so no role's item is ever dropped on the floor. */
@@ -369,6 +402,13 @@ const GROUP_BY_KEY: Record<string, string> = {
     auditlogs: "System",
     profile: "System",
     settings: "System",
+    // POC console. Without these every POC item falls into "Workspace".
+    pocdashboard: "Overview",
+    poccourses: "Learning",
+    pocattendance: "Learning",
+    pocclients: "Management",
+    pocservices: "Management",
+    pocreports: "System",
 };
 
 /**

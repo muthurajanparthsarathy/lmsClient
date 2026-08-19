@@ -13,9 +13,8 @@ import { motion } from "framer-motion";
 import { Search, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-    buildSidebarItems,
+    buildNavForStoredUser,
     groupSidebarItems,
-    isAdminRole,
     readStoredUserData,
     type NavGroup,
     type SidebarItem,
@@ -80,13 +79,10 @@ export function CommandPalette({ open, onOpenChange, onSignOut, className }: Com
     // Re-derive on every open so a changed user/permission set is picked up.
     useEffect(() => {
         if (!open) return;
-        const userData = readStoredUserData();
-        if (userData?.permissions) {
-            const items = buildSidebarItems(userData.permissions, isAdminRole(userData));
-            setGroups(groupSidebarItems(items));
-        } else {
-            setGroups([]);
-        }
+        // Same derivation the sidebar uses, so the palette can never offer a
+        // route the rail hides — including for a POC, whose stored permission
+        // keys still name admin modules.
+        setGroups(groupSidebarItems(buildNavForStoredUser(readStoredUserData())));
     }, [open]);
 
     const go = (href: string) => {

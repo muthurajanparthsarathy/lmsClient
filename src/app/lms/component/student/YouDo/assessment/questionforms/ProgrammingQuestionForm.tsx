@@ -699,7 +699,7 @@ const ProgImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('http://localhost:5533/upload/question-image', {
+      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -6659,7 +6659,16 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
 
       </div>
       {/* ── DIALOGS ── */}
-      {showDiffPopup && completedDiff && (
+      {/* Suppress the "All difficulties complete!" branch entirely. This
+          popup was showing up unnecessarily when another difficulty (e.g.
+          Easy) still had customDistribution slots available — the popup's
+          own `availableNextDiffs` reads the programming per-difficulty
+          quota, which can be 0 for a difficulty that only carries source-
+          allocation slots. Result: the trainer saw a bogus "you're done"
+          screen while the source-picker still showed "2 Easy left".
+          Only render the popup when it's genuinely useful — i.e. when
+          there IS a next difficulty to switch to. All-done just closes. */}
+      {showDiffPopup && completedDiff && availableNextDiffs.length > 0 && (
         <DifficultyPopup completedDiff={completedDiff} availableNext={availableNextDiffs}
           onSelect={handleDiffSelect} onClose={() => { setShowDiffPopup(false); setCompletedDiff(null); }} />
       )}

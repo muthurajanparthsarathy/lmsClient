@@ -553,7 +553,7 @@ const FileUploadAnswerArea: React.FC<{
       const token = getToken() || localStorage.getItem('token') || '';
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch('http://localhost:5533/upload/question-file', {
+      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-file', {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
       });
       const json = await res.json();
@@ -871,7 +871,7 @@ const OthersExam: React.FC<OthersExamProps> = ({
           fd.append('code', '');
           fd.append('othersFiles', JSON.stringify(ans.files || []));
         }
-        await fetch('http://localhost:5533/courses/answers/submit', {
+        await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
         });
       }
@@ -894,7 +894,7 @@ const OthersExam: React.FC<OthersExamProps> = ({
         fd.append('score', '0');
         fd.append('status', 'submitted');
         fd.append('isTestSubmission', 'true');
-        await fetch('http://localhost:5533/courses/answers/submit', {
+        await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
         });
       }

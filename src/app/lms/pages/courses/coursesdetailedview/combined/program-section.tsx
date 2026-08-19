@@ -374,7 +374,7 @@ const ProgrammingQuestion: React.FC<ProgrammingQuestionProps> = ({
         const token = getToken() || localStorage.getItem('token') || '';
         if (!token) return;
         const res = await fetch(
-          `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${qid}&category=${category}`,
+          `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${qid}&category=${category}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) return; // 404 — never submitted, keep blank
@@ -621,7 +621,7 @@ solution();`
         isTestSubmission: false, // per-question save — never flips the exercise
       };
 
-      const response = await fetch('http://localhost:5533/courses/answers/submit-multiple-files', {
+      const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

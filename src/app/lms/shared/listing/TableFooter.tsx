@@ -47,7 +47,11 @@ export default function TableFooter({
                     : `Showing ${from} to ${to} of ${total} ${total === 1 ? 'entry' : 'entries'}`}
             </p>
 
-            <div className="flex items-center gap-2">
+            {/* flex-wrap so a full page-number window (up to 7 buttons +
+                prev/next + the page-size select, ~460px) reflows onto a
+                second line on narrow screens instead of being clipped by
+                the footer row's own overflow. */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
                 <select
                     value={pageSize}
                     onChange={(e) => onPageSize(parseInt(e.target.value, 10))}

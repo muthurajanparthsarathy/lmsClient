@@ -77,7 +77,7 @@ const CombinedExercise = () => {
         const token = getToken() || localStorage.getItem('token') || '';
         if (!token) throw new Error('Authentication token not found');
 
-        const res = await fetch(`http://localhost:5533/exercise/${exerciseId}`, {
+        const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exerciseId}`, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         });
@@ -211,7 +211,7 @@ const CombinedExercise = () => {
       fd.append('language', 'text');
       fd.append('isTestSubmission', 'true');
 
-      const res = await fetch('http://localhost:5533/courses/answers/submit', {
+      const res = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: fd,

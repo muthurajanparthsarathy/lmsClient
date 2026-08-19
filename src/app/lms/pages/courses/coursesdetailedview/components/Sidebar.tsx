@@ -3,9 +3,9 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import {
-  Search, X, ChevronDown, ChevronUp,
+  Search, X, ChevronDown, ChevronRight,
   GraduationCap, Home, LayoutDashboard,
-  Code2, Braces, Atom, Server, Layers,
+  Layers, Library, File as FileIcon,
   Crown, ArrowRight, ChevronsUpDown, ChevronsDownUp,
   AlertTriangle, PanelLeftClose, FileText, FolderOpen,
 } from "lucide-react"
@@ -33,15 +33,16 @@ const C = {
  font: FONT_PRIMARY
 }
 
-/* ─── Module icon helper ─────────────────────────────────────────────────── */
-function getModuleIcon(title: string, size = 11) {
-  const k = title.toLowerCase().replace(/[^a-z]/g, "")
-  if (k.includes("css"))       return <Braces  size={size} strokeWidth={1.8} />
-  if (k.includes("react"))     return <Atom    size={size} strokeWidth={1.8} />
-  if (k.includes("node"))      return <Server  size={size} strokeWidth={1.8} />
-  if (k.includes("express"))   return <Server  size={size} strokeWidth={1.8} />
-  if (k.includes("bootstrap")) return <Layers  size={size} strokeWidth={1.8} />
-  return                               <Code2   size={size} strokeWidth={1.8} />
+/* ─── Type icon helper — shape carries the level, not a text tag ───────────
+   Matches the upload-resources sidebar: module → shelf, submodule → folder,
+   topic → file, subtopic → plain file. Same icon for every node of a level,
+   regardless of title. */
+function getTypeIcon(type: SelectedItemType, size = 13) {
+  const props = { size, strokeWidth: 1.8 }
+  if (type === "module")    return <Library    {...props} />
+  if (type === "submodule") return <FolderOpen {...props} />
+  if (type === "topic")     return <FileText   {...props} />
+  return                           <FileIcon   {...props} />
 }
 
 /* ─── Pedagogy / Hours types ─────────────────────────────────────────────── */
@@ -174,8 +175,8 @@ const NavItem: React.FC<{
 /* ─── Collapsible tree module row ────────────────────────────────────────── */
 const TreeModuleRow: React.FC<{
   icon: React.ReactNode; label: string
-  isOpen: boolean; isActive?: boolean; depth?: number; badge?: string; onToggle: () => void
-}> = ({ icon, label, isOpen, isActive, depth = 0, badge, onToggle }) => {
+  isOpen: boolean; isActive?: boolean; depth?: number; onToggle: () => void
+}> = ({ icon, label, isOpen, isActive, depth = 0, onToggle }) => {
   const [hover, setHover] = useState(false)
   const pl = depth === 0 ? "8px 14px 8px 12px" : "6px 12px 6px 10px"
   const iSize = depth === 0 ? 25 : 20
@@ -188,49 +189,38 @@ const TreeModuleRow: React.FC<{
         display: "flex", alignItems: "center", gap: 10,
         padding: pl, borderRadius: 10, margin: "0 8px",
         cursor: "pointer", userSelect: "none",
-        // White raised pill on the flat gray rail (shell language).
+        // Selected = white raised pill + orange text/icon; unselected rows
+        // stay plain (matches the upload-resources sidebar exactly).
         background: isActive ? "#ffffff" : (hover ? "#E9EBF0" : "transparent"),
         border: isActive ? "1px solid #E4E7EC" : "1px solid transparent",
         boxShadow: isActive ? "0 1px 2px rgba(16,24,40,0.06)" : "none",
         transition: "background 0.12s,border-color 0.12s,box-shadow 0.12s",
       }}
     >
+      <span style={{ color: isActive ? C.accent : C.textGhost, display: "flex", flexShrink: 0 }}>
+        {isOpen
+          ? <ChevronDown size={12} strokeWidth={2} />
+          : <ChevronRight size={12} strokeWidth={2} />}
+      </span>
       <div style={{
         width: iSize, height: iSize,
         borderRadius: depth === 0 ? 6 : 5, flexShrink: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: isActive || isOpen ? C.accentLight : C.surface,
-        transition: "background 0.13s",
+        background: "transparent",
       }}>
-        <span style={{ color: isActive || isOpen ? C.accent : C.textFaint, display: "flex" }}>
+        <span style={{ color: isActive ? C.accent : C.textMuted, display: "flex" }}>
           {icon}
         </span>
       </div>
       <span style={{
         fontFamily: C.font, flex: 1,
-        fontSize: depth === 0 ? 14 : 13.5, fontWeight: 400,  // Reduced from 13.5/12.5/500
-        color: isOpen || isActive ? C.text : C.textMuted,
-        textTransform: depth === 0 ? "uppercase" as const : "none" as const,
-        letterSpacing: depth === 0 ? "0.015em" : "0",  // Reduced from 0.02em
+        fontSize: depth === 0 ? 14 : 13.5,
+        fontWeight: isActive ? 600 : 500,
+        color: isActive ? C.accent : C.text,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         transition: "color 0.13s",
       }}>
         {label}
-      </span>
-      {badge && (
-        <span style={{
-          fontFamily: C.font, fontSize: 10.5, fontWeight: 600,
-          letterSpacing: "0.03em", textTransform: "uppercase" as const,
-          color: C.accent, background: C.accentLight,
-          padding: "2px 7px", borderRadius: 4, flexShrink: 0, whiteSpace: "nowrap",
-        }}>
-          {badge}
-        </span>
-      )}
-      <span style={{ color: isOpen ? C.accent : C.textGhost, display: "flex", flexShrink: 0 }}>
-        {isOpen
-          ? <ChevronUp size={11} strokeWidth={2} />
-          : <ChevronDown size={11} strokeWidth={2} />}
       </span>
     </div>
   )
@@ -285,57 +275,12 @@ const SubtopicRow: React.FC<{
   )
 }
 
-/* ─── Course root row (the "skill set · N Modules" node, matches design) ───── */
-/* ─── Course root row ("skill set · N Modules", the tree root — matches image3) ─ */
-const CourseRootRow: React.FC<{
-  name: string; count: number; open: boolean; onToggle: () => void
-}> = ({ name, count, open, onToggle }) => {
-  const [hover, setHover] = useState(false)
-  return (
-    <div
-      onClick={onToggle}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: "flex", alignItems: "center", gap: 9,
-        padding: "8px 12px", borderRadius: 8, margin: "0 8px 2px",
-        cursor: "pointer", userSelect: "none",
-        background: open ? C.accentLight : hover ? C.surfaceHover : "transparent",
-        transition: "background 0.12s",
-      }}
-    >
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22C55E", flexShrink: 0 }} />
-      <div style={{
-        width: 24, height: 24, borderRadius: 6, flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: C.accentLight,
-      }}>
-        <FolderOpen size={13} strokeWidth={1.9} color={C.accent} />
-      </div>
-      <span style={{
-        fontFamily: C.font, flex: 1, fontSize: 14, fontWeight: 600,
-        color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-      }}>
-        {name}
-      </span>
-      <span style={{
-        fontFamily: C.font, fontSize: 11, fontWeight: 500,
-        color: C.textFaint, background: C.surface, border: `1px solid ${C.border}`,
-        padding: "2px 7px", borderRadius: 16, flexShrink: 0, whiteSpace: "nowrap",
-      }}>
-        {count} Module{count !== 1 ? "s" : ""}
-      </span>
-      <span style={{ color: open ? C.accent : C.textGhost, display: "flex", flexShrink: 0 }}>
-        {open ? <ChevronUp size={11} strokeWidth={2} /> : <ChevronDown size={11} strokeWidth={2} />}
-      </span>
-    </div>
-  )
-}
-
-/* ─── Leaf row (file-icon items like html / css — no expander) ─────────────── */
+/* ─── Leaf row (topic / subtopic — no expander) ─────────────────────────────
+   Selected = white pill + orange dot + orange bold text, exactly matching
+   the upload-resources sidebar's leaf styling. */
 const LeafRow: React.FC<{
-  title: string; isSelected: boolean; isCurrentTopic?: boolean; onClick: () => void
-}> = ({ title, isSelected, isCurrentTopic, onClick }) => {
+  title: string; icon: React.ReactNode; isSelected: boolean; isCurrentTopic?: boolean; onClick: () => void
+}> = ({ title, icon, isSelected, isCurrentTopic, onClick }) => {
   const [hover, setHover] = useState(false)
   return (
     <div
@@ -353,17 +298,21 @@ const LeafRow: React.FC<{
         transition: "background 0.12s, box-shadow 0.12s, border-color 0.12s",
       }}
     >
+      <span style={{
+        width: 4, height: 4, borderRadius: "50%", flexShrink: 0, marginLeft: 2,
+        background: isSelected ? C.accent : C.textGhost,
+      }} />
       <div style={{
         width: 20, height: 20, borderRadius: 5, flexShrink: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
-        color: isSelected ? C.accent : C.textFaint,
+        color: isSelected ? C.accent : C.textMuted,
       }}>
-        <FileText size={13} strokeWidth={1.8} />
+        {icon}
       </div>
       <span style={{
         fontFamily: C.font, fontSize: 13.5, flex: 1,
-        fontWeight: isSelected ? 550 : 400,
-        color: isSelected ? C.text : C.textMuted,
+        fontWeight: isSelected ? 600 : 500,
+        color: isSelected ? C.accent : C.text,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>
         {title}
@@ -586,7 +535,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   courseId, currentTopicId,
 }) => {
   const [pedagogyViews, setPedagogyViews] = useState<PedagogyView[]>([])
-  const [courseTreeOpen, setCourseTreeOpen] = useState(true)
 
   useEffect(() => {
     fetchAllPedagogyViews().then(setPedagogyViews).catch(console.error)
@@ -634,6 +582,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <LeafRow
           key={node._id}
           title={node.title}
+          icon={getTypeIcon(type)}
           isSelected={isSel}
           isCurrentTopic={node._id === currentTopicId}
           onClick={() => sel(node._id, node.title, type, hierarchy, node.pedagogy)}
@@ -652,14 +601,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       : onToggleTopic
 
     return (
-      <div key={node._id} style={{ marginBottom: depth === 1 ? 2 : 0 }}>
+      <div key={node._id} style={{ marginBottom: depth === 0 ? 2 : 0 }}>
         <TreeModuleRow
-          icon={getModuleIcon(node.title)}
+          icon={getTypeIcon(type)}
           label={node.title}
           isOpen={isOpen}
           isActive={isSel}
           depth={depth}
-          badge={type === "module" ? "Module" : undefined}
           onToggle={() => {
             sel(node._id, node.title, type, hierarchy, node.pedagogy)
             toggle(node._id)
@@ -687,18 +635,12 @@ ${FONT_INTER_IMPORT}          .sbd-scroll::-webkit-scrollbar{width:3px}
         `
       }} />
 
-      {/* Course root → modules → topics (matches image3) */}
-      <CourseRootRow
-        name={courseData.courseName || "Course"}
-        count={courseData.modules.length}
-        open={courseTreeOpen}
-        onToggle={() => setCourseTreeOpen(v => !v)}
-      />
-      <AnimCollapse open={courseTreeOpen}>
-        <div style={{ marginLeft: 12, borderLeft: `1.5px solid ${C.border}`, paddingTop: 2 }}>
-          {filtered.map((m: any) => renderNode(m, "module", [m._id], 1))}
-        </div>
-      </AnimCollapse>
+      {/* Modules → topics — no repeated course-name row, the course card above
+          already names it (matches the upload-resources sidebar). */}
+      <SectionLabel label="Syllabus" />
+      <div style={{ paddingTop: 2 }}>
+        {filtered.map((m: any) => renderNode(m, "module", [m._id], 0))}
+      </div>
       <div style={{ height: 8 }} />
     </div>
   )

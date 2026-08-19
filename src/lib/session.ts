@@ -128,3 +128,45 @@ export const getUserId = (): string | null => getSessionItem(SESSION_KEYS.userId
 export const getRole = (): string | null => getSessionItem(SESSION_KEYS.role);
 export const getInstitution = (): string | null =>
   getSessionItem(SESSION_KEYS.institution);
+
+// ─── Point of Contact ─────────────────────────────────────────────────────
+//
+// The POC console is decided by ROLE, never by the stored permission keys.
+// Existing POC accounts still carry admin grants (admindashboard,
+// usermanagement, coursestructure, …), so anything keying on permissions would
+// hand a POC the admin experience. Every POC decision — the route gate, the
+// login redirect, shell selection, nav derivation — comes through here.
+
+const normalizeRole = (v: unknown): string =>
+  String(v ?? "").trim().toLowerCase().replace(/[\s\-_]/g, "");
+
+/**
+ * Exact match, deliberately not `.includes("poc")`. Several pre-existing call
+ * sites use a substring test, which would also match an unrelated role named
+ * e.g. "POC Manager" and silently put it in the read-only console.
+ */
+export const isPocRoleValue = (v: unknown): boolean => {
+  const n = normalizeRole(v);
+  return n === "poc" || n === "pointofcontact";
+};
+
+/**
+ * Is THIS session a Point of Contact? SSR-safe (false on the server).
+ *
+ * `roleValue` is canonical; `originalRole` and `renameRole` are also checked
+ * because `renameRole` is free text an admin sets and some role documents
+ * carry the value only there.
+ */
+export const isPocSession = (): boolean => {
+  if (!isBrowser()) return false;
+  return [SESSION_KEYS.roleValue, SESSION_KEYS.originalRole, SESSION_KEYS.renameRole]
+    .map((k) => getSessionItem(k))
+    .some(isPocRoleValue);
+};
+
+/** The POC console's landing route. */
+export const POC_HOME = "/lms/pages/poc/dashboard";
+
+/** Does this path belong to the POC console? */
+export const isPocRoute = (href: string): boolean =>
+  href.split("?")[0].startsWith("/lms/pages/poc");

@@ -378,7 +378,7 @@ function LiveDashboardInner() {
       const token =
         (typeof window !== "undefined" &&
           (getToken() || localStorage.getItem("token"))) || "";
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
       const qs = new URLSearchParams({ assessmentId, studentId: expandedRowId });
       const res = await fetch(`${apiBase}/api/assessment/student-details?${qs.toString()}`, {
         method: "GET",

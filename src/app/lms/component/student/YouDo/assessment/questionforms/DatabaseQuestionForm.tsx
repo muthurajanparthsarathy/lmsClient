@@ -448,7 +448,7 @@ const ImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('http://localhost:5533/upload/question-image', {
+      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,

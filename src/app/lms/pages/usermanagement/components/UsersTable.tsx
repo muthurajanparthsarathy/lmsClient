@@ -145,13 +145,14 @@ export function UsersTable({
 
   return (
     <div
-      // x is clipped, not scrolled: with fixed layout the columns can never
-      // genuinely overflow, but Chromium's sub-pixel rounding of percentage
-      // widths can exceed the container by <1px and summon a phantom bar.
-      className="overflow-y-auto overflow-x-clip min-h-[260px] custom-scrollbar"
+      // Below min-w the percentage columns would be squeezed unreadably
+      // (email/role clipped to a handful of px on phone widths), so the
+      // table gets a width floor and the container scrolls horizontally
+      // instead — same convention as MappingWorkspaceTable.
+      className="overflow-auto min-h-[260px] custom-scrollbar"
       style={{ maxHeight: maxBodyHeight }}
     >
-      <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+      <table className="w-full min-w-[640px] border-collapse" style={{ tableLayout: "fixed" }}>
         <thead className="sticky top-0 z-sticky">
           <tr>
             <th className={`${HEAD_CELL} ${COL.check}`}>

@@ -5,6 +5,7 @@ import { Eye, EyeOff, GraduationCap } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast, ToastContainer } from "react-toastify";
 import { showErrorToast } from "@/components/ui/toastUtils";
+import { isPocSession, isPocRoleValue, isPocRoute, POC_HOME } from "@/lib/session";
 
 interface Permission {
   permissionName: string;
@@ -146,6 +147,13 @@ const SmartCliffLogin = () => {
 
     if (existingToken && existingInstitution && existingBasedOn) {
       const redirectTo = getRedirectParam();
+      // A POC may only follow a ?redirect= that points into its own console;
+      // anything else would land on a route the gate refuses.
+      if (isPocSession()) {
+        toast.info("Welcome back!");
+        window.location.href = redirectTo && isPocRoute(redirectTo) ? redirectTo : POC_HOME;
+        return;
+      }
       if (redirectTo) { toast.info("Welcome back!"); window.location.href = redirectTo; return; }
       let redirectPath = "/lms/pages/admindashboard";
       const firstPermissionKey = localStorage.getItem("smartcliff_firstPermissionKey");
@@ -187,7 +195,7 @@ const SmartCliffLogin = () => {
           if (loc) clientInfo.location = loc;
         }
       } catch { /* best effort — login is never blocked beyond the timeout */ }
-      const response = await fetch("http://localhost:5533/user/login", {
+      const response = await fetch("https://lmsserver-yeve.onrender.com/user/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...credentials, clientInfo }),
@@ -243,7 +251,7 @@ const SmartCliffLogin = () => {
           localStorage.setItem("smartcliff_roleId", "");
           localStorage.setItem("smartcliff_originalRole", "User");
         }
-        const verifyResponse = await fetch("http://localhost:5533/user/verify-token", {
+        const verifyResponse = await fetch("https://lmsserver-yeve.onrender.com/user/verify-token", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         });
@@ -251,6 +259,15 @@ const SmartCliffLogin = () => {
         // IP / location / device were already captured with the login request
         // (clientInfo), so they persist even though we redirect immediately below.
         if (!user.firstTimeLoginDone) localStorage.setItem("showWelcomeToast", "true");
+        // Roles with a dedicated console are routed by ROLE, ahead of both
+        // ?redirect= and smartcliff_firstPermissionKey. Existing POC accounts
+        // carry stale admin permission keys whose lowest-order entry is
+        // `admindashboard` — a route the POC gate now denies, so honouring the
+        // key would drop them straight onto Access Restricted.
+        if (isPocRoleValue(userRoleValue) || isPocRoleValue(originalRoleValue)) {
+          window.location.href = redirectTo && isPocRoute(redirectTo) ? redirectTo : POC_HOME;
+          return;
+        }
         if (redirectTo) { window.location.href = redirectTo; return; }
         const firstPermissionKey = localStorage.getItem("smartcliff_firstPermissionKey");
         if (firstPermissionKey) { window.location.href = `/lms/pages/${firstPermissionKey}`; return; }

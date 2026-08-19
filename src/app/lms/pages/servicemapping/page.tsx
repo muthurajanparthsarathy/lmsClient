@@ -3649,8 +3649,11 @@ function ClientMappingsModal({
                         exit="exit"
                         // Fixed frame that matches the L&D "Services offered"
                         // overlay: pagination handles overflow instead of the
-                        // dialog scrolling.
-                        className="bg-surface rounded-tile border border-hairline-strong shadow-xl flex flex-col gap-0 overflow-hidden w-[96vw] sm:w-[1120px] sm:max-w-[1120px] h-[86vh] max-h-[820px]"
+                        // dialog scrolling. Scales with the viewport up to a
+                        // 1120px cap — a bare `sm:w-[1120px]` jump would
+                        // overflow every tablet/small-laptop between 640px
+                        // and ~1150px wide.
+                        className="bg-surface rounded-tile border border-hairline-strong shadow-xl flex flex-col gap-0 overflow-hidden w-[96vw] max-w-[1120px] h-[86vh] max-h-[820px]"
                     >
                         {/* ── Header: avatar + title + inline counts + red X ── */}
                         <div className="relative flex-shrink-0 border-b border-hairline px-6 py-3">

@@ -29,9 +29,8 @@ import { postLogout } from "@/apiServices/activityLog";
 // the Business Management merge) lives in ONE shared pure module so the
 // command palette can never disagree with the sidebar.
 import {
-    buildSidebarItems,
+    buildNavForStoredUser,
     groupSidebarItems,
-    isAdminRole,
     USER_DATA_KEY,
     type SidebarItem,
     type UserData,
@@ -94,17 +93,13 @@ export function Sidebar({ className }: SidebarProps) {
                 const userData: UserData = JSON.parse(userDataString);
                 setCurrentUser(userData);
 
-                if (userData?.permissions) {
-                    const permissions: UserPermission[] = userData.permissions;
-                    setUserPermissions(permissions);
-
-                    // Build sidebar items from permissions
-                    const sidebarItemsFromPermissions = buildSidebarItems(permissions, isAdminRole(userData));
-                    setSidebarItems(sidebarItemsFromPermissions);
-                } else {
-                    console.error("No permissions found in user data");
-                    setSidebarItems([]);
-                }
+                setUserPermissions(userData?.permissions || []);
+                // Roles with a dedicated static console (POC) get theirs;
+                // everyone else keeps the permission-derived rail. Going
+                // through the shared helper rather than buildSidebarItems is
+                // what stops a POC's stale admin permission keys rendering the
+                // admin rail on any page that mounts this shell.
+                setSidebarItems(buildNavForStoredUser(userData));
             } catch (error) {
                 console.error("Error loading user data from localStorage:", error);
                 setSidebarItems([]);

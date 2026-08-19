@@ -8,7 +8,7 @@ import {
   Loader2, LayoutDashboard, BookMarked, GraduationCap, ChevronLeft as ChevronLeftIcon,
   X, Sparkles, Hash, Layers, Eye, CheckCircle, Clock, Search, Filter, LayoutGrid, List, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Calendar, Type, FileDigit, FolderOpen, Users, Zap,
-  GripVertical, Bookmark, ArrowRight, User,
+  GripVertical, Bookmark, ArrowRight, User, Info, Network, Link2, Pencil,
 } from "lucide-react"
 import VideoPlayer from "../../../../component/student/video-player"
 import PDFViewer from "../../../../component/student/pdf-viewer"
@@ -132,6 +132,24 @@ const moduleChildInfo = (m: any): { n: number; label: string } => {
   if (m.topics?.length) return { n: m.topics.length, label: m.topics.length === 1 ? 'Topic' : 'Topics' }
   return { n: 0, label: '' }
 }
+
+// ── Submodule Details page palette (premium redesign) ────────────────────────
+const DETAIL_UI = {
+  navy: '#101A35',
+  slate: '#42516F',
+  orange: '#F45116',
+  orangeDeep: '#F0440A',
+  orangeLight: '#FFF0E8',
+  peach: '#FFE4D5',
+  mint: '#DDF7EF',
+  green: '#16805C',
+  blueLight: '#DDF0FF',
+  blue: '#1670C5',
+  tableHeaderBg: '#F3F6FC',
+}
+// Icon representing each hierarchy node type in the redesigned detail header/table.
+const detailTypeIcon = (type: string) =>
+  type === 'module' ? Folder : type === 'submodule' ? Layers : type === 'topic' ? Hash : Bookmark
 
 export default function LMSPage() {
   const params = useParams()
@@ -1530,7 +1548,7 @@ const getExercisesForActivity = (): any[] => {
           let stash: any = { ...exercise, questions: qs, courseId, courseName: cname, context: { courseId, nodeId: selectedItem?.id, nodeTitle: selectedItem?.title, method: selectedMethod, activity: selectedActivity }, storedAt: new Date().toISOString() }
           try {
             const token = localStorage.getItem('smartcliff_token') || localStorage.getItem('token') || ''
-            const res = await fetch(`http://localhost:5533/exercise/${exercise._id}`, {
+            const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exercise._id}`, {
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
             })
             if (res.ok) {
@@ -1562,7 +1580,7 @@ const getExercisesForActivity = (): any[] => {
         // Single-file (existing inline path) — fetch full document and render inline.
         try {
           const token = localStorage.getItem('smartcliff_token') || localStorage.getItem('token') || ''
-          const res = await fetch(`http://localhost:5533/exercise/${exercise._id}`, {
+          const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exercise._id}`, {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
           })
           if (res.ok) {
@@ -1634,30 +1652,6 @@ const getExercisesForActivity = (): any[] => {
     return injectTryItButtons(stamped)
   }
 
-  // ── PedBadge ────────────────────────────────────────────────────────────────
-  const PedBadge = ({ val, variant }: { val: number; variant: "ido" | "wedo" | "ydo" }) => {
-    if (!val || val === 0) {
-      return (
-        <span className="inline-flex items-center justify-center min-w-[28px] h-[22px] px-2.5 rounded-md text-[13px] font-bold bg-black/[0.03] text-gray-300 border border-black/5">
-          —
-        </span>
-      )
-    }
-    const cls = {
-      ido: "bg-sky-100 text-sky-700 border-sky-200",
-      wedo: "bg-orange-100 text-orange-600 border-orange-200",
-      ydo: "bg-emerald-100 text-emerald-600 border-emerald-200",
-    }[variant]
-    return (
-      <span className={`inline-flex items-center justify-center min-w-[28px] h-[22px] px-2.5 rounded-md text-[13px] font-bold border ${cls}`}>
-        {val}
-      </span>
-    )
-  }
-
-  // ── Table header helper ───────────────────────────────────────────────────
-  const thCls = "px-3.5 py-2.5 font-bold text-[12.5px] uppercase tracking-[0.04em] border-b-[1.5px] border-gray-200 whitespace-nowrap text-gray-400"
-
   // ── countPedResources / countPedExercises ─────────────────────────────────
   const countPedResources = (pedagogy: any, method: "I_Do" | "We_Do" | "You_Do"): number => {
     if (!pedagogy?.[method]) return 0
@@ -1694,7 +1688,85 @@ const getExercisesForActivity = (): any[] => {
   const renderFilteredHierarchyTable = () => {
     if (!selectedItem || !courseData?.modules) return null
 
-    const baseTdCls = "align-middle px-4 py-3 border-b border-gray-100 text-[14.5px]"
+    const baseTdCls = "align-middle px-3.5 py-3 border-b border-[#EEF1F6]"
+
+    // ── Premium cell renderers (icons, pills, action chevron) ────────────────
+    const LeadCell = ({ icon: Icon, title, hrs, rowSpan }: { icon: any; title: string; hrs?: number; rowSpan?: number }) => (
+      <td rowSpan={rowSpan} className={`${baseTdCls} border-r border-[#EEF1F6]`} style={{ background: '#FAFBFD' }}>
+        <div className="flex items-center gap-2">
+          <div className="rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: 32, height: 32, background: DETAIL_UI.peach }}>
+            <Icon size={15} strokeWidth={2.2} style={{ color: DETAIL_UI.orange }} />
+          </div>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-bold truncate" style={{ color: DETAIL_UI.navy, fontSize: 13.5 }}>{title}</span>
+            {!!hrs && (
+              <span className="flex-shrink-0 rounded font-bold" style={{ fontSize: 9.5, padding: '1px 4px', background: 'rgba(244,81,22,0.12)', color: DETAIL_UI.orange, border: '1px solid rgba(244,81,22,0.3)' }}>
+                {hrs}h
+              </span>
+            )}
+          </div>
+        </div>
+      </td>
+    )
+
+    const PlainCell = ({ title, hrs, rowSpan, dashedRight }: { title: string; hrs?: number; rowSpan?: number; dashedRight?: boolean }) => (
+      <td rowSpan={rowSpan} className={`${baseTdCls} ${dashedRight ? 'border-r border-dashed border-[#E2E6EE]' : ''}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="font-semibold truncate" style={{ color: DETAIL_UI.navy, fontSize: 13 }}>{title}</span>
+          {!!hrs && (
+            <span className="flex-shrink-0 rounded font-bold" style={{ fontSize: 9.5, padding: '1px 4px', background: 'rgba(99,102,241,0.10)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.25)' }}>
+              {hrs}h
+            </span>
+          )}
+        </div>
+      </td>
+    )
+
+    const SubCell = ({ title }: { title: string }) => (
+      <td className={baseTdCls}>
+        <span className="font-semibold" style={{ color: '#334155', fontSize: 13 }}>{title}</span>
+      </td>
+    )
+
+    const DashCell = () => (
+      <td className={`${baseTdCls} text-center`}>
+        <span className="inline-flex items-center justify-center rounded-full font-bold" style={{ minWidth: 40, height: 28, background: DETAIL_UI.mint, color: DETAIL_UI.green, fontSize: 12.5 }}>–</span>
+      </td>
+    )
+
+    const PillCell = ({ val, icon: Icon, bg, color }: { val: number; icon: any; bg: string; color: string }) => (
+      <td className={`${baseTdCls} text-center`}>
+        {val > 0 ? (
+          <span className="inline-flex items-center justify-center gap-1 rounded-full font-bold" style={{ minWidth: 50, height: 28, padding: '0 10px', background: bg, color, fontSize: 12.5 }}>
+            <Icon size={12} strokeWidth={2.3} />
+            {val}
+          </span>
+        ) : (
+          <span className="inline-flex items-center justify-center rounded-full font-bold" style={{ minWidth: 40, height: 28, background: DETAIL_UI.mint, color: DETAIL_UI.green, fontSize: 12.5 }}>–</span>
+        )}
+      </td>
+    )
+    const IDoCell = ({ val }: { val: number }) => <PillCell val={val} icon={BookOpen} bg={DETAIL_UI.blueLight} color={DETAIL_UI.blue} />
+    const WeDoCell = ({ val }: { val: number }) => <PillCell val={val} icon={Pencil} bg="#FFF0E8" color={DETAIL_UI.orange} />
+    const YouDoCell = ({ val }: { val: number }) => <PillCell val={val} icon={Target} bg="#FDE8E8" color="#DC4545" />
+
+    const ActionCell = ({ onNavigate }: { onNavigate?: () => void }) => (
+      <td className={`${baseTdCls} text-center`} style={{ width: 56 }}>
+        {onNavigate && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onNavigate() }}
+            className="inline-flex items-center justify-center rounded-lg transition-colors cursor-pointer"
+            style={{ width: 32, height: 32, background: '#F3F5F9', border: '1px solid #E7EAF1' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = DETAIL_UI.orangeLight }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#F3F5F9' }}
+            title="Open"
+          >
+            <ChevronRight size={15} strokeWidth={2.3} style={{ color: DETAIL_UI.navy }} />
+          </button>
+        )}
+      </td>
+    )
 
     // Helper to find node by ID
     const findNodeById = (id: string): any => {
@@ -1732,6 +1804,9 @@ const getExercisesForActivity = (): any[] => {
     const selectedNode = findNodeById(selectedItem.id)
     if (!selectedNode) return null
 
+    const goToNode = (id: string, title: string, type: SelectedItemType, hierarchy: string[], pedagogy?: any) => () =>
+      handleItemSelect(id, title, type, hierarchy, pedagogy)
+
     // Generate rows based on selection type
     const generateRows = (): JSX.Element[] => {
       const rows: JSX.Element[] = []
@@ -1767,58 +1842,16 @@ const getExercisesForActivity = (): any[] => {
                     const isFirstRowOfModule = currentRowIndex === 0
                     const isFirstRowOfSubmodule = topics.indexOf(topic) === 0 && stIdx === 0
                     const isFirstRowOfTopic = stIdx === 0
-                    const rowBg = currentRowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
                     rows.push(
-                      <tr key={`${module._id}-${submodule._id}-${topic._id}-${subtopic._id || stIdx}`} className={`ov-tr ${rowBg}`}>
-                        {isFirstRowOfModule && (
-                          <td rowSpan={moduleTotalRows} className={`${baseTdCls} font-bold text-gray-800 bg-gray-50 border-r-2 border-r-gray-200 pl-4`}>
-                            <div className="flex items-center gap-1.5">
-                              {module.title}
-                              {(() => {
-                                const hrs = hoursMap[module._id] || 0
-                                if (!hrs) return null
-                                return (
-                                  <span style={{
-                                    display: 'inline-flex', alignItems: 'center',
-                                    minWidth: 28, height: 16, padding: '0 4px',
-                                    borderRadius: 4, fontSize: '10.5px', fontWeight: 700,
-                                    background: 'rgba(249,115,22,0.12)', color: '#F97316',
-                                    border: '1px solid rgba(249,115,22,0.3)',
-                                  }}>{hrs} hours</span>
-                                )
-                              })()}
-                            </div>
-                          </td>
-                        )}
-                        {isFirstRowOfSubmodule && (
-                          <td rowSpan={submoduleTotalRows} className={`${baseTdCls} font-semibold text-[14px] text-gray-500 bg-gray-50/80 border-r border-r-gray-100`}>
-                            <div className="flex items-center gap-1.5">
-                              {submodule.title}
-                              {(() => {
-                                const hrs = hoursMap[submodule._id] || 0
-                                if (!hrs) return null
-                                return (
-                                  <span style={{
-                                    display: 'inline-flex', alignItems: 'center',
-                                    minWidth: 28, height: 16, padding: '0 4px',
-                                    borderRadius: 4, fontSize: '10.5px', fontWeight: 700,
-                                    background: 'rgba(99,102,241,0.10)', color: '#6366f1',
-                                    border: '1px solid rgba(99,102,241,0.25)',
-                                  }}>{hrs} hours</span>
-                                )
-                              })()}
-                            </div>
-                          </td>
-                        )}
-                        {isFirstRowOfTopic && (
-                          <td rowSpan={topicRowSpan} className={`${baseTdCls} font-semibold text-[14px] text-gray-800 border-r border-dashed border-r-gray-200`}>
-                            {topic.title}
-                          </td>
-                        )}
-                        <td className={`${baseTdCls} text-[13.5px] text-gray-500`}>{subtopic.title}</td>
-                        <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "I_Do")} variant="ido" /></td>
-                        <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(subtopic.pedagogy, "We_Do")} variant="wedo" /></td>
-                        <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "You_Do")} variant="ydo" /></td>
+                      <tr key={`${module._id}-${submodule._id}-${topic._id}-${subtopic._id || stIdx}`} className="ov-tr bg-white">
+                        {isFirstRowOfModule && <LeadCell icon={detailTypeIcon('module')} title={module.title} hrs={hoursMap[module._id]} rowSpan={moduleTotalRows} />}
+                        {isFirstRowOfSubmodule && <PlainCell title={submodule.title} hrs={hoursMap[submodule._id]} rowSpan={submoduleTotalRows} />}
+                        {isFirstRowOfTopic && <PlainCell title={topic.title} rowSpan={topicRowSpan} dashedRight />}
+                        <SubCell title={subtopic.title} />
+                        <IDoCell val={countPedResources(subtopic.pedagogy, "I_Do")} />
+                        <WeDoCell val={countPedExercises(subtopic.pedagogy, "We_Do")} />
+                        <YouDoCell val={countPedResources(subtopic.pedagogy, "You_Do")} />
+                        <ActionCell onNavigate={goToNode(subtopic._id, subtopic.title, 'subtopic', [module._id, submodule._id, topic._id, subtopic._id], subtopic.pedagogy)} />
                       </tr>
                     )
                   })
@@ -1826,44 +1859,32 @@ const getExercisesForActivity = (): any[] => {
                   const currentRowIndex = rowIndex++
                   const isFirstRowOfModule = currentRowIndex === 0
                   const isFirstRowOfSubmodule = topics.indexOf(topic) === 0
-                  const rowBg = currentRowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
                   rows.push(
-                    <tr key={`${module._id}-${submodule._id}-${topic._id}`} className={`ov-tr ${rowBg}`}>
-                      {isFirstRowOfModule && (
-                        <td rowSpan={moduleTotalRows} className={`${baseTdCls} font-bold text-gray-800 bg-gray-50 border-r-2 border-r-gray-200 pl-4`}>
-                          {module.title}
-                        </td>
-                      )}
-                      {isFirstRowOfSubmodule && (
-                        <td rowSpan={submoduleTotalRows} className={`${baseTdCls} font-semibold text-[14px] text-gray-500 bg-gray-50/80 border-r border-r-gray-100`}>
-                          {submodule.title}
-                        </td>
-                      )}
-                      <td className={`${baseTdCls} font-semibold text-[14px] text-gray-800 border-r border-dashed border-r-gray-200`}>{topic.title}</td>
-                      <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-                      <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "I_Do")} variant="ido" /></td>
-                      <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(topic.pedagogy, "We_Do")} variant="wedo" /></td>
-                      <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "You_Do")} variant="ydo" /></td>
+                    <tr key={`${module._id}-${submodule._id}-${topic._id}`} className="ov-tr bg-white">
+                      {isFirstRowOfModule && <LeadCell icon={detailTypeIcon('module')} title={module.title} hrs={hoursMap[module._id]} rowSpan={moduleTotalRows} />}
+                      {isFirstRowOfSubmodule && <PlainCell title={submodule.title} hrs={hoursMap[submodule._id]} rowSpan={submoduleTotalRows} />}
+                      <PlainCell title={topic.title} dashedRight />
+                      <DashCell />
+                      <IDoCell val={countPedResources(topic.pedagogy, "I_Do")} />
+                      <WeDoCell val={countPedExercises(topic.pedagogy, "We_Do")} />
+                      <YouDoCell val={countPedResources(topic.pedagogy, "You_Do")} />
+                      <ActionCell onNavigate={goToNode(topic._id, topic.title, 'topic', [module._id, submodule._id, topic._id], topic.pedagogy)} />
                     </tr>
                   )
                 }
               })
             } else {
               const currentRowIndex = rowIndex++
-              const rowBg = currentRowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
               rows.push(
-                <tr key={`${module._id}-${submodule._id}`} className={`ov-tr ${rowBg}`}>
-                  {currentRowIndex === 0 && (
-                    <td rowSpan={moduleTotalRows} className={`${baseTdCls} font-bold text-gray-800 bg-gray-50 border-r-2 border-r-gray-200 pl-4`}>
-                      {module.title}
-                    </td>
-                  )}
-                  <td className={`${baseTdCls} font-semibold text-[14px] text-gray-500 bg-gray-50/80 border-r border-r-gray-100`}>{submodule.title}</td>
-                  <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-                  <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(submodule.pedagogy, "I_Do")} variant="ido" /></td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(submodule.pedagogy, "We_Do")} variant="wedo" /></td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(submodule.pedagogy, "You_Do")} variant="ydo" /></td>
+                <tr key={`${module._id}-${submodule._id}`} className="ov-tr bg-white">
+                  {currentRowIndex === 0 && <LeadCell icon={detailTypeIcon('module')} title={module.title} hrs={hoursMap[module._id]} rowSpan={moduleTotalRows} />}
+                  <PlainCell title={submodule.title} />
+                  <DashCell />
+                  <DashCell />
+                  <IDoCell val={countPedResources(submodule.pedagogy, "I_Do")} />
+                  <WeDoCell val={countPedExercises(submodule.pedagogy, "We_Do")} />
+                  <YouDoCell val={countPedResources(submodule.pedagogy, "You_Do")} />
+                  <ActionCell onNavigate={goToNode(submodule._id, submodule.title, 'submodule', [module._id, submodule._id], submodule.pedagogy)} />
                 </tr>
               )
             }
@@ -1876,43 +1897,31 @@ const getExercisesForActivity = (): any[] => {
               subtopics.forEach((subtopic: any, stIdx: number) => {
                 const currentRowIndex = rowIndex++
                 const isFirstRowOfTopic = stIdx === 0
-                const rowBg = currentRowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
                 rows.push(
-                  <tr key={`${module._id}-${topic._id}-${subtopic._id || stIdx}`} className={`ov-tr ${rowBg}`}>
-                    {currentRowIndex === 0 && (
-                      <td rowSpan={moduleTotalRows} className={`${baseTdCls} font-bold text-gray-800 bg-gray-50 border-r-2 border-r-gray-200 pl-4`}>
-                        {module.title}
-                      </td>
-                    )}
-                    <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-                    {isFirstRowOfTopic && (
-                      <td rowSpan={topicRowSpan} className={`${baseTdCls} font-semibold text-[14px] text-gray-800 border-r border-dashed border-r-gray-200`}>
-                        {topic.title}
-                      </td>
-                    )}
-                    <td className={`${baseTdCls} text-[13.5px] text-gray-500`}>{subtopic.title}</td>
-                    <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "I_Do")} variant="ido" /></td>
-                    <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(subtopic.pedagogy, "We_Do")} variant="wedo" /></td>
-                    <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "You_Do")} variant="ydo" /></td>
+                  <tr key={`${module._id}-${topic._id}-${subtopic._id || stIdx}`} className="ov-tr bg-white">
+                    {currentRowIndex === 0 && <LeadCell icon={detailTypeIcon('module')} title={module.title} hrs={hoursMap[module._id]} rowSpan={moduleTotalRows} />}
+                    <DashCell />
+                    {isFirstRowOfTopic && <PlainCell title={topic.title} rowSpan={topicRowSpan} dashedRight />}
+                    <SubCell title={subtopic.title} />
+                    <IDoCell val={countPedResources(subtopic.pedagogy, "I_Do")} />
+                    <WeDoCell val={countPedExercises(subtopic.pedagogy, "We_Do")} />
+                    <YouDoCell val={countPedResources(subtopic.pedagogy, "You_Do")} />
+                    <ActionCell onNavigate={goToNode(subtopic._id, subtopic.title, 'subtopic', [module._id, topic._id, subtopic._id], subtopic.pedagogy)} />
                   </tr>
                 )
               })
             } else {
               const currentRowIndex = rowIndex++
-              const rowBg = currentRowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
               rows.push(
-                <tr key={`${module._id}-${topic._id}`} className={`ov-tr ${rowBg}`}>
-                  {currentRowIndex === 0 && (
-                    <td rowSpan={moduleTotalRows} className={`${baseTdCls} font-bold text-gray-800 bg-gray-50 border-r-2 border-r-gray-200 pl-4`}>
-                      {module.title}
-                    </td>
-                  )}
-                  <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-                  <td className={`${baseTdCls} font-semibold text-[14px] text-gray-800 border-r border-dashed border-r-gray-200`}>{topic.title}</td>
-                  <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "I_Do")} variant="ido" /></td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(topic.pedagogy, "We_Do")} variant="wedo" /></td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "You_Do")} variant="ydo" /></td>
+                <tr key={`${module._id}-${topic._id}`} className="ov-tr bg-white">
+                  {currentRowIndex === 0 && <LeadCell icon={detailTypeIcon('module')} title={module.title} hrs={hoursMap[module._id]} rowSpan={moduleTotalRows} />}
+                  <DashCell />
+                  <PlainCell title={topic.title} dashedRight />
+                  <DashCell />
+                  <IDoCell val={countPedResources(topic.pedagogy, "I_Do")} />
+                  <WeDoCell val={countPedExercises(topic.pedagogy, "We_Do")} />
+                  <YouDoCell val={countPedResources(topic.pedagogy, "You_Do")} />
+                  <ActionCell onNavigate={goToNode(topic._id, topic.title, 'topic', [module._id, topic._id], topic.pedagogy)} />
                 </tr>
               )
             }
@@ -1920,6 +1929,7 @@ const getExercisesForActivity = (): any[] => {
         }
       } else if (selectedItem.type === 'submodule') {
         // Show only the selected submodule's hierarchy
+        const module = selectedNode.module
         const submodule = selectedNode.submodule
 
         if (submodule.topics?.length) {
@@ -1927,32 +1937,28 @@ const getExercisesForActivity = (): any[] => {
             const subtopics = topic.subTopics || []
             if (subtopics.length) {
               subtopics.forEach((subtopic: any, stIdx: number) => {
-                const rowBg = rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
                 rowIndex++
                 rows.push(
-                  <tr key={`${submodule._id}-${topic._id}-${subtopic._id || stIdx}`} className={`ov-tr ${rowBg}`}>
-                    {stIdx === 0 && (
-                      <td rowSpan={subtopics.length} className={`${baseTdCls} font-semibold text-[14px] text-gray-800 border-r border-dashed border-r-gray-200`}>
-                        {topic.title}
-                      </td>
-                    )}
-                    <td className={`${baseTdCls} text-[13.5px] text-gray-500`}>{subtopic.title}</td>
-                    <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "I_Do")} variant="ido" /></td>
-                    <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(subtopic.pedagogy, "We_Do")} variant="wedo" /></td>
-                    <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "You_Do")} variant="ydo" /></td>
+                  <tr key={`${submodule._id}-${topic._id}-${subtopic._id || stIdx}`} className="ov-tr bg-white">
+                    {stIdx === 0 && <LeadCell icon={detailTypeIcon('topic')} title={topic.title} hrs={hoursMap[topic._id]} rowSpan={subtopics.length} />}
+                    <SubCell title={subtopic.title} />
+                    <IDoCell val={countPedResources(subtopic.pedagogy, "I_Do")} />
+                    <WeDoCell val={countPedExercises(subtopic.pedagogy, "We_Do")} />
+                    <YouDoCell val={countPedResources(subtopic.pedagogy, "You_Do")} />
+                    <ActionCell onNavigate={goToNode(subtopic._id, subtopic.title, 'subtopic', [module._id, submodule._id, topic._id, subtopic._id], subtopic.pedagogy)} />
                   </tr>
                 )
               })
             } else {
-              const rowBg = rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
               rowIndex++
               rows.push(
-                <tr key={`${submodule._id}-${topic._id}`} className={`ov-tr ${rowBg}`}>
-                  <td className={`${baseTdCls} font-semibold text-[14px] text-gray-800 border-r border-dashed border-r-gray-200`}>{topic.title}</td>
-                  <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "I_Do")} variant="ido" /></td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(topic.pedagogy, "We_Do")} variant="wedo" /></td>
-                  <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "You_Do")} variant="ydo" /></td>
+                <tr key={`${submodule._id}-${topic._id}`} className="ov-tr bg-white">
+                  <LeadCell icon={detailTypeIcon('topic')} title={topic.title} hrs={hoursMap[topic._id]} />
+                  <DashCell />
+                  <IDoCell val={countPedResources(topic.pedagogy, "I_Do")} />
+                  <WeDoCell val={countPedExercises(topic.pedagogy, "We_Do")} />
+                  <YouDoCell val={countPedResources(topic.pedagogy, "You_Do")} />
+                  <ActionCell onNavigate={goToNode(topic._id, topic.title, 'topic', [module._id, submodule._id, topic._id], topic.pedagogy)} />
                 </tr>
               )
             }
@@ -1960,42 +1966,46 @@ const getExercisesForActivity = (): any[] => {
         }
       } else if (selectedItem.type === 'topic') {
         // Show only the selected topic's subtopics
+        const module = selectedNode.module
+        const submodule = selectedNode.submodule
         const topic = selectedNode.topic
         const subtopics = topic.subTopics || []
+        const hierBase = submodule ? [module._id, submodule._id, topic._id] : [module._id, topic._id]
 
         if (subtopics.length) {
           subtopics.forEach((subtopic: any) => {
-            const rowBg = rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
             rowIndex++
             rows.push(
-              <tr key={`${topic._id}-${subtopic._id}`} className={`ov-tr ${rowBg}`}>
-                <td className={`${baseTdCls} text-[13.5px] text-gray-500`}>{subtopic.title}</td>
-                <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "I_Do")} variant="ido" /></td>
-                <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(subtopic.pedagogy, "We_Do")} variant="wedo" /></td>
-                <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "You_Do")} variant="ydo" /></td>
+              <tr key={`${topic._id}-${subtopic._id}`} className="ov-tr bg-white">
+                <LeadCell icon={detailTypeIcon('subtopic')} title={subtopic.title} />
+                <IDoCell val={countPedResources(subtopic.pedagogy, "I_Do")} />
+                <WeDoCell val={countPedExercises(subtopic.pedagogy, "We_Do")} />
+                <YouDoCell val={countPedResources(subtopic.pedagogy, "You_Do")} />
+                <ActionCell onNavigate={goToNode(subtopic._id, subtopic.title, 'subtopic', [...hierBase, subtopic._id], subtopic.pedagogy)} />
               </tr>
             )
           })
         } else {
-          // Show just the topic itself
-          const rowBg = rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50/60"
+          // Show just the topic itself — already the selected node, nothing to drill into
           rows.push(
-            <tr key={topic._id} className={`ov-tr ${rowBg}`}>
-              <td className={`${baseTdCls} text-[13.5px] text-gray-400 text-center`}>—</td>
-              <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "I_Do")} variant="ido" /></td>
-              <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(topic.pedagogy, "We_Do")} variant="wedo" /></td>
-              <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(topic.pedagogy, "You_Do")} variant="ydo" /></td>
+            <tr key={topic._id} className="ov-tr bg-white">
+              <DashCell />
+              <IDoCell val={countPedResources(topic.pedagogy, "I_Do")} />
+              <WeDoCell val={countPedExercises(topic.pedagogy, "We_Do")} />
+              <YouDoCell val={countPedResources(topic.pedagogy, "You_Do")} />
+              <ActionCell />
             </tr>
           )
         }
       } else if (selectedItem.type === 'subtopic') {
-        // Show just the subtopic itself
+        // Show just the subtopic itself — already the selected node
         const subtopic = selectedNode.subtopic
         rows.push(
           <tr key={subtopic._id} className="ov-tr bg-white">
-            <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "I_Do")} variant="ido" /></td>
-            <td className={`${baseTdCls} text-center`}><PedBadge val={countPedExercises(subtopic.pedagogy, "We_Do")} variant="wedo" /></td>
-            <td className={`${baseTdCls} text-center`}><PedBadge val={countPedResources(subtopic.pedagogy, "You_Do")} variant="ydo" /></td>
+            <IDoCell val={countPedResources(subtopic.pedagogy, "I_Do")} />
+            <WeDoCell val={countPedExercises(subtopic.pedagogy, "We_Do")} />
+            <YouDoCell val={countPedResources(subtopic.pedagogy, "You_Do")} />
+            <ActionCell />
           </tr>
         )
       }
@@ -2005,53 +2015,46 @@ const getExercisesForActivity = (): any[] => {
 
     const rows = generateRows()
 
+    // ── Premium table header cell ─────────────────────────────────────────────
+    const Th = ({ children, center }: { children: React.ReactNode; center?: boolean }) => (
+      <th
+        className="whitespace-nowrap font-bold uppercase"
+        style={{ padding: '12px 14px', fontSize: 11, letterSpacing: '0.03em', color: DETAIL_UI.navy, textAlign: center ? 'center' : 'left', borderBottom: '1.5px solid #E7EAF1' }}
+      >
+        {children}
+      </th>
+    )
+    const ThIconLabel = ({ icon: Icon, color, label, suffix }: { icon: any; color: string; label: string; suffix?: string }) => (
+      <span className="inline-flex items-center gap-1.5">
+        <Icon size={13} strokeWidth={2.3} style={{ color }} />
+        {label}{suffix && <span style={{ color: DETAIL_UI.orange }}>&nbsp;{suffix}</span>}
+      </span>
+    )
+
     // Render table headers based on selection type
     const renderTableHeaders = () => {
+      const cols: React.ReactElement[] = []
       if (selectedItem.type === 'module') {
-        return (
-          <tr className="bg-gray-50">
-            <th className={`${thCls} text-left pl-4`}>Module</th>
-            <th className={`${thCls} text-left`}>Submodule</th>
-            <th className={`${thCls} text-left`}>Topic</th>
-            <th className={`${thCls} text-left`}>Sub-topic</th>
-            <th className={`${thCls} text-center text-orange-500`}>📚 I Do  (Resources)</th>
-            <th className={`${thCls} text-center text-orange-400`}>✏️ We Do (Exercises)</th>
-            <th className={`${thCls} text-center text-emerald-500`}>🎯 You Do </th>
-          </tr>
-        )
+        cols.push(<Th key="mod"><ThIconLabel icon={Folder} color="#64748B" label="Module" /></Th>)
+        cols.push(<Th key="sub"><ThIconLabel icon={Layers} color="#64748B" label="Submodule" /></Th>)
+        cols.push(<Th key="top"><ThIconLabel icon={Layers} color="#64748B" label="Topic" /></Th>)
+        cols.push(<Th key="sut"><ThIconLabel icon={Link2} color="#64748B" label="Sub-topic" /></Th>)
       } else if (selectedItem.type === 'submodule') {
-        return (
-          <tr className="bg-gray-50">
-            <th className={`${thCls} text-left pl-4`}>Topic</th>
-            <th className={`${thCls} text-left`}>Sub-topic</th>
-            <th className={`${thCls} text-center text-orange-500`}>📚 I Do (Resources)</th>
-            <th className={`${thCls} text-center text-orange-400`}>✏️ We Do (Exercises)</th>
-            <th className={`${thCls} text-center text-emerald-500`}>🎯 You Do</th>
-          </tr>
-        )
+        cols.push(<Th key="top"><ThIconLabel icon={Layers} color="#64748B" label="Topic" /></Th>)
+        cols.push(<Th key="sut"><ThIconLabel icon={Link2} color="#64748B" label="Sub-topic" /></Th>)
       } else if (selectedItem.type === 'topic') {
-        return (
-          <tr className="bg-gray-50">
-            <th className={`${thCls} text-left pl-4`}>Sub-topic</th>
-            <th className={`${thCls} text-center text-orange-500`}>📚 I Do (Resources)</th>
-            <th className={`${thCls} text-center text-orange-400`}>✏️ We Do (Exercises)</th>
-            <th className={`${thCls} text-center text-emerald-500`}>🎯 You Do</th>
-          </tr>
-        )
-      } else {
-        return (
-          <tr className="bg-gray-50">
-            <th className={`${thCls} text-center text-orange-500`}>📚 I Do (Resources)</th>
-            <th className={`${thCls} text-center text-orange-400`}>✏️ We Do (Exercises)</th>
-            <th className={`${thCls} text-center text-emerald-500`}>🎯 You Do</th>
-          </tr>
-        )
+        cols.push(<Th key="sut"><ThIconLabel icon={Link2} color="#64748B" label="Sub-topic" /></Th>)
       }
+      cols.push(<Th key="ido" center><ThIconLabel icon={BookMarked} color={DETAIL_UI.green} label="I Do" suffix="(Resources)" /></Th>)
+      cols.push(<Th key="wedo" center><ThIconLabel icon={Pencil} color="#C77800" label="We Do" suffix="(Exercises)" /></Th>)
+      cols.push(<Th key="ydo" center><ThIconLabel icon={Target} color="#DC4545" label="You Do" /></Th>)
+      cols.push(<th key="act" style={{ padding: '12px', borderBottom: '1.5px solid #E7EAF1', width: 56 }} />)
+      return <tr style={{ background: DETAIL_UI.tableHeaderBg }}>{cols}</tr>
     }
 
     return (
-      <div className="rounded-xl border-[1.5px] border-gray-200 overflow-hidden">
-        <table className="w-full border-collapse">
+      <div className="rounded-2xl overflow-x-auto bg-white" style={{ border: '1px solid #EEF1F6', boxShadow: '0 8px 24px rgba(30,45,80,0.05)' }}>
+        <table className="w-full border-collapse" style={{ minWidth: 560 }}>
           <thead>
             {renderTableHeaders()}
           </thead>
@@ -2090,6 +2093,48 @@ const getExercisesForActivity = (): any[] => {
       <span className="text-[14px] font-semibold">Logout</span>
     </div>
   )
+
+  // ── Submodule Details "Back" button — steps up one hierarchy level ────────
+  const findNodeMeta = useCallback((id: string): { id: string; title: string; type: SelectedItemType; hierarchy: string[]; pedagogy?: any } | null => {
+    if (!courseData?.modules) return null
+    for (const m of courseData.modules) {
+      if (m._id === id) return { id: m._id, title: m.title, type: "module", hierarchy: [m._id], pedagogy: (m as any).pedagogy }
+      if (m.subModules) for (const sm of m.subModules) {
+        if (sm._id === id) return { id: sm._id, title: sm.title, type: "submodule", hierarchy: [m._id, sm._id], pedagogy: (sm as any).pedagogy }
+        if (sm.topics) for (const t of sm.topics) {
+          if (t._id === id) return { id: t._id, title: t.title, type: "topic", hierarchy: [m._id, sm._id, t._id], pedagogy: (t as any).pedagogy }
+          if (t.subTopics) for (const st of t.subTopics) if (st._id === id) return { id: st._id, title: st.title, type: "subtopic", hierarchy: [m._id, sm._id, t._id, st._id], pedagogy: (st as any).pedagogy }
+        }
+      }
+      if (m.topics) for (const t of m.topics) {
+        if (t._id === id) return { id: t._id, title: t.title, type: "topic", hierarchy: [m._id, t._id], pedagogy: (t as any).pedagogy }
+        if (t.subTopics) for (const st of t.subTopics) if (st._id === id) return { id: st._id, title: st.title, type: "subtopic", hierarchy: [m._id, t._id, st._id], pedagogy: (st as any).pedagogy }
+      }
+    }
+    return null
+  }, [courseData])
+
+  const resetToCourseOverview = () => {
+    setSelectedItem(null)
+    setSelectedMethod("")
+    setSelectedActivity("")
+    setCurrentFolder(null)
+    setFolderPath([])
+    closeAllViewers()
+    localStorage.removeItem('lms_student_selected_node_id')
+    localStorage.removeItem('lms_student_selected_method')
+    localStorage.removeItem('lms_student_selected_activity')
+  }
+
+  const handleBackClick = () => {
+    if (!selectedItem) return
+    const hier = selectedItem.hierarchy
+    if (hier && hier.length > 1) {
+      const parent = findNodeMeta(hier[hier.length - 2])
+      if (parent) { handleItemSelect(parent.id, parent.title, parent.type, parent.hierarchy, parent.pedagogy); return }
+    }
+    resetToCourseOverview()
+  }
 
   if (error) return <div className="p-6 text-red-500">Error: {error}</div>
   if (isLoading) return (
@@ -2167,6 +2212,8 @@ const getExercisesForActivity = (): any[] => {
       >
         {/* Course sidebar — image3 look, hierarchy only */}
         <CourseSidebar
+          courseName={courseData?.courseName || "Course"}
+          moduleCount={courseData?.modules?.length || 0}
           sidebarSearch={sidebarSearch}
           onSearchChange={setSidebarSearch}
           onLogout={() => { setSidebarOpen(false); setShowLogoutModal(true) }}
@@ -2204,6 +2251,8 @@ const getExercisesForActivity = (): any[] => {
           <div className="w-[280px] flex-1 min-h-0 flex flex-col relative">
             {/* Course sidebar — image3 look, hierarchy only */}
             <CourseSidebar
+              courseName={courseData?.courseName || "Course"}
+              moduleCount={courseData?.modules?.length || 0}
               sidebarSearch={sidebarSearch}
               onSearchChange={setSidebarSearch}
               onLogout={() => setShowLogoutModal(true)}
@@ -2583,114 +2632,126 @@ const getExercisesForActivity = (): any[] => {
                 </div>
               )}
 
-              {/* ── ITEM SELECTED — Overview tab ── */}
-              {selectedItem && activeTab === "Overview" && (
-                <div className="sb-scroll flex-1 overflow-y-auto px-8 py-8 animate-[fadeIn_.3s_ease_both]">
+              {/* ── ITEM SELECTED — Overview tab (premium Submodule Details redesign) ── */}
+              {selectedItem && activeTab === "Overview" && (() => {
+                const typeLabel = selectedItem.type.charAt(0).toUpperCase() + selectedItem.type.slice(1)
+                const TypeBadgeIcon = detailTypeIcon(selectedItem.type)
+                const hrs = hoursMap[selectedItem.id] || 0
+                const desc = findNodeDescription(selectedItem.id)
+                const escapeHtml = (text: string) => text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                const descHeading = `${typeLabel} Description`
+                const hierarchyHeading = `${typeLabel} Hierarchy`
 
-                  {/* Header with title */}
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="px-3 py-1 rounded-full text-sm  tracking-widest bg-gray-100 text-gray-600 border border-gray-200">
-                          {selectedItem.type.charAt(0).toUpperCase() + selectedItem.type.slice(1)}
+                return (
+                  <div className="sb-scroll flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-6 py-6 animate-[fadeIn_.3s_ease_both]">
+
+                    {/* Top nav row: back + type/duration pills … Course Overview CTA */}
+                    <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <button
+                          onClick={handleBackClick}
+                          title="Back"
+                          className="inline-flex items-center justify-center rounded-xl transition-colors cursor-pointer flex-shrink-0"
+                          style={{ width: 36, height: 36, background: '#F3F5F9', border: '1px solid #E7EAF1' }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EAEDF3' }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#F3F5F9' }}
+                        >
+                          <ChevronLeft size={16} strokeWidth={2.3} style={{ color: DETAIL_UI.navy }} />
+                        </button>
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full font-semibold flex-shrink-0"
+                          style={{ height: 30, padding: '0 12px', background: DETAIL_UI.peach, color: DETAIL_UI.orange, fontSize: 12 }}
+                        >
+                          <TypeBadgeIcon size={13} strokeWidth={2.3} />
+                          {typeLabel}
                         </span>
-                        {(() => {
-                          const hrs = hoursMap[selectedItem.id] || 0
-                          if (!hrs) return null
-                          return (
-                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-orange-50 text-orange-600 border border-orange-200">
-                              <Clock size={12} className="mr-1.5" />
-                              {hrs} hours
-                            </span>
-                          )
-                        })()}
+                        {hrs > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded-full font-semibold flex-shrink-0"
+                            style={{ height: 30, padding: '0 12px', background: '#FFF7F0', color: DETAIL_UI.orange, fontSize: 12, border: '1px solid rgba(244,81,22,0.25)' }}
+                          >
+                            <Clock size={12} strokeWidth={2.3} />
+                            {hrs} hours
+                          </span>
+                        )}
                       </div>
-                      <h2 className="m-0 text-xl  text-black-700 leading-tight mb-1">{selectedItem.title}</h2>
-                      <p className="m-0 text-[14px]  text-gray-600">Detailed overview with hierarchy and resources</p>
+
+                      {/* Course Overview Button */}
+                      <button
+                        onClick={resetToCourseOverview}
+                        className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl text-white font-semibold cursor-pointer transition-transform hover:-translate-y-0.5"
+                        style={{ height: 36, padding: '0 16px', fontSize: 12.5, background: `linear-gradient(135deg, ${DETAIL_UI.orangeDeep}, ${DETAIL_UI.orange})`, boxShadow: '0 6px 14px rgba(244,81,22,0.25)' }}
+                      >
+                        <BookOpen size={14} />
+                        Course Overview
+                      </button>
                     </div>
 
-                    {/* Course Overview Button */}
-                    <button
-                      onClick={() => {
-                        setSelectedItem(null)
-                        setSelectedMethod("")
-                        setSelectedActivity("")
-                        setCurrentFolder(null)
-                        setFolderPath([])
-                        closeAllViewers()
-                        localStorage.removeItem('lms_student_selected_node_id')
-                        localStorage.removeItem('lms_student_selected_method')
-                        localStorage.removeItem('lms_student_selected_activity')
-                      }}
-                      className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 text-base font-semibold hover:bg-orange-100 transition-colors cursor-pointer"
-                    >
-                      <BookOpen size={14} />
-                      Course Overview
-                    </button>
-                  </div>
+                    {/* Identity: hero icon + title/subtitle … Active status badge */}
+                    <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="rounded-2xl flex items-center justify-center flex-shrink-0" style={{ width: 48, height: 48, background: DETAIL_UI.peach }}>
+                          <BookOpen size={22} strokeWidth={1.8} style={{ color: DETAIL_UI.orange }} />
+                        </div>
+                        <div className="min-w-0">
+                          <h1 className="m-0 font-bold leading-tight truncate" style={{ color: DETAIL_UI.navy, fontSize: 21 }}>{selectedItem.title}</h1>
+                          <p className="mt-1 mb-0" style={{ color: DETAIL_UI.slate, fontSize: 12.5 }}>Detailed overview with hierarchy and resources</p>
+                        </div>
+                      </div>
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full font-semibold flex-shrink-0"
+                        style={{ height: 30, padding: '0 14px', background: DETAIL_UI.mint, color: DETAIL_UI.green, fontSize: 12 }}
+                      >
+                        <CheckCircle size={13} strokeWidth={2.3} />
+                        Active {typeLabel}
+                      </span>
+                    </div>
 
-                  {/* Description display */}
-                  {(() => {
-                    const desc = findNodeDescription(selectedItem.id)
-
-                    const escapeHtml = (text: string) => {
-                      return text
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                    }
-
-                    const getDescriptionHeading = () => {
-                      switch (selectedItem.type) {
-                        case 'module': return 'Module Description'
-                        case 'submodule': return 'Submodule Description'
-                        case 'topic': return 'Topic Description'
-                        case 'subtopic': return 'Subtopic Description'
-                        default: return 'Description'
-                      }
-                    }
-
-                    return desc ? (
-                      <>
-                        <h3 className="mt-6 mb-3 text-black-600">{getDescriptionHeading()}</h3>
+                    {/* Description card */}
+                    <div className="rounded-2xl bg-white mb-6" style={{ border: '1px solid #EEF1F6', boxShadow: '0 8px 24px rgba(30,45,80,0.05)', padding: '16px 18px' }}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="rounded-full flex-shrink-0" style={{ width: 4, height: 22, background: `linear-gradient(${DETAIL_UI.orangeDeep}, ${DETAIL_UI.orange})` }} />
+                        <File size={16} strokeWidth={2} style={{ color: DETAIL_UI.slate }} />
+                        <h3 className="m-0 font-bold" style={{ color: DETAIL_UI.navy, fontSize: 15.5 }}>{descHeading}</h3>
+                      </div>
+                      {desc ? (
                         <div
-                          className="mb-6 text-[14px] text-black-600 leading-[1.8] whitespace-pre-wrap"
+                          className="rounded-xl whitespace-pre-wrap"
+                          style={{ padding: '12px 16px', background: '#F8FAFC', border: '1px solid #EEF1F6', color: DETAIL_UI.navy, fontSize: 13, lineHeight: 1.7 }}
                           dangerouslySetInnerHTML={{ __html: escapeHtml(desc) }}
                         />
-                      </>
-                    ) : (
-                      <>
-                        <h3 className="mt-6 mb-3 text-xl font-extrabold text-gray-900">{getDescriptionHeading()}</h3>
-                        <div className="mb-6 text-[15.5px] text-gray-400 leading-[1.8] italic">
-                          No description available for this {selectedItem.type}.
+                      ) : (
+                        <div className="rounded-xl flex items-center gap-2" style={{ minHeight: 40, padding: '0 16px', background: DETAIL_UI.orangeLight, border: '1px solid #FFD9BF' }}>
+                          <Info size={14} strokeWidth={2.2} style={{ color: DETAIL_UI.orange }} className="flex-shrink-0" />
+                          <span className="italic" style={{ color: DETAIL_UI.slate, fontSize: 12.5 }}>No description available for this {selectedItem.type}.</span>
                         </div>
-                      </>
-                    )
-                  })()}
+                      )}
+                    </div>
 
-                  {/* Filtered Hierarchy Table */}
-                  <div className="mb-6">
-                    <h3 className="m-0 text-black-600 mb-1">
-                      {selectedItem.type === 'module' ? 'Module Hierarchy' :
-                        selectedItem.type === 'submodule' ? 'Submodule Hierarchy' :
-                          selectedItem.type === 'topic' ? 'Topic Hierarchy' : 'Subtopic Details'}
-                    </h3>
-                    <p className="m-0 text-[14px] text-black-500">View the structure and content of this {selectedItem.type}</p>
-                  </div>
-                  {renderFilteredHierarchyTable()}
-
-                  {/* Empty state for subtopic with no resources */}
-                  {selectedItem.type === 'subtopic' &&
-                    countPedResources(selectedItem.pedagogy, "I_Do") === 0 &&
-                    countPedExercises(selectedItem.pedagogy, "We_Do") === 0 &&
-                    countPedResources(selectedItem.pedagogy, "You_Do") === 0 && (
-                      <div className="text-center px-5 py-8 bg-gray-50 rounded-xl border border-gray-200 mt-4">
-                        <Hash size={28} className="text-gray-300 mx-auto mb-2.5 block" />
-                        <p className="m-0 mb-1 font-semibold text-[14.5px] text-gray-800">No resources configured</p>
-                        <p className="m-0 text-[13.5px] text-gray-400">Content will appear here once the instructor adds resources.</p>
+                    {/* Hierarchy section heading */}
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Network size={17} strokeWidth={2.2} style={{ color: DETAIL_UI.orange }} />
+                        <h3 className="m-0 font-bold" style={{ color: DETAIL_UI.navy, fontSize: 16.5 }}>{hierarchyHeading}</h3>
                       </div>
-                    )}
-                </div>
-              )}
+                      <p className="m-0" style={{ color: DETAIL_UI.slate, fontSize: 12.5, marginLeft: 25 }}>View the structure and content of this {selectedItem.type}</p>
+                    </div>
+                    {renderFilteredHierarchyTable()}
+
+                    {/* Empty state for subtopic with no resources */}
+                    {selectedItem.type === 'subtopic' &&
+                      countPedResources(selectedItem.pedagogy, "I_Do") === 0 &&
+                      countPedExercises(selectedItem.pedagogy, "We_Do") === 0 &&
+                      countPedResources(selectedItem.pedagogy, "You_Do") === 0 && (
+                        <div className="text-center rounded-2xl mt-4" style={{ padding: '20px 16px', background: '#FAFBFD', border: '1px solid #EEF1F6' }}>
+                          <Hash size={20} className="mx-auto mb-2 block" style={{ color: '#CBD5E1' }} />
+                          <p className="m-0 mb-1 font-semibold" style={{ fontSize: 13, color: DETAIL_UI.navy }}>No resources configured</p>
+                          <p className="m-0" style={{ fontSize: 12, color: '#94A3B8' }}>Content will appear here once the instructor adds resources.</p>
+                        </div>
+                      )}
+                  </div>
+                )
+              })()}
 
               {/* ── ITEM SELECTED — I Do / We Do / You Do tab content ── */}
               {selectedItem && activeTab !== "Overview" && (
@@ -3497,7 +3558,7 @@ const getExercisesForActivity = (): any[] => {
             subcategory={loc.subcategory}
             folderPath={loc.folderPath}
             courseId={courseId}
-            apiBaseUrl="http://localhost:5533"
+            apiBaseUrl="https://lmsserver-yeve.onrender.com"
           />
         )
       })()}

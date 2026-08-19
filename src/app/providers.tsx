@@ -1,5 +1,5 @@
 'use client'
-import { getToken } from "@/lib/session";
+import { getToken, isPocSession, POC_HOME } from "@/lib/session";
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
@@ -24,6 +24,15 @@ interface Permission {
   isActive: boolean;
   order: number;
   _id: string;
+}
+
+// Where "home" is for whoever is signed in. A POC cannot reach the admin
+// dashboard, so a hardcoded link there would bounce it straight back into the
+// Access Restricted screen it just came from.
+const homeRouteForSession = (): string => {
+  if (isPocSession()) return POC_HOME
+  const role = (localStorage.getItem('smartcliff_originalRole') || '').toLowerCase()
+  return role.includes('student') ? '/lms/pages/studentdashboard' : '/lms/pages/admindashboard'
 }
 
 // Access Restricted Component
@@ -57,7 +66,7 @@ function AccessRestricted() {
             </button>
 
             <button
-              onClick={() => window.location.href = '/lms/pages/admindashboard'}
+              onClick={() => window.location.href = homeRouteForSession()}
               className="w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
             >
               Go to Dashboard
@@ -176,6 +185,50 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
   const userRole = localStorage.getItem("smartcliff_originalRole") || ''
   const isStudent = userRole.toLowerCase().includes('student')
 
+  // ── POC: closed, role-driven allowlist ──────────────────────────────────
+  //
+  // Placed FIRST and returning unconditionally. Both matter:
+  //   • Several checks below grant on `!isStudent` alone (admindashboard, logs)
+  //     or unconditionally (live-mcq, codinganalytics). A POC is not a student,
+  //     so any of them sitting above this would let it through.
+  //   • Existing POC accounts carry stale admin permission keys, which the
+  //     matcher further down would honour. The ROLE decides here; those keys
+  //     are never consulted for a POC.
+  //
+  // The POC works on the REAL admin pages — the server scopes every read there
+  // to its enrolled courses and refuses every write against records outside
+  // that scope. So the allowlist opens the pages the POC actually uses:
+  // the POC dashboard, Course Management, Attendance, Business Management,
+  // Grades, the L&D report console, Profile and Notifications. Anything else —
+  // User Management, Role Management, Dynamic Field Settings, Audit Logs —
+  // has no per-course scoping and is deliberately absent.
+  if (isPocSession()) {
+    const ALLOWED_PREFIXES = [
+      '/lms/pages/poc',
+      '/lms/pages/coursestructure',
+      '/lms/pages/attendancemanagement',
+      '/lms/pages/businessmanagement',
+      '/lms/pages/clientmanagement',
+      '/lms/pages/servicemapping',
+      '/lms/pages/grades',
+      '/lms/pages/grade',
+      '/lms/pages/lddashboard',
+      '/lms/pages/profile',
+      '/lms/pages/notifications',
+      '/lms/pages/courses',
+      // Approvals: queue is inherently per-user; list endpoints already
+      // pass through pocClientFilter / pocCourseFilter.
+      '/lms/pages/approvals',
+      // Question Banks: internal is per-institution, external is a shared
+      // library that is intentionally global for all roles.
+      '/lms/pages/questionbanks',
+      // Calendar and Logs are NOT here on purpose — both have pre-existing
+      // cross-institution leaks and would show a POC every tenant's data.
+    ]
+    const allowed = ALLOWED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
+    return { hasAccess: allowed, requiredPermission: 'poc' }
+  }
+
   if (pathname.startsWith('/lms/pages/studentdashboard')) {
     return { hasAccess: isStudent, requiredPermission: 'studentdashboard' }
   }
@@ -218,17 +271,21 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
     return { hasAccess: hasEither, requiredPermission: 'clientmanagement' }
   }
 
-  // ── Two flows legitimately land inside /lms/pages/courses without holding the
-  //    `courses` module itself, so grant those and let everyone else fall
-  //    through to the normal permission matching below (purely additive):
-  //      1. the L&D console's Learning Content cards, which open the real
+  // ── Flows that legitimately land inside /lms/pages/courses without holding
+  //    the `courses` module itself, granted here and letting everyone else
+  //    fall through to the normal permission matching below (purely additive):
+  //      1. actual students — /lms/pages/courses IS the student courses list
+  //         (StudentLayout), and many student user docs seed only
+  //         `studentdashboard`, so gate on the role rather than requiring an
+  //         extra permission key on every learner
+  //      2. the L&D console's Learning Content cards, which open the real
   //         learner view of a course — L&D owns content oversight, not authoring
-  //      2. any staff role previewing as a student, which is exactly what the
+  //      3. any staff role previewing as a student, which is exactly what the
   //         "Switch to Student" menu item routes into
   if (pathname.startsWith('/lms/pages/courses')) {
     const keys = getActivePermissionKeys()
     const previewingAsStudent = localStorage.getItem('smartcliff_isDummyStudent') === 'true'
-    if (previewingAsStudent || keys.includes('lddashboard')) {
+    if (isStudent || previewingAsStudent || keys.includes('lddashboard')) {
       return { hasAccess: true, requiredPermission: 'courses' }
     }
   }
@@ -374,13 +431,21 @@ function AuthWrapper({ children }: { children: ReactNode }) {
           const isOnStudentDashboard = pathname.includes('studentdashboard')
           const isOnAdminDashboard = pathname.includes('admindashboard')
 
+          // A POC landing on either legacy dashboard — a stale bookmark, an old
+          // firstPermissionKey redirect, a hardcoded link — is sent to its own
+          // console rather than shown Access Restricted.
+          if (isPocSession() && (isOnAdminDashboard || isOnStudentDashboard)) {
+            router.push(POC_HOME)
+            return
+          }
+
           if (isStudent && isOnAdminDashboard) {
             router.push('/lms/pages/studentdashboard')
             return
           }
 
           if (!isStudent && isOnStudentDashboard) {
-            router.push('/lms/pages/admindashboard')
+            router.push(homeRouteForSession())
             return
           }
         }

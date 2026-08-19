@@ -6,13 +6,17 @@
 
 import React, { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Search, ChevronDown, LogOut, BookOpen, UserRound, Undo2 } from "lucide-react"
+import { Search, ChevronDown, LogOut, BookOpen, Layers, UserRound, Undo2 } from "lucide-react"
 import { staffRouteForCurrentCourse, studentRouteForCurrentCourse } from "@/app/lms/component/useAccountMenu"
 
 const ACCENT = "#F97316"
 const FONT = "'Poppins','Roboto',system-ui,-apple-system,sans-serif"
 
 interface CourseSidebarProps {
+  /** Shown in the brand card instead of the app name — mirrors the
+      upload-resources sidebar, which leads with the course, not "SmartCliff". */
+  courseName: string
+  moduleCount: number
   sidebarSearch: string
   onSearchChange: (v: string) => void
   onLogout: () => void
@@ -22,7 +26,7 @@ interface CourseSidebarProps {
 }
 
 export const CourseSidebar: React.FC<CourseSidebarProps> = ({
-  sidebarSearch, onSearchChange, onLogout, onCollapse, children,
+  courseName, moduleCount, sidebarSearch, onSearchChange, onLogout, onCollapse, children,
 }) => {
   const router = useRouter()
   const [info, setInfo] = useState({ name: "Student", role: "Student", letter: "S", enrolled: 0, streak: 0 })
@@ -106,8 +110,10 @@ export const CourseSidebar: React.FC<CourseSidebarProps> = ({
     // (floating-workspace language); the mobile drawer's own white wrapper
     // still provides a solid surface there.
     <div className="h-full w-full flex flex-col bg-transparent overflow-hidden" style={{ fontFamily: FONT }}>
-      {/* Brand card — raised white block on the gray rail, like every shell.
-          The chevron collapses the rail (same control as the L&D brand card). */}
+      {/* Course card — raised white block on the gray rail, like every shell.
+          Leads with the course (icon + name + module count), matching the
+          upload-resources sidebar, not the app brand. The chevron collapses
+          the rail (same control as the L&D brand card). */}
       <div className="flex-shrink-0 px-3 pt-3 pb-1.5">
         <div className="flex items-center gap-2.5 rounded-[14px] border border-[#E4E7EC] bg-white px-3 py-2 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
           <div
@@ -116,7 +122,17 @@ export const CourseSidebar: React.FC<CourseSidebarProps> = ({
           >
             <BookOpen className="w-4 h-4 text-white" />
           </div>
-          <span className="text-[15px] font-bold tracking-tight text-gray-900">SmartCliff</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-bold tracking-tight text-gray-900 truncate leading-tight m-0">
+              {courseName || "Course"}
+            </p>
+            <div className="flex items-center gap-1 mt-0.5">
+              <Layers className="w-2.5 h-2.5 text-gray-400 flex-shrink-0" strokeWidth={2} />
+              <span className="text-[11px] font-medium text-gray-400 truncate">
+                {moduleCount} module{moduleCount !== 1 ? "s" : ""}
+              </span>
+            </div>
+          </div>
           {onCollapse && (
             <button
               type="button"

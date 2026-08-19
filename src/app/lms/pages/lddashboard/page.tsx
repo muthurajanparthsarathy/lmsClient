@@ -74,7 +74,7 @@ const AttendanceReportPage = dynamic(
   { ssr: false, loading: () => <Loading /> },
 );
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
 const getToken = () =>
   typeof window === "undefined"
     ? ""

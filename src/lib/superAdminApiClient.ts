@@ -3,7 +3,7 @@ import axios, { AxiosError, AxiosRequestConfig } from "axios";
 // Mirrors lib/apiClient.ts but reads/writes a separate token key
 // (superadmin_token) so an LMS session and a Super Admin session can
 // coexist in the same browser without colliding.
-export const API_BASE_URL = "http://localhost:5533";
+export const API_BASE_URL = "https://lmsserver-yeve.onrender.com";
 
 export interface ApiError extends Error {
   status?: number;

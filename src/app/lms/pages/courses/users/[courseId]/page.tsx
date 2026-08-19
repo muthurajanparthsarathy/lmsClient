@@ -77,7 +77,7 @@ interface CourseUsersData {
 // ─── API Service ─────────────────────────────────────────────────────────────
 const fetchCourseUsers = async (courseId: string): Promise<CourseUsersData> => {
   const token = getAuthToken();
-  const response = await fetch(`http://localhost:5533/staff/analytics/course/${courseId}/students`, {
+  const response = await fetch(`https://lmsserver-yeve.onrender.com/staff/analytics/course/${courseId}/students`, {
     cache: 'no-store',
     headers: {
       'Authorization': `Bearer ${token}`,

@@ -23,7 +23,7 @@ const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? ""
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${GEMINI_API_KEY}`;
 
 // Backend API URL - adjust based on your environment
-const BACKEND_API_URL = "http://localhost:5533"
+const BACKEND_API_URL = "https://lmsserver-yeve.onrender.com"
 
 export default function AIPanel({ isOpen, onClose, fileUrl, title, fileType }: AIPanelProps) {
   const [prompt, setPrompt] = useState("")

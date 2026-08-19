@@ -3,7 +3,7 @@ import { getToken } from "@/lib/session";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const API_BASE = "http://localhost:5533";
+const API_BASE = "https://lmsserver-yeve.onrender.com";
 
 /* ─── Google Font ───────────────────────────────────────────────── */
 const FONT_URL =

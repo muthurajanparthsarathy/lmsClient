@@ -561,6 +561,114 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
   const [showDocUpload, setShowDocUpload] = useState(false);
   const [bankPreload, setBankPreload] = useState<{ questions: any[]; source: string } | null>(null);
 
+  // ── AI / Other Platform close-trap ─────────────────────────────────────────
+  // A slot's designated source (AI or Other Platform) must not be silently
+  // bypassed by closing an empty dialog. Both refs flip to `true` the moment
+  // the dialog produces content (AI onSave, Bank onSelect); onClose reads the
+  // ref and, if false + sourceChoice is 'ai' or 'thirdParty', refuses to close
+  // — instead flashing a red viewport ring, playing a Windows-style ding, and
+  // firing a toast that names the reason + offers "Change source" as the
+  // explicit escape. Manual / Bank (internal) close freely — only the two
+  // sources that CAN'T be silently switched to something else are trapped.
+  const aiHasContentRef = useRef(false);
+  const qbHasContentRef = useRef(false);
+  const [trapFlash, setTrapFlash] = useState(0);
+  const trapDingRef = useRef<AudioContext | null>(null);
+  const playTrapDing = useCallback(() => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      if (!trapDingRef.current) trapDingRef.current = new Ctx();
+      const ctx = trapDingRef.current!;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      // Fast down-chirp for that Windows "error" feel.
+      osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.18);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.24);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.26);
+    } catch { /* audio blocked — silent fail is fine */ }
+  }, []);
+  const flashViewport = useCallback(() => {
+    setTrapFlash((n) => n + 1);
+    // The overlay auto-hides via its own timer — see the render at the bottom.
+  }, []);
+  const trapCloseAttempt = useCallback((source: 'ai' | 'thirdParty') => {
+    playTrapDing();
+    flashViewport();
+    const isAI = source === 'ai';
+    const label = isAI ? 'AI' : 'Other Platform';
+    const action = isAI ? 'generate a question' : 'pick a question';
+    toast.custom((t) => (
+      <div
+        style={{
+          background: '#fef2f2',
+          border: '1.5px solid #ef4444',
+          borderRadius: 10,
+          padding: '10px 14px',
+          minWidth: 340,
+          maxWidth: 460,
+          boxShadow: '0 8px 24px rgba(239,68,68,0.18)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          fontSize: 13,
+          color: '#7f1d1d',
+          fontWeight: 500,
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>Cannot close — slot is designated for {label}</div>
+          <div style={{ fontSize: 12, color: '#991b1b' }}>
+            This slot must be filled from {label}. {isAI ? 'Generate a question' : 'Pick a question'} or use&nbsp;
+            <b>Change source</b> to switch away from {label}.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => {
+                // Explicit source change — allowed. Reset the flag so we don't
+                // trap again, close the sibling modal, and drop the trainer
+                // back at the source-picker step so they can re-choose.
+                aiHasContentRef.current = true;
+                qbHasContentRef.current = true;
+                setShowAIModal(false);
+                setShowQBank(false);
+                setAddQ((prev) => ({ ...prev, sourceChoice: undefined, step: 'source' }));
+                toast.dismiss(t.id);
+              }}
+              style={{
+                height: 26, padding: '0 10px', borderRadius: 6,
+                border: '1px solid #b91c1c', background: '#ffffff',
+                color: '#991b1b', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Change source
+            </button>
+            <button
+              type="button"
+              onClick={() => toast.dismiss(t.id)}
+              style={{
+                height: 26, padding: '0 10px', borderRadius: 6,
+                border: '1px solid #ef4444', background: '#ef4444',
+                color: '#ffffff', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              {action}
+            </button>
+          </div>
+        </div>
+      </div>
+    ), { duration: 5000, position: 'top-center' });
+  }, [playTrapDing, flashViewport]);
+
   // ── List filters + preview (parity with QuestionsView.tsx list toolbar) ──
   // Trainer needs to narrow long question lists by name / difficulty / type
   // without exiting the page. Preview lets them view a saved question without
@@ -772,12 +880,17 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
       return;
     }
     if (choice === 'bank' || choice === 'thirdParty') {
+      // Reset the close-trap content flag every time the picker opens.
+      // `thirdParty` is the trapped source; `bank` is internal + free to close.
+      qbHasContentRef.current = false;
       setAddQ(prev => ({ ...prev, sourceChoice: choice, step: null }));
       setShowQBank(true);
       return;
     }
     if (choice === 'ai') {
       if (isMCQ) {
+        // Reset the close-trap content flag every time the AI modal opens.
+        aiHasContentRef.current = false;
         setAddQ(prev => ({ ...prev, sourceChoice: choice, step: null }));
         setShowAIModal(true);
         return;
@@ -1858,12 +1971,35 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
         // the Question Source step (not by deleting saved questions).
         const _needsAllocMsg = 'Allocate counts for this section in Question Source first';
         const _mkNote = (defaultMsg: string) => _sectionNeedsAllocation ? _needsAllocMsg : defaultMsg;
-        const rows: Array<{ key: RowKey; title: string; sub: string; Icon: any; accent: string; iconBg: string; full: boolean; fullNote: string }> = [];
-        if (showScratch) rows.push({ key: 'manual', title: 'Create Question From Scratch', sub: isProg ? 'Build a programming question from scratch' : 'Build from scratch with custom content', Icon: Plus, accent: '#F27757', iconBg: 'rgba(242,119,87,0.1)', full: rowFull.manual, fullNote: _mkNote('All Manual slots in the distribution are used') });
-        if (showBank) rows.push({ key: 'bank', title: 'Create Question From Question Bank', sub: 'Import from existing question repository', Icon: Database, accent: '#a855f7', iconBg: 'rgba(168,85,247,0.08)', full: rowFull.bank, fullNote: _mkNote('All Manual slots in the distribution are used') });
-        if (showOther) rows.push({ key: 'thirdParty', title: 'Import From Other Platform', sub: 'Pick platform-imported questions — counted against Other Platform quota', Icon: Database, accent: '#0d9488', iconBg: 'rgba(13,148,136,0.08)', full: rowFull.thirdParty, fullNote: _mkNote('All Other Platform slots in the distribution are used') });
-        if (showAI) rows.push({ key: 'ai', title: 'Generate with AI', sub: 'Let AI draft questions from your topic', Icon: FlaskConical, accent: '#6366f1', iconBg: 'rgba(99,102,241,0.12)', full: rowFull.ai, fullNote: _mkNote('All AI slots in the distribution are used') });
-        if (canDoc) rows.push({ key: 'doc', title: 'Add Questions via Document', sub: 'Bulk import from JSON · CSV · TXT', Icon: FileText, accent: '#0891b2', iconBg: 'rgba(8,145,178,0.08)', full: rowFull.doc, fullNote: _mkNote('All Manual slots in the distribution are used') });
+        // Per-difficulty breakdown text for a source — reads `dist` directly so
+        // the row can say "1 Easy · 1 Medium remaining" instead of a bare "2".
+        // Only meaningful under Custom distribution; falls back to the total
+        // number otherwise. Used in the row's slot-label chip.
+        const _breakdownFor = (k: 'scratch' | 'ai' | 'thirdParty'): string => {
+          if (!dist || distTotal <= 0) return '';
+          const parts: string[] = [];
+          const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+          (['easy', 'medium', 'hard'] as const).forEach(d => {
+            const n = dist?.[d]?.[k] || 0;
+            if (n > 0) parts.push(`${n} ${cap(d)}`);
+          });
+          return parts.join(' · ');
+        };
+        // Slot-label chip text: "N remaining · Easy / Medium / Hard breakdown"
+        // when >0, empty string when the row is not applicable to the current
+        // exercise's quota model. Rendered as a chip next to the row title so
+        // trainers see EXACTLY which slots each source is going to fill.
+        const _slotLabel = (rem: number | null, k: 'scratch' | 'ai' | 'thirdParty'): string => {
+          if (rem === null || rem <= 0) return '';
+          const bd = _breakdownFor(k);
+          return bd ? `${rem} left · ${bd}` : `${rem} left`;
+        };
+        const rows: Array<{ key: RowKey; title: string; sub: string; Icon: any; accent: string; iconBg: string; full: boolean; fullNote: string; slotLabel: string }> = [];
+        if (showScratch) rows.push({ key: 'manual', title: 'Create Question From Scratch', sub: isProg ? 'Build a programming question from scratch' : 'Build from scratch with custom content', Icon: Plus, accent: '#F27757', iconBg: 'rgba(242,119,87,0.1)', full: rowFull.manual, fullNote: _mkNote('All Manual slots in the distribution are used'), slotLabel: _slotLabel(remScratch, 'scratch') });
+        if (showBank) rows.push({ key: 'bank', title: 'Create Question From Question Bank', sub: 'Import from existing question repository', Icon: Database, accent: '#a855f7', iconBg: 'rgba(168,85,247,0.08)', full: rowFull.bank, fullNote: _mkNote('All Manual slots in the distribution are used'), slotLabel: _slotLabel(remScratch, 'scratch') });
+        if (showOther) rows.push({ key: 'thirdParty', title: 'Import From Other Platform', sub: 'Pick platform-imported questions — counted against Other Platform quota', Icon: Database, accent: '#0d9488', iconBg: 'rgba(13,148,136,0.08)', full: rowFull.thirdParty, fullNote: _mkNote('All Other Platform slots in the distribution are used'), slotLabel: _slotLabel(remThird, 'thirdParty') });
+        if (showAI) rows.push({ key: 'ai', title: 'Generate with AI', sub: 'Let AI draft questions from your topic', Icon: FlaskConical, accent: '#6366f1', iconBg: 'rgba(99,102,241,0.12)', full: rowFull.ai, fullNote: _mkNote('All AI slots in the distribution are used'), slotLabel: _slotLabel(remAI, 'ai') });
+        if (canDoc) rows.push({ key: 'doc', title: 'Add Questions via Document', sub: 'Bulk import from JSON · CSV · TXT', Icon: FileText, accent: '#0891b2', iconBg: 'rgba(8,145,178,0.08)', full: rowFull.doc, fullNote: _mkNote('All Manual slots in the distribution are used'), slotLabel: _slotLabel(remScratch, 'scratch') });
 
         // Auto-skip when the chooser would be redundant: exactly one USABLE
         // option — jump straight into that option. Zero usable rows means EVERY
@@ -1941,6 +2077,18 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
                       </p>
                     </div>
                   )}
+                  {/* Source-rule hint — surfaces the difficulty rules that
+                      constrain AI + Other Platform so the trainer knows why
+                      certain rows show only certain difficulties in their
+                      slot label. Suppressed when no rows show remaining
+                      counts (nothing to explain). */}
+                  {rows.some(r => !r.full && r.slotLabel) && (dist && distTotal > 0) && (
+                    <div className="mb-1 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-[10px]"
+                      style={{ color: '#1e3a8a' }}>
+                      <span className="font-semibold">Source rules:</span>{' '}
+                      Other Platform fills <span className="font-semibold">Easy</span> slots · AI fills <span className="font-semibold">Medium</span> slots · Manual can fill any difficulty.
+                    </div>
+                  )}
                   {rows.map(r => {
                     const Icon = r.Icon;
                     // Quota-full rows stay visible (parity with We_Do) but go
@@ -1971,6 +2119,17 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
                               <span className="inline-flex items-center shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full"
                                 style={{ color: '#d97706', background: '#fffbeb', border: '1px solid #fde68a', letterSpacing: '0.03em' }}>
                                 Quota full
+                              </span>
+                            )}
+                            {/* Slot label — shows the user exactly what this
+                                source is going to fill ("2 left · 1 Easy · 1
+                                Medium"), so choosing a source stops feeling
+                                like guesswork. Hidden when the row is full
+                                (the Quota-full pill already says why). */}
+                            {!r.full && r.slotLabel && (
+                              <span className="inline-flex items-center shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                style={{ color: r.accent, background: r.iconBg, border: `1px solid ${r.accent}33`, letterSpacing: '0.02em' }}>
+                                {r.slotLabel}
                               </span>
                             )}
                           </div>
@@ -2095,9 +2254,27 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
             bankSource={bankSource}
             selectionQuota={selectionQuota}
             initialDifficultyFilter={initialDiffFilter}
-            onBack={() => { setShowQBank(false); setAddQ(prev => ({ ...prev, step: 'source' })); }}
-            onClose={() => { setShowQBank(false); closeAddQ(); }}
+            onBack={() => {
+              // Back is an explicit "change source" — allowed even when empty.
+              qbHasContentRef.current = true;
+              setShowQBank(false);
+              setAddQ(prev => ({ ...prev, step: 'source' }));
+            }}
+            onClose={() => {
+              // Other Platform slot cannot be silently bypassed — if the
+              // trainer picked "Other Platform" as the source and hits X
+              // without selecting anything, refuse to close, run the trap.
+              if (addQ.sourceChoice === 'thirdParty' && !qbHasContentRef.current) {
+                trapCloseAttempt('thirdParty');
+                return;
+              }
+              setShowQBank(false);
+              closeAddQ();
+            }}
             onSelect={(qs) => {
+              // Content has been picked — the trap flag flips so the natural
+              // close-after-select path passes through cleanly.
+              qbHasContentRef.current = (qs?.length || 0) > 0;
               // Hand the picked bank questions to the form for review-then-save.
               const src = addQ.sourceChoice === 'thirdParty' ? 'thirdParty' : 'scratch-bank';
               setBankPreload({ questions: qs || [], source: src });
@@ -2212,8 +2389,23 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
             // the source-chooser reappears under it and the user can pick again
             // or X out of that to fully cancel. Parity with QuestionsView.tsx
             // which does `setShowGenerateAI(false)` only.
-            onClose={() => setShowAIModal(false)}
+            //
+            // Close-trap: an AI slot cannot be silently bypassed. If the
+            // trainer picked "AI" and hits X without generating anything, we
+            // refuse the close and run the trap (flash + ding + toast with
+            // "Change source"). The natural onSave→onClose path flips the
+            // flag first (see onSave below), so a real save closes cleanly.
+            onClose={() => {
+              if (addQ.sourceChoice === 'ai' && !aiHasContentRef.current) {
+                trapCloseAttempt('ai');
+                return;
+              }
+              setShowAIModal(false);
+            }}
             onSave={(aiQuestions: any[]) => {
+              // Content produced — flip the trap flag so the subsequent
+              // onClose fired by the AI modal passes through unchallenged.
+              aiHasContentRef.current = (aiQuestions?.length || 0) > 0;
               // The AI generator emits its own shape (title/options/trueFalseAnswer/type='multiple-choice').
               // MCQQuestionForm's seeding path expects the persisted MCQ shape
               // (mcqQuestionTitle / mcqQuestionOptions / mcqQuestionCorrectAnswers /
@@ -2457,6 +2649,31 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
           </>
         );
       })()}
+
+      {/* ── Close-trap viewport flash ─────────────────────────────────────────
+          Painted whenever `trapFlash` bumps (see `flashViewport`); a keyed
+          div forces a fresh mount + a fresh CSS animation on each attempt,
+          so mashing X keeps firing the flash. Pointer-events-none keeps the
+          modal underneath fully interactive. */}
+      {trapFlash > 0 && (
+        <div
+          key={trapFlash}
+          aria-hidden
+          className="qtest-trap-flash"
+          style={{
+            position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 2147483000,
+            boxShadow: 'inset 0 0 0 4px rgba(239,68,68,0.75), inset 0 0 40px rgba(239,68,68,0.35)',
+            animation: 'qtestTrapFlash 480ms ease-out forwards',
+          }}
+        />
+      )}
+      <style>{`
+        @keyframes qtestTrapFlash {
+          0%   { opacity: 0; }
+          15%  { opacity: 1; }
+          100% { opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 };

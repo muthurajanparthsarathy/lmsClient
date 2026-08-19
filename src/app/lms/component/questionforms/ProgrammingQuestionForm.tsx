@@ -696,7 +696,7 @@ const ProgImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('http://localhost:5533/upload/question-image', {
+      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -7162,7 +7162,12 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
 
       </div>
       {/* ── DIALOGS ── */}
-      {showDiffPopup && completedDiff && (
+      {/* Suppress the "All difficulties complete!" branch (see the student-
+          copy for the full rationale): the popup was firing bogusly when
+          another difficulty still had customDistribution slots available
+          but zero programming per-difficulty quota. Only render when
+          there's actually a next difficulty to jump to. */}
+      {showDiffPopup && completedDiff && availableNextDiffs.length > 0 && (
         <DifficultyPopup completedDiff={completedDiff} availableNext={availableNextDiffs}
           onSelect={handleDiffSelect} onClose={() => { setShowDiffPopup(false); setCompletedDiff(null); }} />
       )}
