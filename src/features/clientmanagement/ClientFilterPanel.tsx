@@ -7,10 +7,17 @@ import { RotateCcw } from 'lucide-react'
 // Inline filter panel for Client Management — expands on the SAME screen under
 // the toolbar (no drawer). DRAFT model: edits stay local until "Apply Filters"
 // commits them to the page's filter state; Reset clears both; Apply collapses.
+//
+// Only Status + Business Model are exposed here. Client-type and created-date
+// were removed from the panel per product feedback (they added noise for a
+// question the user rarely asked). Their fields stay on the interface (empty
+// strings) so the page's filter payload keeps its stable shape.
 
 export interface ClientFilters {
     status: string
     model: string
+    // Kept for payload compatibility with the server filter shape; the panel
+    // no longer surfaces controls for these.
     type: string
     date: string
 }
@@ -24,7 +31,6 @@ interface ClientFilterPanelProps {
     onClose: () => void
     current: ClientFilters
     modelOptions: Option[]
-    typeOptions: Option[]
     onApply: (filters: ClientFilters) => void
     onReset: () => void
 }
@@ -36,12 +42,6 @@ const SELECT_CLS =
 const STATUS_OPTIONS: Option[] = [
     { value: 'active', label: 'Active' },
     { value: 'inactive', label: 'Inactive' },
-]
-const DATE_OPTIONS: Option[] = [
-    { value: '7', label: 'Last 7 days' },
-    { value: '30', label: 'Last 30 days' },
-    { value: '90', label: 'Last 90 days' },
-    { value: 'year', label: 'This year' },
 ]
 
 function Field({ label, value, onChange, allLabel, options }: { label: string; value: string; onChange: (v: string) => void; allLabel: string; options: Option[] }) {
@@ -56,7 +56,7 @@ function Field({ label, value, onChange, allLabel, options }: { label: string; v
     )
 }
 
-export default function ClientFilterPanel({ open, onClose, current, modelOptions, typeOptions, onApply, onReset }: ClientFilterPanelProps) {
+export default function ClientFilterPanel({ open, onClose, current, modelOptions, onApply, onReset }: ClientFilterPanelProps) {
     const [draft, setDraft] = useState<ClientFilters>(current)
 
     useEffect(() => {
@@ -99,11 +99,9 @@ export default function ClientFilterPanel({ open, onClose, current, modelOptions
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <Field label="Status" value={draft.status} onChange={set('status')} allLabel="Any status" options={STATUS_OPTIONS} />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <Field label="Business Model" value={draft.model} onChange={set('model')} allLabel="All models" options={modelOptions} />
-                            <Field label="Client Type" value={draft.type} onChange={set('type')} allLabel="All types" options={typeOptions} />
-                            <Field label="Created Date" value={draft.date} onChange={set('date')} allLabel="Any time" options={DATE_OPTIONS} />
+                            <Field label="Status" value={draft.status} onChange={set('status')} allLabel="Any status" options={STATUS_OPTIONS} />
                         </div>
                     </div>
                 </motion.div>

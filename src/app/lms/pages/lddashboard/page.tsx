@@ -16,7 +16,7 @@ import { Fragment, Suspense, createContext, useContext, useEffect, useMemo, useR
 import { createPortal } from "react-dom";
 import {
   Target, Users, CheckCircle2, AlertTriangle, Building2, BookOpen,
-  Activity, GraduationCap, ArrowUpRight, FileText, Eye, EyeOff,
+  Activity, GraduationCap, ArrowUpRight, FileText, EyeOff,
   ChevronRight, ChevronLeft, ChevronDown, Check, ClipboardList, CalendarCheck, Star, Clock, UserCheck,
   Search, Bell, Settings, SlidersHorizontal, ArrowLeft, X, Printer, Download, FileSpreadsheet,
   RefreshCw,
@@ -4198,13 +4198,17 @@ function printReportHtml(title: string, scope: string, inner: string) {
 
 /* Header + scope pickers + Print. Printing flips RPrintCtx first so every
    table renders its FULL filtered set, then snapshots this shell's content. */
-function ReportShell({ title, sub, f, client = true, course = true, actions, children, hidePrint = false }: {
+function ReportShell({ title, sub, f, client = true, course = true, actions, extraFilters, children, hidePrint = false }: {
   title: string; sub: string; f: ViewFilter; client?: boolean; course?: boolean;
   /** Pass a plain ReactNode for the header actions, OR pass a function that
    *  receives the shared doPrint callback so the view can render its own
    *  Print button inline with its other action buttons. Views that render
    *  their own Print should also pass `hidePrint`. */
   actions?: ReactNode | ((doPrint: () => void) => ReactNode);
+  /** Extra page-owned filter pickers rendered alongside Client/Course, so a
+   *  view can promote its table's Status/Trainer selects into the same
+   *  header filter row (matching floating-label style). */
+  extraFilters?: ReactNode;
   children: ReactNode;
   /** Suppress the default Print button in the header (rep-performance opts out
    *  so it can render its own Print next to Detailed / Generate in one group). */
@@ -4228,8 +4232,11 @@ function ReportShell({ title, sub, f, client = true, course = true, actions, chi
         title={title}
         sub={sub}
         filters={
-          client || course ? (
-            <ScopeFilters f={f} client={client} course={course} />
+          client || course || extraFilters ? (
+            <>
+              {(client || course) ? <ScopeFilters f={f} client={client} course={course} /> : null}
+              {extraFilters}
+            </>
           ) : undefined
         }
         actions={
@@ -5798,6 +5805,56 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
   });
 
   const scopeStr = scopeLabel(f, f.courseOpts.find((c) => c.id === f.course)?.name) || "All clients · all courses";
+
+  // Header-level filters (promoted out of the table's own filter bar so the
+  // user gets one consistent floating-label row for Client / Course / Status /
+  // Trainer instead of a mixed native-select strip below the table title).
+  const [status, setStatus] = useState<"all" | "open" | "closed">("all");
+  const [trainer, setTrainer] = useState<string>("all");
+  const trainerOptions = useMemo(
+    () => [
+      { value: "all", label: "All trainers" },
+      ...Array.from(new Set(forms.map((x: any) => x.trainer))).sort().map((t) => ({
+        value: t as string,
+        label: t as string,
+      })),
+    ],
+    [forms],
+  );
+  const shownForms = useMemo(
+    () =>
+      forms.filter((r: any) => {
+        if (status !== "all" && (status === "open") !== !!r.active) return false;
+        if (trainer !== "all" && r.trainer !== trainer) return false;
+        return true;
+      }),
+    [forms, status, trainer],
+  );
+
+  const extraFilters = (
+    <>
+      <FloatingPicker
+        label="Status"
+        minWidth="min-w-[160px]"
+        value={status}
+        options={[
+          { value: "all", label: "All statuses" },
+          { value: "open", label: "Open" },
+          { value: "closed", label: "Closed" },
+        ]}
+        onChange={(v) => setStatus(v as "all" | "open" | "closed")}
+      />
+      <FloatingPicker
+        label="Trainer"
+        minWidth="min-w-[200px]"
+        value={trainer}
+        options={trainerOptions}
+        onChange={setTrainer}
+        searchable={trainerOptions.length > 8}
+      />
+    </>
+  );
+
   const actions = (
     <button
       className="ldc-btn green" type="button"
@@ -5809,28 +5866,13 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
   );
 
   return (
-    <ReportShell title="Feedback Report" sub={sub} f={f} actions={actions}>
+    <ReportShell title="Feedback Report" sub={sub} f={f} actions={actions} extraFilters={extraFilters}>
       <RTable
         title="Feedback forms"
-        rows={forms}
+        rows={shownForms}
         init="avg"
         searchKeys={["title", "course", "client", "trainer", "batch"]}
         unit="forms"
-        filterDefs={[
-          {
-            key: "st", label: "Status",
-            options: [{ value: "all", label: "All statuses" }, { value: "open", label: "Open" }, { value: "closed", label: "Closed" }],
-            match: (r: any, v) => (v === "open") === !!r.active,
-          },
-          {
-            key: "tr", label: "Trainer",
-            options: [
-              { value: "all", label: "All trainers" },
-              ...Array.from(new Set(forms.map((x: any) => x.trainer))).sort().map((t) => ({ value: t as string, label: t as string })),
-            ],
-            match: (r: any, v) => r.trainer === v,
-          },
-        ]}
         cols={[
           { k: "title", h: "Form", render: (r: any) => <b>{r.title}</b> },
           { k: "course", h: "Course" },
@@ -5850,8 +5892,13 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
             // fine (no printable use of the L&D console via Ctrl+P today).
             k: "open", h: "", sv: () => 0,
             render: (r: any) => (
-              <button className="ldc-btn" type="button" title="Open the detailed report — responses, column pickers, PDF / Excel" onClick={() => setOpenDoc(r.raw)}>
-                <Eye size={13} style={ICO} />Open
+              <button
+                type="button"
+                className="ldr-viewlink"
+                title="Open the detailed report — responses, column pickers, PDF / Excel"
+                onClick={() => setOpenDoc(r.raw)}
+              >
+                View
               </button>
             ),
           },
@@ -6300,7 +6347,11 @@ const LDC_CSS = `
 .ldc-list-h span{margin-left:auto; font-size:11px; font-weight:500; color:var(--muted);}
 .ldc-group-h{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:0 0 8px 2px;}
 .ldc-group-h span{font-weight:500; text-transform:none; letter-spacing:0; margin-left:6px;}
-.ldc-scroll{overflow-x:auto; max-height:58vh;}
+/* Cap the table scroll so pagination stays visible inside the viewport
+   instead of forcing the whole page to scroll. calc() reserves height for the
+   page shell (header + filter row + list heading + pagination + margins), and
+   min-height keeps a usable table even when the viewport is short. */
+.ldc-scroll{overflow-x:auto; overflow-y:auto; max-height:min(58vh, calc(100vh - 340px)); min-height:220px;}
 .ldc-list table{width:100%; border-collapse:collapse; font-size:12.5px;}
 .ldc-list th{text-align:left; font-size:9.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); padding:9px 15px; background:color-mix(in srgb,var(--muted) 6%,var(--surface)); border-bottom:1px solid var(--grid); position:sticky; top:0;}
 .ldc-list th.r{text-align:right;}
@@ -6754,6 +6805,12 @@ const LDC_CSS = `
 .ldr-sel{font:inherit; font-size:12px; font-weight:600; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:5px 8px; outline:none; cursor:pointer;}
 .ldr-sel:focus{border-color:var(--accent);}
 /* pagination footer (review-submission report style) */
+/* Text link used as a per-row action ("View", etc). Blue, underlined on hover,
+   matches the enterprise "View · Edit · Delete" link cluster convention that
+   reads clearer than a coloured icon-button in a dense table row. */
+.ldr-viewlink{background:none; border:0; padding:0; margin:0; font-family:inherit; font-size:12.5px; font-weight:600; color:#2563eb; cursor:pointer; text-underline-offset:2px;}
+.ldr-viewlink:hover{color:#1d4ed8; text-decoration:underline;}
+.ldr-viewlink:focus-visible{outline:2px solid #93c5fd; outline-offset:2px; border-radius:2px;}
 .ldr-pgn{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; padding:10px 15px; border-top:1px solid var(--grid);}
 .ldr-pgn-info{font-size:12px; color:var(--muted);}
 .ldr-pgn-ctl{display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px;}

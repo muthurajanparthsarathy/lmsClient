@@ -3,9 +3,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-    ArrowDown, ArrowUp, ArrowUpDown, Building2, Eye, LayoutGrid,
-    MoreVertical, Pencil, Plus, Power, Rows3, SearchX, Trash2, X,
-    Search, SlidersHorizontal, Download, MoreHorizontal,
+    Building2, ChevronDown, Eye, EyeOff, LayoutGrid,
+    MoreVertical, Pencil, Plus, Printer, Rows3, SearchX, Trash2, X,
+    Search, SlidersHorizontal, Download, FileSpreadsheet, FileText,
 } from 'lucide-react'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -54,11 +54,6 @@ const dateCutoff = (d: string): number => {
     return 0
 }
 
-const SORT_OPTIONS: Array<{ key: ClientSortKey; label: string }> = [
-    { key: 'company', label: 'Client name' },
-    { key: 'model', label: 'Business model' },
-    { key: 'status', label: 'Status' },
-]
 
 // ─── Main page component ──────────────────────────────────────────────────────
 
@@ -113,11 +108,22 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     const [search, setSearch] = useState('')
     const [statusFilter, setStatusFilter] = useState<'' | 'active' | 'inactive'>('')
     const [businessModelFilter, setBusinessModelFilter] = useState('')
-    const [typeFilter, setTypeFilter] = useState('')
-    const [dateFilter, setDateFilter] = useState('')
+    // type + date filters were dropped from the surface; retained in the
+    // payload with fixed empty values so the server filter shape stays stable.
+    const typeFilter = ''
+    const dateFilter = ''
     const [showFilters, setShowFilters] = useState(false)
     const [sortKey, setSortKey] = useState<ClientSortKey | null>(null)
     const [sortDir, setSortDir] = useState<SortDir>('asc')
+    // Rows currently showing every contact (not just the primary). Toggled by
+    // the row-level "View all" action so a reader can spot-check secondary
+    // contact details without leaving the list.
+    const [expandedRowIds, setExpandedRowIds] = useState<Set<string>>(new Set())
+    const toggleRowExpanded = (id: string) => setExpandedRowIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id); else next.add(id)
+        return next
+    })
 
     // ── The client list ────────────────────────────────────────────────
     // The page used to download every client and filter, sort and slice the
@@ -184,9 +190,9 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         setSortDir('asc')
     }
 
-    const hasActiveFilters = Boolean(search.trim() || statusFilter || businessModelFilter || typeFilter || dateFilter)
+    const hasActiveFilters = Boolean(search.trim() || statusFilter || businessModelFilter)
     // Drawer/panel filters only (search has its own box) — badges the Filter button.
-    const activeFilterCount = (statusFilter ? 1 : 0) + (businessModelFilter ? 1 : 0) + (typeFilter ? 1 : 0) + (dateFilter ? 1 : 0)
+    const activeFilterCount = (statusFilter ? 1 : 0) + (businessModelFilter ? 1 : 0)
     const totalUsers = clientPage?.total ?? 0
     const totalPages = clientPage?.totalPages ?? 1
 
@@ -238,8 +244,6 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         setSearch('')
         setStatusFilter('')
         setBusinessModelFilter('')
-        setTypeFilter('')
-        setDateFilter('')
         setCurrentPage(1)
     }
 
@@ -247,37 +251,40 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     const filterChips: { key: string; label: string; onRemove: () => void }[] = [
         ...(statusFilter ? [{ key: 'status', label: statusFilter === 'active' ? 'Active' : 'Inactive', onRemove: () => setStatusFilter('') }] : []),
         ...(businessModelFilter ? [{ key: 'model', label: businessModelFullName(businessModelFilter), onRemove: () => setBusinessModelFilter('') }] : []),
-        ...(typeFilter ? [{ key: 'type', label: typeFilter === 'college' ? 'College' : 'Company', onRemove: () => setTypeFilter('') }] : []),
-        ...(dateFilter ? [{ key: 'date', label: ({ '7': 'Last 7 days', '30': 'Last 30 days', '90': 'Last 90 days', year: 'This year' } as Record<string, string>)[dateFilter] || dateFilter, onRemove: () => setDateFilter('') }] : []),
     ]
 
-    // Export the filtered set to CSV — still EVERY row matching the current
-    // filters, not just the visible page, so it asks the server for the whole
-    // selection rather than reading what happens to be loaded.
+    // Export the filtered set — still EVERY row matching the current filters,
+    // not just the visible page, so it asks the server for the whole selection
+    // rather than reading what happens to be loaded.
     const [isExporting, setIsExporting] = useState(false)
+    // Fetch once and hand the caller a snapshot for either format; toasts on
+    // failure so both export paths keep the same error UX.
+    const fetchExportRows = async (): Promise<Client[] | null> => {
+        if (!totalUsers) { notify.error('Nothing to export'); return null }
+        try {
+            const rows = await fetchClientsForExport(clientFilters)
+            if (!rows.length) { notify.error('Nothing to export'); return null }
+            return rows
+        } catch {
+            notify.error('Export failed')
+            return null
+        }
+    }
     const exportCsv = async () => {
         if (isExporting) return
-        if (!totalUsers) { notify.error('Nothing to export'); return }
-        let filteredClients: Client[]
         setIsExporting(true)
-        try {
-            filteredClients = await fetchClientsForExport(clientFilters)
-        } catch {
-            setIsExporting(false)
-            notify.error('Export failed')
-            return
-        }
+        const rows = await fetchExportRows()
         setIsExporting(false)
-        if (!filteredClients.length) { notify.error('Nothing to export'); return }
+        if (!rows) return
         const esc = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-        const header = ['Client', 'Business Model', 'Type', 'Status', 'Modules', 'Primary Contact', 'Email', 'Phone', 'Created']
+        const header = ['Client', 'Business Model', 'Status', 'Primary Contact', 'Email', 'Phone', 'Created']
         const lines = [
             header.join(','),
-            ...filteredClients.map((c) => {
+            ...rows.map((c) => {
                 const primary = orderedContacts(c.contactPersons)[0]
                 return [
-                    c.clientCompany, businessModelFullName(c.businessModel), (c.type || []).join(' | '),
-                    c.status, (c.services || []).map((s) => s.service).filter(Boolean).join(' | '),
+                    c.clientCompany, businessModelFullName(c.businessModel),
+                    c.status,
                     primary?.name || '', primary?.email || '', primary?.phoneNumber || '', fmtDate(c.createdAt),
                 ].map(esc).join(',')
             }),
@@ -289,7 +296,58 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         a.download = `clients-${new Date().toISOString().slice(0, 10)}.csv`
         a.click()
         URL.revokeObjectURL(url)
-        notify.success(`Exported ${filteredClients.length} client${filteredClients.length > 1 ? 's' : ''}`)
+        notify.success(`Exported ${rows.length} client${rows.length > 1 ? 's' : ''}`)
+    }
+    // Same rows as CSV, laid out as a PDF table via jspdf-autotable. The
+    // dynamic import keeps ~180KB of PDF machinery out of the initial bundle.
+    const exportPdf = async () => {
+        if (isExporting) return
+        setIsExporting(true)
+        const rows = await fetchExportRows()
+        if (!rows) { setIsExporting(false); return }
+        try {
+            const [{ default: JsPDF }, autoTableMod] = await Promise.all([
+                import('jspdf'),
+                import('jspdf-autotable'),
+            ])
+            const autoTable = (autoTableMod as any).default ?? autoTableMod
+            const doc = new JsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+            doc.setFontSize(14)
+            doc.text('Clients', 40, 40)
+            doc.setFontSize(9)
+            doc.setTextColor(90)
+            doc.text(`Generated ${fmtDate(new Date().toISOString())} · ${rows.length} client${rows.length > 1 ? 's' : ''}`, 40, 58)
+            autoTable(doc, {
+                startY: 76,
+                head: [['Client', 'Business Model', 'Status', 'Primary Contact', 'Email', 'Phone', 'Created']],
+                body: rows.map((c) => {
+                    const primary = orderedContacts(c.contactPersons)[0]
+                    return [
+                        c.clientCompany || '—',
+                        businessModelFullName(c.businessModel),
+                        c.status || '—',
+                        primary?.name || '—',
+                        primary?.email || '—',
+                        primary?.phoneNumber || '—',
+                        fmtDate(c.createdAt),
+                    ]
+                }),
+                styles: { fontSize: 8, cellPadding: 6, overflow: 'linebreak' },
+                headStyles: { fillColor: [45, 55, 72], textColor: 255, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [247, 249, 252] },
+            })
+            doc.save(`clients-${new Date().toISOString().slice(0, 10)}.pdf`)
+            notify.success(`Exported ${rows.length} client${rows.length > 1 ? 's' : ''} as PDF`)
+        } catch {
+            notify.error('PDF export failed')
+        } finally {
+            setIsExporting(false)
+        }
+    }
+    // Browser Print — the app's design tokens print acceptably; the toolbar
+    // and modal controls fall out via the standard print-hidden classes.
+    const printList = () => {
+        if (typeof window !== 'undefined') window.print()
     }
 
     // ── Form handlers ──
@@ -528,20 +586,21 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     }
 
     // ── Table columns ──
-    // The table renders in DataTable's fixedLayout mode, so these percentage
-    // widths ARE the layout: they must sum to exactly 100% (4+23+16+20+20+10+7)
-    // or `table-layout: fixed` widens the table past its container and brings
-    // the horizontal scrollbar back. Every column is always visible — long
-    // values ellipsize (`truncate`) with the full value in a title tooltip
-    // instead of stretching the row. The content columns keep roughly the
-    // 30/20/25/25 ratio scaled around the fixed #, Status and Actions columns.
+    // DataTable renders in fixedLayout mode, so the percentage widths ARE the
+    // layout: they must sum to exactly 100% (4+22+16+18+22+13+5) or
+    // table-layout:fixed widens the table past its container. Long values
+    // ellipsize with the full value in a title tooltip. When a row is
+    // "expanded" (via the row-level "View all" action), the Contact
+    // Name/Email/Contact Number cells stack all contacts vertically inside
+    // the same row — the header rhythm still holds because every stacked
+    // list stays inside its cell.
     const columns: Column<Client>[] = [
         {
             // Row number, matching the Service Mapping listing: continuous
             // across pages, so page 2 starts where page 1 left off.
             key: 'num',
             label: '#',
-            className: 'w-[4%] pl-4 sm:pl-5 text-left text-xs text-faint tabular-nums',
+            className: 'w-[4%] pl-4 sm:pl-5 text-left text-xs text-faint tabular-nums align-top py-3',
             skeletonWidth: '20px',
             render: (_client, i) => (currentPage - 1) * pageSize + i + 1,
         },
@@ -549,7 +608,7 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             key: 'clientCompany',
             label: 'Client Name',
             sortKey: 'company',
-            className: 'w-[23%] px-3 text-left',
+            className: 'w-[22%] px-3 text-left align-top py-3',
             skeletonWidth: '80%',
             render: (client) => {
                 const name = client.clientCompany || 'N/A'
@@ -569,7 +628,7 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             key: 'businessModel',
             label: 'Business Model',
             sortKey: 'model',
-            className: 'w-[16%] px-3 text-left',
+            className: 'w-[16%] px-3 text-left align-top py-3',
             render: (client) =>
                 client.businessModel ? (
                     <span
@@ -578,8 +637,6 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                         }`}
                         title={businessModelLabel(client.businessModel)}
                     >
-                        {/* Ellipsis must live on a text element — a flex
-                            container clips without the "…". */}
                         <span className="truncate">{businessModelFullName(client.businessModel)}</span>
                     </span>
                 ) : (
@@ -594,24 +651,29 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         {
             key: 'contactName',
             label: 'Contact Name',
-            className: 'w-[20%] px-3 text-left',
+            className: 'w-[18%] px-3 text-left align-top py-3',
             render: (client) => {
-                // One line per row: the row rhythm is fixed, so extra contacts
-                // are counted rather than stacked. The full list is in the
-                // tooltip and in the details drawer.
                 const contacts = orderedContacts(client.contactPersons)
                 if (!contacts.length) return <span className="text-sm text-faint">—</span>
-                const extra = contacts.length - 1
+                const expanded = expandedRowIds.has(client._id)
+                const shown = expanded ? contacts : contacts.slice(0, 1)
+                const extra = contacts.length - shown.length
                 return (
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                            className="text-sm text-body truncate"
-                            title={contacts.map((c) => c.name || 'N/A').join(', ')}
-                        >
-                            {contacts[0].name || 'N/A'}
-                        </span>
+                    <div className="flex flex-col gap-1 min-w-0">
+                        {shown.map((c, i) => (
+                            <span
+                                key={i}
+                                className={`text-sm truncate ${i === 0 ? 'text-body' : 'text-subtle'}`}
+                                title={c.name || 'N/A'}
+                            >
+                                {c.name || 'N/A'}
+                                {expanded && i === 0 && contacts.length > 1 ? (
+                                    <span className="ml-1.5 text-2xs font-medium text-brand-strong">primary</span>
+                                ) : null}
+                            </span>
+                        ))}
                         {extra > 0 && (
-                            <span className="text-2xs text-faint flex-shrink-0">+{extra}</span>
+                            <span className="text-2xs text-faint">+{extra}</span>
                         )}
                     </div>
                 )
@@ -620,66 +682,67 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         {
             key: 'email',
             label: 'Email',
-            className: 'w-[20%] px-3 text-left',
+            className: 'w-[22%] px-3 text-left align-top py-3',
             skeletonWidth: '85%',
             render: (client) => {
                 const contacts = orderedContacts(client.contactPersons)
                 if (!contacts.length) return <span className="text-sm text-faint">—</span>
+                const expanded = expandedRowIds.has(client._id)
+                const shown = expanded ? contacts : contacts.slice(0, 1)
                 return (
-                    <span
-                        className="text-sm text-subtle truncate block"
-                        title={contacts.map((c) => c.email || 'N/A').join(', ')}
-                    >
-                        {contacts[0].email || '—'}
-                    </span>
+                    <div className="flex flex-col gap-1 min-w-0">
+                        {shown.map((c, i) => (
+                            <span
+                                key={i}
+                                className="text-sm text-subtle truncate block"
+                                title={c.email || 'N/A'}
+                            >
+                                {c.email || '—'}
+                            </span>
+                        ))}
+                    </div>
                 )
             },
         },
         {
-            key: 'status',
-            label: 'Status',
-            sortKey: 'status',
-            // Right-aligned per the LMS pattern: status/service indicators
-            // consistently sit toward the right of their column, matching
-            // Service Mapping and Manage.
-            className: 'w-[10%] px-3 text-right',
-            skeletonWidth: '60%',
+            key: 'contactNumber',
+            label: 'Contact Number',
+            className: 'w-[13%] px-3 text-left align-top py-3',
+            skeletonWidth: '75%',
             render: (client) => {
-                const isActive = client.status === 'active'
-                const isToggling = togglingClientId === client._id
-                // A real sliding switch, not a clickable pill: the pill read as a
-                // status BADGE and its clickability went undiscovered. The label
-                // beside it keeps the state readable at a glance (and by screen
-                // readers) since a bare knob names nothing.
+                const contacts = orderedContacts(client.contactPersons)
+                if (!contacts.length) return <span className="text-sm text-faint">—</span>
+                const expanded = expandedRowIds.has(client._id)
+                const shown = expanded ? contacts : contacts.slice(0, 1)
                 return (
-                    <div className="flex items-center justify-end gap-2">
-                        {canToggle ? (
-                            <Switch
-                                checked={isActive}
-                                disabled={isToggling}
-                                onCheckedChange={() => handleToggleStatus(client)}
-                                aria-label={isActive ? 'Deactivate client' : 'Activate client'}
-                                title={isActive ? 'Active — switch off to deactivate' : 'Inactive — switch on to activate'}
-                                className="data-[state=checked]:bg-success-500 data-[state=unchecked]:bg-ink-200"
-                            />
-                        ) : null}
-                        <span className={`text-xs font-medium ${isActive ? 'text-success-700' : 'text-subtle'} ${isToggling ? 'animate-pulse' : ''}`}>
-                            {isActive ? 'Active' : 'Inactive'}
-                        </span>
+                    <div className="flex flex-col gap-1 min-w-0">
+                        {shown.map((c, i) => (
+                            <span
+                                key={i}
+                                className="text-sm text-subtle tabular-nums truncate block"
+                                title={c.phoneNumber || 'N/A'}
+                            >
+                                {c.phoneNumber || '—'}
+                            </span>
+                        ))}
                     </div>
                 )
             },
         },
         {
             key: 'actions',
-            label: 'Actions',
-            // All actions live in the kebab — the column only needs room for
-            // one 28-px icon plus the right gutter. Right-aligned so the
-            // trigger sits flush with the row's right edge.
-            className: 'w-[7%] pl-2 pr-4 sm:pr-5 text-right whitespace-nowrap',
+            label: '',
+            // Every row-level action lives in the kebab now, including the
+            // status toggle — the column only needs room for a 28-px trigger
+            // plus the right gutter.
+            className: 'w-[5%] pl-2 pr-4 sm:pr-5 text-right whitespace-nowrap align-top py-3',
             skeletonWidth: '20px',
             render: (client) => {
                 const anyKebab = canView || canEdit || canToggle || canDelete
+                const isActive = client.status === 'active'
+                const isToggling = togglingClientId === client._id
+                const expanded = expandedRowIds.has(client._id)
+                const hasSecondary = (client.contactPersons?.length ?? 0) > 1
                 return (
                     <div className="flex items-center justify-end">
                         {anyKebab && (
@@ -689,7 +752,26 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                                         <MoreVertical size={14} />
                                     </button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuContent align="end" className="w-52">
+                                    {/* Secondary-contact reveal — shown ONLY when the row
+                                        has more than the primary, otherwise there is
+                                        literally nothing "all" to view. */}
+                                    {hasSecondary && (
+                                        <DropdownMenuItem
+                                            onClick={() => toggleRowExpanded(client._id)}
+                                            className="cursor-pointer"
+                                        >
+                                            {expanded ? (
+                                                <>
+                                                    <EyeOff /> Hide secondary contacts
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Eye className="text-brand-strong" /> View all contacts
+                                                </>
+                                            )}
+                                        </DropdownMenuItem>
+                                    )}
                                     {canView && (
                                         <DropdownMenuItem onClick={() => handleView(client._id)} className="cursor-pointer">
                                             <Eye className="text-brand-strong" /> View details
@@ -701,10 +783,31 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                                         </DropdownMenuItem>
                                     )}
                                     {canToggle && (
-                                        <DropdownMenuItem onClick={() => handleToggleStatus(client)} className="cursor-pointer">
-                                            <Power className={client.status === 'active' ? undefined : 'text-success-700'} />
-                                            {client.status === 'active' ? 'Deactivate' : 'Activate'}
-                                        </DropdownMenuItem>
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            {/* Status is now controlled by an inline
+                                                switch inside the menu item — one place
+                                                to see and change state, with a live label
+                                                that mirrors the switch. Selecting the
+                                                item toggles too, so keyboard users don't
+                                                need to hit the switch itself. */}
+                                            <DropdownMenuItem
+                                                onSelect={(e) => { e.preventDefault(); handleToggleStatus(client) }}
+                                                className="cursor-pointer justify-between gap-3"
+                                            >
+                                                <span className={`text-xs font-medium ${isActive ? 'text-success-700' : 'text-subtle'} ${isToggling ? 'animate-pulse' : ''}`}>
+                                                    {isActive ? 'Active' : 'Inactive'}
+                                                </span>
+                                                <Switch
+                                                    checked={isActive}
+                                                    disabled={isToggling}
+                                                    onCheckedChange={() => handleToggleStatus(client)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    aria-label={isActive ? 'Deactivate client' : 'Activate client'}
+                                                    className="data-[state=checked]:bg-success-500 data-[state=unchecked]:bg-ink-200"
+                                                />
+                                            </DropdownMenuItem>
+                                        </>
                                     )}
                                     {canDelete && (
                                         <>
@@ -761,18 +864,19 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                     />
                 </div>
 
-                {/* ── One toolbar: search · Filter · view toggle · overflow · Add Client ── */}
-                {/* flex-wrap + min-w-0: on narrow viewports the search shrinks
-                    (flex-1 min-w-0) and the trailing buttons wrap onto a new
-                    row instead of pushing past the workspace width. */}
+                {/* ── One toolbar: search · Filter · view toggle · Export · Print · Add Client ── */}
+                {/* Search is bounded (max-w-xs) rather than flex-filling so
+                    the trailing action buttons (Export, Print, Add) breathe
+                    on the same row. flex-wrap kicks in only on very narrow
+                    viewports as a safety fallback. */}
                 <div className="mt-4 flex items-center gap-2 flex-wrap min-w-0">
-                    <div className="relative flex-1 min-w-0">
+                    <div className="relative w-full max-w-xs">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }}
-                            placeholder="Search by client, contact or email…"
+                            placeholder="Search client, contact, email…"
                             className="w-full h-10 pl-10 pr-9 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
                         />
                         {search && (
@@ -796,22 +900,41 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                         <button type="button" onClick={() => setLayout('table')} aria-pressed={layout === 'table'} title="List view" className={`h-8 w-8 rounded-chip flex items-center justify-center transition-colors duration-150 ${layout === 'table' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}><Rows3 className="w-4 h-4" /></button>
                     </div>
 
+                    {/* Export — CSV or PDF via a small dropdown. Both hit the
+                        server for the full filtered set (not the visible page)
+                        so the download matches what the user is looking at. */}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <button type="button" aria-label="More actions" className="inline-flex items-center justify-center h-10 px-2.5 rounded-control border border-hairline-strong bg-surface text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"><MoreHorizontal className="w-4 h-4" /></button>
+                            <button
+                                type="button"
+                                aria-label="Export list"
+                                disabled={isExporting || !totalUsers}
+                                className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Download className="w-4 h-4" />
+                                <span className="hidden sm:inline">Export</span>
+                                <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" sideOffset={6} className="w-52">
-                            <DropdownMenuItem onClick={exportCsv} className="cursor-pointer"><Download className="h-4 w-4" /> Export list (CSV)</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <div className="px-2 py-1 text-2xs font-semibold uppercase tracking-wider text-faint">Sort by</div>
-                            {SORT_OPTIONS.map((o) => (
-                                <DropdownMenuItem key={o.key} onClick={() => handleSort(o.key)} className="cursor-pointer justify-between">
-                                    {o.label}
-                                    {sortKey === o.key ? (sortDir === 'asc' ? <ArrowUp className="text-brand-strong" /> : <ArrowDown className="text-brand-strong" />) : <ArrowUpDown className="text-faint" />}
-                                </DropdownMenuItem>
-                            ))}
+                        <DropdownMenuContent align="end" sideOffset={6} className="w-40">
+                            <DropdownMenuItem onClick={exportCsv} className="cursor-pointer">
+                                <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={exportPdf} className="cursor-pointer">
+                                <FileText className="h-4 w-4 text-danger-500" /> PDF
+                            </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
+
+                    <button
+                        type="button"
+                        onClick={printList}
+                        title="Print this page"
+                        className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                    >
+                        <Printer className="w-4 h-4" />
+                        <span className="hidden sm:inline">Print</span>
+                    </button>
 
                     {canAdd && (
                         <button
@@ -825,16 +948,16 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                     )}
                 </div>
 
-                {/* ── Inline filter panel (same screen) ── */}
+                {/* ── Inline filter panel (Business Model + Status only) ── */}
                 <ClientFilterPanel
                     open={showFilters}
                     onClose={() => setShowFilters(false)}
                     current={{ status: statusFilter, model: businessModelFilter, type: typeFilter, date: dateFilter }}
                     modelOptions={availableModels.map(([value, label]) => ({ value, label }))}
-                    typeOptions={[{ value: 'college', label: 'College' }, { value: 'company', label: 'Company' }]}
                     onApply={(f) => {
-                        setStatusFilter(f.status as '' | 'active' | 'inactive'); setBusinessModelFilter(f.model)
-                        setTypeFilter(f.type); setDateFilter(f.date); setCurrentPage(1)
+                        setStatusFilter(f.status as '' | 'active' | 'inactive')
+                        setBusinessModelFilter(f.model)
+                        setCurrentPage(1)
                     }}
                     onReset={clearFilters}
                 />
