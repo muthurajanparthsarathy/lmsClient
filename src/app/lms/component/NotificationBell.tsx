@@ -61,10 +61,34 @@ export const NotificationBell: React.FC = () => {
   const notifications: Notification[] = data?.notifications || [];
   const unread = data?.unreadCount || 0;
 
-  // Clicking a retest-request notification → Manage Users page, Request List tab
+  // Read metadata handling both plain-object and Map shapes — the server ships
+  // notifications as a Map (see the enrollment/removal senders), but React
+  // Query hydrates them as plain objects with the toJSON'd keys.
+  const readMeta = (n: Notification): Record<string, any> => {
+    const m: any = n.metadata;
+    if (!m) return {};
+    if (m instanceof Map) return Object.fromEntries(m);
+    return typeof m === "object" ? m : {};
+  };
+
+  // A notification click follows this precedence:
+  //   1. `metadata.redirectUrl` — the app-wide contract. The server sets it on
+  //      enrollment (→ /lms/pages/courses/uploadcourseresources?courseId=…)
+  //      and approval-reject (→ the exact assessment row).
+  //   2. The retest-request shape, which predates the shared contract and
+  //      routes with a query string of its own.
+  //   3. Anything else falls through and stays as a plain in-place item.
   const handleNotifClick = (n: Notification) => {
     if (!n.isRead) markRead.mutate(n._id);
-    const m: Record<string, any> = (n.metadata as any) || {};
+    const m = readMeta(n);
+
+    const redirectUrl = typeof m.redirectUrl === "string" ? m.redirectUrl : "";
+    if (redirectUrl) {
+      setOpen(false);
+      router.push(redirectUrl);
+      return;
+    }
+
     const isRetest =
       m.kind === "retest_request" ||
       !!m.requestId ||

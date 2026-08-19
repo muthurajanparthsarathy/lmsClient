@@ -435,9 +435,14 @@ export default function ApprovalsPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           {it.courseId && (
+                            // `from=/lms/pages/approvals` — view-resources reads
+                            // this to render a Back button that returns to the
+                            // queue. Needed because this is a plain <a>, not a
+                            // router.push, so the review page can end up with no
+                            // useful history entry to fall back on.
                             <a
                               className="text-xs font-semibold text-orange-700 hover:underline"
-                              href={`/lms/pages/coursestructure/view-resources?courseId=${it.courseId}&tabType=${it.tabType || "You_Do"}`}
+                              href={`/lms/pages/coursestructure/view-resources?courseId=${it.courseId}&tabType=${it.tabType || "You_Do"}&from=${encodeURIComponent('/lms/pages/approvals')}`}
                             >
                               Review →
                             </a>

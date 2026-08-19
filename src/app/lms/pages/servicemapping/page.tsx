@@ -4262,16 +4262,8 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     const [statusFilter, setStatusFilter] = useState<'' | 'active' | 'inactive'>('')
     const [yearFilter, setYearFilter] = useState('')
     const [clientFilter, setClientFilter] = useState('')
-    const [serviceFilter, setServiceFilter] = useState('')
-    const [serviceModelFilter, setServiceModelFilter] = useState('')
     const [sortKey, setSortKey] = useState<SortKey | null>(null)
     const [sortDir, setSortDir] = useState<SortDir>('asc')
-    // Hierarchy filters (from the filter drawer) — derived from each mapping's
-    // masterData at filter time; presentation-only, no new data source.
-    const [degreeFilter, setDegreeFilter] = useState('')
-    const [departmentFilter, setDepartmentFilter] = useState('')
-    const [sectionFilter, setSectionFilter] = useState('')
-    const [semesterFilter, setSemesterFilter] = useState('')
     // Workspace chrome: table vs hierarchy cards, the filter drawer, and the
     // mapping whose detail panel is open.
     const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
@@ -4299,18 +4291,10 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         status: statusFilter,
         year: yearFilter,
         client: clientFilter,
-        service: serviceFilter,
-        serviceModel: serviceModelFilter,
-        degree: degreeFilter,
-        department: departmentFilter,
-        section: sectionFilter,
-        semester: semesterFilter,
         // A cleared sort is a real state here — it returns the server's own
         // createdAt-desc order, which is otherwise unreachable.
         ...(sortKey ? { sortKey, sortDir } : {}),
-    }), [debouncedSearch, statusFilter, yearFilter, clientFilter, serviceFilter,
-        serviceModelFilter, degreeFilter, departmentFilter, sectionFilter,
-        semesterFilter, sortKey, sortDir])
+    }), [debouncedSearch, statusFilter, yearFilter, clientFilter, sortKey, sortDir])
 
     // Any filter change goes back to page 1. Adjusting during render (rather
     // than in an effect) means the OLD page number never reaches a request:
@@ -4379,14 +4363,6 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         () => (facets?.clients ?? []) as [string, string][],
         [facets]
     )
-    const availableServices = facets?.services ?? []
-    const availableServiceModels = facets?.serviceModels ?? []
-    const hierarchyOptions = useMemo(() => ({
-        degrees: facets?.hierarchy?.degrees ?? [],
-        departments: facets?.hierarchy?.departments ?? [],
-        sections: facets?.hierarchy?.sections ?? [],
-        semesters: facets?.hierarchy?.semesters ?? [],
-    }), [facets])
 
     // ── Search + filters ──
     // The server applied both, so `rows` IS the filtered page. The predicate
@@ -4397,14 +4373,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     const filteredRows = rows
 
     const hasActiveFilters = Boolean(
-        search.trim() || statusFilter || yearFilter || clientFilter || serviceFilter || serviceModelFilter
-        || degreeFilter || departmentFilter || sectionFilter || semesterFilter
+        search.trim() || statusFilter || yearFilter || clientFilter
     )
     // Drawer filters only (search has its own box) — badges the Filter button.
     const activeFilterCount =
-        (clientFilter ? 1 : 0) + (serviceFilter ? 1 : 0) + (serviceModelFilter ? 1 : 0) +
-        (yearFilter ? 1 : 0) + (statusFilter ? 1 : 0) + (degreeFilter ? 1 : 0) +
-        (departmentFilter ? 1 : 0) + (sectionFilter ? 1 : 0) + (semesterFilter ? 1 : 0)
+        (clientFilter ? 1 : 0) + (yearFilter ? 1 : 0) + (statusFilter ? 1 : 0)
 
     // ── Sorting ──
     // Clicking the sorted column flips direction; clicking a third time clears it
@@ -4484,12 +4457,6 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         setStatusFilter('')
         setYearFilter('')
         setClientFilter('')
-        setServiceFilter('')
-        setServiceModelFilter('')
-        setDegreeFilter('')
-        setDepartmentFilter('')
-        setSectionFilter('')
-        setSemesterFilter('')
         setCurrentPage(1)
     }
 
@@ -4758,13 +4725,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     // Removable chips for the applied drawer filters (search has its own box).
     const filterChips: { key: string; label: string; onRemove: () => void }[] = [
         ...(clientFilter ? [{ key: 'client', label: availableClients.find(([v]) => v === clientFilter)?.[1] || 'Client', onRemove: () => setClientFilter('') }] : []),
-        ...(degreeFilter ? [{ key: 'degree', label: degreeFilter, onRemove: () => setDegreeFilter('') }] : []),
-        ...(departmentFilter ? [{ key: 'dept', label: departmentFilter, onRemove: () => setDepartmentFilter('') }] : []),
-        ...(sectionFilter ? [{ key: 'section', label: sectionFilter, onRemove: () => setSectionFilter('') }] : []),
-        ...(semesterFilter ? [{ key: 'semester', label: `Sem ${semesterFilter}`, onRemove: () => setSemesterFilter('') }] : []),
         ...(yearFilter ? [{ key: 'year', label: yearFilter, onRemove: () => setYearFilter('') }] : []),
-        ...(serviceFilter ? [{ key: 'service', label: serviceFilter, onRemove: () => setServiceFilter('') }] : []),
-        ...(serviceModelFilter ? [{ key: 'model', label: serviceModelFilter, onRemove: () => setServiceModelFilter('') }] : []),
         ...(statusFilter ? [{ key: 'status', label: statusFilter === 'active' ? 'Active' : 'Inactive', onRemove: () => setStatusFilter('') }] : []),
     ]
 
@@ -4915,19 +4876,13 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                     <MappingWorkspaceFilterPanel
                         open={showFilters}
                         onClose={() => setShowFilters(false)}
-                        current={{ client: clientFilter, service: serviceFilter, model: serviceModelFilter, year: yearFilter, status: statusFilter, degree: degreeFilter, department: departmentFilter, section: sectionFilter, semester: semesterFilter }}
+                        current={{ client: clientFilter, year: yearFilter, status: statusFilter }}
                         clientOptions={availableClients.map(([value, label]) => ({ value, label }))}
-                        serviceOptions={availableServices.map((s) => ({ value: s, label: s }))}
-                        modelOptions={availableServiceModels.map((m) => ({ value: m, label: m }))}
                         yearOptions={availableYears.map((y) => ({ value: y, label: y }))}
-                        degreeOptions={hierarchyOptions.degrees.map((v) => ({ value: v, label: v }))}
-                        departmentOptions={hierarchyOptions.departments.map((v) => ({ value: v, label: v }))}
-                        sectionOptions={hierarchyOptions.sections.map((v) => ({ value: v, label: v }))}
-                        semesterOptions={hierarchyOptions.semesters.map((v) => ({ value: v, label: `Semester ${v}` }))}
                         onApply={(f) => {
-                            setClientFilter(f.client); setServiceFilter(f.service); setServiceModelFilter(f.model)
-                            setYearFilter(f.year); setStatusFilter(f.status as '' | 'active' | 'inactive')
-                            setDegreeFilter(f.degree); setDepartmentFilter(f.department); setSectionFilter(f.section); setSemesterFilter(f.semester)
+                            setClientFilter(f.client)
+                            setYearFilter(f.year)
+                            setStatusFilter(f.status as '' | 'active' | 'inactive')
                             setCurrentPage(1)
                         }}
                         onReset={clearFilters}

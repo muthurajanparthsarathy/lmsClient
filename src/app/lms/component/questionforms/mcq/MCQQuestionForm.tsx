@@ -1583,29 +1583,30 @@ const typeConfig: Record<string, { label: string; icon: React.ReactNode; color: 
 
 // ─── BREADCRUMB ───────────────────────────────────────────────────────────────
 const QuestionFormBreadcrumb: React.FC<{
-  breadcrumbs: any[]; tabType: string; exerciseName?: string; actionLabel: string; questionLabel: string;
-}> = ({ breadcrumbs, tabType, exerciseName, actionLabel, questionLabel }) => (
-  <nav className="flex items-center" style={{ fontFamily: 'var(--lms-font)' }}>
-    <ol className="flex items-center flex-wrap gap-y-0.5">
-      {breadcrumbs.map((crumb: any, idx: number) => (
-        <React.Fragment key={idx}>
-          <li><span className="text-[12.5px] font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{crumb.name}</span></li>
-          <li><span className="lms-breadcrumb-sep">»</span></li>
-        </React.Fragment>
-      ))}
-      {exerciseName && (
-        <><li><span className="text-[12.5px] font-semibold truncate max-w-[120px]" style={{ color: 'var(--lms-text-main)' }}>{exerciseName}</span></li>
-          <li><span className="lms-breadcrumb-sep">»</span></li></>
-      )}
-      <li>
-        <span className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)' }}>
-          {actionLabel}
-          {questionLabel && <span className="ml-1.5 font-normal" style={{ color: 'var(--lms-text-muted)' }}>· {questionLabel}</span>}
-        </span>
-      </li>
-    </ol>
-  </nav>
-);
+  breadcrumbs: any[]; tabType?: string; exerciseName?: string; actionLabel: string; questionLabel: string;
+}> = ({ breadcrumbs, exerciseName, actionLabel, questionLabel }) => {
+  const courseName = breadcrumbs?.[0]?.name;
+  return (
+    <nav className="flex items-center" style={{ fontFamily: 'var(--lms-font)' }}>
+      <ol className="flex items-center flex-wrap gap-y-0.5">
+        {courseName && (
+          <><li><span className="text-[12.5px] font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{courseName}</span></li>
+            <li><span className="lms-breadcrumb-sep">»</span></li></>
+        )}
+        {exerciseName && (
+          <><li><span className="text-[12.5px] font-semibold truncate max-w-[120px]" style={{ color: 'var(--lms-text-main)' }}>{exerciseName}</span></li>
+            <li><span className="lms-breadcrumb-sep">»</span></li></>
+        )}
+        <li>
+          <span className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)' }}>
+            {actionLabel}
+            {questionLabel && <span className="ml-1.5 font-normal" style={{ color: 'var(--lms-text-muted)' }}>· {questionLabel}</span>}
+          </span>
+        </li>
+      </ol>
+    </nav>
+  );
+};
 
 // ─── MODAL PRIMITIVES ──────────────────────────────────────────────────────────
 const SmallModal: React.FC<{

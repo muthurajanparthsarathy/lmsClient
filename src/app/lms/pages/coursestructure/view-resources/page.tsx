@@ -2,12 +2,12 @@
 import { getToken } from "@/lib/session";
 
 import { useState, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Poppins } from 'next/font/google'
 import {
   BookOpen, BookMarked, Home, GitBranch, Eye, ShieldCheck, CheckCircle2,
-  Clock as ClockIcon, Lock, AlertCircle, X, XCircle, RefreshCw,
+  Clock as ClockIcon, Lock, AlertCircle, X, XCircle, RefreshCw, ArrowLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,6 +25,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCourseRosterQuery } from '@/queries/courseRoster'
 import { toast, Toaster } from 'sonner'
 import DashboardLayout from '@/app/lms/component/layout'
+import LDLayout from '@/app/lms/component/ldshell/LDLayout'
 import {
   fetchCourseApprovalsOverview,
   approveExerciseStep,
@@ -48,6 +49,14 @@ type CourseSummary = { _id: string; courseName: string; courseCode?: string; cat
 
 export default function ViewResourcesPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  // Shell selection — mirrors AttendanceManagementLayout's `?from=ldc` escape
+  // hatch (features/attendancemanagement/AttendanceManagementLayout.tsx:34).
+  // If the caller was the L&D console (its dashboard or its Approval queue),
+  // stay inside LDLayout so the rail, brand and back destination all belong to
+  // L&D instead of jumping to the admin shell.
+  const fromParam = searchParams.get('from') || ''
+  const fromLdc = fromParam.startsWith('/lms/pages/lddashboard')
   const courseId = searchParams.get('courseId') || ''
   const queryClient = useQueryClient()
 
@@ -218,16 +227,58 @@ export default function ViewResourcesPage() {
     )
   }
 
-  return (
-    <DashboardLayout>
-      <motion.div
+  // active="appr-queue" so the L&D rail highlights Approvals for the whole
+  // duration of the review, matching what happens on lddashboard itself.
+  // Written as an inline ternary — an inline `const Shell = (…)=> …` component
+  // was rejected by SWC ("Expected jsx identifier") once TypeScript stripped
+  // the type annotations.
+  const inner = (
+    <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18 }}
         className={`${poppins.className} min-h-screen bg-white`}
       >
-        {/* Breadcrumb */}
-        <div className="px-4 pt-2">
+        {/* Breadcrumb + Back button.
+            Back precedence:
+              1. `?from=<url>` — the caller (e.g. the Approvals queue) tells us
+                 exactly where to return. Approvals passes /lms/pages/approvals
+                 so the queue reopens even for a caller that arrived here via a
+                 plain <a href=…> and has no useful history entry.
+              2. history.back() — for callers that used router.push (CustomDropdown,
+                 lddashboard) and left a real back-stack entry.
+              3. /lms/pages/coursestructure — final fallback so the button always
+                 does SOMETHING; a hard-refresh into this URL has no history. */}
+        <div className="px-4 pt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              const from = searchParams.get('from')
+              if (from && from.startsWith('/lms/pages/')) {
+                // Full navigation, NOT router.push:
+                //   - Next 15's App Router doesn't reliably navigate to a
+                //     different pathname carrying a `#hash` (measured — the
+                //     URL didn't change and the nav-loader hit its 8s ceiling).
+                //   - The L&D dashboard selects its opening tab from the hash
+                //     at mount; a soft transition can arrive before its
+                //     hash-router installs its listener, and the wrong tab
+                //     wins.
+                // A hard nav sidesteps both problems and matches the caller's
+                // plain <a href=…> pattern.
+                if (typeof window !== 'undefined') window.location.href = from
+                return
+              }
+              if (typeof window !== 'undefined' && window.history.length > 1) {
+                router.back()
+                return
+              }
+              router.push('/lms/pages/coursestructure')
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900 shrink-0"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back
+          </button>
           <Breadcrumb>
             <BreadcrumbList className="text-[11px]">
               <BreadcrumbItem>
@@ -455,8 +506,10 @@ export default function ViewResourcesPage() {
 
         <Toaster position="top-right" richColors closeButton />
       </motion.div>
-    </DashboardLayout>
   )
+  return fromLdc
+    ? <LDLayout active="appr-queue">{inner}</LDLayout>
+    : <DashboardLayout>{inner}</DashboardLayout>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

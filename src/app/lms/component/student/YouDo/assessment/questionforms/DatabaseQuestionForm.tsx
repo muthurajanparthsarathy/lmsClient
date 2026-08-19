@@ -942,29 +942,15 @@ const DescriptionEditor: React.FC<{
 const capFirst = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
 const Breadcrumb: React.FC<{
-  hierarchyData: any; tabType: string; subcategory?: string; subcategoryLabel?: string;
+  hierarchyData: any; tabType?: string; subcategory?: string; subcategoryLabel?: string;
   exerciseName?: string; actionLabel: string; questionLabel?: string;
-}> = ({ hierarchyData, tabType, subcategory, subcategoryLabel, exerciseName, actionLabel, questionLabel }) => {
-  const crumbs: { text: string; tip: string }[] = [];
-  if (hierarchyData?.courseName) crumbs.push({ text: hierarchyData.courseName, tip: 'Course' });
-  if (hierarchyData?.moduleName) crumbs.push({ text: hierarchyData.moduleName, tip: 'Module' });
-  if (hierarchyData?.submoduleName) crumbs.push({ text: hierarchyData.submoduleName, tip: 'Sub-module' });
-  if (hierarchyData?.topicName) crumbs.push({ text: hierarchyData.topicName, tip: 'Topic' });
-  if (hierarchyData?.subtopicName) crumbs.push({ text: hierarchyData.subtopicName, tip: 'Sub-topic' });
-
+}> = ({ hierarchyData, exerciseName, actionLabel, questionLabel }) => {
   const Sep = () => <li><span className="lms-breadcrumb-sep">»</span></li>;
 
   return (
     <nav style={{ fontFamily: 'var(--lms-font)' }}>
       <ol className="flex items-center flex-wrap gap-y-0.5">
-        {crumbs.map((c, i) => (
-          <React.Fragment key={i}>
-            <li><span className="lms-crumb" data-tip={c.tip} style={{ color: 'var(--lms-text-sec)' }}>{capFirst(c.text)}</span></li>
-            <Sep />
-          </React.Fragment>
-        ))}
-        {tabType && (<><li><span className="lms-crumb" data-tip="Category" style={{ color: 'var(--lms-text-sec)' }}>{capFirst(tabType.replace(/_/g, ' '))}</span></li><Sep /></>)}
-        {(subcategoryLabel || subcategory) && (<><li><span className="lms-crumb" data-tip="Sub-category" style={{ color: 'var(--lms-orange)' }}>{capFirst(subcategoryLabel || subcategory || '')}</span></li><Sep /></>)}
+        {hierarchyData?.courseName && (<><li><span className="lms-crumb" data-tip="Course" style={{ color: 'var(--lms-text-sec)' }}>{capFirst(hierarchyData.courseName)}</span></li><Sep /></>)}
         {exerciseName && (<><li><span className="lms-crumb" data-tip="Exercise" style={{ color: 'var(--lms-text-main)', verticalAlign: 'bottom' }}><span style={{ maxWidth: 140, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{capFirst(exerciseName)}</span></span></li><Sep /></>)}
         <li><span style={{ fontFamily: 'var(--lms-font)', fontSize: 12.5, fontWeight: 700, color: 'var(--lms-text-main)' }}>{capFirst(actionLabel)}{questionLabel && questionLabel !== actionLabel && (<span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>· {questionLabel}</span>)}</span></li>
       </ol>

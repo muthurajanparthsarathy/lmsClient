@@ -73,6 +73,14 @@ const AttendanceReportPage = dynamic(
   () => import("@/features/attendancemanagement/AttendanceReportPage"),
   { ssr: false, loading: () => <Loading /> },
 );
+/* Detailed Report designer for #rep-performance — Canva-style overlay with
+   activity / sub-category / grade pickers, removable preview sections, and
+   Excel / PDF exports. Dynamic so exceljs + jspdf never join the page
+   bundle until a head actually opens the designer. */
+const PerformanceReportDesignerModal = dynamic(
+  () => import("./PerformanceReportDesignerModal"),
+  { ssr: false },
+);
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
 const getToken = () =>
@@ -1423,7 +1431,13 @@ function QueueView() {
                   <a
                     className="text-2xs font-semibold"
                     style={{ color: "var(--accent-ink, #b45309)", textDecoration: "none" }}
-                    href={`/lms/pages/coursestructure/view-resources?courseId=${it.courseId}&tabType=${it.tabType || "You_Do"}`}
+                    // Same `from=` contract the Approvals queue uses (see
+                    // app/lms/pages/approvals/page.tsx:440). The
+                    // `/lms/pages/lddashboard` prefix ALSO tells view-resources
+                    // to render inside LDLayout instead of the admin shell, so
+                    // the L&D console's own rail stays put across the review.
+                    // `#appr-queue` re-selects the tab on return.
+                    href={`/lms/pages/coursestructure/view-resources?courseId=${it.courseId}&tabType=${it.tabType || "You_Do"}&from=${encodeURIComponent('/lms/pages/lddashboard#appr-queue')}`}
                   >
                     Review →
                   </a>
@@ -5058,6 +5072,10 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
   const [draft, setDraft] = useState<PerfDocCfg>(() => perfDefaultCfg());
   const [docCfg, setDocCfg] = useState<PerfDocCfg | null>(null);
   const [genAt, setGenAt] = useState("");
+  // Detailed Report designer (Canva-style modal — activity / sub-category /
+  // grade filters + preview + Excel/PDF). Runs alongside the existing
+  // Generate flow, opened from a second button in the actions row.
+  const [designerOpen, setDesignerOpen] = useState(false);
 
   // A student picked under one scope means nothing under another.
   useEffect(() => { setPick(null); }, [f.client, f.course]);
@@ -5097,6 +5115,10 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
           score: scoreOf(p),
           last: s.lastActivity ? fmtDay(s.lastActivity) : "—",
           lastT: s.lastActivity ? (Date.parse(s.lastActivity) || 0) : 0,
+          // Raw progress kept for the Detailed Report designer — the sub-cat
+          // multipick and grade math walk this object to discover what the
+          // course actually allocated.
+          progress: p,
         };
       });
     });
@@ -5160,6 +5182,12 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
   const actions = (
     <>
       <MultiPick label="Students" options={opts} sel={pick} onChange={setPick} />
+      <button
+        className="ldc-btn" type="button" title="Open the Report Designer overlay — dynamic filters + downloads"
+        onClick={() => setDesignerOpen(true)}
+      >
+        <SlidersHorizontal size={13} style={ICO} />Detailed report
+      </button>
       <button
         className="ldc-btn go" type="button" title="Generate a customized, downloadable report"
         onClick={() => { setDraft(docCfg ?? perfDefaultCfg()); setOpen(true); }}
@@ -5252,6 +5280,18 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
         onChange={setDraft}
         onGenerate={() => { setDocCfg(draft); setGenAt(new Date().toLocaleString("en-GB")); setOpen(false); }}
       />
+      {/* Detailed Report designer (Canva-style) — sibling to Generate, opens
+          from the "Detailed report" action button above. The heavy modal is
+          lazy so its exceljs + jspdf bundles stay off the initial page. */}
+      {designerOpen ? (
+        <PerformanceReportDesignerModal
+          open={designerOpen}
+          onClose={() => setDesignerOpen(false)}
+          baseStudents={students}
+          baseCourseRows={courseRows}
+          scopeLabel={scope}
+        />
+      ) : null}
     </ReportShell>
   );
 }
