@@ -169,24 +169,56 @@ const ErrBox = ({ m }: { m: string }) => <div className="ldc-empty ldc-err">{m}<
    (Course Insight, Trainers, Schedule, hosted course screens) pass `showBack`
    to get a lone chip back to the dashboard instead. `eyebrow` stays in the
    type so the many existing call sites keep compiling; it is not rendered. */
-const Head = ({ title, sub, back = "#dashboard", right, showBack }: { eyebrow?: string; title: string; sub?: string; back?: string; right?: ReactNode; showBack?: boolean }) => (
-  <div className={sub ? "ldc-head" : "ldc-head nosub"}>
-    <div className="ldc-head-l">
-    {showBack ? (
-      <a
-        href={back}
-        className="mb-2 inline-flex items-center gap-1 rounded-chip px-1 py-0.5 text-xs font-medium text-brand-700 outline-none transition-colors duration-fast hover:bg-brand-100 focus-visible:ring-2 focus-visible:ring-brand-500/40 dark:text-brand-400 dark:hover:bg-brand-500/15"
-      >
-        <ArrowLeft size={13} strokeWidth={2.4} aria-hidden />
-        Back to Dashboard
-      </a>
-    ) : null}
-    <h1>{title}</h1>
-    {sub ? <p>{sub}</p> : null}
+// Header supports two shapes:
+//   1. Legacy `right` (kept for the many call sites that just want a single
+//      right-aligned cluster).
+//   2. New `filters` + `actions` — when a caller passes filters separately,
+//      the row uses a 3-slot layout (title · centered filters · right actions)
+//      so scope pickers land in the visual centre instead of being cramped
+//      against the action buttons on the far right.
+const Head = ({
+  title, sub, back = "#dashboard", right, filters, actions, showBack,
+}: {
+  eyebrow?: string;
+  title: string;
+  sub?: string;
+  back?: string;
+  /** Legacy single right-side slot — kept for existing callers. */
+  right?: ReactNode;
+  /** Centered filter cluster (new). If provided, `right` is ignored in favour
+   *  of the split `filters` + `actions` layout. */
+  filters?: ReactNode;
+  /** Right-aligned actions cluster (new, used with `filters`). */
+  actions?: ReactNode;
+  showBack?: boolean;
+}) => {
+  const useSplit = filters !== undefined || actions !== undefined;
+  return (
+    <div className={`${sub ? "ldc-head" : "ldc-head nosub"}${useSplit ? " ldc-head--split" : ""}`}>
+      <div className="ldc-head-l">
+        {showBack ? (
+          <a
+            href={back}
+            className="mb-2 inline-flex items-center gap-1 rounded-chip px-1 py-0.5 text-xs font-medium text-brand-700 outline-none transition-colors duration-fast hover:bg-brand-100 focus-visible:ring-2 focus-visible:ring-brand-500/40 dark:text-brand-400 dark:hover:bg-brand-500/15"
+          >
+            <ArrowLeft size={13} strokeWidth={2.4} aria-hidden />
+            Back to Dashboard
+          </a>
+        ) : null}
+        <h1>{title}</h1>
+        {sub ? <p>{sub}</p> : null}
+      </div>
+      {useSplit ? (
+        <>
+          {filters ? <div className="ldc-head-c">{filters}</div> : null}
+          {actions ? <div className="ldc-head-r">{actions}</div> : null}
+        </>
+      ) : (
+        right ? <div className="ldc-head-r">{right}</div> : null
+      )}
     </div>
-    {right ? <div className="ldc-head-r">{right}</div> : null}
-  </div>
-);
+  );
+};
 const Note = ({ children }: { children: ReactNode }) => <p className="ldc-note">{children}</p>;
 
 /* ── Page-owned scope pickers ─────────────────────────────────────────────
@@ -4195,9 +4227,13 @@ function ReportShell({ title, sub, f, client = true, course = true, actions, chi
       <Head
         title={title}
         sub={sub}
-        right={
-          <>
+        filters={
+          client || course ? (
             <ScopeFilters f={f} client={client} course={course} />
+          ) : undefined
+        }
+        actions={
+          <>
             {typeof actions === "function" ? actions(doPrint) : actions}
             {!hidePrint && typeof actions !== "function" ? (
               <button className="ldc-btn go" type="button" onClick={doPrint} title="Print this report">
@@ -5708,7 +5744,10 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
   // Detailed Report designer — Canva-style overlay pooling responses across
   // every form in scope. Opened by the green Detailed report button.
   const [designerOpen, setDesignerOpen] = useState(false);
-  const sub = "Pick a form to open its full report — responses, ratings, column pickers and PDF / Excel downloads.";
+  // Sub-line intentionally blank on this report — the page's action buttons
+  // and the row-level Open action already document the entry points; the
+  // longer paragraph just added noise between the title and the filter row.
+  const sub = "";
   if (fb.loading || cs.loading) return <ReportShell title="Feedback Report" sub={sub} f={f}><Loading /></ReportShell>;
   if (fb.error) return <ReportShell title="Feedback Report" sub={sub} f={f}><ErrBox m={fb.error} /></ReportShell>;
   // The course list is what scopes foreign institutions out — without it the
@@ -6229,6 +6268,21 @@ const LDC_CSS = `
 /* Right slot of a page header — hosts the page-owned scope pickers. The 48px
    right margin keeps clear of the shell's corner-pinned notification bell. */
 .ldc-head-r{margin-left:auto; margin-right:48px; padding-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+/* Split header: two visual rows.
+     Row 1: title on the left, action cluster on the right.
+     Row 2: scope pickers left-aligned under the title.
+   The pickers get their own row so the heading reads unobstructed and the
+   filters sit in a predictable "filters underneath the page title" spot.
+   The 48px right padding preserves clearance for the shell's corner-pinned
+   notification bell. */
+.ldc-head--split{display:grid; grid-template-columns:1fr auto; grid-template-areas:"title actions" "filters filters"; align-items:center; column-gap:16px; row-gap:10px; padding-right:48px;}
+.ldc-head--split .ldc-head-l{grid-area:title; min-width:0;}
+.ldc-head--split .ldc-head-c{grid-area:filters; display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.ldc-head--split .ldc-head-r{grid-area:actions; margin-left:0; margin-right:0; padding-top:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-self:end;}
+@media (max-width: 900px){
+  .ldc-head--split{grid-template-columns:1fr; grid-template-areas:"title" "actions" "filters"; padding-right:0;}
+  .ldc-head--split .ldc-head-r{justify-self:start;}
+}
 .ldc-eyebrow{font-size:10px; font-weight:700; letter-spacing:.11em; text-transform:uppercase; color:var(--accent-ink);}
 .ldc-head h1{margin:4px 0 0; font-size:17px; font-weight:650; letter-spacing:-.02em;}
 .ldc-bars{display:grid; gap:1px;}
