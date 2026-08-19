@@ -5063,7 +5063,7 @@ function PerfDocView({ cfg, model, genAt, onRemove, onCustomize, onClose }: {
   );
 }
 
-const PERF_SUB = "Solved I Do / We Do / You Do per learner — filter the scope, then Generate a customizable, downloadable report.";
+const PERF_SUB = "";
 
 function PerformanceReport({ f }: { f: ViewFilter }) {
   const { loading, error, data } = useStaffAnalytics((j) => j?.data ?? null);
@@ -5183,7 +5183,7 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
     <>
       <MultiPick label="Students" options={opts} sel={pick} onChange={setPick} />
       <button
-        className="ldc-btn" type="button" title="Open the Report Designer overlay — dynamic filters + downloads"
+        className="ldc-btn green" type="button" title="Open the Report Designer overlay — dynamic filters + downloads"
         onClick={() => setDesignerOpen(true)}
       >
         <SlidersHorizontal size={13} style={ICO} />Detailed report
@@ -5231,7 +5231,7 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
           <div className="ldc-panel">
             <div className="ldc-panel-h"><h2>Courses by average progress</h2></div>
             <BarList
-              rows={[...courseRows].sort((a: any, b: any) => b.avg - a.avg).slice(0, 12).map((c: any) => ({ label: c.name, sub: c.client, value: c.avg }))}
+              rows={[...courseRows].sort((a: any, b: any) => b.avg - a.avg).slice(0, 12).map((c: any) => ({ label: c.name, value: c.avg }))}
               fmt={(v) => pct(v)} max={100}
             />
           </div>
@@ -5242,7 +5242,6 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
             unit="courses"
             cols={[
               { k: "name", h: "Course", render: (r: any) => <b>{r.name}</b> },
-              { k: "client", h: "Client" },
               { k: "students", h: "Students", r: true },
               { k: "avg", h: "Avg progress", r: true, render: (r: any) => pct(r.avg) },
               { k: "done", h: "Completed", r: true },
@@ -5260,8 +5259,6 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
             filterDefs={[{ key: "status", label: "Status", options: PERF_STATUS, match: perfStatusMatch }]}
             cols={[
               { k: "name", h: "Student", render: (r: any) => <b>{r.name}</b> },
-              { k: "course", h: "Course" },
-              { k: "client", h: "Client" },
               { k: "overall", h: "Overall", r: true, render: (r: any) => <StatusChip tone={r.overall >= 80 ? "success" : r.overall > 0 && r.overall < 50 ? "danger" : r.overall === 0 ? "neutral" : "brand"}>{pct(r.overall)}</StatusChip> },
               { k: "iDo", h: "I Do", r: true, sv: (r: any) => r.iDo ?? -1, render: (r: any) => (r.iDo === null ? "N/A" : pct(r.iDo)) },
               { k: "weDo", h: "We Do", r: true, sv: (r: any) => r.weDo ?? -1, render: (r: any) => (r.weDo === null ? "N/A" : pct(r.weDo)) },
@@ -6175,7 +6172,7 @@ const LDC_CSS = `
    right margin keeps clear of the shell's corner-pinned notification bell. */
 .ldc-head-r{margin-left:auto; margin-right:48px; padding-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
 .ldc-eyebrow{font-size:10px; font-weight:700; letter-spacing:.11em; text-transform:uppercase; color:var(--accent-ink);}
-.ldc-head h1{margin:4px 0 0; font-size:17px; font-weight:700; letter-spacing:-.02em;}
+.ldc-head h1{margin:4px 0 0; font-size:17px; font-weight:650; letter-spacing:-.02em;}
 .ldc-bars{display:grid; gap:1px;}
 .ldc-head p{margin:3px 0 0; font-size:13px; color:var(--ink2); max-width:70ch;}
 .ldc-strip{display:flex; flex-wrap:wrap; border-bottom:1px solid var(--grid); padding:2px 0 11px; margin-bottom:14px;}
@@ -6187,18 +6184,18 @@ const LDC_CSS = `
 .ldc-s i{display:block; font-size:10px; color:var(--muted); font-style:normal; margin-top:2px;}
 .ldc-list{background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:hidden; box-shadow:var(--sh); margin-bottom:14px;}
 .ldc-list-h{display:flex; align-items:center; gap:10px; padding:11px 15px; border-bottom:1px solid var(--grid);}
-.ldc-list-h h2{margin:0; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.02em; color:var(--ink2);}
-.ldc-list-h span{margin-left:auto; font-size:11px; font-weight:600; color:var(--muted);}
+.ldc-list-h h2{margin:0; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.02em; color:var(--ink2);}
+.ldc-list-h span{margin-left:auto; font-size:11px; font-weight:500; color:var(--muted);}
 .ldc-group-h{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:0 0 8px 2px;}
 .ldc-group-h span{font-weight:500; text-transform:none; letter-spacing:0; margin-left:6px;}
 .ldc-scroll{overflow-x:auto; max-height:58vh;}
 .ldc-list table{width:100%; border-collapse:collapse; font-size:12.5px;}
-.ldc-list th{text-align:left; font-size:9.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); padding:9px 15px; background:color-mix(in srgb,var(--muted) 6%,var(--surface)); border-bottom:1px solid var(--grid); position:sticky; top:0;}
+.ldc-list th{text-align:left; font-size:9.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); padding:9px 15px; background:color-mix(in srgb,var(--muted) 6%,var(--surface)); border-bottom:1px solid var(--grid); position:sticky; top:0;}
 .ldc-list th.r{text-align:right;}
 .ldc-list td{padding:11px 15px; border-bottom:1px solid var(--grid); color:var(--ink2); vertical-align:middle;}
 .ldc-list tbody tr:last-child td{border-bottom:none;}
 .ldc-list tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
-.ldc-list td b{color:var(--ink); display:block; font-weight:650;}
+.ldc-list td b{color:var(--ink); display:block; font-weight:500;}
 .ldc-list td small{color:var(--muted); font-size:10.5px;}
 .ldc-list td.r{text-align:right; font-variant-numeric:tabular-nums; color:var(--ink);}
 .ldc-bar{display:inline-block; vertical-align:middle; width:80px; height:6px; border-radius:99px; background:color-mix(in srgb,var(--accent) 14%,transparent); margin-right:8px; overflow:hidden;}
@@ -6218,6 +6215,8 @@ const LDC_CSS = `
 .ldc-box.off{background:none; border:1.5px solid var(--border); color:transparent;}
 .ldc-btn{background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:7px 14px; font:inherit; font-size:12px; font-weight:650; color:var(--ink2); cursor:pointer;}
 .ldc-btn.go{background:var(--accent); border-color:var(--accent); color:#fff;}
+.ldc-btn.green{background:#0E9F6E; border-color:#0E9F6E; color:#fff;}
+.ldc-btn.green:hover{background:#0B8760; border-color:#0B8760;}
 .ldc-empty{padding:36px 16px; text-align:center; color:var(--muted); font-size:13px;}
 .ldc-empty b{display:block; color:var(--ink); font-weight:650; font-size:14px; margin-bottom:3px;}
 .ldc-empty span{display:block; font-size:12px;}
@@ -6227,8 +6226,8 @@ const LDC_CSS = `
 @media (max-width:860px){ .ldc-grid2{grid-template-columns:1fr;} }
 .ldc-panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:var(--sh); padding:16px 18px; margin-bottom:14px;}
 .ldc-panel-h{display:flex; align-items:baseline; gap:10px; margin-bottom:12px;}
-.ldc-panel-h h2{margin:0; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.02em; color:var(--ink2);}
-.ldc-panel-h span{margin-left:auto; font-size:11px; font-weight:600; color:var(--muted);}
+.ldc-panel-h h2{margin:0; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.02em; color:var(--ink2);}
+.ldc-panel-h span{margin-left:auto; font-size:11px; font-weight:500; color:var(--muted);}
 .ldc-barrow{display:flex; align-items:center; gap:12px; padding:4px 0; font-size:12px;}
 .ldc-barrow .nm{flex:0 0 40%; max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); font-weight:550;}
 .ldc-barrow .tk{flex:1; height:9px; border-radius:99px; background:color-mix(in srgb,var(--accent) 12%,transparent); overflow:hidden;}
@@ -6590,13 +6589,13 @@ const LDC_CSS = `
 /* horizontal bars */
 .ldr-bars{display:grid; gap:8px;}
 .ldr-bar{display:grid; grid-template-columns:minmax(90px,1.1fr) 2fr 52px; align-items:center; gap:10px;}
-.ldr-bar-l{font-size:11.5px; font-weight:600; color:var(--ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.ldr-bar-l{font-size:11.5px; font-weight:500; color:var(--ink2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .ldr-bar-l small{font-size:10px; color:var(--muted); font-weight:500;}
 .ldr-track{display:flex; gap:2px; height:10px; border-radius:5px; background:color-mix(in srgb,var(--muted) 9%,transparent); overflow:hidden;}
 .ldr-fill{display:block; height:100%; border-radius:0 4px 4px 0; min-width:2px;}
 .ldr-stack .ldr-fill{border-radius:0;}
 .ldr-stack .ldr-fill:last-child{border-radius:0 4px 4px 0;}
-.ldr-bar-v{font-size:11.5px; font-weight:700; color:var(--ink); text-align:right; font-variant-numeric:tabular-nums;}
+.ldr-bar-v{font-size:11.5px; font-weight:600; color:var(--ink); text-align:right; font-variant-numeric:tabular-nums;}
 .ldr-legendrow{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:2px;}
 /* vertical columns */
 .ldr-cols{display:flex; align-items:stretch; gap:14px; height:130px; padding-top:4px;}
@@ -6626,7 +6625,7 @@ const LDC_CSS = `
 /* inline stats line (review-submission report style) */
 .ldr-stats{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 0; font-size:12.5px; color:var(--ink2); margin:2px 0 14px;}
 .ldr-stat .lab{color:var(--muted);}
-.ldr-stat b{font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums;}
+.ldr-stat b{font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums;}
 .ldr-stat b.good{color:var(--good-ink);}
 .ldr-stat b.warn{color:color-mix(in srgb,var(--warn) 80%,var(--ink));}
 .ldr-stat b.bad{color:var(--bad);}
@@ -6666,7 +6665,7 @@ const LDC_CSS = `
 /* generated document */
 .ldr-doc{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; box-shadow:var(--sh);}
 .ldr-doc-h{padding-bottom:10px; border-bottom:1px solid var(--grid); margin-bottom:14px;}
-.ldr-doc-h h2{margin:0; font-size:16px; font-weight:750; letter-spacing:-.01em; color:var(--ink);}
+.ldr-doc-h h2{margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em; color:var(--ink);}
 .ldr-doc-h p{margin:3px 0 0; font-size:11.5px; color:var(--muted);}
 .ldr-sec{position:relative; margin:0 0 14px;}
 .ldr-sec .ldc-panel-h{padding-right:30px;}
