@@ -27,11 +27,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     BarChart3,
     ChevronDown,
+    ChevronRight,
     ChevronsLeft,
     ChevronsRight,
     Download,
     FileSpreadsheet,
     FileText,
+    Layers,
     Loader2,
     PieChart as PieIcon,
     Search,
@@ -53,6 +55,17 @@ import {
     XAxis,
     YAxis,
 } from "recharts";
+import { useQuery } from "@tanstack/react-query";
+import { courseDataApi } from "@/apiServices/coursesData";
+import {
+    computeStudentMarks,
+    findExerciseInCourseData,
+    getDynamicExerciseTotal,
+    getExerciseGradeBands,
+    getStudentQuestionsBreakdown,
+    scaleForPercent,
+    type QuestionBreakdownRow,
+} from "@/app/lms/pages/courses/manageUsers/reports/utils/computeStudentMarks";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public props — parent hands us the scope + already-derived analytics
@@ -93,6 +106,10 @@ type Props = {
     baseStudents: PerfStudentRow[];
     baseCourseRows: PerfCourseRow[];
     scopeLabel: string;
+    /** Set only when the page filter is narrowed to ONE course — enables the
+     *  per-assignment / per-question drilldown, which needs the heavy
+     *  /getAll/courses-data payload (pedagogy + participant answers). */
+    courseId?: string;
 };
 
 // ─── Grade bands (mirrors DEFAULT_GRADE_BANDS in the assignment Reports flow) ─
@@ -158,13 +175,14 @@ const prettySubcat = (raw: string): string => {
 };
 
 // ─── Views the canvas can render (multi-select). ─────────────────────────
-type ViewKey = "stats" | "gradePie" | "subcatBars" | "courses" | "roster";
+type ViewKey = "stats" | "gradePie" | "subcatBars" | "courses" | "roster" | "exerciseDetail";
 const VIEWS: { key: ViewKey; label: string; icon: React.FC<{ className?: string }> }[] = [
     { key: "stats", label: "Summary stats", icon: SlidersHorizontal },
     { key: "gradePie", label: "Grade distribution", icon: PieIcon },
     { key: "subcatBars", label: "Sub-category bars", icon: BarChart3 },
     { key: "courses", label: "Courses table", icon: TableIcon },
     { key: "roster", label: "Roster (with grade)", icon: TableIcon },
+    { key: "exerciseDetail", label: "Assignment / Assessment detail", icon: Layers },
 ];
 
 // ─── Roster columns the user can toggle. ─────────────────────────────────
@@ -197,6 +215,199 @@ const COLUMNS: { key: ColKey; label: string; hint: string; r?: boolean }[] = [
 
 const DEFAULT_COLS: ColKey[] = ["email", "course", "overall", "subcatPct", "grade", "last"];
 const DEFAULT_VIEWS: ViewKey[] = ["stats", "gradePie", "subcatBars", "roster"];
+
+// ─── Per-exercise drilldown (mirrors assignment Dashboard → Reports view) ─
+// Summary columns shown on the outer roster row (like SUMMARY_COLUMNS in
+// courses/manageUsers/reports/components/ReportExportModal). Student Name +
+// Email are always on — the picker toggles the rest.
+type SumColKey =
+    | "totalQ"
+    | "completed"
+    | "nonCompleted"
+    | "testStatus"
+    | "totalMarks"
+    | "scoredMarks"
+    | "percentage"
+    | "scale";
+
+const SUM_COLS: { key: SumColKey; label: string; hint: string; r?: boolean }[] = [
+    { key: "totalQ", label: "Total Questions", hint: "Questions on the exercise", r: true },
+    { key: "completed", label: "Completed", hint: "Answered questions", r: true },
+    { key: "nonCompleted", label: "Non Completed", hint: "Skipped / unanswered", r: true },
+    { key: "testStatus", label: "Test Status", hint: "Not Started / Started / Submitted" },
+    { key: "totalMarks", label: "Total Marks", hint: "Max marks for the exercise", r: true },
+    { key: "scoredMarks", label: "Scored Marks", hint: "Marks the student earned", r: true },
+    { key: "percentage", label: "Percentage", hint: "scored / total × 100", r: true },
+    { key: "scale", label: "Scale", hint: "Grade band (per-exercise gradeSettings, else default)" },
+];
+const DEFAULT_SUM_COLS: SumColKey[] = [
+    "totalQ",
+    "completed",
+    "nonCompleted",
+    "testStatus",
+    "totalMarks",
+    "scoredMarks",
+    "percentage",
+    "scale",
+];
+
+// Per-question detail columns (inner table when a student row is expanded).
+// Same catalogue as DETAIL_COLUMNS in ReportExportModal so the two flows
+// stay visually consistent.
+type QColKey =
+    | "qno"
+    | "title"
+    | "type"
+    | "status"
+    | "totalMark"
+    | "scoredMark"
+    | "submittedAt"
+    | "timeTaken";
+
+const Q_COLS: { key: QColKey; label: string; hint: string; r?: boolean }[] = [
+    { key: "qno", label: "Q. No.", hint: "Question number", r: true },
+    { key: "title", label: "Title", hint: "Question title" },
+    { key: "type", label: "Type", hint: "MCQ / Programming / etc." },
+    { key: "status", label: "Status", hint: "Evaluated / Submitted / Not Answered / Pending" },
+    { key: "totalMark", label: "Total Mark", hint: "Max mark for this question", r: true },
+    { key: "scoredMark", label: "Scored Mark", hint: "Mark this student earned", r: true },
+    { key: "submittedAt", label: "Submitted At", hint: "Timestamp of last submission" },
+    { key: "timeTaken", label: "Time Taken", hint: "Wall-clock time on this question" },
+];
+const DEFAULT_Q_COLS: QColKey[] = [
+    "qno",
+    "title",
+    "type",
+    "status",
+    "totalMark",
+    "scoredMark",
+    "submittedAt",
+    "timeTaken",
+];
+
+// One entry per assignment / assessment discovered in the course pedagogy.
+// Path = "Module → (Sub-module → )Topic → (Sub-topic → )Sub-category" so a
+// head glancing at the list knows which cell of the syllabus each exercise
+// lives under.
+type CatalogueEx = {
+    id: string;
+    name: string;
+    path: string;
+    stage: "We_Do" | "You_Do";
+    subCategory: string;
+    exercise: any;
+    totalMarks: number;
+    totalQuestions: number;
+};
+
+const SUBCAT_INCLUDE = new Set([
+    // We_Do
+    "assignments", "assignment", "practical", "project_development", "assessments", "assesments",
+    // You_Do
+    "assessment", "Assessment", "assesment",
+]);
+
+function walkCatalogue(courseData: any): CatalogueEx[] {
+    if (!courseData?.modules || !Array.isArray(courseData.modules)) return [];
+    const out: CatalogueEx[] = [];
+    const seen = new Set<string>();
+
+    const scan = (pedagogy: any, path: string) => {
+        if (!pedagogy) return;
+        (["We_Do", "You_Do"] as const).forEach((stage) => {
+            const tabData = pedagogy[stage];
+            if (!tabData || typeof tabData !== "object") return;
+            for (const [rawKey, list] of Object.entries(tabData)) {
+                if (!Array.isArray(list)) continue;
+                if (!SUBCAT_INCLUDE.has(rawKey)) continue;
+                for (const ex of list as any[]) {
+                    const id = String(ex?._id || ex?.exerciseInformation?.exerciseId || "");
+                    if (!id || seen.has(id)) continue;
+                    seen.add(id);
+                    const name =
+                        ex?.exerciseInformation?.exerciseName ||
+                        ex?.title ||
+                        ex?.name ||
+                        "Untitled exercise";
+                    const subCategory = prettySubcat(rawKey);
+                    const fullPath = `${path} · ${ACTIVITIES.find((a) => a.key === stage)?.label} · ${subCategory}`;
+                    out.push({
+                        id,
+                        name,
+                        path: fullPath,
+                        stage,
+                        subCategory,
+                        exercise: ex,
+                        totalMarks: getDynamicExerciseTotal(ex),
+                        totalQuestions: Array.isArray(ex?.questions) ? ex.questions.length : 0,
+                    });
+                }
+            }
+        });
+    };
+
+    for (const mod of courseData.modules) {
+        const mPath = mod?.title || "Module";
+        scan(mod?.pedagogy, mPath);
+
+        for (const topic of mod?.topics || []) {
+            const tPath = `${mPath} → ${topic?.title || "Topic"}`;
+            scan(topic?.pedagogy, tPath);
+            for (const st of topic?.subTopics || []) {
+                scan(st?.pedagogy, `${tPath} → ${st?.title || "Subtopic"}`);
+            }
+        }
+
+        for (const sub of mod?.subModules || []) {
+            const sPath = `${mPath} → ${sub?.title || "Sub-module"}`;
+            scan(sub?.pedagogy, sPath);
+            for (const topic of sub?.topics || []) {
+                const tPath = `${sPath} → ${topic?.title || "Topic"}`;
+                scan(topic?.pedagogy, tPath);
+                for (const st of topic?.subTopics || []) {
+                    scan(st?.pedagogy, `${tPath} → ${st?.title || "Subtopic"}`);
+                }
+            }
+        }
+    }
+
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Time formatter (HH:MM:SS or MM:SS) matching ReportExportModal so the
+// detail rows line up with what the assignment Reports flow shows.
+const fmtTime = (secs: number | null | undefined): string => {
+    if (typeof secs !== "number" || !Number.isFinite(secs) || secs <= 0) return "—";
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+};
+const fmtDateT = (iso: string | null): string => {
+    if (!iso) return "—";
+    try {
+        return new Date(iso).toLocaleString("en-GB", {
+            day: "2-digit", month: "short", year: "numeric",
+            hour: "2-digit", minute: "2-digit",
+        });
+    } catch {
+        return iso;
+    }
+};
+
+const Q_STATUS_LABEL: Record<QuestionBreakdownRow["status"], string> = {
+    evaluated: "Evaluated",
+    submitted: "Submitted",
+    not_answered: "Not Answered",
+    pending: "Pending",
+};
+const Q_STATUS_TONE: Record<QuestionBreakdownRow["status"], string> = {
+    evaluated: "bg-success-500/15 text-success-500",
+    submitted: "bg-brand-500/15 text-brand-strong",
+    not_answered: "bg-danger-500/15 text-danger-500",
+    pending: "bg-subtle/15 text-subtle",
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 // Read progress[stage][subcat] as { completed, total, percentage }. Used
@@ -404,6 +615,7 @@ export default function PerformanceReportDesignerModal({
     baseStudents,
     baseCourseRows,
     scopeLabel,
+    courseId,
 }: Props) {
     // Designer state
     const [drawerCollapsed, setDrawerCollapsed] = useState(false);
@@ -421,6 +633,41 @@ export default function PerformanceReportDesignerModal({
     // Views multi-pick so removing a section from the preview doesn't clear
     // the setting a user might want to re-enable via the drawer.
     const [removed, setRemoved] = useState<Set<ViewKey>>(new Set());
+
+    // Per-exercise drilldown state — mirrors assignment Dashboard → Reports.
+    const [exSel, setExSel] = useState<Set<string> | null>(new Set()); // picked assignments/assessments (null = all)
+    const [sumCols, setSumCols] = useState<Set<SumColKey>>(new Set(DEFAULT_SUM_COLS));
+    const [qCols, setQCols] = useState<Set<QColKey>>(new Set(DEFAULT_Q_COLS));
+    // Which (exerciseId:studentId) rows are expanded to show per-question detail.
+    const [expanded, setExpanded] = useState<Set<string>>(new Set());
+    // Detailed toggle mirrors the assignment Reports view: when off, the
+    // roster rows have no chevron and can't expand (the summary IS the whole
+    // row); when on, each row can drill into the per-question inner table.
+    const [detailed, setDetailed] = useState(true);
+
+    // Fetch full course data ONLY when a single course is in scope — the
+    // pedagogy tree + participant answers are what powers per-question detail.
+    // Uses the SAME cache key `["course", id, activeBatchId]` the review /
+    // reports pages read, so no duplicate request when they've already loaded it.
+    const courseDataQuery = useQuery({
+        ...(courseId ? courseDataApi.getById(courseId) : { queryKey: ["course-detail-skip"], queryFn: async () => null as any }),
+        enabled: !!courseId && open,
+    });
+    const courseData = (courseDataQuery.data as any)?.data ?? null;
+
+    // Catalogue of picked-able assignments/assessments (empty when multi-course scope).
+    const catalogue = useMemo(() => walkCatalogue(courseData), [courseData]);
+    // Participants keyed by student id for O(1) marks lookup per exercise.
+    const participants = useMemo(() => {
+        if (!courseData) return new Map<string, any>();
+        const flat: any[] = (courseData.batchAndParticipants || []).flatMap((b: any) => b?.users || []);
+        const byId = new Map<string, any>();
+        for (const p of flat) {
+            const id = String(p?.user?._id || p?._id || "");
+            if (id) byId.set(id, p);
+        }
+        return byId;
+    }, [courseData]);
 
     const downloadRef = useRef<HTMLDivElement>(null);
 
@@ -449,6 +696,8 @@ export default function PerformanceReportDesignerModal({
     useEffect(() => {
         setStudentSel(null);
         setSubcats(null);
+        setExSel(new Set());
+        setExpanded(new Set());
     }, [baseStudents]);
 
     // ── Options derived from the current base ──
@@ -569,6 +818,169 @@ export default function PerformanceReportDesignerModal({
         const excellent = workingRows.filter((r) => r.gradePct >= 80).length;
         return { total, avgOverall, avgSelected, avgScore, atRisk, notStarted, excellent };
     }, [workingRows]);
+
+    // ── Per-exercise drilldown data ──────────────────────────────────────
+    // Which of the catalogue's exercises are actually selected. `null` = all,
+    // empty Set = none (initial state — user hasn't picked yet).
+    const activeExercises = useMemo(() => {
+        if (!catalogue.length) return [] as CatalogueEx[];
+        if (exSel === null) return catalogue;
+        return catalogue.filter((e) => exSel.has(e.id));
+    }, [catalogue, exSel]);
+
+    // For each selected exercise, compute one summary row per surviving
+    // student in scope (workingRows). Heavy: iterates rows × exercises and
+    // walks the answer tree for each — but only for what the head picked.
+    type ExRosterRow = {
+        pid: string;
+        name: string;
+        email: string;
+        totalMarks: number;
+        scoredMarks: number | null;
+        totalQuestions: number;
+        completed: number;
+        nonCompleted: number;
+        hasSubmitted: boolean;
+        parentSubmitted: boolean;
+        testStatus: "not-started" | "started" | "submitted";
+        percentage: number | null;
+        scale: string;
+    };
+    type ExRoster = {
+        ex: CatalogueEx;
+        gradeBands: ReturnType<typeof getExerciseGradeBands>;
+        rows: ExRosterRow[];
+        stats: {
+            students: number;
+            submitted: number;
+            started: number;
+            notStarted: number;
+            avgPct: number | null;
+            passCount: number;
+            failCount: number;
+        };
+    };
+
+    const exerciseRosters = useMemo<ExRoster[]>(() => {
+        if (!courseData || activeExercises.length === 0 || workingRows.length === 0) return [];
+        const out: ExRoster[] = [];
+        for (const ex of activeExercises) {
+            const gradeBands = getExerciseGradeBands(courseData, ex.id);
+            const rows: ExRosterRow[] = [];
+            for (const w of workingRows) {
+                const participant = participants.get(w.pid);
+                if (!participant) {
+                    rows.push({
+                        pid: w.pid,
+                        name: w.name,
+                        email: w.email,
+                        totalMarks: ex.totalMarks,
+                        scoredMarks: null,
+                        totalQuestions: ex.totalQuestions,
+                        completed: 0,
+                        nonCompleted: ex.totalQuestions,
+                        hasSubmitted: false,
+                        parentSubmitted: false,
+                        testStatus: "not-started",
+                        percentage: null,
+                        scale: "",
+                    });
+                    continue;
+                }
+                const marks = computeStudentMarks({
+                    courseData,
+                    courseId: courseId || "",
+                    exerciseId: ex.id,
+                    participant,
+                });
+                const totalMarks = marks.totalMarks || ex.totalMarks || 0;
+                const totalQuestions = marks.totalQuestions || ex.totalQuestions || 0;
+                const completed = marks.completedQuestions || 0;
+                const nonCompleted = Math.max(0, totalQuestions - completed);
+                const hasSubmitted = marks.hasSubmitted;
+                const parentSubmitted = marks.parentSubmitted;
+                const testStatus: ExRosterRow["testStatus"] = parentSubmitted
+                    ? "submitted"
+                    : hasSubmitted
+                        ? "started"
+                        : "not-started";
+                const pct =
+                    hasSubmitted && totalMarks > 0
+                        ? Math.round((marks.scoredMarks / totalMarks) * 1000) / 10
+                        : null;
+                const scale = pct !== null ? scaleForPercent(pct, gradeBands) : "";
+                rows.push({
+                    pid: w.pid,
+                    name: w.name,
+                    email: w.email,
+                    totalMarks,
+                    scoredMarks: hasSubmitted ? marks.scoredMarks : null,
+                    totalQuestions,
+                    completed,
+                    nonCompleted,
+                    hasSubmitted,
+                    parentSubmitted,
+                    testStatus,
+                    percentage: pct,
+                    scale,
+                });
+            }
+            // Roll-up stats for the per-exercise header strip.
+            let submitted = 0, started = 0, notStarted = 0, pass = 0, fail = 0;
+            const pcts: number[] = [];
+            const PASS = 50;
+            for (const r of rows) {
+                if (r.testStatus === "submitted") submitted++;
+                else if (r.testStatus === "started") started++;
+                else notStarted++;
+                if (r.percentage !== null) {
+                    pcts.push(r.percentage);
+                    if (r.percentage >= PASS) pass++; else fail++;
+                }
+            }
+            const avgPct = pcts.length ? Math.round((pcts.reduce((a, b) => a + b, 0) / pcts.length) * 10) / 10 : null;
+            out.push({
+                ex,
+                gradeBands,
+                rows,
+                stats: { students: rows.length, submitted, started, notStarted, avgPct, passCount: pass, failCount: fail },
+            });
+        }
+        return out;
+    }, [courseData, activeExercises, workingRows, participants, courseId]);
+
+    // Per-question breakdown for expanded rows only. Recomputed lazily via
+    // memo keyed on the expanded set + participants, so re-renders that don't
+    // change expansion don't re-walk the answer tree.
+    const breakdowns = useMemo(() => {
+        const map = new Map<string, QuestionBreakdownRow[]>();
+        if (!courseData || expanded.size === 0) return map;
+        for (const key of expanded) {
+            const [exId, pid] = key.split(":");
+            if (!exId || !pid) continue;
+            const participant = participants.get(pid);
+            if (!participant) { map.set(key, []); continue; }
+            const rows = getStudentQuestionsBreakdown({
+                courseData,
+                courseId: courseId || "",
+                exerciseId: exId,
+                participant,
+                studentSubmitted: true,
+            });
+            map.set(key, rows);
+        }
+        return map;
+    }, [expanded, courseData, participants, courseId]);
+
+    const toggleExpanded = (exId: string, pid: string) => {
+        const key = `${exId}:${pid}`;
+        setExpanded((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
 
     // Whether a view should render on the canvas.
     const shouldShow = (k: ViewKey) => views.has(k) && !removed.has(k);
@@ -766,6 +1178,96 @@ export default function PerformanceReportDesignerModal({
                 rs.views = [{ state: "frozen", ySplit: 1 }];
             }
 
+            // Per-exercise sheets (one per selected assignment / assessment).
+            // Sheet name is truncated to Excel's 31-char cap; the header row
+            // carries the full exercise + path so nothing gets lost.
+            if (shouldShow("exerciseDetail") && exerciseRosters.length > 0) {
+                const truncate = (s: string) => s.replace(/[\\\/\?\*\[\]:]/g, "").slice(0, 28);
+                const activeSum = SUM_COLS.filter((c) => sumCols.has(c.key));
+                const activeQ = Q_COLS.filter((c) => qCols.has(c.key));
+                exerciseRosters.forEach((er, idx) => {
+                    const sName = truncate(`${idx + 1} ${er.ex.name}`) || `Exercise ${idx + 1}`;
+                    const es = wb.addWorksheet(sName);
+                    es.addRow([er.ex.name]).getCell(1).style = { font: { bold: true, size: 13 } };
+                    es.addRow([er.ex.path]);
+                    es.addRow([`Total: ${er.ex.totalMarks} marks · ${er.ex.totalQuestions} questions`]);
+                    es.addRow([`Submitted ${er.stats.submitted} · Started ${er.stats.started} · Not started ${er.stats.notStarted} · Avg ${er.stats.avgPct === null ? "—" : er.stats.avgPct + "%"}`]);
+                    es.addRow([]);
+                    const head = ["#", "Student", "Email", ...activeSum.map((c) => c.label)];
+                    const hr = es.addRow(head);
+                    hr.eachCell((c: any) => (c.style = header));
+                    er.rows.forEach((r, i) => {
+                        const row = es.addRow([
+                            i + 1,
+                            r.name,
+                            r.email,
+                            ...activeSum.map((c) => {
+                                switch (c.key) {
+                                    case "totalQ": return r.totalQuestions;
+                                    case "completed": return r.completed;
+                                    case "nonCompleted": return r.nonCompleted;
+                                    case "testStatus":
+                                        return r.testStatus === "submitted"
+                                            ? "Submitted"
+                                            : r.testStatus === "started"
+                                                ? "Started"
+                                                : "Not Started";
+                                    case "totalMarks": return r.totalMarks || "";
+                                    case "scoredMarks": return typeof r.scoredMarks === "number" ? r.scoredMarks : "";
+                                    case "percentage": return r.percentage === null ? "" : `${r.percentage}%`;
+                                    case "scale": return r.scale || "";
+                                    default: return "";
+                                }
+                            }),
+                        ]);
+                        row.eachCell((c: any) => (c.style = bordered));
+                    });
+                    es.columns.forEach((c: any) => (c.width = Math.max(12, String(c.header || "").length + 2)));
+
+                    // Detailed mode → append one per-question block per student that has any answers.
+                    if (detailed && activeQ.length > 0) {
+                        for (const r of er.rows) {
+                            const participant = participants.get(r.pid);
+                            if (!participant) continue;
+                            const bd = getStudentQuestionsBreakdown({
+                                courseData,
+                                courseId: courseId || "",
+                                exerciseId: er.ex.id,
+                                participant,
+                                studentSubmitted: true,
+                            });
+                            if (!bd.length) continue;
+                            es.addRow([]);
+                            const label = es.addRow([`Detail — ${r.name}${r.email ? ` (${r.email})` : ""}`]);
+                            label.getCell(1).style = { font: { bold: true } };
+                            const qh = es.addRow(activeQ.map((c) => c.label));
+                            qh.eachCell((c: any) => (c.style = header));
+                            for (const q of bd) {
+                                const qrow = es.addRow(
+                                    activeQ.map((c) => {
+                                        switch (c.key) {
+                                            case "qno": return q.questionNo;
+                                            case "title": return q.title;
+                                            case "type": return q.type;
+                                            case "status": return Q_STATUS_LABEL[q.status];
+                                            case "totalMark": return q.totalMark;
+                                            case "scoredMark":
+                                                return q.status === "pending" || q.status === "not_answered"
+                                                    ? ""
+                                                    : q.scoredMark;
+                                            case "submittedAt": return fmtDateT(q.submittedAt);
+                                            case "timeTaken": return fmtTime(q.timeTakenSeconds);
+                                            default: return "";
+                                        }
+                                    }),
+                                );
+                                qrow.eachCell((c: any) => (c.style = bordered));
+                            }
+                        }
+                    }
+                });
+            }
+
             const buf = await wb.xlsx.writeBuffer();
             saveAs(
                 new Blob([buf], {
@@ -918,6 +1420,118 @@ export default function PerformanceReportDesignerModal({
                     headStyles: { fillColor: [235, 104, 52] },
                     margin: { left: M, right: M },
                 });
+                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
+            }
+
+            // Per-exercise detail — one section per selected exercise, each
+            // starts on a fresh page so a head can print + hand out slices.
+            if (shouldShow("exerciseDetail") && exerciseRosters.length > 0) {
+                const activeSum = SUM_COLS.filter((c) => sumCols.has(c.key));
+                const activeQ = Q_COLS.filter((c) => qCols.has(c.key));
+                exerciseRosters.forEach((er) => {
+                    doc.addPage();
+                    y = M;
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(13);
+                    doc.setTextColor(17, 24, 39);
+                    doc.text(er.ex.name, M, y);
+                    y += 16;
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(9);
+                    doc.setTextColor(107, 114, 128);
+                    doc.text(er.ex.path, M, y);
+                    y += 12;
+                    doc.text(
+                        `${er.ex.totalQuestions} questions · ${er.ex.totalMarks} marks · Submitted ${er.stats.submitted} · Started ${er.stats.started} · Not started ${er.stats.notStarted} · Avg ${er.stats.avgPct === null ? "—" : er.stats.avgPct + "%"}`,
+                        M,
+                        y,
+                    );
+                    y += 14;
+
+                    autoTable(doc, {
+                        startY: y,
+                        head: [["#", "Student", "Email", ...activeSum.map((c) => c.label)]],
+                        body: er.rows.map((r, i) => [
+                            i + 1,
+                            r.name,
+                            r.email,
+                            ...activeSum.map((c) => {
+                                switch (c.key) {
+                                    case "totalQ": return String(r.totalQuestions);
+                                    case "completed": return String(r.completed);
+                                    case "nonCompleted": return String(r.nonCompleted);
+                                    case "testStatus":
+                                        return r.testStatus === "submitted"
+                                            ? "Submitted"
+                                            : r.testStatus === "started"
+                                                ? "Started"
+                                                : "Not Started";
+                                    case "totalMarks": return r.totalMarks > 0 ? String(r.totalMarks) : "—";
+                                    case "scoredMarks": return typeof r.scoredMarks === "number" ? String(r.scoredMarks) : "—";
+                                    case "percentage": return r.percentage === null ? "—" : `${r.percentage}%`;
+                                    case "scale": return r.scale || "—";
+                                    default: return "";
+                                }
+                            }),
+                        ]),
+                        styles: { fontSize: 8, cellPadding: 3 },
+                        headStyles: { fillColor: [124, 92, 252] },
+                        margin: { left: M, right: M },
+                    });
+                    y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
+
+                    if (detailed && activeQ.length > 0) {
+                        for (const r of er.rows) {
+                            const participant = participants.get(r.pid);
+                            if (!participant) continue;
+                            const bd = getStudentQuestionsBreakdown({
+                                courseData,
+                                courseId: courseId || "",
+                                exerciseId: er.ex.id,
+                                participant,
+                                studentSubmitted: true,
+                            });
+                            if (!bd.length) continue;
+                            if (y > doc.internal.pageSize.getHeight() - 100) {
+                                doc.addPage();
+                                y = M;
+                            }
+                            doc.setFont("helvetica", "bold");
+                            doc.setFontSize(10);
+                            doc.setTextColor(17, 24, 39);
+                            doc.text(
+                                `${r.name}${r.email ? ` — ${r.email}` : ""}`,
+                                M,
+                                y,
+                            );
+                            y += 12;
+                            autoTable(doc, {
+                                startY: y,
+                                head: [activeQ.map((c) => c.label)],
+                                body: bd.map((q) => activeQ.map((c) => {
+                                    switch (c.key) {
+                                        case "qno": return String(q.questionNo);
+                                        case "title": return q.title;
+                                        case "type": return q.type;
+                                        case "status": return Q_STATUS_LABEL[q.status];
+                                        case "totalMark": return String(q.totalMark);
+                                        case "scoredMark":
+                                            return q.status === "pending" || q.status === "not_answered"
+                                                ? "—"
+                                                : String(q.scoredMark);
+                                        case "submittedAt": return fmtDateT(q.submittedAt);
+                                        case "timeTaken": return fmtTime(q.timeTakenSeconds);
+                                        default: return "";
+                                    }
+                                })),
+                                styles: { fontSize: 7.5, cellPadding: 2.5 },
+                                headStyles: { fillColor: [45, 191, 175] },
+                                margin: { left: M, right: M },
+                            });
+                            y = (doc as any).lastAutoTable?.finalY + 8 || y + 8;
+                        }
+                    }
+                });
             }
 
             // Page numbers
@@ -955,6 +1569,11 @@ export default function PerformanceReportDesignerModal({
         setGrades(null);
         setStudentSel(null);
         setRemoved(new Set());
+        setExSel(new Set());
+        setSumCols(new Set(DEFAULT_SUM_COLS));
+        setQCols(new Set(DEFAULT_Q_COLS));
+        setExpanded(new Set());
+        setDetailed(true);
     };
 
     if (!open) return null;
@@ -981,7 +1600,8 @@ export default function PerformanceReportDesignerModal({
         shouldShow("gradePie") ||
         shouldShow("subcatBars") ||
         shouldShow("courses") ||
-        shouldShow("roster");
+        shouldShow("roster") ||
+        shouldShow("exerciseDetail");
 
     return (
         <div
@@ -1211,6 +1831,134 @@ export default function PerformanceReportDesignerModal({
                                                     type="checkbox"
                                                     checked={on}
                                                     onChange={() => setCols(toggleSet(cols, c.key))}
+                                                    className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                                                />
+                                                <span className="flex-1 min-w-0">
+                                                    <span className="block text-[11px] font-medium text-body">
+                                                        {c.label}
+                                                    </span>
+                                                    <span className="block truncate text-[10px] text-faint">
+                                                        {c.hint}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+
+                            {/* Assignments / Assessments — per-course drilldown. Only
+                                works with a single-course scope; when multiple courses
+                                are in scope we tell the head to narrow first (matches
+                                assignment Dashboard → Reports, which is also per-course). */}
+                            <section
+                                aria-disabled={!views.has("exerciseDetail")}
+                                className={views.has("exerciseDetail") ? "" : "opacity-50 pointer-events-none"}
+                            >
+                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
+                                    Assignments / Assessments
+                                </h3>
+                                {!courseId ? (
+                                    <p className="rounded-md border border-dashed border-hairline bg-surface px-2.5 py-2 text-[10px] text-subtle">
+                                        Narrow the page's Course filter to ONE course to enable per-exercise detail.
+                                    </p>
+                                ) : courseDataQuery.isLoading ? (
+                                    <div className="flex items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-2 text-[10px] text-subtle">
+                                        <Loader2 className="h-3 w-3 animate-spin" /> Loading exercises…
+                                    </div>
+                                ) : catalogue.length === 0 ? (
+                                    <p className="rounded-md border border-dashed border-hairline bg-surface px-2.5 py-2 text-[10px] text-subtle">
+                                        No assignments / assessments on this course.
+                                    </p>
+                                ) : (
+                                    <>
+                                        <MultiPickBox
+                                            label="Exercises"
+                                            options={catalogue.map((e) => ({
+                                                id: e.id,
+                                                name: e.name,
+                                                sub: `${e.subCategory} · ${e.totalQuestions} Q · ${e.totalMarks} m`,
+                                            }))}
+                                            sel={exSel}
+                                            onChange={(s) => setExSel(s)}
+                                            empty="No exercises match"
+                                        />
+                                        <p className="mt-1 text-[10px] text-faint">
+                                            Pick one or several — each renders as its own card with a student roster.
+                                        </p>
+                                        <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-row-hover">
+                                            <input
+                                                type="checkbox"
+                                                checked={detailed}
+                                                onChange={(e) => setDetailed(e.target.checked)}
+                                                className="size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                                            />
+                                            <span className="text-[11px] font-medium text-body">
+                                                Detailed report (per-question breakdown)
+                                            </span>
+                                        </label>
+                                    </>
+                                )}
+                            </section>
+
+                            {/* Detail — summary columns (outer roster row) */}
+                            <section
+                                aria-disabled={!views.has("exerciseDetail") || !courseId}
+                                className={views.has("exerciseDetail") && courseId ? "" : "opacity-50 pointer-events-none"}
+                            >
+                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
+                                    Detail: summary columns
+                                </h3>
+                                <div className="space-y-1">
+                                    {SUM_COLS.map((c) => {
+                                        const on = sumCols.has(c.key);
+                                        return (
+                                            <label
+                                                key={c.key}
+                                                className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-row-hover"
+                                                title={c.hint}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={on}
+                                                    onChange={() => setSumCols(toggleSet(sumCols, c.key))}
+                                                    className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
+                                                />
+                                                <span className="flex-1 min-w-0">
+                                                    <span className="block text-[11px] font-medium text-body">
+                                                        {c.label}
+                                                    </span>
+                                                    <span className="block truncate text-[10px] text-faint">
+                                                        {c.hint}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+
+                            {/* Detail — per-question columns (inner table when expanded) */}
+                            <section
+                                aria-disabled={!views.has("exerciseDetail") || !courseId || !detailed}
+                                className={views.has("exerciseDetail") && courseId && detailed ? "" : "opacity-50 pointer-events-none"}
+                            >
+                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
+                                    Detail: per-question columns
+                                </h3>
+                                <div className="space-y-1">
+                                    {Q_COLS.map((c) => {
+                                        const on = qCols.has(c.key);
+                                        return (
+                                            <label
+                                                key={c.key}
+                                                className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-row-hover"
+                                                title={c.hint}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={on}
+                                                    onChange={() => setQCols(toggleSet(qCols, c.key))}
                                                     className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
                                                 />
                                                 <span className="flex-1 min-w-0">
@@ -1556,6 +2304,230 @@ export default function PerformanceReportDesignerModal({
                                     </Sec>
                                 ) : null}
 
+                                {shouldShow("exerciseDetail") ? (
+                                    <Sec id="exerciseDetail">
+                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
+                                            <div className="min-w-0">
+                                                <h3 className="text-xs font-semibold text-heading">
+                                                    Assignment / Assessment detail
+                                                </h3>
+                                                <p className="mt-0.5 truncate text-[10px] text-subtle">
+                                                    {courseId
+                                                        ? exerciseRosters.length === 0
+                                                            ? "Pick one or more exercises from the drawer to drill down."
+                                                            : `${exerciseRosters.length} exercise${exerciseRosters.length === 1 ? "" : "s"} · ${detailed ? "detailed mode (expandable)" : "summary only"}`
+                                                        : "Narrow to a single course to enable drilldown."}
+                                                </p>
+                                            </div>
+                                            <span className="text-[10px] text-subtle tabular-nums">
+                                                {workingRows.length} students in scope
+                                            </span>
+                                        </header>
+                                        <div className="flex flex-col gap-3 p-4">
+                                            {!courseId ? (
+                                                <div className="rounded-md border border-dashed border-hairline bg-surface p-6 text-center text-xs text-subtle">
+                                                    Narrow the page's Course filter to ONE course to enable per-assignment drilldown.
+                                                </div>
+                                            ) : courseDataQuery.isLoading ? (
+                                                <div className="flex items-center justify-center gap-2 rounded-md border border-hairline bg-surface p-6 text-xs text-subtle">
+                                                    <Loader2 className="h-4 w-4 animate-spin" /> Loading course pedagogy…
+                                                </div>
+                                            ) : exerciseRosters.length === 0 ? (
+                                                <div className="rounded-md border border-dashed border-hairline bg-surface p-6 text-center text-xs text-subtle">
+                                                    {catalogue.length === 0
+                                                        ? "This course has no assignments or assessments."
+                                                        : "Pick one or more exercises from the drawer to see their detail."}
+                                                </div>
+                                            ) : (
+                                                exerciseRosters.map((er) => {
+                                                    const activeSum = SUM_COLS.filter((c) => sumCols.has(c.key));
+                                                    const activeQ = Q_COLS.filter((c) => qCols.has(c.key));
+                                                    return (
+                                                        <div
+                                                            key={er.ex.id}
+                                                            className="rounded-tile border border-hairline bg-surface"
+                                                        >
+                                                            <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 py-3">
+                                                                <div className="min-w-0 flex-1">
+                                                                    <h4 className="truncate text-xs font-semibold text-heading">
+                                                                        {er.ex.name}
+                                                                    </h4>
+                                                                    <p className="mt-0.5 truncate text-[10px] text-subtle">
+                                                                        {er.ex.path} · {er.ex.totalQuestions} question
+                                                                        {er.ex.totalQuestions === 1 ? "" : "s"} · {er.ex.totalMarks} marks
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] tabular-nums text-subtle">
+                                                                    <span>
+                                                                        Submitted:{" "}
+                                                                        <b className="text-success-500">
+                                                                            {er.stats.submitted}
+                                                                        </b>
+                                                                    </span>
+                                                                    <span>
+                                                                        Started:{" "}
+                                                                        <b className="text-warn-500">
+                                                                            {er.stats.started}
+                                                                        </b>
+                                                                    </span>
+                                                                    <span>
+                                                                        Not started:{" "}
+                                                                        <b className="text-subtle">
+                                                                            {er.stats.notStarted}
+                                                                        </b>
+                                                                    </span>
+                                                                    <span>
+                                                                        Avg %:{" "}
+                                                                        <b className="text-brand-strong">
+                                                                            {er.stats.avgPct === null
+                                                                                ? "—"
+                                                                                : `${er.stats.avgPct}%`}
+                                                                        </b>
+                                                                    </span>
+                                                                    <span>
+                                                                        Pass / Fail:{" "}
+                                                                        <b>
+                                                                            {er.stats.passCount} / {er.stats.failCount}
+                                                                        </b>
+                                                                    </span>
+                                                                </div>
+                                                            </header>
+                                                            <div className="overflow-x-auto">
+                                                                <table className="w-full border-collapse text-xs">
+                                                                    <thead className="bg-surface-sunken/50">
+                                                                        <tr>
+                                                                            {detailed ? (
+                                                                                <th className="w-8 px-2 py-2 border-b border-hairline" />
+                                                                            ) : null}
+                                                                            <th className="w-10 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
+                                                                                #
+                                                                            </th>
+                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
+                                                                                Student
+                                                                            </th>
+                                                                            {activeSum.map((c) => (
+                                                                                <th
+                                                                                    key={c.key}
+                                                                                    className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline ${c.r ? "text-right" : "text-left"}`}
+                                                                                >
+                                                                                    {c.label}
+                                                                                </th>
+                                                                            ))}
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {er.rows.map((r, i) => {
+                                                                            const key = `${er.ex.id}:${r.pid}`;
+                                                                            const isOpen = expanded.has(key);
+                                                                            const rows: React.ReactNode[] = [
+                                                                                <tr
+                                                                                    key={`${key}-sum`}
+                                                                                    className="border-b border-hairline last:border-0 hover:bg-row-hover transition-colors"
+                                                                                >
+                                                                                    {detailed ? (
+                                                                                        <td className="w-8 px-2 py-2">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => toggleExpanded(er.ex.id, r.pid)}
+                                                                                                aria-label={isOpen ? "Collapse" : "Expand"}
+                                                                                                className="flex h-5 w-5 items-center justify-center rounded text-subtle hover:bg-row-hover hover:text-heading transition-colors"
+                                                                                            >
+                                                                                                {isOpen ? (
+                                                                                                    <ChevronDown className="h-3.5 w-3.5" />
+                                                                                                ) : (
+                                                                                                    <ChevronRight className="h-3.5 w-3.5" />
+                                                                                                )}
+                                                                                            </button>
+                                                                                        </td>
+                                                                                    ) : null}
+                                                                                    <td className="px-3 py-2 text-[10px] tabular-nums text-faint">
+                                                                                        {String(i + 1).padStart(2, "0")}
+                                                                                    </td>
+                                                                                    <td className="px-3 py-2">
+                                                                                        <div className="truncate text-xs font-semibold text-heading">
+                                                                                            {r.name}
+                                                                                        </div>
+                                                                                        {r.email && (
+                                                                                            <div className="truncate text-[10px] text-subtle">
+                                                                                                {r.email}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </td>
+                                                                                    {activeSum.map((c) => (
+                                                                                        <td
+                                                                                            key={c.key}
+                                                                                            className={`px-3 py-2 text-xs text-body ${c.r ? "text-right tabular-nums" : ""}`}
+                                                                                        >
+                                                                                            {renderSumCell(r, c.key)}
+                                                                                        </td>
+                                                                                    ))}
+                                                                                </tr>,
+                                                                            ];
+                                                                            if (detailed && isOpen) {
+                                                                                const bd = breakdowns.get(key) || [];
+                                                                                rows.push(
+                                                                                    <tr key={`${key}-detail`} className="bg-surface-sunken/30">
+                                                                                        <td className="w-8 px-2" />
+                                                                                        <td
+                                                                                            colSpan={2 + activeSum.length}
+                                                                                            className="border-b border-hairline px-4 py-3"
+                                                                                        >
+                                                                                            {bd.length === 0 ? (
+                                                                                                <p className="text-[11px] text-subtle">
+                                                                                                    No questions recorded for this student.
+                                                                                                </p>
+                                                                                            ) : (
+                                                                                                <div className="overflow-x-auto rounded border border-hairline">
+                                                                                                    <table className="w-full text-[11.5px]">
+                                                                                                        <thead className="bg-surface">
+                                                                                                            <tr>
+                                                                                                                {activeQ.map((qc) => (
+                                                                                                                    <th
+                                                                                                                        key={qc.key}
+                                                                                                                        className={`px-3 py-1.5 text-[10px] font-semibold text-subtle border-b border-hairline ${qc.r ? "text-right" : "text-left"}`}
+                                                                                                                    >
+                                                                                                                        {qc.label}
+                                                                                                                    </th>
+                                                                                                                ))}
+                                                                                                            </tr>
+                                                                                                        </thead>
+                                                                                                        <tbody>
+                                                                                                            {bd.map((q) => (
+                                                                                                                <tr
+                                                                                                                    key={q.questionId}
+                                                                                                                    className="border-b border-hairline last:border-0"
+                                                                                                                >
+                                                                                                                    {activeQ.map((qc) => (
+                                                                                                                        <td
+                                                                                                                            key={qc.key}
+                                                                                                                            className={`px-3 py-1.5 text-body ${qc.r ? "text-right tabular-nums" : ""}`}
+                                                                                                                        >
+                                                                                                                            {renderQCell(q, qc.key)}
+                                                                                                                        </td>
+                                                                                                                    ))}
+                                                                                                                </tr>
+                                                                                                            ))}
+                                                                                                        </tbody>
+                                                                                                    </table>
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                );
+                                                                            }
+                                                                            return rows;
+                                                                        })}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </Sec>
+                                ) : null}
+
                                 {shouldShow("roster") ? (
                                     <Sec id="roster">
                                         <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
@@ -1666,4 +2638,111 @@ function Stat({
             {hint ? <div className="mt-0.5 text-[10px] text-faint">{hint}</div> : null}
         </div>
     );
+}
+
+// Per-exercise summary-cell renderer. Types intentionally loose because the
+// caller passes rows from the private ExRosterRow type defined inside the
+// component.
+type SumRowLoose = {
+    totalQuestions: number;
+    completed: number;
+    nonCompleted: number;
+    testStatus: "not-started" | "started" | "submitted";
+    totalMarks: number;
+    scoredMarks: number | null;
+    percentage: number | null;
+    scale: string;
+};
+function renderSumCell(r: SumRowLoose, k: SumColKey): React.ReactNode {
+    switch (k) {
+        case "totalQ":
+            return r.totalQuestions;
+        case "completed":
+            return <span className="font-semibold text-success-500">{r.completed}</span>;
+        case "nonCompleted":
+            return <span className="font-semibold text-warn-500">{r.nonCompleted}</span>;
+        case "testStatus": {
+            const meta =
+                r.testStatus === "submitted"
+                    ? { label: "Submitted", cls: "bg-success-500/15 text-success-500" }
+                    : r.testStatus === "started"
+                        ? { label: "Started", cls: "bg-warn-500/15 text-warn-500" }
+                        : { label: "Not Started", cls: "bg-subtle/15 text-subtle" };
+            return (
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${meta.cls}`}>
+                    {meta.label}
+                </span>
+            );
+        }
+        case "totalMarks":
+            return r.totalMarks > 0 ? r.totalMarks : "—";
+        case "scoredMarks":
+            return typeof r.scoredMarks === "number" ? (
+                <span className="font-semibold text-success-500">{r.scoredMarks}</span>
+            ) : (
+                <span className="text-faint">—</span>
+            );
+        case "percentage":
+            if (r.percentage === null) return <span className="text-faint">—</span>;
+            {
+                const pctv = r.percentage;
+                const cls =
+                    pctv >= 80
+                        ? "text-success-500"
+                        : pctv >= 50
+                            ? "text-warn-500"
+                            : "text-danger-500";
+                return <span className={`font-semibold ${cls}`}>{pctv}%</span>;
+            }
+        case "scale":
+            return r.scale ? (
+                <span className="inline-flex items-center rounded-full bg-brand-500/15 px-2 py-0.5 text-[10.5px] font-semibold text-brand-strong">
+                    {r.scale}
+                </span>
+            ) : (
+                <span className="text-faint">—</span>
+            );
+        default:
+            return "";
+    }
+}
+
+function renderQCell(q: QuestionBreakdownRow, k: QColKey): React.ReactNode {
+    switch (k) {
+        case "qno":
+            return q.questionNo;
+        case "title":
+            return (
+                <span className="text-body" title={q.title}>
+                    {q.title || "—"}
+                </span>
+            );
+        case "type":
+            return <span className="uppercase tracking-wide text-subtle">{q.type || "—"}</span>;
+        case "status":
+            return (
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${Q_STATUS_TONE[q.status]}`}>
+                    {Q_STATUS_LABEL[q.status]}
+                </span>
+            );
+        case "totalMark":
+            return q.totalMark;
+        case "scoredMark":
+            if (q.status === "pending" || q.status === "not_answered") return <span className="text-faint">—</span>;
+            {
+                const cls =
+                    q.scoredMark === q.totalMark
+                        ? "text-success-500"
+                        : q.scoredMark === 0
+                            ? "text-danger-500"
+                            : "text-warn-500";
+                return <span className={`font-semibold ${cls}`}>{q.scoredMark}</span>;
+            }
+        case "submittedAt":
+            return <span className="whitespace-nowrap">{fmtDateT(q.submittedAt)}</span>;
+        case "timeTaken":
+            return <span className="whitespace-nowrap">{fmtTime(q.timeTakenSeconds)}</span>;
+        default:
+            return "";
+    }
 }

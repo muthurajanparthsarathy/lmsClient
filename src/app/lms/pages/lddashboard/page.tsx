@@ -5290,6 +5290,7 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
           baseStudents={students}
           baseCourseRows={courseRows}
           scopeLabel={scope}
+          courseId={f.course && f.course !== "all" ? f.course : undefined}
         />
       ) : null}
     </ReportShell>
