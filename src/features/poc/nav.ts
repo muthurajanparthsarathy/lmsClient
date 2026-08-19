@@ -3,7 +3,6 @@ import {
   BookOpen,
   CalendarCheck,
   Building2,
-  FileText,
   ClipboardCheck,
   CheckCircle2,
   Library,
@@ -111,14 +110,6 @@ export const POC_NAV_ITEMS: SidebarItem[] = [
         permissionKey: "questionbanks",
       },
     ],
-  },
-  {
-    title: "Reports",
-    href: "/lms/pages/lddashboard",
-    icon: FileText,
-    iconName: "FileText",
-    color: "slate",
-    permissionKey: "lddashboard",
   },
   {
     // User-owned records — the endpoint keys off the caller's own id.
