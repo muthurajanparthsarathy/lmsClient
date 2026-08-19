@@ -8,8 +8,9 @@ import {
     ArrowLeft, ArrowRight, AlertTriangle, Loader2, Edit,
     Lock, Briefcase, ListTree, BookOpen,
     HelpCircle,
-    SlidersHorizontal, LayoutGrid, List, MoreHorizontal, Download,
+    SlidersHorizontal, MoreHorizontal, Download,
     MoreVertical, Settings2, ChevronLeft, ChevronRight, Eye,
+    Printer, FileSpreadsheet, FileText,
 } from 'lucide-react'
 import { toast } from 'react-toastify'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -23,7 +24,7 @@ import {
     useServiceMappingsPage, useClientGroupsPage, useMappingsByClient,
     useCreateServiceMapping, useUpdateServiceMapping,
     useDeleteServiceMapping, useToggleServiceMappingStatus, serviceMappingApi, serviceMappingKeys,
-    useInvalidateMappingCaches,
+    useInvalidateMappingCaches, fetchMappingPageExport,
     type ServiceMapping, type ServiceMappingInput, type MappedClientRef,
     type HierarchyLevelConfig, type MasterDataEntry, type BatchConfig, type MappedCourse,
 } from '@/apiServices/serviceMappingService'
@@ -57,10 +58,9 @@ import WizardTour, { type WizardTourHandle } from './components/WizardTour'
 import DataTable, { type Column, type SortDir } from '../../shared/listing/DataTable'
 import TableFooter from '../../shared/listing/TableFooter'
 import { EmptyState, pageEnter } from '../../shared/ui'
-import { HeaderStats } from '../../shared/ui/HeaderStats'
 // Redesigned listing workspace (presentation only — all data + handlers stay in
 // ServiceMappingView below and are passed down).
-import { buildRowVM, extractHierarchy, ClientAvatar, type MappingRowVM } from './components/workspaceShared'
+import { buildRowVM, extractHierarchy, type MappingRowVM } from './components/workspaceShared'
 import MappingWorkspaceTable from './components/MappingWorkspaceTable'
 import MappingHierarchyCards from './components/MappingHierarchyCards'
 import { MappingWorkspaceFilterPanel } from './components/MappingWorkspaceFilterPanel'
@@ -70,6 +70,9 @@ import { PATH_SEP, blankCourse, type CourseEntry, type CourseApi, type DegreeVie
 import { isUnder, type Scope } from './components/HierarchyBuilder/scope'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PERMISSION_IDS } from '@/components/permissions'
+// Reuse Client Management's business-model helpers so the mapping listing
+// renders the same coloured B2B / B2I pill and the two pages stay in lockstep.
+import { businessModelFullName } from '@/features/clientmanagement/lib'
 
 // ─── Configuration (data-driven — extend here, no component changes needed) ───
 
@@ -3768,8 +3771,7 @@ function ClientMappingsModal({
                                         <table className="w-full border-collapse">
                                             <thead className="sticky top-0 z-10 bg-surface-sunken/60">
                                                 <tr className="border-b border-hairline">
-                                                    <th className="w-56 px-3 py-1.5 text-left text-2xs font-semibold uppercase tracking-wider text-subtle">Service model</th>
-                                                    <th className="px-3 py-1.5 text-left text-2xs font-semibold uppercase tracking-wider text-subtle">Service</th>
+                                                    <th className="px-3 py-1.5 text-left text-2xs font-semibold uppercase tracking-wider text-subtle">Service model</th>
                                                     <th className="w-40 px-3 py-1.5 text-left text-2xs font-semibold uppercase tracking-wider text-subtle">Service code</th>
                                                     <th className="w-32 px-3 py-1.5 text-left text-2xs font-semibold uppercase tracking-wider text-subtle">Offering year</th>
                                                     <th className="w-44 px-3 py-1.5 text-left text-2xs font-semibold uppercase tracking-wider text-subtle">Status</th>
@@ -3793,17 +3795,6 @@ function ClientMappingsModal({
                                                                 ) : (
                                                                     <span className="text-xs text-faint">—</span>
                                                                 )}
-                                                            </td>
-                                                            <td className="px-3 py-2 align-middle">
-                                                                <div className="min-w-0">
-                                                                    <div className="truncate text-sm font-semibold text-heading">{m.service || '—'}</div>
-                                                                    {m.courseName && (
-                                                                        <div className="mt-0.5 flex items-center gap-1 text-2xs text-subtle truncate">
-                                                                            <BookOpen size={9} className="flex-shrink-0" />
-                                                                            <span className="truncate">{m.courseName}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
                                                             </td>
                                                             <td className="px-3 py-2 align-middle">
                                                                 {m.serviceCode
@@ -3847,10 +3838,7 @@ function ClientMappingsModal({
                                                                         <>
                                                                         <DropdownMenuSeparator />
                                                                         <DropdownMenuItem onClick={() => onDeleteMapping(m)} className="text-xs cursor-pointer text-danger-700 focus:text-danger-700">
-                                                                            <Trash2 className="h-3.5 w-3.5" /> Delete this service
-                                                                        </DropdownMenuItem>
-                                                                        <DropdownMenuItem onClick={() => onDeleteSeveral()} className="text-xs cursor-pointer text-danger-700 focus:text-danger-700">
-                                                                            <Trash2 className="h-3.5 w-3.5" /> Delete several…
+                                                                            <Trash2 className="h-3.5 w-3.5" /> Delete
                                                                         </DropdownMenuItem>
                                                                         </>
                                                                         )}
@@ -4729,21 +4717,140 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         ...(statusFilter ? [{ key: 'status', label: statusFilter === 'active' ? 'Active' : 'Inactive', onRemove: () => setStatusFilter('') }] : []),
     ]
 
-    // Export the filtered set (all pages) to CSV.
-    const exportCsv = () => {
-        const all = sortedRows.map((r) => buildRowVM(r.mapping, r.client))
-        if (!all.length) { notify.error('Nothing to export'); return }
+    // ── Export / Print with per-client selection ──────────────────────────────
+    // The three actions (CSV export, PDF export, Print) all use the SAME
+    // client-picker modal — pick which clients to include, then the output
+    // renders one page per selected client with:
+    //   Row 1: Client name | Service name
+    //   Row 2..: Service model | Year (one line per service under that client)
+    // Nothing hardcoded — data is pulled fresh via fetchMappingPageExport so
+    // it matches the current filters.
+    const [pickerMode, setPickerMode] = useState<null | 'csv' | 'pdf' | 'print'>(null)
+    const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set())
+    const [pickerSearch, setPickerSearch] = useState('')
+    const [pickerBusy, setPickerBusy] = useState(false)
+
+    const openPicker = (mode: 'csv' | 'pdf' | 'print') => {
+        setPickerSelected(new Set())
+        setPickerSearch('')
+        setPickerMode(mode)
+    }
+    const closePicker = () => { if (!pickerBusy) setPickerMode(null) }
+
+    // Client options for the picker — from the current facets (whole institution),
+    // filtered by the picker's own search box for quick scanning.
+    const pickerOptions = useMemo(() => {
+        const q = pickerSearch.trim().toLowerCase()
+        const source: [string, string][] = (facets?.clients ?? []) as [string, string][]
+        return q ? source.filter(([, name]) => name.toLowerCase().includes(q)) : source
+    }, [facets, pickerSearch])
+
+    // Fetch every mapping the current filters select, keep only the picked
+    // clients, and group them by client id — the shape the three renderers all
+    // consume.
+    type ClientBundle = { id: string; name: string; mappings: ServiceMapping[] }
+    const fetchClientBundles = async (): Promise<ClientBundle[] | null> => {
+        try {
+            const res = await fetchMappingPageExport(pageFilters)
+            const rowsAll: ServiceMapping[] = Array.isArray((res as any).data)
+                ? (res as any).data
+                : []
+            if (!rowsAll.length) { notify.error('Nothing to export'); return null }
+            // Group by client id, preserving the picker's selection order via a Map.
+            const byClient = new Map<string, ClientBundle>()
+            rowsAll.forEach((m) => {
+                const c = (m.client && typeof m.client === 'object') ? m.client as MappedClientRef : null
+                if (!c || !c._id) return
+                const id = String(c._id)
+                if (!pickerSelected.has(id)) return
+                const bundle = byClient.get(id) ?? {
+                    id,
+                    name: c.clientCompany || '—',
+                    mappings: [],
+                }
+                bundle.mappings.push(m)
+                byClient.set(id, bundle)
+            })
+            const bundles = Array.from(byClient.values())
+                .sort((a, b) => a.name.localeCompare(b.name))
+            if (!bundles.length) { notify.error('Nothing to export for the selected clients'); return null }
+            return bundles
+        } catch {
+            notify.error('Failed to fetch data for export')
+            return null
+        }
+    }
+
+    // Every (model, year) pair under a client, tagged with the mapping's
+    // service name so a block can be built per (client, service).
+    type ModelYear = { service: string; model: string; year: string }
+    const modelYearRows = (b: ClientBundle): ModelYear[] => {
+        const out: ModelYear[] = []
+        b.mappings.forEach((m) => {
+            const service = m.service || '—'
+            const year = m.year || '—'
+            const models = (m.serviceModels || []).filter(Boolean)
+            if (models.length === 0) {
+                out.push({ service, model: '—', year })
+            } else {
+                models.forEach((sm) => out.push({ service, model: sm, year }))
+            }
+        })
+        // Sort by (service, year ASC — oldest first) so blocks and rows read
+        // in a predictable order.
+        return out.sort((x, y) => {
+            const s = x.service.localeCompare(y.service)
+            if (s !== 0) return s
+            return String(x.year).localeCompare(String(y.year))
+        })
+    }
+
+    // Group by service so each (client, service) becomes ONE block containing
+    // its (model, year) rows underneath.
+    const blocksFor = (b: ClientBundle): { service: string; rows: ModelYear[] }[] => {
+        const map = new Map<string, ModelYear[]>()
+        modelYearRows(b).forEach((r) => {
+            const list = map.get(r.service) ?? []
+            list.push(r)
+            map.set(r.service, list)
+        })
+        return Array.from(map.entries()).map(([service, rows]) => ({ service, rows }))
+    }
+
+    // CSV — every client is a series of two-column blocks written in the exact
+    // shape the reader draws on the printed page:
+    //   Client Name , Service
+    //   <name>      , <service>
+    //   (blank line)
+    //   Service Model , Year
+    //   <model>       , <year>
+    //   <model>       , <year>
+    //   (blank line separator)
+    //   [next block for the SAME or NEXT client]
+    const runCsv = async (bundles: ClientBundle[]) => {
         const esc = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-        const header = ['Client', 'Service ID', 'Service', 'Service Models', 'Year', 'Status', 'Degrees', 'Departments', 'Sections', 'Semesters', 'Courses', 'Updated']
-        const lines = [
-            header.join(','),
-            ...all.map((vm) => [
-                vm.clientName, vm.serviceCode, vm.service, vm.models.join(' | '), vm.year, vm.status,
-                vm.hierarchy.degrees.join(' | '), vm.hierarchy.departments.join(' | '),
-                vm.hierarchy.sections.join(' | '), vm.hierarchy.semesters.join(' | '),
-                vm.courseNames.join(' | '), fmtDate(vm.updatedAt || vm.createdAt),
-            ].map(esc).join(',')),
-        ]
+        const lines: string[] = []
+        bundles.forEach((b, bi) => {
+            const blocks = blocksFor(b)
+            if (blocks.length === 0) {
+                lines.push(['Client Name', 'Service'].map(esc).join(','))
+                lines.push([b.name, ''].map(esc).join(','))
+            } else {
+                blocks.forEach((blk, blkIdx) => {
+                    lines.push(['Client Name', 'Service'].map(esc).join(','))
+                    lines.push([b.name, blk.service].map(esc).join(','))
+                    lines.push('') // blank line the user asked for
+                    lines.push(['Service Model', 'Year'].map(esc).join(','))
+                    blk.rows.forEach((r) => {
+                        lines.push([r.model, r.year].map(esc).join(','))
+                    })
+                    // Two blank lines between blocks so the reader can see the
+                    // break in Excel; three between clients.
+                    if (blkIdx < blocks.length - 1) { lines.push(''); lines.push('') }
+                })
+            }
+            if (bi < bundles.length - 1) { lines.push(''); lines.push(''); lines.push('') }
+        })
         const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -4751,7 +4858,275 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         a.download = `service-mappings-${new Date().toISOString().slice(0, 10)}.csv`
         a.click()
         URL.revokeObjectURL(url)
-        notify.success(`Exported ${all.length} mapping${all.length > 1 ? 's' : ''}`)
+        notify.success(`Exported ${bundles.length} client${bundles.length > 1 ? 's' : ''}`)
+    }
+
+    // Rendered HTML for PDF (via a print window's "Save as PDF") and Print.
+    //
+    // ONE client per page — a client's blocks stay together, next client
+    // always starts on a fresh page (page-break-after: always).
+    //
+    // Layout per page:
+    //   Client Name       Service                  ← header labels
+    //   ABC College       Placement Training       ← values
+    //                                              ← blank line
+    //   Service Model     Year                     ← header labels
+    //   Degree Program    2024
+    //   Placement         2024
+    //   Placement         2025
+    //
+    //   (second block for the same client with another service, if any)
+    //
+    // Matches the user's exact "client name / service — blank line —
+    // service model / year" cadence.
+    const buildPerClientHtml = (bundles: ClientBundle[], printedAt: string): string => {
+        const esc = (v: unknown) => String(v ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        const clientPages = bundles.map((b, idx) => {
+            const blocks = blocksFor(b)
+            const blockHtml = blocks.length ? blocks.map((blk) => `
+                <table class="svc-block">
+                    <colgroup><col style="width:50%"/><col style="width:50%"/></colgroup>
+                    <tbody>
+                        <tr class="label-row">
+                            <td>Client Name</td>
+                            <td>Service</td>
+                        </tr>
+                        <tr class="value-row">
+                            <td class="v-client">${esc(b.name)}</td>
+                            <td class="v-service">${esc(blk.service)}</td>
+                        </tr>
+                        <tr class="spacer-row"><td>&nbsp;</td><td>&nbsp;</td></tr>
+                        <tr class="label-row">
+                            <td>Service Model</td>
+                            <td>Year</td>
+                        </tr>
+                        ${blk.rows.map((r) => `
+                            <tr class="data-row">
+                                <td>${esc(r.model)}</td>
+                                <td class="num">${esc(r.year)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `).join('') : `
+                <table class="svc-block">
+                    <colgroup><col style="width:50%"/><col style="width:50%"/></colgroup>
+                    <tbody>
+                        <tr class="label-row"><td>Client Name</td><td>Service</td></tr>
+                        <tr class="value-row"><td class="v-client">${esc(b.name)}</td><td class="v-service">—</td></tr>
+                    </tbody>
+                </table>`
+            return `
+                <section class="client-page">
+                    ${blockHtml}
+                    <footer class="client-foot">
+                        Client ${idx + 1} of ${bundles.length} · Printed on ${printedAt}
+                    </footer>
+                </section>`
+        }).join('')
+        return `<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Service mappings — ${printedAt}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 24px 32px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #1f2937; font-size: 12.5px; line-height: 1.5;
+        }
+        .client-page {
+            /* Never split a single client across pages — if it would, the
+               browser starts it on a fresh page. But two small clients that
+               DO fit together share a page, so short entries don't waste
+               half a sheet each.
+               Top and bottom breathing room so separate clients read as
+               distinct sections. */
+            page-break-inside: avoid; break-inside: avoid;
+            margin-top: 32px;
+            margin-bottom: 32px;
+        }
+        .client-page:first-child { margin-top: 0; }
+        .client-page:last-child { margin-bottom: 0; }
+        .svc-block {
+            width: 100%; border-collapse: collapse;
+            margin-bottom: 22px;
+            page-break-inside: avoid; break-inside: avoid;
+            border: 1px solid #111827;
+        }
+        .svc-block:last-child { margin-bottom: 0; }
+        .svc-block td {
+            padding: 9px 14px;
+            border: 1px solid #d1d5db;
+            text-align: left;
+            vertical-align: middle;
+        }
+        .label-row td {
+            background: #111827; color: #fff;
+            font-size: 10.5px; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .value-row .v-client {
+            background: #f3f4f6;
+            font-size: 15px; font-weight: 700; color: #111827;
+        }
+        .value-row .v-service {
+            background: #f3f4f6;
+            font-size: 13.5px; font-weight: 600; color: #111827;
+        }
+        .spacer-row td {
+            background: #fff;
+            height: 12px;
+            padding: 0;
+            border-left: 1px solid #111827;
+            border-right: 1px solid #111827;
+            border-top: 0; border-bottom: 0;
+        }
+        .data-row td { background: #ffffff; font-size: 12.5px; }
+        .num { font-variant-numeric: tabular-nums; }
+        .client-foot {
+            margin-top: 14px; padding-top: 6px;
+            font-size: 10px; color: #9ca3af; font-style: italic; text-align: right;
+        }
+        @page { size: A4; margin: 15mm; }
+        @media print { body { padding: 0; } }
+    </style>
+</head>
+<body>${clientPages}</body>
+</html>`
+    }
+
+    // Open a fresh window with the formatted document and trigger print.
+    // Used by the Print action so we get a clean page with none of the app
+    // shell (sidebar, filters, toolbar) reaching the paper.
+    const openPrintWindow = (html: string, autoprint: boolean) => {
+        const win = window.open('', '_blank', 'width=1024,height=768')
+        if (!win) { notify.error('Please allow pop-ups to print/export'); return }
+        win.document.open(); win.document.write(html); win.document.close()
+        if (!autoprint) return
+        const doPrint = () => { try { win.focus(); win.print() } catch { /* pop-up closed */ } }
+        if (win.document.readyState === 'complete') setTimeout(doPrint, 100)
+        else win.onload = () => setTimeout(doPrint, 100)
+    }
+
+    // PDF export — direct download, no "Save as PDF" print dialog. jsPDF +
+    // autoTable are loaded on demand (~180 KB), so nothing lands in the
+    // initial page bundle. Each client is one autoTable with
+    // pageBreak: 'avoid' so a client never splits between pages, and short
+    // clients share a page.
+    const exportPdfDirect = async (bundles: ClientBundle[], printedAt: string) => {
+        const [{ default: JsPDF }, autoTableMod] = await Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable'),
+        ])
+        const autoTable = (autoTableMod as any).default ?? autoTableMod
+        const doc = new JsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const MARGIN = 40
+        const colWidth = (pageWidth - MARGIN * 2) / 2
+
+        // Title header on the first page.
+        doc.setFontSize(16); doc.setTextColor(17, 24, 39)
+        doc.text('Service Mappings', MARGIN, MARGIN + 4)
+        doc.setFontSize(9); doc.setTextColor(107, 114, 128)
+        doc.text(`Printed on ${printedAt} · ${bundles.length} client${bundles.length > 1 ? 's' : ''}`, MARGIN, MARGIN + 20)
+
+        // Reset text color for the tables.
+        doc.setTextColor(31, 41, 55)
+
+        bundles.forEach((b, ci) => {
+            const blocks = blocksFor(b)
+            const bodyRows: any[] = []
+            const emptyRow = (): any[] => [
+                { content: '', styles: { fillColor: [255, 255, 255], minCellHeight: 12 } as any },
+                { content: '', styles: { fillColor: [255, 255, 255], minCellHeight: 12 } as any },
+            ]
+            const labelCell = (text: string) => ({
+                content: text,
+                styles: {
+                    fillColor: [17, 24, 39], textColor: [255, 255, 255],
+                    fontStyle: 'bold', fontSize: 9,
+                } as any,
+            })
+            const valueClient = (text: string) => ({
+                content: text,
+                styles: { fillColor: [243, 244, 246], fontStyle: 'bold', fontSize: 12 } as any,
+            })
+            const valueService = (text: string) => ({
+                content: text,
+                styles: { fillColor: [243, 244, 246], fontStyle: 'bold', fontSize: 11 } as any,
+            })
+            const dataCell = (text: string) => ({
+                content: text,
+                styles: { fillColor: [255, 255, 255], fontSize: 10 } as any,
+            })
+
+            if (blocks.length === 0) {
+                bodyRows.push([labelCell('Client Name'), labelCell('Service')])
+                bodyRows.push([valueClient(b.name), valueService('—')])
+            } else {
+                blocks.forEach((blk, bi) => {
+                    if (bi > 0) bodyRows.push(emptyRow())
+                    bodyRows.push([labelCell('Client Name'), labelCell('Service')])
+                    bodyRows.push([valueClient(b.name), valueService(blk.service)])
+                    bodyRows.push(emptyRow())
+                    bodyRows.push([labelCell('Service Model'), labelCell('Year')])
+                    blk.rows.forEach((r) => {
+                        bodyRows.push([dataCell(r.model), dataCell(r.year)])
+                    })
+                })
+            }
+
+            const startY = ci === 0
+                ? MARGIN + 34
+                : ((doc as any).lastAutoTable?.finalY ?? MARGIN) + 22
+            autoTable(doc, {
+                startY,
+                body: bodyRows,
+                theme: 'grid',
+                margin: { left: MARGIN, right: MARGIN },
+                columnStyles: { 0: { cellWidth: colWidth }, 1: { cellWidth: colWidth } },
+                styles: {
+                    font: 'helvetica', fontSize: 10,
+                    cellPadding: 6, lineWidth: 0.5, lineColor: [209, 213, 219],
+                    overflow: 'linebreak',
+                },
+                // pageBreak: 'avoid' keeps the whole client's table together —
+                // if it wouldn't fit on the current page, autoTable pushes
+                // the whole thing to the next page instead of splitting.
+                pageBreak: 'avoid',
+                rowPageBreak: 'avoid',
+            })
+        })
+        doc.save(`service-mappings-${new Date().toISOString().slice(0, 10)}.pdf`)
+    }
+
+    const confirmPicker = async () => {
+        if (!pickerMode) return
+        if (pickerSelected.size === 0) { notify.error('Select at least one client'); return }
+        setPickerBusy(true)
+        const bundles = await fetchClientBundles()
+        if (!bundles) { setPickerBusy(false); return }
+        const printedAt = new Date().toLocaleString('en-GB', {
+            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        })
+        try {
+            if (pickerMode === 'csv') {
+                await runCsv(bundles)
+            } else if (pickerMode === 'pdf') {
+                await exportPdfDirect(bundles, printedAt)
+                notify.success(`Downloaded PDF — ${bundles.length} client${bundles.length > 1 ? 's' : ''}`)
+            } else {
+                openPrintWindow(buildPerClientHtml(bundles, printedAt), true)
+            }
+            setPickerMode(null)
+        } catch {
+            notify.error('Export failed')
+        } finally {
+            setPickerBusy(false)
+        }
     }
 
     // Empty state for the table/cards.
@@ -4794,85 +5169,99 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                 viewport instead of capping at a computed maxHeight. min-w-0
                 stops flex children from pushing width past the workspace. */}
             <motion.div variants={pageEnter} initial="hidden" animate="visible" className="flex h-full flex-col min-h-0 min-w-0">
-                <div className="flex flex-1 min-h-0 flex-col px-4 sm:px-6 md:px-8 pt-5 pb-4">
-                    {/* ── Slim header + compact stat chips ──
-                        flex-nowrap on md+ so the chip strip stays on the
-                        right; left column shrinks (flex-1 min-w-0) and its
-                        subtitle wraps within its own column. */}
-                    <div className="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
-                        <div className="min-w-0 flex-1">
-                            <h1 className="text-xl sm:text-2xl font-semibold text-heading tracking-[-0.01em]">Services</h1>
-                        </div>
-                        {/* Right-aligned stat strip via shared HeaderStats —
-                            same primitive as Client Management + Course Setup. */}
-                        <HeaderStats
-                            loading={isLoadingMappings}
-                            items={[
-                                { label: 'Mappings', value: stats.total },
-                                { label: 'Active', value: stats.active },
-                                { label: 'Inactive', value: Math.max(0, stats.total - stats.active) },
-                                { label: 'Clients', value: stats.clients },
-                            ]}
-                        />
+                <div className="flex flex-1 min-h-0 flex-col px-4 sm:px-6 md:px-8 pt-3 pb-3">
+                    {/* Slim heading — just the page title. Chip strip removed
+                        to match Client Management's tone. */}
+                    <div className="flex items-center justify-between gap-4">
+                        <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">Services</h1>
                     </div>
 
-                    {/* ── One toolbar: search · Filter · view toggle · overflow · New Mapping ── */}
-                    {/* flex-wrap + min-w-0: search shrinks, trailing buttons
-                        wrap onto a new row on narrow viewports instead of
-                        pushing past the workspace width. */}
-                    <div className="mt-4 flex items-center gap-2 flex-wrap min-w-0">
-                        <div className="relative flex-1 min-w-0">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
+                    {/* One toolbar: search left · Filter · Export · Print
+                        grouped right · vertical divider · New Mapping (primary).
+                        Mirrors the Client Management toolbar so the two lists
+                        read the same. */}
+                    <div className="no-print mt-3 flex items-center gap-2 flex-wrap min-w-0">
+                        <div className="relative flex-1 min-w-[220px] max-w-md">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
                             <input
                                 type="text"
                                 value={search}
                                 onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }}
-                                placeholder="Search client, service, service model…"
-                                className="w-full h-10 pl-10 pr-9 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+                                placeholder="Search client, service…"
+                                className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
                             />
                             {search && (
-                                <button type="button" aria-label="Clear search" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 inline-flex size-6 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"><X size={14} /></button>
+                                <button type="button" aria-label="Clear search" onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"><X size={12} /></button>
                             )}
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={() => setShowFilters((v) => !v)}
-                            aria-expanded={showFilters}
-                            className={`inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border text-sm font-medium shadow-xs transition-colors duration-150 relative ${activeFilterCount > 0 || showFilters ? 'border-brand text-brand-strong bg-brand-wash' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
-                        >
-                            <SlidersHorizontal className="w-4 h-4" />
-                            <span className="hidden sm:inline">Filter</span>
-                            {activeFilterCount > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">{activeFilterCount}</span>}
-                        </button>
-
-                        <div className="hidden sm:flex items-center p-0.5 rounded-control border border-hairline-strong bg-surface h-10">
-                            <button type="button" onClick={() => setViewMode('table')} title="Table view" aria-label="Table view" className={`h-8 w-8 rounded-chip flex items-center justify-center transition-colors duration-150 ${viewMode === 'table' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}><List className="w-4 h-4" /></button>
-                            <button type="button" onClick={() => setViewMode('cards')} title="Hierarchy cards" aria-label="Hierarchy cards" className={`h-8 w-8 rounded-chip flex items-center justify-center transition-colors duration-150 ${viewMode === 'cards' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}><LayoutGrid className="w-4 h-4" /></button>
-                        </div>
-
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <button type="button" aria-label="More actions" className="inline-flex items-center justify-center h-10 px-2.5 rounded-control border border-hairline-strong bg-surface text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"><MoreHorizontal className="w-4 h-4" /></button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" sideOffset={6} className="w-52">
-                                <DropdownMenuItem onClick={exportCsv} className="cursor-pointer"><Download className="h-4 w-4" /> Export list (CSV)</DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        {canMap && (
+                        {/* Secondary-action cluster (Filter · Export · Print) —
+                            pushed to the right of the search via ml-auto,
+                            grouped with a small gap so they read as one row of
+                            related tools. */}
+                        <div className="ml-auto flex items-center gap-1.5 flex-wrap">
                             <button
                                 type="button"
-                                onClick={() => openCreate()}
-                                className="inline-flex items-center gap-2 h-10 px-3.5 rounded-control bg-brand-strong text-white shadow-xs hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+                                onClick={() => setShowFilters((v) => !v)}
+                                aria-expanded={showFilters}
+                                className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 relative ${activeFilterCount > 0 || showFilters ? 'border-brand text-brand-strong bg-brand-wash' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
                             >
-                                <Plus size={16} strokeWidth={2.4} />
-                                <span className="text-sm font-semibold hidden sm:inline">New Mapping</span>
+                                <SlidersHorizontal className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Filter</span>
+                                {activeFilterCount > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">{activeFilterCount}</span>}
                             </button>
+
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <button
+                                        type="button"
+                                        aria-label="Export list"
+                                        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">Export</span>
+                                        <ChevronDown className="w-3 h-3" />
+                                    </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" sideOffset={6} className="w-40">
+                                    <DropdownMenuItem onClick={() => openPicker('csv')} className="cursor-pointer">
+                                        <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => openPicker('pdf')} className="cursor-pointer">
+                                        <FileText className="h-4 w-4 text-danger-500" /> PDF
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            <button
+                                type="button"
+                                onClick={() => openPicker('print')}
+                                title="Print — pick which clients to include"
+                                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                            >
+                                <Printer className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Print</span>
+                            </button>
+                        </div>
+
+                        {canMap && (
+                            <>
+                                <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
+                                <button
+                                    type="button"
+                                    onClick={() => openCreate()}
+                                    className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+                                >
+                                    <Plus size={14} strokeWidth={2.4} />
+                                    <span className="text-xs font-semibold hidden sm:inline">New Mapping</span>
+                                </button>
+                            </>
                         )}
                     </div>
 
                     {/* ── Inline filter panel — expands on the same screen under the toolbar ── */}
+                    {/* no-print via wrapper — the panel is chrome; hidden in print. */}
+                    <div className="no-print">
                     <MappingWorkspaceFilterPanel
                         open={showFilters}
                         onClose={() => setShowFilters(false)}
@@ -4887,10 +5276,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                         }}
                         onReset={clearFilters}
                     />
+                    </div>
 
                     {/* ── Active filter chips ── */}
                     {filterChips.length > 0 && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <div className="no-print mt-3 flex flex-wrap items-center gap-2">
                             {filterChips.map((chip) => (
                                 <span key={chip.key} className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong">
                                     {chip.label}
@@ -4911,7 +5301,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                         // flex-1 min-h-0 = fill remaining height; flex-col so
                         // the scroll region can flex-1 while the pagination
                         // footer keeps its natural height at the bottom.
-                        <div className="mt-4 flex flex-1 min-h-0 flex-col bg-surface rounded-xl border border-hairline shadow-xs overflow-hidden">
+                        <div className="mt-2 flex flex-1 min-h-0 flex-col">
                             <DataTable<ClientRow>
                                 rows={currentClientAggregated}
                                 rowKey={(row) => row._id}
@@ -4921,7 +5311,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                 isLoading={isLoadingMappings}
                                 isFiltered={hasActiveFilters}
                                 fillHeight
-                                minWidth={720}
+                                fixedLayout
                                 emptyTitle={hasActiveFilters ? 'No services match these filters' : 'No services mapped yet'}
                                 emptyHint={hasActiveFilters
                                     ? 'Try widening or clearing them to see more.'
@@ -4932,7 +5322,12 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                     {
                                         key: 'num',
                                         label: '#',
-                                        className: 'w-[52px] pl-5 text-left text-xs text-faint tabular-nums',
+                                        // Column widths as percentages — sum to 100% so
+                                        // fixedLayout fills the container without a
+                                        // horizontal scrollbar. Actions needs real width
+                                        // for the two buttons; numeric/short-text columns
+                                        // stay narrow so Client gets breathing room.
+                                        className: 'w-[4%] pl-5 text-left text-xs text-faint tabular-nums align-middle',
                                         skeletonWidth: '20px',
                                         render: (_row, i) => (currentPage - 1) * pageSize + i + 1,
                                     },
@@ -4940,90 +5335,93 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                         key: 'client',
                                         label: 'Client',
                                         sortKey: 'client',
-                                        className: 'px-3 text-left',
+                                        className: 'w-[32%] px-3 text-left align-middle',
                                         skeletonWidth: '60%',
                                         render: (row) => (
-                                            <div className="flex items-center gap-2.5 min-w-0">
-                                                <ClientAvatar name={row.client.clientCompany || '—'} size="sm" />
-                                                <div className="min-w-0">
-                                                    <div className="font-semibold text-heading truncate">{row.client.clientCompany || '—'}</div>
-                                                    <div className="text-2xs text-faint truncate">{row.client.type || 'business to institution'}</div>
-                                                </div>
-                                            </div>
-                                        ),
-                                    },
-                                    {
-                                        key: 'services',
-                                        label: 'Services',
-                                        sortKey: 'services',
-                                        className: 'px-3 text-left',
-                                        skeletonWidth: '80px',
-                                        render: (row) => (
-                                            <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full border border-brand-500/20 bg-brand-wash text-brand-strong text-2xs font-semibold">
-                                                <Layers size={11} />
-                                                {aggServiceCount(row)} {aggServiceCount(row) === 1 ? 'service' : 'services'}
+                                            <span className="block truncate text-body" title={row.client.clientCompany || '—'}>
+                                                {row.client.clientCompany || '—'}
                                             </span>
                                         ),
                                     },
                                     {
-                                        key: 'year',
-                                        label: 'Year',
-                                        sortKey: 'year',
-                                        className: 'px-3 text-left hidden md:table-cell',
-                                        skeletonWidth: '60px',
-                                        render: (row) => (
-                                            <span className="text-sm text-body tabular-nums">{aggYearLabel(row)}</span>
-                                        ),
-                                    },
-                                    {
-                                        key: 'status',
-                                        label: 'Status',
-                                        // Right-aligned per the LMS pattern.
-                                        className: 'px-3 text-right hidden lg:table-cell',
-                                        skeletonWidth: '90px',
+                                        key: 'businessModel',
+                                        label: 'Business Model',
+                                        className: 'w-[14%] px-3 text-left align-middle',
+                                        skeletonWidth: '60%',
                                         render: (row) => {
-                                            const active = aggActiveCount(row)
-                                            const total = aggServiceCount(row)
-                                            const allActive = active === total
+                                            const bm = row.client.businessModel
+                                            if (!bm) return <span className="text-xs text-line-muted">—</span>
                                             return (
-                                                <span className={`inline-flex items-center gap-1.5 h-6 px-2 rounded-full border text-2xs font-semibold ${
-                                                    allActive
-                                                        ? 'bg-success-50 text-success-700 border-success-500/20'
-                                                        : active === 0
-                                                            ? 'bg-ink-100 text-ink-500 border-ink-200'
-                                                            : 'bg-warn-50 text-warn-700 border-warn-500/20'
-                                                }`}>
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${allActive ? 'bg-success-500' : active === 0 ? 'bg-ink-400' : 'bg-warn-500'}`} />
-                                                    {active}/{total} active
-                                                </span>
+                                                <span className="block truncate text-body" title={businessModelFullName(bm)}>{bm}</span>
                                             )
                                         },
                                     },
                                     {
-                                        key: 'updated',
-                                        label: 'Updated',
-                                        sortKey: 'updated',
-                                        className: 'px-3 text-left hidden xl:table-cell',
+                                        key: 'servicesCount',
+                                        label: 'Services',
+                                        className: 'w-[9%] px-3 text-left align-middle',
+                                        skeletonWidth: '40px',
+                                        render: (row) => {
+                                            const total = aggServiceCount(row)
+                                            if (total === 0) return <span className="text-xs text-line-muted">—</span>
+                                            return (
+                                                <span className="text-body tabular-nums" title={`${total} service${total === 1 ? '' : 's'} mapped`}>{total}</span>
+                                            )
+                                        },
+                                    },
+                                    {
+                                        key: 'active',
+                                        label: 'Active',
+                                        className: 'w-[9%] px-3 text-left align-middle',
+                                        skeletonWidth: '90px',
+                                        render: (row) => {
+                                            const active = aggActiveCount(row)
+                                            const total = aggServiceCount(row)
+                                            return (
+                                                <span className="text-body tabular-nums">{active}/{total}</span>
+                                            )
+                                        },
+                                    },
+                                    {
+                                        key: 'action',
+                                        label: 'Action',
+                                        // Split the former Actions column into two —
+                                        // one header per button, so the labels map
+                                        // 1:1 to what's rendered below.
+                                        className: 'w-[16%] no-print px-3 text-center whitespace-nowrap align-middle',
+                                        skeletonWidth: '110px',
+                                        render: (row) => (
+                                            canMap ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); openCreate(row._id) }}
+                                                    title="Map a new service for this client"
+                                                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-brand-500/30 bg-brand-wash text-brand-strong text-2xs font-semibold hover:bg-brand-100 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                                                >
+                                                    <Plus size={12} /> Map Services
+                                                </button>
+                                            ) : <span className="text-xs text-line-muted">—</span>
+                                        ),
+                                    },
+                                    {
+                                        key: 'manage',
+                                        label: 'Manage',
+                                        className: 'w-[16%] no-print pl-3 pr-4 sm:pr-5 text-center whitespace-nowrap align-middle',
                                         skeletonWidth: '80px',
                                         render: (row) => (
-                                            <span className="text-xs text-subtle">{fmtDate(aggLastUpdated(row))}</span>
+                                            canView ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); setDetailsClientId(row._id) }}
+                                                    title="Manage this client's services — grouped by service model"
+                                                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-hairline-strong bg-surface text-body text-2xs font-semibold hover:bg-row-hover hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                                                >
+                                                    <Settings2 size={12} /> Manage
+                                                </button>
+                                            ) : <span className="text-xs text-line-muted">—</span>
                                         ),
                                     },
                                 ]}
-                                rowActions={(canView || canMap) ? ((row) => (
-                                    <>
-                                        {canView && (
-                                        <DropdownMenuItem onClick={() => setDetailsClientId(row._id)} className="text-xs cursor-pointer">
-                                            <Settings2 className="h-3.5 w-3.5" /> Manage Services
-                                        </DropdownMenuItem>
-                                        )}
-                                        {canMap && (
-                                        <DropdownMenuItem onClick={() => openCreate(row._id)} className="text-xs cursor-pointer">
-                                            <Plus className="h-3.5 w-3.5" /> Map Services
-                                        </DropdownMenuItem>
-                                        )}
-                                    </>
-                                )) : undefined}
                             />
                             {!isLoadingMappings && clientTotal > 0 && (
                                 <TableFooter
@@ -5126,6 +5524,133 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                 onConfirm={confirmDelete}
                 onCancel={() => setDeleteModal({ open: false, mapping: null })}
             />
+
+            {/* Client-picker modal used by Export CSV / Export PDF / Print.
+                The three actions share one popup so the user always answers
+                the same question (which clients?) with the same UI. */}
+            <AnimatePresence>
+                {pickerMode && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.14 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-[2px] p-4"
+                        onClick={(e) => { if (e.target === e.currentTarget) closePicker() }}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.97, y: 12 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.97, y: 12 }}
+                            transition={{ duration: 0.18, ease: 'easeOut' }}
+                            className="flex w-full max-w-lg flex-col rounded-xl border border-hairline bg-surface shadow-2xl"
+                        >
+                            <header className="flex items-start justify-between gap-3 border-b border-hairline px-5 py-3.5">
+                                <div>
+                                    <h2 className="text-sm font-semibold text-heading tracking-[-0.01em]">
+                                        {pickerMode === 'csv' ? 'Export CSV' : pickerMode === 'pdf' ? 'Export PDF' : 'Print'} — select clients
+                                    </h2>
+                                    <p className="mt-0.5 text-xs text-subtle">
+                                        Each selected client renders on its own page (client name · service name · service model · year).
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={closePicker}
+                                    disabled={pickerBusy}
+                                    className="inline-flex size-7 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/25 disabled:opacity-50"
+                                    aria-label="Close"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </header>
+
+                            <div className="flex flex-shrink-0 items-center gap-3 border-b border-hairline px-5 py-3">
+                                <div className="relative flex-1">
+                                    <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+                                    <input
+                                        type="text"
+                                        value={pickerSearch}
+                                        onChange={(e) => setPickerSearch(e.target.value)}
+                                        placeholder="Search clients…"
+                                        className="h-9 w-full rounded-control border border-hairline-strong bg-surface pl-8 pr-3 text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors"
+                                    />
+                                </div>
+                                <span className="text-2xs font-medium tabular-nums text-subtle whitespace-nowrap">
+                                    {pickerSelected.size} of {pickerOptions.length} selected
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 border-b border-hairline px-5 py-2 text-2xs">
+                                <button
+                                    type="button"
+                                    onClick={() => setPickerSelected(new Set(pickerOptions.map(([id]) => id)))}
+                                    disabled={pickerOptions.length === 0 || pickerBusy}
+                                    className="font-semibold text-brand-strong hover:text-brand-800 disabled:opacity-40"
+                                >
+                                    Select all shown
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPickerSelected(new Set())}
+                                    disabled={pickerSelected.size === 0 || pickerBusy}
+                                    className="font-semibold text-subtle hover:text-heading disabled:opacity-40"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+
+                            <ul className="max-h-[45vh] overflow-y-auto px-2 py-2">
+                                {pickerOptions.length === 0 ? (
+                                    <li className="px-3 py-6 text-center text-xs text-subtle">
+                                        No clients match &quot;{pickerSearch}&quot;.
+                                    </li>
+                                ) : (
+                                    pickerOptions.map(([id, name]) => {
+                                        const checked = pickerSelected.has(id)
+                                        return (
+                                            <li key={id}>
+                                                <label className="flex cursor-pointer items-center gap-2.5 rounded-control px-3 py-2 text-xs text-body hover:bg-row-hover">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={(e) => setPickerSelected((prev) => {
+                                                            const next = new Set(prev)
+                                                            if (e.target.checked) next.add(id); else next.delete(id)
+                                                            return next
+                                                        })}
+                                                        className="h-4 w-4 cursor-pointer accent-brand-500"
+                                                    />
+                                                    <span className="truncate font-medium text-heading">{name}</span>
+                                                </label>
+                                            </li>
+                                        )
+                                    })
+                                )}
+                            </ul>
+
+                            <footer className="flex items-center justify-end gap-2 border-t border-hairline px-5 py-3">
+                                <button
+                                    type="button"
+                                    onClick={closePicker}
+                                    disabled={pickerBusy}
+                                    className="inline-flex h-9 items-center px-3.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={confirmPicker}
+                                    disabled={pickerBusy || pickerSelected.size === 0}
+                                    className="inline-flex h-9 items-center gap-1.5 px-4 rounded-control bg-brand-strong text-xs font-semibold text-white shadow-xs hover:bg-brand-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {pickerBusy ? (<><Loader2 size={12} className="animate-spin" /> Preparing…</>) : 'Done'}
+                                </button>
+                            </footer>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Delete — multi-select (from the row kebab) */}
             <DeleteMappingsModal

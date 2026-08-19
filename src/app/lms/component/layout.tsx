@@ -18,7 +18,6 @@ import { Menu } from "lucide-react";
 import { Sidebar } from "./sidebar";
 import { CommandPalette } from "../shared/ui/CommandPalette";
 import { useAccountMenu } from "./useAccountMenu";
-import NotificationBell from "./NotificationBell";
 import { ToastContainer } from "react-toastify";
 import { Poppins } from "next/font/google";
 import { useSyncPermissions } from "@/hooks/useSyncPermissions";
@@ -65,26 +64,54 @@ export default function DashboardLayout({
 
   return (
     <SidebarContext.Provider value={{ isCollapsed, setIsCollapsed, hasSidebar: true }}>
+      {/* Print rules: hide the shell chrome (sidebar, notification bell,
+          mobile menu button, and anything a page tagged as .no-print) so
+          window.print() gives the reader just the page content. Unwrap the
+          floating panel — no rounded card, no shadow, no gutter — and let
+          <main> flow the full page. Applies to every page under this shell,
+          so a page just needs .no-print on its toolbar / paginator to reach
+          a clean print layout. */}
+      <style jsx global>{`
+        @media print {
+          html, body { background: #fff !important; }
+          .no-print, .no-print * { display: none !important; }
+          .print-only { display: block !important; }
+          aside.dashboard-aside { display: none !important; }
+          .dashboard-shell { padding: 0 !important; height: auto !important; overflow: visible !important; }
+          .dashboard-panel {
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+          }
+          .dashboard-main {
+            overflow: visible !important;
+            height: auto !important;
+          }
+          @page { margin: 14mm; }
+        }
+        .print-only { display: none; }
+      `}</style>
       <div
-        className={`${poppins.variable} h-screen flex bg-surface-sunken`}
+        className={`${poppins.variable} dashboard-shell h-screen flex bg-surface-sunken`}
         style={{ fontFamily: "var(--font-poppins), 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
       >
         {/* Full-height sidebar, flat on the gray canvas */}
-        <aside className="flex-shrink-0 h-full">
+        <aside className="dashboard-aside no-print flex-shrink-0 h-full">
           <Sidebar />
         </aside>
 
         {/* Floating white workspace: the canvas shows through as a gutter on
             the panel's top, right and bottom edges, flowing from the rail. */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-3.5 pl-0 max-md:p-2.5 max-md:pl-2.5">
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-hairline bg-surface shadow-xs">
+          <div className="dashboard-panel relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-hairline bg-surface shadow-xs">
 
             {/* Mobile only: reopens the sidebar overlay (the old navbar burger). */}
             <button
               type="button"
               onClick={() => setIsCollapsed(false)}
               aria-label="Open navigation"
-              className="absolute top-3 left-4 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full border border-hairline bg-surface text-body shadow-xs md:hidden"
+              className="no-print absolute top-3 left-4 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full border border-hairline bg-surface text-body shadow-xs md:hidden"
             >
               <Menu className="h-[18px] w-[18px]" strokeWidth={2} />
             </button>
@@ -92,7 +119,7 @@ export default function DashboardLayout({
             {/* overflow-x-hidden is explicit: without it, overflow-y-auto
                 alone computes overflow-x to auto per CSS spec, and any child
                 that overflows produces a page-level horizontal scrollbar. */}
-            <main className="sc-panel-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <main className="dashboard-main sc-panel-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
               {/* Notifications sit inside the panel's top-right corner, but as
                   an absolute anchored to a relative wrapper INSIDE the scroll
                   flow — the bell scrolls up with the content instead of
@@ -105,9 +132,9 @@ export default function DashboardLayout({
                   not provide one. Overflowing children still bubble scroll up
                   to <main>, so tall pages behave the same as before. */}
               <div className="relative h-full">
-                <div className="absolute top-3 right-4 z-30">
-                  <NotificationBell />
-                </div>
+                {/* Notification bell removed from the panel corner — the
+                    Notification entry lives in the sidebar now, with its
+                    own unread indicator. */}
                 {children}
               </div>
             </main>

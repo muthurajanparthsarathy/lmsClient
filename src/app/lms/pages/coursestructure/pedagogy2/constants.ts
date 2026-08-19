@@ -31,9 +31,9 @@ export const popAnimation = {
     exit: { scale: 1 }
 } as any
 
-/** Learning levels, easiest first. Picker is single-select — a cell holds
- *  exactly one of these. parseLevels/formatLevels below stay for legacy DB
- *  rows that still carry combined "Easy & Medium" values. */
+/** Learning levels, easiest first. Picker is multi-select — a cell can hold
+ *  any combination, stored as one combined string ("Easy & Medium"). Use
+ *  parseLevels/formatLevels below to move between that string and the list. */
 export const LEVEL_OPTIONS = ["Basic", "Easy", "Medium", "Hard"] as const
 
 export const LEVEL_SEPARATOR = " & "

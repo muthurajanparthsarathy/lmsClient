@@ -131,20 +131,21 @@ export function DataTable<T>({
     }
 
     const headerCellClasses =
-        'h-11 align-middle bg-canvas border-b border-hairline'
+        'h-8 align-middle bg-canvas border-b border-hairline'
 
     return (
         <>
         <div
-            // In fixedLayout mode horizontal overflow is impossible by
-            // construction (columns sum to 100% and cells clip their own
-            // content), so the x-axis is clipped outright: Chromium's
-            // fractional-width rounding of percentage columns can otherwise
-            // exceed the container by <1px and summon a phantom scrollbar.
+            // fixedLayout: no scrollbars in either axis — columns sum to 100%
+            // (x cannot overflow), and the auto-fit page-size effect on the
+            // caller sizes the page to fit the container height (y cannot
+            // overflow either). Both axes are clipped as a safety net for
+            // sub-pixel rounding — the page never shows a scrollbar in this
+            // mode. Non-fixed mode keeps its previous overflow-auto shape.
             className={
                 fillHeight
-                    ? `flex-1 min-h-[220px] ${fixedLayout ? 'overflow-y-auto overflow-x-clip' : 'overflow-auto'}`
-                    : `min-h-[220px] ${fixedLayout ? 'overflow-y-auto overflow-x-clip' : 'overflow-auto'}`
+                    ? `flex-1 min-h-[220px] ${fixedLayout ? 'overflow-hidden' : 'overflow-auto'}`
+                    : `min-h-[220px] ${fixedLayout ? 'overflow-hidden' : 'overflow-auto'}`
             }
             style={fillHeight ? undefined : { maxHeight }}
         >
@@ -172,7 +173,7 @@ export function DataTable<T>({
                                     // Border on the cell, not the row: a sticky
                                     // <tr>'s own border scrolls away in Chrome
                                     // and leaves the header visually floating.
-                                    className={`${c.className || 'px-3 text-left'} h-11 text-2xs font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline`}
+                                    className={`${c.className || 'px-3 text-left'} h-8 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline`}
                                 >
                                     {c.sortKey ? (
                                         <button
@@ -205,7 +206,7 @@ export function DataTable<T>({
                         Array.from({ length: 7 }).map((_, i) => (
                             <tr key={i} className="border-b border-hairline">
                                 {selectable && (
-                                    <td className="w-11 px-3 h-12 align-middle">
+                                    <td className="w-11 px-3 h-11 align-middle">
                                         <div
                                             className="size-4.5 rounded-[5px] bg-ink-100 animate-pulse"
                                             style={{ animationDelay: `${i * 60}ms` }}
@@ -213,7 +214,7 @@ export function DataTable<T>({
                                     </td>
                                 )}
                                 {columns.map((c) => (
-                                    <td key={c.key} className={`${c.className || 'px-3'} h-12 align-middle`}>
+                                    <td key={c.key} className={`${c.className || 'px-3'} h-11 align-middle`}>
                                         <div
                                             className="h-3 rounded bg-ink-100 animate-pulse"
                                             // Staggered so the row reads as one
@@ -224,7 +225,7 @@ export function DataTable<T>({
                                     </td>
                                 ))}
                                 {rowActions && (
-                                    <td className="w-12 px-3 h-12 align-middle">
+                                    <td className="w-12 px-3 h-11 align-middle">
                                         <div
                                             className="ml-auto size-4.5 rounded bg-ink-100 animate-pulse"
                                             style={{ animationDelay: `${i * 60}ms` }}
@@ -272,10 +273,12 @@ export function DataTable<T>({
                                     // Only the first handful stagger — past that the
                                     // delay would outlast the user's patience.
                                     transition={{ duration: 0.18, delay: Math.min(i, 8) * 0.022 }}
+                                    // Thin hairline between rows so the reader has
+                                    // a clear separator without heavy grid lines.
                                     className={`border-b border-hairline last:border-0 transition-colors ${isSelected ? 'bg-brand-wash/60 hover:bg-brand-wash' : 'hover:bg-row-hover'}`}
                                 >
                                     {selectable && (
-                                        <td className="w-11 px-3 h-12 align-middle">
+                                        <td className="w-11 px-3 h-11 align-middle">
                                             <Checkbox
                                                 aria-label={`Select row ${i + 1}`}
                                                 checked={isSelected}
@@ -286,15 +289,18 @@ export function DataTable<T>({
                                     {columns.map((c, ci) => (
                                         // First column carries the row's identity, so
                                         // it reads a step heavier than the rest.
+                                        // h-11 (44px) + 12px cell text = the compact
+                                        // reference density — ~11 rows visible in the
+                                        // same vertical span that h-14 fit ~8.
                                         <td
                                             key={c.key}
-                                            className={`${c.className || 'px-3'} h-12 align-middle text-sm ${ci === 0 ? 'font-medium text-heading' : 'text-body'}`}
+                                            className={`${c.className || 'px-3'} h-11 align-middle text-[12px] ${ci === 0 ? 'font-medium text-heading' : 'text-body'}`}
                                         >
                                             {c.render(row, i)}
                                         </td>
                                     ))}
                                     {rowActions && (
-                                        <td className="w-12 px-3 h-12 align-middle text-right">
+                                        <td className="w-12 px-3 h-11 align-middle text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <button

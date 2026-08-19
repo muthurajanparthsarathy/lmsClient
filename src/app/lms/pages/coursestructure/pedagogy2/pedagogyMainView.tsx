@@ -903,8 +903,16 @@ export function renderMainContent(deps: PedagogyMainViewDeps) {
                                         <div
                                             className={`bg-white rounded-xl shadow-sm border border-gray-200 relative flex flex-col`}
                                             style={{
-                                                // Full View: fill the viewport (minus the overlay's p-2 padding)
-                                                maxHeight: isTableFullView ? 'calc(100vh - 16px)' : '70vh',
+                                                // Full View: fill the viewport (minus the overlay's p-2 padding).
+                                                // Divided by the zoom for the same reason the wrapper above
+                                                // multiplies its width by it: this box is laid out inside the
+                                                // scaled space, so an uncompensated 70vh paints as 70vh * zoom and
+                                                // the table frame itself shrinks on zoom out. Compensating keeps
+                                                // the frame the same size on screen and lets the smaller content
+                                                // inside it fit more rows -- which is the point of zooming out.
+                                                maxHeight: isTableFullView
+                                                    ? `calc((100vh - 16px) / ${tableZoomLevel})`
+                                                    : `calc(70vh / ${tableZoomLevel})`,
                                             }}
                                         >
                                             <div className="flex-none">

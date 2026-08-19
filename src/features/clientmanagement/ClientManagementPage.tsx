@@ -3,8 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-    Building2, ChevronDown, Eye, EyeOff, LayoutGrid,
-    MoreVertical, Pencil, Plus, Printer, Rows3, SearchX, Trash2, X,
+    Building2, ChevronDown, Eye,
+    MoreVertical, Pencil, Plus, Printer, SearchX, Trash2, X,
     Search, SlidersHorizontal, Download, FileSpreadsheet, FileText,
 } from 'lucide-react'
 import {
@@ -16,7 +16,6 @@ import DashboardLayout from '@/app/lms/component/layout'
 import DataTable, { type Column, type SortDir } from '@/app/lms/shared/listing/DataTable'
 import TableFooter from '@/app/lms/shared/listing/TableFooter'
 import { EmptyState, SkeletonCards, pageEnter } from '@/app/lms/shared/ui'
-import { HeaderStats } from '@/app/lms/shared/ui/HeaderStats'
 import ClientFilterPanel from './ClientFilterPanel'
 import {
     useClientsPage, useClientNames, fetchClientsForExport, useCreateClient, useUpdateClient,
@@ -24,7 +23,7 @@ import {
     type Client, type ClientInput,
 } from '@/apiServices/clientManagementService'
 import {
-    MODEL_TONES, avatarTone, businessModelFullName, businessModelLabel,
+    businessModelFullName, businessModelLabel,
     fmtDate, notify, orderedContacts, splitPhone,
     type ClientSortKey, type ContactErrors, type FormData, type FormErrors,
 } from './lib'
@@ -115,15 +114,6 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     const [showFilters, setShowFilters] = useState(false)
     const [sortKey, setSortKey] = useState<ClientSortKey | null>(null)
     const [sortDir, setSortDir] = useState<SortDir>('asc')
-    // Rows currently showing every contact (not just the primary). Toggled by
-    // the row-level "View all" action so a reader can spot-check secondary
-    // contact details without leaving the list.
-    const [expandedRowIds, setExpandedRowIds] = useState<Set<string>>(new Set())
-    const toggleRowExpanded = (id: string) => setExpandedRowIds((prev) => {
-        const next = new Set(prev)
-        if (next.has(id)) next.delete(id); else next.add(id)
-        return next
-    })
 
     // ── The client list ────────────────────────────────────────────────
     // The page used to download every client and filter, sort and slice the
@@ -203,15 +193,6 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         return seen.map((m) => [m, businessModelFullName(m)] as [string, string])
     }, [clientPage])
 
-    // ── Summary counts (compact chips in the header) ──
-    const counts = useMemo(() => {
-        // Over EVERY client in the institution, as before — not the current
-        // filter. Counted server-side now (facets) instead of from a list the
-        // page no longer holds.
-        const f = clientPage?.facets?.counts
-        return f ?? { total: 0, active: 0, inactive: 0, models: 0 }
-    }, [clientPage])
-
     // Keep the current page valid as filters / page size change
     useEffect(() => {
         setCurrentPage((p) => Math.min(p, totalPages))
@@ -226,11 +207,18 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         if (layout !== 'table') return
         const el = tableCardRef.current
         if (!el) return
-        const HEADER_H = 44
-        const FOOTER_H = 56
-        const ROW_H = 48
+        const HEADER_H = 32
+        const FOOTER_H = 44
+        const ROW_H = 44
+        // Safety margin: subtract half a row before dividing, so the fit
+        // count is one row LESS than the theoretical max. Without it, the
+        // last row can land right at the bottom edge and clip (the wrapper
+        // is overflow-hidden — no scrollbar surfaces the missing row) —
+        // then the "hidden" row rolls onto page 2, which is exactly what
+        // the user reported.
+        const SAFETY = Math.round(ROW_H / 2)
         const compute = () => {
-            const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H)
+            const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY)
             const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)))
             setPageSize((prev) => (prev === fits ? prev : fits))
         }
@@ -344,10 +332,248 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             setIsExporting(false)
         }
     }
-    // Browser Print — the app's design tokens print acceptably; the toolbar
-    // and modal controls fall out via the standard print-hidden classes.
-    const printList = () => {
-        if (typeof window !== 'undefined') window.print()
+    // Professional print — a stand-alone print window with a per-client
+    // listing (primary + secondary contacts, model, status, created date).
+    // Fetches the WHOLE filtered set (not just the visible page), so the
+    // reader gets the same rows the export CSV/PDF would give them. Opening a
+    // fresh window keeps the app chrome, sidebar and toolbar out of the paper
+    // deterministically — no reliance on print media rules winning over the
+    // shell's layout classes.
+    const printList = async () => {
+        if (isExporting) return
+        setIsExporting(true)
+        const rows = await fetchExportRows()
+        setIsExporting(false)
+        if (!rows) return
+
+        const esc = (v: unknown) => String(v ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+
+        const printedAt = new Date().toLocaleString('en-GB', {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+        })
+
+        // Flat rows: one <tr> per contact. Client-scoped cells (#, name,
+        // model, status) use rowSpan across a client's contact rows so each
+        // client reads as one visual block, but the whole document is a
+        // single continuous table — a simple listing, not a card grid.
+        const bodyRows = rows.flatMap((c, idx) => {
+            const contacts = orderedContacts(c.contactPersons)
+            // Every client renders at least one contact row (a placeholder
+            // dash if the client has no contact persons on file) so the
+            // table's shape stays predictable.
+            const span = Math.max(1, contacts.length)
+            const modelName = businessModelFullName(c.businessModel) || '—'
+            const list = contacts.length ? contacts : [null]
+            return list.map((cp, i) => {
+                const first = i === 0
+                return `<tr class="${first ? 'row-first' : 'row-cont'}">
+                    ${first ? `<td class="num" rowspan="${span}">${idx + 1}</td>` : ''}
+                    ${first ? `<td class="col-client" rowspan="${span}"><span class="client-name">${esc(c.clientCompany || '—')}</span></td>` : ''}
+                    ${first ? `<td rowspan="${span}"><span class="pill pill-model">${esc(modelName)}</span></td>` : ''}
+                    <td>
+                        ${cp?.name ? esc(cp.name) : '—'}
+                        ${cp && i === 0 && contacts.length > 0 ? '<span class="tag">Primary</span>' : ''}
+                    </td>
+                    <td class="col-email">${cp?.email ? esc(cp.email) : '—'}</td>
+                    <td class="num">${cp?.phoneNumber ? esc(cp.phoneNumber) : '—'}</td>
+                </tr>`
+            }).join('')
+        }).join('')
+
+        const html = `<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Clients — ${printedAt}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 24px 32px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #1f2937;
+            font-size: 11.5px;
+            line-height: 1.45;
+        }
+        .page-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            padding-bottom: 10px;
+            margin-bottom: 14px;
+            border-bottom: 2px solid #111827;
+        }
+        .page-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            margin: 0;
+            color: #111827;
+        }
+        .page-sub {
+            margin-top: 3px;
+            font-size: 11px;
+            color: #6b7280;
+        }
+        .page-meta {
+            text-align: right;
+            font-size: 10.5px;
+            color: #6b7280;
+        }
+        .count {
+            font-weight: 600;
+            color: #111827;
+        }
+        table.listing {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        table.listing thead th {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #374151;
+        }
+        table.listing tbody td {
+            border: 1px solid #e5e7eb;
+            padding: 7px 10px;
+            vertical-align: top;
+        }
+        /* Alternating row-group background is applied at the CLIENT level via
+           row-first / row-cont classes so a client's continuation rows share
+           the shade of their first row. */
+        tbody tr.row-first { background: #ffffff; }
+        tbody tr.row-cont { background: #ffffff; }
+        tbody tr.row-first + tr.row-cont { border-top: 0; }
+        /* Zebra by client: nth-of-type on row-first, then all its row-cont
+           children inherit through the same client block. Since CSS can't
+           easily reach across rowspans, we tint via a client-scoped rule at
+           render time — the odd/even shading below uses a plain nth for
+           readability. */
+        table.listing tbody tr:nth-child(even) { background: #fafafa; }
+        .col-client { width: 22%; }
+        .col-email { width: 20%; }
+        .client-name {
+            font-weight: 700;
+            color: #111827;
+        }
+        .num {
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .pill {
+            display: inline-block;
+            padding: 1.5px 7px;
+            border-radius: 999px;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        .pill-model {
+            background: #eef2ff;
+            color: #3730a3;
+            border: 1px solid #c7d2fe;
+        }
+        .status-active {
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+        .status-inactive {
+            background: #f3f4f6;
+            color: #374151;
+            border: 1px solid #d1d5db;
+        }
+        .tag {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 0 6px;
+            border-radius: 3px;
+            background: #f3f4f6;
+            color: #6b7280;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+            font-size: 14px;
+            border: 1px dashed #e5e7eb;
+        }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; break-inside: avoid; }
+        @page { margin: 14mm; }
+        @media print { body { padding: 0; } }
+    </style>
+</head>
+<body>
+    <div class="page-head">
+        <div>
+            <h1 class="page-title">Clients</h1>
+            <div class="page-sub">
+                <span class="count">${rows.length}</span> client${rows.length === 1 ? '' : 's'}${hasActiveFilters ? ' (filtered)' : ''}
+            </div>
+        </div>
+        <div class="page-meta">Printed on ${printedAt}</div>
+    </div>
+    ${rows.length ? `
+        <table class="listing">
+            <thead>
+                <tr>
+                    <th style="width:36px;">#</th>
+                    <th>Client Name</th>
+                    <th>Business Model</th>
+                    <th>Contact Name</th>
+                    <th>Email</th>
+                    <th>Contact Number</th>
+                </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+        </table>
+    ` : '<div class="empty">No clients to print.</div>'}
+</body>
+</html>`
+
+        const win = window.open('', '_blank', 'width=1024,height=768')
+        if (!win) {
+            notify.error('Please allow pop-ups to print')
+            return
+        }
+        win.document.open()
+        win.document.write(html)
+        win.document.close()
+        // Give the browser a beat to lay out the doc before triggering the
+        // print dialog — printing immediately after write() often catches an
+        // empty document.
+        const doPrint = () => {
+            try {
+                win.focus()
+                win.print()
+            } catch {
+                /* pop-up was closed before we got here — nothing to do */
+            }
+        }
+        if (win.document.readyState === 'complete') {
+            setTimeout(doPrint, 100)
+        } else {
+            win.onload = () => setTimeout(doPrint, 100)
+        }
     }
 
     // ── Form handlers ──
@@ -586,21 +812,20 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     }
 
     // ── Table columns ──
-    // DataTable renders in fixedLayout mode, so the percentage widths ARE the
-    // layout: they must sum to exactly 100% (4+22+16+18+22+13+5) or
-    // table-layout:fixed widens the table past its container. Long values
-    // ellipsize with the full value in a title tooltip. When a row is
-    // "expanded" (via the row-level "View all" action), the Contact
-    // Name/Email/Contact Number cells stack all contacts vertically inside
-    // the same row — the header rhythm still holds because every stacked
-    // list stays inside its cell.
+    // fixedLayout mode: percentage widths add up to 100% and each cell
+    // truncates its own text. No horizontal scroll — every column fits the
+    // container width; long values ellipsize with the full value in a title
+    // tooltip on hover.
+    const primaryOf = (client: Client) => orderedContacts(client.contactPersons)[0]
     const columns: Column<Client>[] = [
         {
             // Row number, matching the Service Mapping listing: continuous
             // across pages, so page 2 starts where page 1 left off.
+            // 7 data columns + 1 actions column: each 12.5% so the row
+            // splits equally and the cells all get the same breathing room.
             key: 'num',
             label: '#',
-            className: 'w-[4%] pl-4 sm:pl-5 text-left text-xs text-faint tabular-nums align-top py-3',
+            className: 'w-[5%] pl-4 sm:pl-5 text-left text-xs text-faint tabular-nums align-middle py-3 whitespace-nowrap',
             skeletonWidth: '20px',
             render: (_client, i) => (currentPage - 1) * pageSize + i + 1,
         },
@@ -608,19 +833,14 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             key: 'clientCompany',
             label: 'Client Name',
             sortKey: 'company',
-            className: 'w-[22%] px-3 text-left align-top py-3',
+            className: 'w-[22%] px-3 text-left align-middle py-3',
             skeletonWidth: '80%',
             render: (client) => {
                 const name = client.clientCompany || 'N/A'
                 return (
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={`w-7 h-7 rounded-full flex items-center justify-center text-2xs font-semibold flex-shrink-0 ${avatarTone(name)}`}>
-                            {name.charAt(0).toUpperCase() || 'C'}
-                        </span>
-                        <span className="truncate" title={name}>
-                            {name}
-                        </span>
-                    </div>
+                    <span className="block truncate" title={name}>
+                        {name}
+                    </span>
                 )
             },
         },
@@ -628,20 +848,18 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             key: 'businessModel',
             label: 'Business Model',
             sortKey: 'model',
-            className: 'w-[16%] px-3 text-left align-top py-3',
+            className: 'w-[15%] px-3 text-left align-middle py-3',
             render: (client) =>
                 client.businessModel ? (
                     <span
-                        className={`inline-flex items-center h-[22px] px-2 rounded-chip text-2xs font-medium whitespace-nowrap max-w-full ${
-                            MODEL_TONES[client.businessModel] || 'bg-ink-100 text-subtle'
-                        }`}
+                        className="text-body truncate block"
                         title={businessModelLabel(client.businessModel)}
                     >
-                        <span className="truncate">{businessModelFullName(client.businessModel)}</span>
+                        {businessModelFullName(client.businessModel)}
                     </span>
                 ) : (
                     <span
-                        className="inline-flex items-center h-[22px] px-2 rounded-chip text-2xs font-medium bg-warn-50 text-warn-700 whitespace-nowrap"
+                        className="text-faint italic"
                         title="Edit this client to set its business model"
                     >
                         Not set
@@ -651,29 +869,27 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         {
             key: 'contactName',
             label: 'Contact Name',
-            className: 'w-[18%] px-3 text-left align-top py-3',
+            className: 'w-[14%] px-3 text-left align-middle py-3',
             render: (client) => {
-                const contacts = orderedContacts(client.contactPersons)
-                if (!contacts.length) return <span className="text-sm text-faint">—</span>
-                const expanded = expandedRowIds.has(client._id)
-                const shown = expanded ? contacts : contacts.slice(0, 1)
-                const extra = contacts.length - shown.length
+                const primary = primaryOf(client)
+                if (!primary) return <span className="text-sm text-faint">—</span>
+                const total = client.contactPersons?.length ?? 0
+                const extra = Math.max(0, total - 1)
                 return (
-                    <div className="flex flex-col gap-1 min-w-0">
-                        {shown.map((c, i) => (
-                            <span
-                                key={i}
-                                className={`text-sm truncate ${i === 0 ? 'text-body' : 'text-subtle'}`}
-                                title={c.name || 'N/A'}
-                            >
-                                {c.name || 'N/A'}
-                                {expanded && i === 0 && contacts.length > 1 ? (
-                                    <span className="ml-1.5 text-2xs font-medium text-brand-strong">primary</span>
-                                ) : null}
-                            </span>
-                        ))}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                            className="text-body truncate"
+                            title={primary.name || 'N/A'}
+                        >
+                            {primary.name || 'N/A'}
+                        </span>
                         {extra > 0 && (
-                            <span className="text-2xs text-faint">+{extra}</span>
+                            <span
+                                className="inline-flex items-center h-[18px] px-1.5 rounded-chip bg-brand-wash text-brand-strong text-[10px] font-semibold tabular-nums flex-shrink-0"
+                                title={`${extra} more contact${extra === 1 ? '' : 's'} — open View all contacts to see them`}
+                            >
+                                +{extra}
+                            </span>
                         )}
                     </div>
                 )
@@ -682,66 +898,54 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         {
             key: 'email',
             label: 'Email',
-            className: 'w-[22%] px-3 text-left align-top py-3',
+            className: 'w-[20%] px-3 text-left align-middle py-3',
             skeletonWidth: '85%',
             render: (client) => {
-                const contacts = orderedContacts(client.contactPersons)
-                if (!contacts.length) return <span className="text-sm text-faint">—</span>
-                const expanded = expandedRowIds.has(client._id)
-                const shown = expanded ? contacts : contacts.slice(0, 1)
+                const primary = primaryOf(client)
+                if (!primary) return <span className="text-sm text-faint">—</span>
                 return (
-                    <div className="flex flex-col gap-1 min-w-0">
-                        {shown.map((c, i) => (
-                            <span
-                                key={i}
-                                className="text-sm text-subtle truncate block"
-                                title={c.email || 'N/A'}
-                            >
-                                {c.email || '—'}
-                            </span>
-                        ))}
-                    </div>
+                    <span
+                        className="text-subtle truncate block"
+                        title={primary.email || 'N/A'}
+                    >
+                        {primary.email || '—'}
+                    </span>
                 )
             },
         },
         {
             key: 'contactNumber',
             label: 'Contact Number',
-            className: 'w-[13%] px-3 text-left align-top py-3',
+            className: 'w-[16%] px-3 text-left align-middle py-3',
             skeletonWidth: '75%',
             render: (client) => {
-                const contacts = orderedContacts(client.contactPersons)
-                if (!contacts.length) return <span className="text-sm text-faint">—</span>
-                const expanded = expandedRowIds.has(client._id)
-                const shown = expanded ? contacts : contacts.slice(0, 1)
+                const primary = primaryOf(client)
+                if (!primary) return <span className="text-sm text-faint">—</span>
                 return (
-                    <div className="flex flex-col gap-1 min-w-0">
-                        {shown.map((c, i) => (
-                            <span
-                                key={i}
-                                className="text-sm text-subtle tabular-nums truncate block"
-                                title={c.phoneNumber || 'N/A'}
-                            >
-                                {c.phoneNumber || '—'}
-                            </span>
-                        ))}
-                    </div>
+                    <span
+                        className="text-subtle tabular-nums truncate block"
+                        title={primary.phoneNumber || 'N/A'}
+                    >
+                        {primary.phoneNumber || '—'}
+                    </span>
                 )
             },
         },
         {
             key: 'actions',
-            label: '',
+            label: 'Actions',
             // Every row-level action lives in the kebab now, including the
             // status toggle — the column only needs room for a 28-px trigger
-            // plus the right gutter.
-            className: 'w-[5%] pl-2 pr-4 sm:pr-5 text-right whitespace-nowrap align-top py-3',
+            // plus the right gutter. no-print — the kebab is chrome, not data.
+            className: 'no-print w-[8%] pl-2 pr-4 sm:pr-5 text-right whitespace-nowrap align-middle py-3',
             skeletonWidth: '20px',
             render: (client) => {
                 const anyKebab = canView || canEdit || canToggle || canDelete
                 const isActive = client.status === 'active'
                 const isToggling = togglingClientId === client._id
-                const expanded = expandedRowIds.has(client._id)
+                // Only surface the "view all contacts" affordance when there
+                // actually IS more than the primary — otherwise it points to
+                // nothing new for the reader.
                 const hasSecondary = (client.contactPersons?.length ?? 0) > 1
                 return (
                     <div className="flex items-center justify-end">
@@ -753,23 +957,13 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                                     </button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="w-52">
-                                    {/* Secondary-contact reveal — shown ONLY when the row
-                                        has more than the primary, otherwise there is
-                                        literally nothing "all" to view. */}
-                                    {hasSecondary && (
-                                        <DropdownMenuItem
-                                            onClick={() => toggleRowExpanded(client._id)}
-                                            className="cursor-pointer"
-                                        >
-                                            {expanded ? (
-                                                <>
-                                                    <EyeOff /> Hide secondary contacts
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Eye className="text-brand-strong" /> View all contacts
-                                                </>
-                                            )}
+                                    {/* Direct pointer to the secondary contacts — same
+                                        drawer as View details, but the label tells the
+                                        reader why they should open it. Shown only when
+                                        the row actually has more than the primary. */}
+                                    {canView && hasSecondary && (
+                                        <DropdownMenuItem onClick={() => handleView(client._id)} className="cursor-pointer">
+                                            <Eye className="text-brand-strong" /> View all contacts
                                         </DropdownMenuItem>
                                     )}
                                     {canView && (
@@ -838,117 +1032,119 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                 // remaining viewport height instead of capping at a hardcoded
                 // maxHeight. min-w-0 stops flex children from pushing width
                 // beyond the workspace and triggering horizontal overflow.
-                className="flex flex-col h-full min-h-0 min-w-0 px-4 sm:px-6 md:px-8 pt-5 pb-4"
+                // Symmetric padding — the notification bell now sits in
+                // the panel's very corner (top-1.5 right-1.5 in the shell)
+                // so no extra clearance is needed on the right.
+                className="flex flex-col h-full min-h-0 min-w-0 px-4 sm:px-6 md:px-8 pt-3 pb-3"
             >
-                {/* ── Slim header + compact stat chips ── */}
-                {/* flex-nowrap on the wide/desktop rail: the left column
-                    shrinks (flex-1 min-w-0) so its subtitle wraps within
-                    its own column instead of pushing the right-side chip
-                    strip onto a new line. flex-wrap kicks in only on very
-                    narrow viewports as a safety fallback. */}
-                <div className="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
-                    <div className="min-w-0 flex-1">
-                        <h1 className="text-xl sm:text-2xl font-semibold text-heading tracking-[-0.01em]">Clients</h1>
-                    </div>
-                    {/* Right-aligned stat strip — shared primitive so every
-                        LMS listing page (Services, Course Setup, …) sits on
-                        exactly the same alignment. */}
-                    <HeaderStats
-                        loading={isLoadingList}
-                        items={[
-                            { label: 'Clients', value: counts.total },
-                            { label: 'Active', value: counts.active },
-                            { label: 'Inactive', value: counts.inactive },
-                            { label: 'Models', value: counts.models },
-                        ]}
-                    />
+                {/* Slim heading — just the page title. The stat-chip strip
+                    (Clients / Active / Inactive / Models) was removed to
+                    reduce noise; the numbers live in the list itself. */}
+                <div className="flex items-center justify-between gap-4">
+                    <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">Clients</h1>
                 </div>
 
                 {/* ── One toolbar: search · Filter · view toggle · Export · Print · Add Client ── */}
-                {/* Search is bounded (max-w-xs) rather than flex-filling so
-                    the trailing action buttons (Export, Print, Add) breathe
-                    on the same row. flex-wrap kicks in only on very narrow
-                    viewports as a safety fallback. */}
-                <div className="mt-4 flex items-center gap-2 flex-wrap min-w-0">
-                    <div className="relative w-full max-w-xs">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
+                {/* Wider search (flex-1 up to max-w-lg) so a full company name
+                    fits without truncation. Add Client is pushed to the far
+                    right corner via ml-auto so it reads as the page's primary
+                    call-to-action, separated from the row of secondary
+                    actions. flex-wrap kicks in only on very narrow viewports.
+                    no-print — toolbar shouldn't reach paper. */}
+                <div className="no-print mt-3 flex items-center gap-2 flex-wrap min-w-0">
+                    <div className="relative flex-1 min-w-[220px] max-w-md">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }}
                             placeholder="Search client, contact, email…"
-                            className="w-full h-10 pl-10 pr-9 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+                            className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
                         />
                         {search && (
-                            <button type="button" aria-label="Clear search" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 inline-flex size-6 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"><X size={14} /></button>
+                            <button type="button" aria-label="Clear search" onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"><X size={12} /></button>
                         )}
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() => setShowFilters((v) => !v)}
-                        aria-expanded={showFilters}
-                        className={`inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border text-sm font-medium shadow-xs transition-colors duration-150 relative ${activeFilterCount > 0 || showFilters ? 'border-brand text-brand-strong bg-brand-wash' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
-                    >
-                        <SlidersHorizontal className="w-4 h-4" />
-                        <span className="hidden sm:inline">Filter</span>
-                        {activeFilterCount > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">{activeFilterCount}</span>}
-                    </button>
-
-                    <div className="hidden sm:flex items-center p-0.5 rounded-control border border-hairline-strong bg-surface h-10" role="group" aria-label="Layout">
-                        <button type="button" onClick={() => setLayout('cards')} aria-pressed={layout === 'cards'} title="Card view" className={`h-8 w-8 rounded-chip flex items-center justify-center transition-colors duration-150 ${layout === 'cards' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}><LayoutGrid className="w-4 h-4" /></button>
-                        <button type="button" onClick={() => setLayout('table')} aria-pressed={layout === 'table'} title="List view" className={`h-8 w-8 rounded-chip flex items-center justify-center transition-colors duration-150 ${layout === 'table' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}><Rows3 className="w-4 h-4" /></button>
-                    </div>
-
-                    {/* Export — CSV or PDF via a small dropdown. Both hit the
-                        server for the full filtered set (not the visible page)
-                        so the download matches what the user is looking at. */}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <button
-                                type="button"
-                                aria-label="Export list"
-                                disabled={isExporting || !totalUsers}
-                                className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <Download className="w-4 h-4" />
-                                <span className="hidden sm:inline">Export</span>
-                                <ChevronDown className="w-3.5 h-3.5" />
-                            </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" sideOffset={6} className="w-40">
-                            <DropdownMenuItem onClick={exportCsv} className="cursor-pointer">
-                                <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={exportPdf} className="cursor-pointer">
-                                <FileText className="h-4 w-4 text-danger-500" /> PDF
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <button
-                        type="button"
-                        onClick={printList}
-                        title="Print this page"
-                        className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
-                    >
-                        <Printer className="w-4 h-4" />
-                        <span className="hidden sm:inline">Print</span>
-                    </button>
-
-                    {canAdd && (
+                    {/* Secondary-action cluster (Filter · Export · Print) — pushed
+                        to the right of the search via ml-auto, grouped with a
+                        small gap so they read as one row of related tools. */}
+                    <div className="ml-auto flex items-center gap-1.5 flex-wrap">
                         <button
                             type="button"
-                            onClick={handleAddNew}
-                            className="inline-flex items-center gap-2 h-10 px-3.5 rounded-control bg-brand-strong text-white shadow-xs hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+                            onClick={() => setShowFilters((v) => !v)}
+                            aria-expanded={showFilters}
+                            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 relative ${activeFilterCount > 0 || showFilters ? 'border-brand text-brand-strong bg-brand-wash' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
                         >
-                            <Plus size={16} strokeWidth={2.4} />
-                            <span className="text-sm font-semibold hidden sm:inline">Add Client</span>
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Filter</span>
+                            {activeFilterCount > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">{activeFilterCount}</span>}
                         </button>
+
+                        {/* Export — CSV or PDF via a small dropdown. Both hit
+                            the server for the full filtered set (not the
+                            visible page) so the download matches what the
+                            user is looking at. */}
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    aria-label="Export list"
+                                    disabled={isExporting || !totalUsers}
+                                    className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline">Export</span>
+                                    <ChevronDown className="w-3 h-3" />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" sideOffset={6} className="w-40">
+                                <DropdownMenuItem onClick={exportCsv} className="cursor-pointer">
+                                    <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={exportPdf} className="cursor-pointer">
+                                    <FileText className="h-4 w-4 text-danger-500" /> PDF
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        <button
+                            type="button"
+                            onClick={printList}
+                            title="Print this page"
+                            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                        >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Print</span>
+                        </button>
+                    </div>
+
+                    {canAdd && (
+                        <>
+                            {/* Vertical divider separates secondary tools
+                                from the primary Add action. hidden below sm
+                                so on very narrow viewports the primary just
+                                wraps to a new line rather than sitting next
+                                to a stray divider. */}
+                            <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
+                            <button
+                                type="button"
+                                onClick={handleAddNew}
+                                // Filled primary in the app's brand accent —
+                                // stands out as the ONE main action on the row.
+                                className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+                            >
+                                <Plus size={14} strokeWidth={2.4} />
+                                <span className="text-xs font-semibold hidden sm:inline">Add Client</span>
+                            </button>
+                        </>
                     )}
                 </div>
 
                 {/* ── Inline filter panel (Business Model + Status only) ── */}
+                {/* no-print via wrapper — the panel itself is portal/inline and
+                    shouldn't reach paper regardless of open state. */}
+                <div className="no-print">
                 <ClientFilterPanel
                     open={showFilters}
                     onClose={() => setShowFilters(false)}
@@ -961,10 +1157,11 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                     }}
                     onReset={clearFilters}
                 />
+                </div>
 
                 {/* ── Active filter chips ── */}
                 {filterChips.length > 0 && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <div className="no-print mt-3 flex flex-wrap items-center gap-2">
                         {filterChips.map((chip) => (
                             <span key={chip.key} className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong">
                                 {chip.label}
@@ -981,7 +1178,10 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                     keeps its natural height at the bottom. The ref feeds the
                     auto-fit page-size effect above — measuring THIS box tells
                     the effect how many rows fit without vertical scroll. */}
-                <div ref={tableCardRef} className="mt-4 flex flex-1 min-h-0 flex-col bg-surface rounded-xl border border-hairline shadow-xs overflow-hidden">
+                {/* No card chrome around the list — the reference reads as a
+                    flat list on the panel, not a bordered table card. Rows
+                    stay separated by their own hairline. */}
+                <div ref={tableCardRef} className="mt-2 flex flex-1 min-h-0 flex-col overflow-hidden">
 
                     {layout === 'table' ? (
                         <DataTable
@@ -993,11 +1193,11 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                             onSort={handleSort}
                             isLoading={isLoadingList}
                             isFiltered={hasActiveFilters}
-                            // fixedLayout = table-layout:fixed with no minimum
-                            // width: the column percentages (summing to 100%)
-                            // decide the layout, long values ellipsize, and the
-                            // table always fits the card — never a horizontal
-                            // scrollbar.
+                            // fixedLayout: percentage widths sum to 100% so
+                            // every column fits inside the container without
+                            // a horizontal scrollbar. Cells with `truncate`
+                            // shorten with "…" and hover shows the full
+                            // value via title tooltip.
                             fixedLayout
                             fillHeight
                             emptyTitle={hasActiveFilters ? 'No clients match these filters' : 'No clients yet'}
@@ -1053,6 +1253,7 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                         </div>
                     )}
 
+                    <div className="no-print">
                     <TableFooter
                         from={totalUsers === 0 ? 0 : (currentPage - 1) * pageSize + 1}
                         to={Math.min(currentPage * pageSize, totalUsers)}
@@ -1065,6 +1266,7 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                         totalPages={totalPages}
                         onPage={setCurrentPage}
                     />
+                    </div>
                 </div>
             </motion.div>
 

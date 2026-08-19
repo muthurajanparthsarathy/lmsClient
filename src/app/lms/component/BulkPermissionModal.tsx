@@ -24,6 +24,9 @@ interface User {
   id: string; firstName: string; lastName: string; email: string
   role: string; roleId: string; degree?: string; department?: string
   year?: string; batch?: string; semester?: string
+  // Student-only: a student is added under a client and one of that client's
+  // service models. Staff and admin users carry neither.
+  clientName?: string; serviceModel?: string
   status: "active" | "inactive"; gender?: string
 }
 
@@ -166,6 +169,8 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
   const [deptFilters, setDeptFilters] = useState<string[]>([])
   const [yearFilters, setYearFilters] = useState<string[]>([])
   const [batchFilters, setBatchFilters] = useState<string[]>([])
+  const [clientFilters, setClientFilters] = useState<string[]>([])
+  const [serviceFilters, setServiceFilters] = useState<string[]>([])
   const [showSelected, setShowSelected] = useState(false)
 
   // Permission selection — tree-driven
@@ -182,7 +187,48 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
   const uniqueYears   = [...new Set(availableUsers.map(u => u.year).filter(Boolean) as string[])]
   const uniqueBatches = [...new Set(availableUsers.map(u => u.batch).filter(Boolean) as string[])]
 
-  const activeFilters = roleFilters.length + statusFilters.length + degreeFilters.length + deptFilters.length + yearFilters.length + batchFilters.length
+  // Client / Service Model are student-only, so the pair of filters only shows
+  // once a Student role is picked -- on staff and admin rows both fields are
+  // empty and the dropdowns would be dead. Same name-match the Add User form
+  // uses to decide a client is required (usermanagement/page.tsx).
+  const isStudentRoleId = (id: string) => {
+    const r = roles.find(x => x._id === id)
+    return (r?.renameRole?.toLowerCase() || "").includes("student") ||
+           (r?.originalRole?.toLowerCase() || "").includes("student")
+  }
+  const studentRoleSelected = roleFilters.some(isStudentRoleId)
+  // Options come from the students of the selected role(s) only, so the lists
+  // never offer a client or model with nobody behind it.
+  const studentScope = availableUsers.filter(u => roleFilters.includes(u.roleId) && isStudentRoleId(u.roleId))
+  const uniqueClients = [...new Set(studentScope.map(u => u.clientName).filter(Boolean) as string[])].sort()
+  // Service Model cascades off Client: each client runs its own set of models,
+  // so picking a client narrows this list to that client's models -- a client
+  // with only TD offers only TD, one running HTD and TD offers both. With no
+  // client picked it falls back to every model across the students in scope.
+  const serviceScope = clientFilters.length
+    ? studentScope.filter(u => u.clientName && clientFilters.includes(u.clientName))
+    : studentScope
+  const uniqueServiceModels = [...new Set(serviceScope.map(u => u.serviceModel).filter(Boolean) as string[])].sort()
+
+  // Deselecting the Student role hides both dropdowns; leaving their values set
+  // would keep shrinking the list with nothing on screen to explain it.
+  useEffect(() => {
+    if (!studentRoleSelected && (clientFilters.length || serviceFilters.length)) {
+      setClientFilters([])
+      setServiceFilters([])
+    }
+  }, [studentRoleSelected])
+
+  // Switching client can strip models the previous one had. A model left
+  // selected that the new client does not run would filter the list down to
+  // nothing with no visible cause, so drop the picks that no longer apply.
+  useEffect(() => {
+    if (!serviceFilters.length) return
+    const stillValid = serviceFilters.filter(m => uniqueServiceModels.includes(m))
+    if (stillValid.length !== serviceFilters.length) setServiceFilters(stillValid)
+  }, [clientFilters])
+
+  const activeFilters = roleFilters.length + statusFilters.length + degreeFilters.length + deptFilters.length + yearFilters.length + batchFilters.length + clientFilters.length + serviceFilters.length
 
   const filteredUsers = availableUsers.filter(u => {
     const q = searchTerm.toLowerCase()
@@ -193,7 +239,9 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
       (!degreeFilters.length || (u.degree && degreeFilters.includes(u.degree))) &&
       (!deptFilters.length   || (u.department && deptFilters.includes(u.department))) &&
       (!yearFilters.length   || (u.year && yearFilters.includes(u.year))) &&
-      (!batchFilters.length  || (u.batch && batchFilters.includes(u.batch)))
+      (!batchFilters.length  || (u.batch && batchFilters.includes(u.batch))) &&
+      (!clientFilters.length  || (u.clientName && clientFilters.includes(u.clientName))) &&
+      (!serviceFilters.length || (u.serviceModel && serviceFilters.includes(u.serviceModel)))
     )
   })
 
@@ -224,7 +272,7 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
   const selectedPermCount = Object.keys(selection).length
   const totalFuncs = Object.values(selection).reduce((a, b) => a + b.size, 0)
 
-  const resetFilters = () => { setSearchTerm(""); setRoleFilters([]); setStatusFilters([]); setDegreeFilters([]); setDeptFilters([]); setYearFilters([]); setBatchFilters([]) }
+  const resetFilters = () => { setSearchTerm(""); setRoleFilters([]); setStatusFilters([]); setDegreeFilters([]); setDeptFilters([]); setYearFilters([]); setBatchFilters([]); setClientFilters([]); setServiceFilters([]) }
 
   const mutation = useMutation({
     mutationFn: async (payload: { userId: string; permissions: any[] }[]) => {
@@ -330,9 +378,17 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
               {/* Filter panel */}
               {showFilters && (
                 <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-2.5 space-y-2">
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 gap-3">
                     <div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Role</p><RoleDropdown roles={roles} selected={roleFilters} onChange={setRoleFilters} /></div>
                     <div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Status</p><FilterDropdown placeholder="All" options={["active", "inactive"]} selected={statusFilters} onChange={setStatusFilters} /></div>
+                    {/* Student-only: narrow to one client's students, or to a
+                        single service model within them, before assigning. */}
+                    {studentRoleSelected && uniqueClients.length > 0 && (
+                      <div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Client</p><FilterDropdown placeholder="All" options={uniqueClients} selected={clientFilters} onChange={setClientFilters} /></div>
+                    )}
+                    {studentRoleSelected && uniqueServiceModels.length > 0 && (
+                      <div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Service Model</p><FilterDropdown placeholder="All" options={uniqueServiceModels} selected={serviceFilters} onChange={setServiceFilters} /></div>
+                    )}
                     {basedOn === "college" && uniqueDegrees.length > 0 && (
                       <div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Degree</p><FilterDropdown placeholder="All" options={uniqueDegrees} selected={degreeFilters} onChange={setDegreeFilters} /></div>
                     )}

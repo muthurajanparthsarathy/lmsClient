@@ -3,7 +3,7 @@
 export interface LMSURLParams {
   courseId: string | null;
   nodeId: string | null;
-  activeTab: "I_Do" | "We_Do" | "youDo" | null;
+  activeTab: "I_Do" | "We_Do" | "You_Do" | null;
   activeSubcategory: string | null;
   exerciseId?: string | null;
   fromAnalytics?: string | null;
@@ -15,7 +15,7 @@ export const parseURLParams = (searchParams: URLSearchParams): LMSURLParams => {
   return {
     courseId: searchParams.get('courseId'),
     nodeId: searchParams.get('nodeId'),
-    activeTab: searchParams.get('activeTab') as "I_Do" | "We_Do" | "youDo" | null,
+    activeTab: searchParams.get('activeTab') as "I_Do" | "We_Do" | "You_Do" | null,
     activeSubcategory: searchParams.get('activeSubcategory'),
     exerciseId: searchParams.get('exerciseId'),
     fromAnalytics: searchParams.get('fromAnalytics'),

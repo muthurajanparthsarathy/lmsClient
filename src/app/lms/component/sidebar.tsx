@@ -25,6 +25,7 @@ import {
 import { useSidebar } from "./layout";
 import { logoutUser } from "@/apiServices/tokenVerify";
 import { postLogout } from "@/apiServices/activityLog";
+import NotificationDot from "./NotificationDot";
 // The permission → route derivation (types, icon lookup, admin whitelist and
 // the Business Management merge) lives in ONE shared pure module so the
 // command palette can never disagree with the sidebar.
@@ -260,17 +261,28 @@ export function Sidebar({ className }: SidebarProps) {
                                                         <Icon className={cn(
                                                             "w-[18px] h-[18px] flex-shrink-0",
                                                             isActive
-                                                                ? "text-brand-strong"
+                                                                ? "text-heading"
                                                                 : "text-subtle group-hover:text-body"
                                                         )} />
                                                         {!isCollapsed && (
                                                             <span className={cn(
-                                                                "text-sm truncate whitespace-nowrap",
+                                                                "text-sm truncate whitespace-nowrap flex items-center gap-1",
+                                                                // Both states read in normal weight — the raised
+                                                                // white pill + shadow already carries "selected",
+                                                                // and heavy weight on every row made the rail
+                                                                // feel loud.
                                                                 isActive
-                                                                    ? "text-brand-strong font-semibold"
-                                                                    : "text-body font-medium"
+                                                                    ? "text-heading font-medium"
+                                                                    : "text-body font-normal"
                                                             )}>
                                                                 {item.title}
+                                                                {/* Red blinking unread indicator, only for the
+                                                                    Notification entry — mounted here so the dot
+                                                                    lives beside the label text (not the icon)
+                                                                    and reads as "N unread" at a glance. */}
+                                                                {item.permissionKey === 'notifications' && (
+                                                                    <NotificationDot />
+                                                                )}
                                                             </span>
                                                         )}
                                                     </div>
@@ -296,7 +308,7 @@ export function Sidebar({ className }: SidebarProps) {
                                                             <ChevronDown className={cn(
                                                                 "w-3.5 h-3.5 transition-transform duration-150",
                                                                 submenuOpen && "rotate-180",
-                                                                isActive ? "text-brand-strong" : "text-faint"
+                                                                isActive ? "text-heading" : "text-faint"
                                                             )} />
                                                         </button>
                                                     )}
@@ -349,14 +361,14 @@ export function Sidebar({ className }: SidebarProps) {
                                                                         <ChildIcon className={cn(
                                                                             "w-[15px] h-[15px] flex-shrink-0",
                                                                             childActive
-                                                                                ? "text-brand-strong"
+                                                                                ? "text-heading"
                                                                                 : "text-faint group-hover:text-body"
                                                                         )} />
                                                                         <span className={cn(
                                                                             "text-sm truncate whitespace-nowrap",
                                                                             childActive
-                                                                                ? "text-brand-strong font-semibold"
-                                                                                : "text-body font-medium"
+                                                                                ? "text-heading font-medium"
+                                                                                : "text-body font-normal"
                                                                         )}>
                                                                             {child.title}
                                                                         </span>

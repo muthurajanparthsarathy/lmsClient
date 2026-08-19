@@ -1,14 +1,17 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { Search, SlidersHorizontal, List, LayoutGrid, MoreHorizontal, Download, ExternalLink, X, BookOpen, SearchX } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import {
+    Search, SlidersHorizontal, List, LayoutGrid, Download, ExternalLink, X, BookOpen, SearchX,
+    Printer, FileSpreadsheet, FileText, ChevronDown, Loader2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import {
     DropdownMenu,
     DropdownMenuTrigger,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '../../../shared/ui'
 import { HeaderStats } from '../../../shared/ui/HeaderStats'
@@ -27,7 +30,6 @@ import {
     clientNameOf,
     statusOf,
     STATUS_META,
-    formatDate,
     type MappingRowVM,
 } from './mappingPresentation'
 
@@ -136,7 +138,6 @@ export default function MappingList({
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
     const [currentPage, setCurrentPage] = useState(1)
     const [pageSize, setPageSize] = useState(25)
-    const [isExporting, setIsExporting] = useState(false)
 
     // Typing is now a request, so it waits for a pause.
     useEffect(() => {
@@ -260,40 +261,497 @@ export default function MappingList({
         try { navigator.clipboard?.writeText(code); toast.success(`Copied ${code}`) } catch { /* clipboard unavailable */ }
     }
 
-    // Export EVERY row the current filters select, not the ones on screen. The
-    // rows come back in one `export=1` request carrying the same filters and
-    // sort, so the file matches the list the user is looking at. Before
-    // pagination this read the in-memory array; left alone it would have
-    // quietly exported one page and still called itself the list.
-    const exportCsv = async () => {
-        if (isExporting) return
-        if (!totalRows) { toast.info('Nothing to export'); return }
-        setIsExporting(true)
+    // ── Export / Print with per-client selection ──────────────────────────────
+    // Mirrors the ServiceMapping page: click Export CSV/PDF or Print → popup
+    // with a multi-select client list → per-client-per-page output. Each page
+    // shows Client Name | Service, Service Model | Year, and the courses under
+    // that mapping listed with their configuration status. Nothing hardcoded
+    // — data is pulled via fetchMappingPageExport so the file matches the
+    // current filters exactly.
+    const [pickerMode, setPickerMode] = useState<null | 'csv' | 'pdf' | 'print'>(null)
+    const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set())
+    const [pickerSearch, setPickerSearch] = useState('')
+    const [pickerBusy, setPickerBusy] = useState(false)
+
+    const openPicker = (mode: 'csv' | 'pdf' | 'print') => {
+        setPickerSelected(new Set())
+        setPickerSearch('')
+        setPickerMode(mode)
+    }
+    const closePicker = () => { if (!pickerBusy) setPickerMode(null) }
+
+    // Client options for the picker — the whole institution's clients (from
+    // facets), filtered by the popup's own search box.
+    const pickerOptions = useMemo(() => {
+        const q = pickerSearch.trim().toLowerCase()
+        const source: [string, string][] = (facets?.clients ?? []) as [string, string][]
+        return q ? source.filter(([, name]) => name.toLowerCase().includes(q)) : source
+    }, [facets, pickerSearch])
+
+    type ClientBundle = { id: string; name: string; rows: MappingRowVM[] }
+    const fetchClientBundles = async (): Promise<ClientBundle[] | null> => {
         try {
             const res = await fetchMappingPageExport(serverFilters, { setup: true })
-            const exported = (res.data || []).map(toRowVM)
-            if (!exported.length) { toast.info('Nothing to export'); return }
-            const esc = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-            const header = ['Client', 'Service ID', 'Service', 'Service Models', 'Courses', 'Year', 'Status', 'Configured', 'Total Courses', 'Last Updated']
-            const lines = [
-                header.join(','),
-                ...exported.map((r) => [
-                    r.clientName, r.serviceCode, r.service, r.models.join(' | '), r.courses.join(' | '), r.year,
-                    STATUS_META[r.status].label, r.configured, r.total, formatDate(r.updatedAt),
-                ].map(esc).join(',')),
-            ]
-            const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `course-setup-${new Date().toISOString().slice(0, 10)}.csv`
-            a.click()
-            URL.revokeObjectURL(url)
-            toast.success(`Exported ${exported.length} row${exported.length > 1 ? 's' : ''}`)
+            const all = (res.data || []).map(toRowVM)
+            if (!all.length) { toast.info('Nothing to export'); return null }
+            const byClient = new Map<string, ClientBundle>()
+            all.forEach((r) => {
+                const m = r.mapping
+                const cRef: any = m.client
+                const id = cRef && typeof cRef === 'object' ? String(cRef._id) : String(cRef || '')
+                if (!id || !pickerSelected.has(id)) return
+                const bundle = byClient.get(id) ?? { id, name: r.clientName || '—', rows: [] }
+                bundle.rows.push(r)
+                byClient.set(id, bundle)
+            })
+            const bundles = Array.from(byClient.values())
+                .sort((a, b) => a.name.localeCompare(b.name))
+            if (!bundles.length) { toast.info('Nothing to export for the selected clients'); return null }
+            return bundles
         } catch {
-            toast.error('Could not export the list')
+            toast.error('Failed to fetch data for export')
+            return null
+        }
+    }
+
+    // Group a client's mappings by service name so the same service never
+    // repeats within a client's section. Each service group keeps its own
+    // list of MAPPINGS — a mapping is what teaches a set of courses under a
+    // (model, year) pair, so the courses stay tied to the model+year they
+    // were actually mapped under (not merged across the whole service).
+    type ServiceGroup = {
+        service: string
+        mappings: {
+            modelYears: { model: string; year: string }[]
+            courses: string[]
+            status: MappingRowVM['status']
+        }[]
+    }
+    const groupByService = (b: ClientBundle): ServiceGroup[] => {
+        const out = new Map<string, ServiceGroup>()
+        b.rows.forEach((r) => {
+            const service = r.service || '—'
+            const g = out.get(service) ?? { service, mappings: [] }
+            const models = r.models.length ? r.models : ['—']
+            g.mappings.push({
+                modelYears: models.map((sm) => ({ model: sm, year: r.year || '—' })),
+                courses: [...r.courses],
+                status: r.status,
+            })
+            out.set(service, g)
+        })
+        // Sort mappings within each service group by earliest year for a
+        // predictable reading order (oldest first).
+        out.forEach((g) => {
+            g.mappings.sort((x, y) => {
+                const yx = x.modelYears[0]?.year || ''
+                const yy = y.modelYears[0]?.year || ''
+                return String(yx).localeCompare(String(yy))
+            })
+        })
+        return Array.from(out.values())
+    }
+
+    // CSV — one "Client Name" row per client (not per service), then a stack
+    // of service blocks under it. Each service block is:
+    //   Service                (label)
+    //   <name>                 (value)
+    //   Service Model | Year   (labels)
+    //   <model>       | <year> (rows)
+    //   S.No | Course Name | Status
+    //   1    | ...
+    // Never repeat the client name inside a client's own section.
+    const runCsv = async (bundles: ClientBundle[]) => {
+        const esc = (v: unknown) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+        const lines: string[] = []
+        bundles.forEach((b, bi) => {
+            lines.push(['Client Name'].map(esc).join(','))
+            lines.push([b.name].map(esc).join(','))
+            lines.push('')
+            const services = groupByService(b)
+            services.forEach((g, gi) => {
+                lines.push(['Service'].map(esc).join(','))
+                lines.push([g.service].map(esc).join(','))
+                lines.push('')
+                g.mappings.forEach((mp, mi) => {
+                    lines.push(['Service Model', 'Year'].map(esc).join(','))
+                    if (mp.modelYears.length === 0) {
+                        lines.push(['—', '—'].map(esc).join(','))
+                    } else {
+                        mp.modelYears.forEach((my) => {
+                            lines.push([my.model, my.year].map(esc).join(','))
+                        })
+                    }
+                    lines.push('')
+                    lines.push(['S.No', 'Course Name', 'Status'].map(esc).join(','))
+                    if (mp.courses.length === 0) {
+                        lines.push([1, '(no courses mapped)', STATUS_META[mp.status].label].map(esc).join(','))
+                    } else {
+                        mp.courses.forEach((cn, i) => {
+                            lines.push([i + 1, cn, STATUS_META[mp.status].label].map(esc).join(','))
+                        })
+                    }
+                    if (mi < g.mappings.length - 1) lines.push('')
+                })
+                if (gi < services.length - 1) { lines.push(''); lines.push('') }
+            })
+            if (bi < bundles.length - 1) { lines.push(''); lines.push(''); lines.push('') }
+        })
+        const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `course-setup-${new Date().toISOString().slice(0, 10)}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+        toast.success(`Exported ${bundles.length} client${bundles.length > 1 ? 's' : ''}`)
+    }
+
+    // Rendered HTML shared by PDF (via a print window that saves as PDF) and
+    // Print. Each client is one <section> with page-break-inside: avoid, so a
+    // client stays together but multiple short clients can share a page.
+    //
+    // Client Name appears ONCE at the top of the section — even when the same
+    // client has multiple services, the name never repeats. Each service is
+    // its own sub-block below the client heading.
+    const buildPerClientHtml = (bundles: ClientBundle[], printedAt: string): string => {
+        const esc = (v: unknown) => String(v ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        const clientPages = bundles.map((b, idx) => {
+            const services = groupByService(b)
+            const rowBlocks = services.map((g) => {
+                // "Service" heading — printed ONCE per service.
+                const svcHeader = `
+                    <table class="svc-block">
+                        <tbody>
+                            <tr class="label-row"><td>Service</td></tr>
+                            <tr class="value-row"><td class="v-service">${esc(g.service)}</td></tr>
+                        </tbody>
+                    </table>`
+                // For each mapping under this service, a (Model, Year) block
+                // followed by its own courses table — so courses stay tied to
+                // the model/year they were actually mapped under.
+                const mappingBlocks = g.mappings.map((mp) => {
+                    const modelYearRows = mp.modelYears.length
+                        ? mp.modelYears.map((my) => `
+                            <tr class="data-row"><td>${esc(my.model)}</td><td class="num">${esc(my.year)}</td></tr>
+                        `).join('')
+                        : `<tr class="data-row"><td>—</td><td class="num">—</td></tr>`
+                    const courseRows = mp.courses.length
+                        ? mp.courses.map((cn, i) => `
+                            <tr class="crs-row">
+                                <td class="num">${i + 1}</td>
+                                <td>${esc(cn)}</td>
+                                <td>${esc(STATUS_META[mp.status].label)}</td>
+                            </tr>`).join('')
+                        : `<tr class="crs-row"><td class="num">—</td><td>(no courses mapped)</td><td>${esc(STATUS_META[mp.status].label)}</td></tr>`
+                    return `
+                        <div class="model-block">
+                            <table class="svc-block">
+                                <colgroup><col style="width:50%"/><col style="width:50%"/></colgroup>
+                                <tbody>
+                                    <tr class="label-row"><td>Service Model</td><td>Year</td></tr>
+                                    ${modelYearRows}
+                                </tbody>
+                            </table>
+                            <table class="crs-table">
+                                <colgroup><col style="width:60px"/><col/><col style="width:180px"/></colgroup>
+                                <thead>
+                                    <tr><th>S.No</th><th>Course Name</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>${courseRows}</tbody>
+                            </table>
+                        </div>`
+                }).join('')
+                return `
+                    <div class="svc-section">
+                        ${svcHeader}
+                        ${mappingBlocks}
+                    </div>`
+            }).join('')
+            return `
+                <section class="client-page">
+                    <h2 class="client-heading">
+                        <span class="client-heading-label">Client Name</span>
+                        <span class="client-heading-name">${esc(b.name)}</span>
+                    </h2>
+                    ${rowBlocks}
+                    <footer class="client-foot">Client ${idx + 1} of ${bundles.length} · Printed on ${printedAt}</footer>
+                </section>`
+        }).join('')
+        return `<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Course setup — ${printedAt}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 24px 32px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #1f2937; font-size: 12.5px; line-height: 1.5;
+        }
+        .client-page {
+            page-break-inside: avoid; break-inside: avoid;
+            /* Top and bottom breathing room so each client reads as its own
+               section — clearer separation on-screen and in print. */
+            margin-top: 32px;
+            margin-bottom: 32px;
+        }
+        .client-page:first-child { margin-top: 0; }
+        .client-page:last-child { margin-bottom: 0; }
+        .client-heading {
+            margin: 0 0 16px; padding-bottom: 10px;
+            border-bottom: 2px solid #111827;
+        }
+        .client-heading-label {
+            display: block; margin-bottom: 3px;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; color: #6b7280;
+        }
+        .client-heading-name {
+            font-size: 20px; font-weight: 700; color: #111827;
+            letter-spacing: -0.01em;
+        }
+        .svc-section {
+            margin-bottom: 18px;
+        }
+        .svc-section:last-child { margin-bottom: 0; }
+        .model-block {
+            /* Big breathing room between one (Service Model → Courses) unit
+               and the next, so the reader can tell "these courses belong to
+               THAT model" without squinting. First block sits close to the
+               Service header. */
+            margin-top: 26px;
+            padding-left: 12px;
+            border-left: 3px solid #e5e7eb;
+            page-break-inside: avoid; break-inside: avoid;
+        }
+        .model-block:first-of-type { margin-top: 8px; }
+        .svc-block {
+            width: 100%; border-collapse: collapse;
+            margin-bottom: 8px;
+            border: 1px solid #111827;
+        }
+        /* Model/Year table INSIDE a .model-block sits flush against its own
+           courses table below — no gap between them, so a reader immediately
+           sees "this model → these courses". The visible break comes from
+           .model-block margin-top on the NEXT unit. */
+        .model-block .svc-block { margin-bottom: 0; }
+        .model-block .crs-table { margin-top: -1px; /* collapse the double border */ }
+        .svc-block td {
+            padding: 9px 14px;
+            border: 1px solid #d1d5db;
+            text-align: left; vertical-align: middle;
+        }
+        .label-row td {
+            background: #111827; color: #fff;
+            font-size: 10.5px; font-weight: 700;
+            letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .value-row .v-client { background: #f3f4f6; font-size: 15px; font-weight: 700; color: #111827; }
+        .value-row .v-service { background: #f3f4f6; font-size: 13.5px; font-weight: 600; color: #111827; }
+        .spacer-row td {
+            background: #fff; height: 12px; padding: 0;
+            border-left: 1px solid #111827; border-right: 1px solid #111827;
+            border-top: 0; border-bottom: 0;
+        }
+        .data-row td { background: #ffffff; font-size: 12.5px; }
+        .crs-table {
+            width: 100%; border-collapse: collapse; margin-bottom: 22px;
+            border: 1px solid #d1d5db;
+        }
+        .crs-table th {
+            padding: 8px 14px;
+            background: #f9fafb; color: #374151;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase;
+            border: 1px solid #d1d5db;
+            text-align: left;
+        }
+        .crs-table td {
+            padding: 7px 14px; border: 1px solid #e5e7eb;
+            background: #ffffff; font-size: 12px; vertical-align: top;
+        }
+        .num { font-variant-numeric: tabular-nums; }
+        .client-foot {
+            margin-top: 6px; padding-top: 4px;
+            font-size: 10px; color: #9ca3af; font-style: italic; text-align: right;
+        }
+        @page { size: A4; margin: 15mm; }
+        @media print { body { padding: 0; } }
+    </style>
+</head>
+<body>${clientPages}</body>
+</html>`
+    }
+
+    const openPrintWindow = (html: string) => {
+        const win = window.open('', '_blank', 'width=1024,height=768')
+        if (!win) { toast.error('Please allow pop-ups to print'); return }
+        win.document.open(); win.document.write(html); win.document.close()
+        const doPrint = () => { try { win.focus(); win.print() } catch { /* pop-up closed */ } }
+        if (win.document.readyState === 'complete') setTimeout(doPrint, 100)
+        else win.onload = () => setTimeout(doPrint, 100)
+    }
+
+    // Direct PDF download — no "Save as PDF" print dialog. jsPDF + autoTable
+    // are dynamic-imported (~180 KB) so nothing lands in the initial bundle.
+    // Each client is its own set of tables with pageBreak: 'avoid' — the
+    // client's block stays together; short clients share a page.
+    const exportPdfDirect = async (bundles: ClientBundle[], printedAt: string) => {
+        const [{ default: JsPDF }, autoTableMod] = await Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable'),
+        ])
+        const autoTable = (autoTableMod as any).default ?? autoTableMod
+        const doc = new JsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const MARGIN = 40
+        const halfCol = (pageWidth - MARGIN * 2) / 2
+
+        doc.setFontSize(16); doc.setTextColor(17, 24, 39)
+        doc.text('Course Setup', MARGIN, MARGIN + 4)
+        doc.setFontSize(9); doc.setTextColor(107, 114, 128)
+        doc.text(`Printed on ${printedAt} · ${bundles.length} client${bundles.length > 1 ? 's' : ''}`, MARGIN, MARGIN + 20)
+        doc.setTextColor(31, 41, 55)
+
+        const labelCell = (t: string) => ({ content: t, styles: { fillColor: [17, 24, 39], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 } as any })
+        const clientVal = (t: string) => ({ content: t, styles: { fillColor: [243, 244, 246], fontStyle: 'bold', fontSize: 12 } as any })
+        const serviceVal = (t: string) => ({ content: t, styles: { fillColor: [243, 244, 246], fontStyle: 'bold', fontSize: 11 } as any })
+        const dataCell = (t: string) => ({ content: t, styles: { fillColor: [255, 255, 255], fontSize: 10 } as any })
+        const emptyRow = () => [
+            { content: '', styles: { fillColor: [255, 255, 255], minCellHeight: 12 } as any },
+            { content: '', styles: { fillColor: [255, 255, 255], minCellHeight: 12 } as any },
+        ]
+
+        bundles.forEach((b, ci) => {
+            // Client heading — drawn ONCE per client, then all services below
+            // reuse the same client (no repeated client name).
+            const pageWidthPt = doc.internal.pageSize.getWidth()
+            const pageHeightPt = doc.internal.pageSize.getHeight()
+            const currentBottom = (doc as any).lastAutoTable?.finalY ?? (MARGIN + 34)
+            const headingTop = ci === 0
+                ? MARGIN + 34
+                : currentBottom + 34
+            // If the heading + at least one small block wouldn't fit, jump to a
+            // fresh page so a client always starts with its heading visible.
+            const needed = 60
+            let hy = headingTop
+            if (ci > 0 && hy + needed > pageHeightPt - MARGIN) {
+                doc.addPage()
+                hy = MARGIN
+            }
+            doc.setDrawColor(17, 24, 39); doc.setLineWidth(1.2)
+            doc.line(MARGIN, hy + 30, pageWidthPt - MARGIN, hy + 30)
+            doc.setFontSize(8); doc.setTextColor(107, 114, 128)
+            doc.text('CLIENT NAME', MARGIN, hy + 8)
+            doc.setFontSize(15); doc.setTextColor(17, 24, 39)
+            doc.text(b.name, MARGIN, hy + 24)
+            // Reset for the subsequent tables.
+            doc.setTextColor(31, 41, 55)
+            // Manually advance the "finalY" reference so the first block's
+            // startY calc below places itself after the heading.
+            ;(doc as any).lastAutoTable = { finalY: hy + 38 }
+
+            groupByService(b).forEach((g) => {
+                // "Service" header — drawn ONCE per service, spanning both cols.
+                const svcHeaderRows: any[] = []
+                svcHeaderRows.push([{ ...labelCell('Service'), colSpan: 2 }])
+                svcHeaderRows.push([{ ...serviceVal(g.service), colSpan: 2 }])
+                autoTable(doc, {
+                    startY: ((doc as any).lastAutoTable?.finalY ?? MARGIN) + 14,
+                    body: svcHeaderRows,
+                    theme: 'grid',
+                    margin: { left: MARGIN, right: MARGIN },
+                    columnStyles: { 0: { cellWidth: halfCol }, 1: { cellWidth: halfCol } },
+                    styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, lineWidth: 0.5, lineColor: [209, 213, 219], overflow: 'linebreak' },
+                    pageBreak: 'avoid',
+                    rowPageBreak: 'avoid',
+                })
+                // Each mapping under this service: its own Model/Year block
+                // followed by its own courses table — courses stay tied to
+                // the model+year they were mapped under.
+                //
+                // Spacing: 8pt between the Model/Year block and its OWN
+                // courses table (kept close so they read as one unit), but
+                // 24pt between one mapping's courses table and the NEXT
+                // mapping's Model/Year — a bigger gap so the reader can see
+                // "this is the previous service model's courses, this is the
+                // next service model's" at a glance.
+                g.mappings.forEach((mp, mi) => {
+                    const bodyRows: any[] = []
+                    bodyRows.push([labelCell('Service Model'), labelCell('Year')])
+                    if (mp.modelYears.length === 0) {
+                        bodyRows.push([dataCell('—'), dataCell('—')])
+                    } else {
+                        mp.modelYears.forEach((my) => {
+                            bodyRows.push([dataCell(my.model), dataCell(my.year)])
+                        })
+                    }
+                    const gapBeforeModel = mi === 0 ? 10 : 24
+                    autoTable(doc, {
+                        startY: ((doc as any).lastAutoTable?.finalY ?? MARGIN) + gapBeforeModel,
+                        body: bodyRows,
+                        theme: 'grid',
+                        margin: { left: MARGIN, right: MARGIN },
+                        columnStyles: { 0: { cellWidth: halfCol }, 1: { cellWidth: halfCol } },
+                        styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, lineWidth: 0.5, lineColor: [209, 213, 219], overflow: 'linebreak' },
+                        pageBreak: 'avoid',
+                        rowPageBreak: 'avoid',
+                    })
+                    const courseRows: any[] = mp.courses.length
+                        ? mp.courses.map((cn, i) => [
+                            { content: String(i + 1), styles: { fontSize: 10 } as any },
+                            { content: cn, styles: { fontSize: 10 } as any },
+                            { content: STATUS_META[mp.status].label, styles: { fontSize: 10 } as any },
+                        ])
+                        : [[{ content: '—' }, { content: '(no courses mapped)' }, { content: STATUS_META[mp.status].label }]]
+                    // Flush against the Model/Year table (no gap) so the two
+                    // read as one attached unit: "this model → these courses".
+                    // The big gap the reader sees comes from gapBeforeModel on
+                    // the NEXT mapping in the loop.
+                    autoTable(doc, {
+                        startY: (doc as any).lastAutoTable?.finalY ?? MARGIN,
+                        head: [['S.No', 'Course Name', 'Status']],
+                        body: courseRows,
+                        theme: 'grid',
+                        margin: { left: MARGIN, right: MARGIN },
+                        columnStyles: { 0: { cellWidth: 60 }, 2: { cellWidth: 160 } },
+                        headStyles: { fillColor: [17, 24, 39], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+                        styles: { font: 'helvetica', fontSize: 10, cellPadding: 6, lineWidth: 0.5, lineColor: [209, 213, 219], overflow: 'linebreak' },
+                        pageBreak: 'avoid',
+                        rowPageBreak: 'avoid',
+                    })
+                })
+            })
+        })
+        doc.save(`course-setup-${new Date().toISOString().slice(0, 10)}.pdf`)
+    }
+
+    const confirmPicker = async () => {
+        if (!pickerMode) return
+        if (pickerSelected.size === 0) { toast.error('Select at least one client'); return }
+        setPickerBusy(true)
+        const bundles = await fetchClientBundles()
+        if (!bundles) { setPickerBusy(false); return }
+        const printedAt = new Date().toLocaleString('en-GB', {
+            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        })
+        try {
+            if (pickerMode === 'csv') {
+                await runCsv(bundles)
+            } else if (pickerMode === 'pdf') {
+                await exportPdfDirect(bundles, printedAt)
+                toast.success(`Downloaded PDF — ${bundles.length} client${bundles.length > 1 ? 's' : ''}`)
+            } else {
+                openPrintWindow(buildPerClientHtml(bundles, printedAt))
+            }
+            setPickerMode(null)
+        } catch {
+            toast.error('Export failed')
         } finally {
-            setIsExporting(false)
+            setPickerBusy(false)
         }
     }
 
@@ -377,7 +835,7 @@ export default function MappingList({
 
             {/* ── One toolbar: search · Filter · view toggle · overflow ── */}
             <div className="mt-4 flex items-center gap-2">
-                <div className="relative flex-1 min-w-0">
+                <div className="relative w-full max-w-xs">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
                     <input
                         type="text"
@@ -386,7 +844,7 @@ export default function MappingList({
                         // DEBOUNCED term, and resetting now would fire a page-1
                         // request for the search the user has already left.
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search client, course, service ID, service or model…"
+                        placeholder="Search client, course, service…"
                         className="w-full h-10 pl-10 pr-9 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
                     />
                     {search && (
@@ -439,27 +897,49 @@ export default function MappingList({
                     </button>
                 </div>
 
-                {/* Overflow */}
+                {/* Export dropdown (CSV / PDF) — opens the client-picker
+                    popup, then produces the per-client-per-page file. */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <button
                             type="button"
-                            aria-label="More actions"
-                            className="inline-flex items-center justify-center h-10 px-2.5 rounded-control border border-hairline-strong bg-surface text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                            aria-label="Export list"
+                            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
                         >
-                            <MoreHorizontal className="w-4 h-4" />
+                            <Download className="w-4 h-4" />
+                            <span className="hidden sm:inline">Export</span>
+                            <ChevronDown className="w-3.5 h-3.5" />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" sideOffset={6} className="w-56">
-                        <DropdownMenuItem onClick={exportCsv} disabled={isExporting} className="cursor-pointer">
-                            <Download className="h-4 w-4" /> {isExporting ? 'Exporting…' : 'Export list (CSV)'}
+                    <DropdownMenuContent align="end" sideOffset={6} className="w-40">
+                        <DropdownMenuItem onClick={() => openPicker('csv')} className="cursor-pointer">
+                            <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={goServiceMapping} className="cursor-pointer">
-                            <ExternalLink className="h-4 w-4" /> Open Service Mapping
+                        <DropdownMenuItem onClick={() => openPicker('pdf')} className="cursor-pointer">
+                            <FileText className="h-4 w-4 text-danger-500" /> PDF
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
+
+                <button
+                    type="button"
+                    onClick={() => openPicker('print')}
+                    title="Print — pick which clients to include"
+                    className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                >
+                    <Printer className="w-4 h-4" />
+                    <span className="hidden sm:inline">Print</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={goServiceMapping}
+                    title="Open Service Mapping"
+                    className="ml-auto inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                >
+                    <ExternalLink className="w-4 h-4" />
+                    <span className="hidden sm:inline">Service Mapping</span>
+                </button>
             </div>
 
             {/* ── Inline filter panel — expands on the same screen under the toolbar ── */}
@@ -550,6 +1030,133 @@ export default function MappingList({
                 </div>
             )}
 
+
+            {/* Client-picker modal used by Export CSV / Export PDF / Print.
+                All three share one popup so the user always answers "which
+                clients?" the same way. */}
+            <AnimatePresence>
+                {pickerMode && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.14 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-[2px] p-4"
+                        onClick={(e) => { if (e.target === e.currentTarget) closePicker() }}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.97, y: 12 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.97, y: 12 }}
+                            transition={{ duration: 0.18, ease: 'easeOut' }}
+                            className="flex w-full max-w-lg flex-col rounded-xl border border-hairline bg-surface shadow-2xl"
+                        >
+                            <header className="flex items-start justify-between gap-3 border-b border-hairline px-5 py-3.5">
+                                <div>
+                                    <h2 className="text-sm font-semibold text-heading tracking-[-0.01em]">
+                                        {pickerMode === 'csv' ? 'Export CSV' : pickerMode === 'pdf' ? 'Export PDF' : 'Print'} — select clients
+                                    </h2>
+                                    <p className="mt-0.5 text-xs text-subtle">
+                                        Each selected client renders on its own page (client name · service · service model · year · courses).
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={closePicker}
+                                    disabled={pickerBusy}
+                                    className="inline-flex size-7 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/25 disabled:opacity-50"
+                                    aria-label="Close"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </header>
+
+                            <div className="flex flex-shrink-0 items-center gap-3 border-b border-hairline px-5 py-3">
+                                <div className="relative flex-1">
+                                    <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+                                    <input
+                                        type="text"
+                                        value={pickerSearch}
+                                        onChange={(e) => setPickerSearch(e.target.value)}
+                                        placeholder="Search clients…"
+                                        className="h-9 w-full rounded-control border border-hairline-strong bg-surface pl-8 pr-3 text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors"
+                                    />
+                                </div>
+                                <span className="text-2xs font-medium tabular-nums text-subtle whitespace-nowrap">
+                                    {pickerSelected.size} of {pickerOptions.length} selected
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 border-b border-hairline px-5 py-2 text-2xs">
+                                <button
+                                    type="button"
+                                    onClick={() => setPickerSelected(new Set(pickerOptions.map(([id]) => id)))}
+                                    disabled={pickerOptions.length === 0 || pickerBusy}
+                                    className="font-semibold text-brand-strong hover:text-brand-800 disabled:opacity-40"
+                                >
+                                    Select all shown
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPickerSelected(new Set())}
+                                    disabled={pickerSelected.size === 0 || pickerBusy}
+                                    className="font-semibold text-subtle hover:text-heading disabled:opacity-40"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+
+                            <ul className="max-h-[45vh] overflow-y-auto px-2 py-2">
+                                {pickerOptions.length === 0 ? (
+                                    <li className="px-3 py-6 text-center text-xs text-subtle">
+                                        No clients match &quot;{pickerSearch}&quot;.
+                                    </li>
+                                ) : (
+                                    pickerOptions.map(([id, name]) => {
+                                        const checked = pickerSelected.has(id)
+                                        return (
+                                            <li key={id}>
+                                                <label className="flex cursor-pointer items-center gap-2.5 rounded-control px-3 py-2 text-xs text-body hover:bg-row-hover">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={(e) => setPickerSelected((prev) => {
+                                                            const next = new Set(prev)
+                                                            if (e.target.checked) next.add(id); else next.delete(id)
+                                                            return next
+                                                        })}
+                                                        className="h-4 w-4 cursor-pointer accent-brand-500"
+                                                    />
+                                                    <span className="truncate font-medium text-heading">{name}</span>
+                                                </label>
+                                            </li>
+                                        )
+                                    })
+                                )}
+                            </ul>
+
+                            <footer className="flex items-center justify-end gap-2 border-t border-hairline px-5 py-3">
+                                <button
+                                    type="button"
+                                    onClick={closePicker}
+                                    disabled={pickerBusy}
+                                    className="inline-flex h-9 items-center px-3.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={confirmPicker}
+                                    disabled={pickerBusy || pickerSelected.size === 0}
+                                    className="inline-flex h-9 items-center gap-1.5 px-4 rounded-control bg-brand-strong text-xs font-semibold text-white shadow-xs hover:bg-brand-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {pickerBusy ? (<><Loader2 size={12} className="animate-spin" /> Preparing…</>) : 'Done'}
+                                </button>
+                            </footer>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

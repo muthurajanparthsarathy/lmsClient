@@ -61,20 +61,27 @@ export const USER_DATA_KEY = "smartcliff_userData";
 // Admin / Super Admin sidebars show ONLY these modules, in this order.
 // (Other roles keep their full permission-driven list.)
 export const ADMIN_SIDEBAR_KEYS = [
-    "admindashboard",       // Admin Dashboard
+    "admindashboard",       // Admin Dashboard — always first (the landing)
+    "notifications",        // Notification — promoted to 2nd; carries the red
+                            //                blinking unread indicator now that
+                            //                the corner bell is retired
     "usermanagement",       // User Management
     "coursestructure",      // Course Management
     "approvals",            // Approvals (assessment/assignment review queue)
-    "dynamicfieldsettings", // Dynamic Field Settings
     "questionbanks",        // Question Banks
-    "grades",               // Grades
-    "notifications",        // Notification
     "profile",              // Profiles
     "calendar",             // Calendar
-    "attendancemanagement", // Attendance Management
     "clientmanagement",     // Business Management (Client Management tab)
     "servicemapping",       // Business Management (Service Mapping tab)
-    "logs",                 // Audit Logs
+    // System Settings parent — merges dynamicfieldsettings + logs. Both
+    // permissions are still listed here so the merger below picks them up.
+    "dynamicfieldsettings", // → System Settings › Dynamic Settings
+    "logs",                 // → System Settings › Audit Logs
+    // grades removed — Grade lives inside a Course's per-course dropdown
+    // (Feedback / Grade / Attendance) under Course Setup, not as a top-level
+    // sidebar entry.
+    // attendancemanagement removed — same story: Attendance is a per-course
+    // control accessed from within a Course, not a rail entry.
 ];
 
 // Stored permission keys that mean the same module as a canonical key.
@@ -319,11 +326,63 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
         };
         const filtered = items.filter(i => !MERGED_KEYS.includes((i.permissionKey || "").toLowerCase()));
         filtered.splice(firstIdx, 0, merged);
-        return filtered;
+        return systemSettingsMerge(filtered);
     }
 
-    return items;
+    return systemSettingsMerge(items);
 };
+
+// System Settings parent — collapses Dynamic Field Settings + Audit Logs into
+// a single expandable rail item so the sidebar's tail reads as "settings
+// grouped under one heading" instead of two loose system-level entries.
+// Same pattern as the Business Management merger above: build children off
+// whichever of the two source keys the user actually holds, splice them in
+// at the position of the first source item.
+const SYSTEM_SETTINGS_KEYS = ["dynamicfieldsettings", "logs"];
+function systemSettingsMerge(items: SidebarItem[]): SidebarItem[] {
+    const firstIdx = items.findIndex(i => SYSTEM_SETTINGS_KEYS.includes((i.permissionKey || "").toLowerCase()));
+    if (firstIdx === -1) return items;
+    const dfs = items.find(i => (i.permissionKey || "").toLowerCase() === "dynamicfieldsettings");
+    const logs = items.find(i => (i.permissionKey || "").toLowerCase() === "logs");
+    const sectionColor = items[firstIdx].color;
+    const children: SidebarItem[] = [];
+    if (dfs) {
+        children.push({
+            title: "Dynamic Settings",
+            href: "/lms/pages/dynamicfieldsettings",
+            icon: getIconByName("Settings2"),
+            iconName: "Settings2",
+            color: sectionColor,
+            permissionKey: "dynamicfieldsettings",
+        });
+    }
+    if (logs) {
+        children.push({
+            title: "Audit Logs",
+            href: "/lms/pages/logs",
+            icon: getIconByName("ScrollText"),
+            iconName: "ScrollText",
+            color: sectionColor,
+            permissionKey: "logs",
+        });
+    }
+    if (children.length === 0) return items;
+    const merged: SidebarItem = {
+        title: "System Settings",
+        // Parent opens whichever child is first (both are real pages; there is
+        // no combined landing page under this heading).
+        href: children[0].href,
+        icon: getIconByName("Settings"),
+        iconName: "Settings",
+        color: sectionColor,
+        hasChevron: false,
+        permissionKey: "systemsettings",
+        children,
+    };
+    const filtered = items.filter(i => !SYSTEM_SETTINGS_KEYS.includes((i.permissionKey || "").toLowerCase()));
+    filtered.splice(firstIdx, 0, merged);
+    return filtered;
+}
 
 /**
  * Mirror of `isAdminRole` for the Point-of-Contact role.
@@ -395,7 +454,13 @@ const GROUP_BY_KEY: Record<string, string> = {
     progress: "Learning",
     attendancemanagement: "Learning",
     dynamicfieldsettings: "System",
-    notifications: "System",
+    // System Settings — merged parent for Dynamic Settings + Audit Logs.
+    // Lives in the System bucket so it sits with other system-level tools.
+    systemsettings: "System",
+    // Notifications sits next to Admin Dashboard in Overview so the sidebar's
+    // second row is always Notification — the corner bell was retired and
+    // the red pulse on this row now carries "you have unread activity".
+    notifications: "Overview",
     // Audit Logs reaches the staff rail as a synthetic item with no permission
     // key, so it is matched on its route instead — see navGroupLabelFor.
     logs: "System",

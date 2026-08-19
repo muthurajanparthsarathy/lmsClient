@@ -32,12 +32,15 @@ export interface MasterDataEntry {
   values: string[];
 }
 
-// Client ref as populated by the server list endpoints
+// Client ref as populated by the server list endpoints. `businessModel` is
+// populated so the mapping listing can render the B2B / B2I pill without a
+// second fetch — matching the Client Management column.
 export interface MappedClientRef {
   _id: string;
   clientCompany: string;
   status: "active" | "inactive";
   type?: string[];
+  businessModel?: string;
 }
 
 // One batch of the mapping's course. PRT department mode ties each batch to a

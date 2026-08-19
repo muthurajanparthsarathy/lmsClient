@@ -36,10 +36,6 @@ interface UsersTableProps {
   renderStatus: (user: User) => React.ReactNode;
   renderActions: (user: User) => React.ReactNode;
   emptyState: React.ReactNode;
-  // A CSS max-height for the scroll region, so the table fills the viewport but
-  // never pushes the footer off-screen. Computed by the page from the chrome
-  // above/below it.
-  maxBodyHeight: string;
   // When false, the Actions column (both header and every row cell) is not
   // rendered at all — used when the signed-in admin holds no row-level action
   // permissions, so an empty column doesn't sit there taking width.
@@ -59,24 +55,30 @@ interface UsersTableProps {
 // instead, as a gap beside the checkbox. Status is the right column to hand it
 // to — it is right-aligned, so the slack lands invisibly to its left.
 const COL = {
-  check: "w-11 pl-4 sm:pl-5 pr-0 text-left",
-  user: "w-[22%] px-3 text-left",
-  email: "w-[24%] px-3 text-left",
-  // Phone is a 10-digit number and never needs more, and a name is shorter
-  // than an email — the slack from both goes to Role, whose longest pill
-  // ("Super Administrator", 166px) would otherwise clip on a laptop screen.
+  // All widths as percentages summing to 100 so `table-layout: fixed`
+  // fills the container edge-to-edge. Status renders a Switch + an
+  // "Active"/"Inactive" label (~110 px) so it needs a real slice, not
+  // the leftover crumb; Actions holds a 28 px kebab plus the right
+  // gutter, so 6 % keeps the button from bumping the edge.
+  check: "w-[4%] pl-4 sm:pl-5 pr-0 text-left",
+  user: "w-[24%] px-3 text-left",
+  // Email absorbs the slack — long institutional addresses were already the
+  // widest content on the row, and Role/Actions only need their content size.
+  email: "w-[32%] px-3 text-left",
   phone: "w-[10%] px-3 text-left hidden lg:table-cell",
-  role: "w-[16%] px-3 text-left",
-  // Right-aligned to match the rest of the LMS listings, where the status
-  // indicator sits toward the right of its column.
-  status: "px-3 text-right",
-  actions: "w-[72px] pl-2 pr-4 sm:pr-5 text-right",
+  // Role holds a fixed pill; the longest label ("Super Administrator")
+  // fits inside ~150 px, so 12 % is enough on typical viewports.
+  role: "w-[12%] px-3 text-left",
+  status: "w-[14%] px-3 text-right whitespace-nowrap",
+  // Just enough for a 28 px kebab + a tight right gutter, so it hugs the row
+  // edge instead of floating in dead space.
+  actions: "w-[4%] pl-1 pr-3 sm:pr-4 text-right",
 };
 
 const HEAD_CELL =
-  "h-11 text-2xs font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline whitespace-nowrap";
-// 48px, the shared listing row height.
-const BODY_CELL = "h-12 align-middle";
+  "h-8 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline whitespace-nowrap";
+// 44px — matches the shared DataTable's compact row height.
+const BODY_CELL = "h-11 align-middle";
 // Skeleton bar, matching DataTable's.
 const BAR = "h-3 rounded bg-ink-100 animate-pulse";
 
@@ -128,7 +130,6 @@ export function UsersTable({
   renderStatus,
   renderActions,
   emptyState,
-  maxBodyHeight,
   showActionsColumn = true,
 }: UsersTableProps) {
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
@@ -145,14 +146,13 @@ export function UsersTable({
 
   return (
     <div
-      // Below min-w the percentage columns would be squeezed unreadably
-      // (email/role clipped to a handful of px on phone widths), so the
-      // table gets a width floor and the container scrolls horizontally
-      // instead — same convention as MappingWorkspaceTable.
-      className="overflow-auto min-h-[260px] custom-scrollbar"
-      style={{ maxHeight: maxBodyHeight }}
+      // flex-1 min-h-0 absorbs the vertical space between the toolbar and
+      // the pagination footer; the caller's auto-fit effect picks a page
+      // size that fills that space exactly, so overflow-hidden is safe
+      // (no scrollbar, no empty band).
+      className="flex-1 min-h-0 overflow-hidden"
     >
-      <table className="w-full min-w-[640px] border-collapse" style={{ tableLayout: "fixed" }}>
+      <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
         <thead className="sticky top-0 z-sticky">
           <tr>
             <th className={`${HEAD_CELL} ${COL.check}`}>
@@ -249,8 +249,8 @@ export function UsersTable({
                       className="size-4 rounded border-hairline-strong accent-brand cursor-pointer align-middle"
                     />
                   </td>
-                  <td className={`${COL.user} ${BODY_CELL} text-sm font-medium text-heading`}>
-                    <div className="flex items-center gap-2.5 min-w-0">
+                  <td className={`${COL.user} ${BODY_CELL} text-[12px] font-medium text-heading`}>
+                    <div className="flex items-center gap-2 min-w-0">
                       <UserAvatar name={user.firstName} size="xs" />
                       {/* Long values ellipsize with the full value in the
                           tooltip, rather than stretching the row. */}
@@ -258,12 +258,12 @@ export function UsersTable({
                     </div>
                   </td>
                   <td className={`${COL.email} ${BODY_CELL}`}>
-                    <span className="text-sm text-subtle truncate block" title={user.email || undefined}>
+                    <span className="text-[12px] text-subtle truncate block" title={user.email || undefined}>
                       {user.email || "—"}
                     </span>
                   </td>
                   <td className={`${COL.phone} ${BODY_CELL}`}>
-                    <span className="text-sm text-body tabular-nums truncate block">{user.phone || "—"}</span>
+                    <span className="text-[12px] text-body tabular-nums truncate block">{user.phone || "—"}</span>
                   </td>
                   <td className={`${COL.role} ${BODY_CELL}`}>
                     {/* max-w-full + an inner truncate: the pill is a fixed-height

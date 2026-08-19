@@ -1562,10 +1562,15 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
   //   • loadCourseLight  — the tree skeleton, same entry the page already
   //     reads at mount, so it is normally a cache hit costing nothing.
   //
-  // Both keep the old `fresh` contract: drop the entry first so the next read
-  // is a real fetch, used after an upload / delete / batch switch. The batch is
-  // part of both keys (getActiveBatchId is baked into them by coursesData.ts),
-  // so batch 1 and batch 2 never share an entry.
+  // Both keep the old `fresh` contract -- the next read is a real fetch, used
+  // after an upload / delete / batch switch -- but spell it with staleTime 0
+  // rather than removeQueries. Dropping the entry ALSO aborted whatever fetch
+  // was already in flight for that key, so a plain overlap (the node-click read
+  // and the batch-settle re-read landing together) rejected the first caller
+  // with CancelledError. staleTime 0 forces the network read and dedupes
+  // against an in-flight one instead of killing it, so both callers get data.
+  // The batch is part of both keys (getActiveBatchId is baked into them by
+  // coursesData.ts), so batch 1 and batch 2 never share an entry.
 
   // getNodePedagogy has no notion of the course root. The old code had the
   // same hole — `findInFresh` only walked modules/submodules/topics/subtopics,
@@ -1581,10 +1586,9 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
       const type = nodePedagogyType(node.type);
       if (!type) return null;
       const spec = courseDataApi.getNodePedagogy(type, node.id);
-      if (opts?.fresh) queryClient.removeQueries({ queryKey: spec.queryKey });
       const res = await queryClient.fetchQuery({
         ...spec,
-        staleTime: 60 * 1000,
+        staleTime: opts?.fresh ? 0 : 60 * 1000,
         gcTime: 10 * 60 * 1000,
       });
       return res?.data ?? null;
@@ -1595,10 +1599,9 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
   const loadCourseLight = useCallback(
     async (opts?: { fresh?: boolean }): Promise<any> => {
       const spec = courseDataApi.getLight(courseId || "");
-      if (opts?.fresh) queryClient.removeQueries({ queryKey: spec.queryKey });
       return queryClient.fetchQuery({
         ...spec,
-        staleTime: 60 * 1000,
+        staleTime: opts?.fresh ? 0 : 60 * 1000,
         gcTime: 10 * 60 * 1000,
       });
     },
@@ -1648,7 +1651,13 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
       }
 
       setInitialLoadComplete(true);
-    } catch (err) {
+    } catch (err: any) {
+      // The same benign race fetchAndCacheNodeData guards against, seen from
+      // the other side. A cancelled read (unmount, a cache reset on batch
+      // switch) means this node is no longer the one to paint, or another path
+      // is already fetching it. Falling back would duplicate that work and log
+      // a scary error for a normal overlap.
+      if (err?.name === "CancelledError" || err?.silent) return;
       console.error("fetchAndRefresh error:", err);
       await refreshContentData(node);
     } finally {
@@ -3646,7 +3655,7 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
     }
   }, [courseStructureResponse?.data]);
 
-  // ── Auto-select: first module → deepest leaf, I Do, first subcategory ─────────
+  // ── Auto-select: first module → deepest leaf, first section, first subcategory ─────
   const hasAutoSelected = useRef(false);
   useEffect(() => {
     // Skip auto-select entirely when the URL already tells us where to go —
@@ -3658,12 +3667,18 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
       const sp = new URLSearchParams(window.location.search);
       if (sp.get("fromAnalytics") === "true" || sp.get("nodeId")) return;
     }
+    // The section to land on is the first the course configured -- a course with
+    // no I Do activities but some We Do ones used to fail this guard outright
+    // and never auto-select at all.
+    const firstTab = (["I_Do", "We_Do", "You_Do"] as const)
+      .find((t) => subcategories[t].length > 0);
+
     // Only run once, after courseData and subcategories are ready, and no node selected yet
     if (
       hasAutoSelected.current ||
       !courseData.length ||
       selectedNode ||
-      !subcategories.I_Do.length
+      !firstTab
     ) return;
 
     // Helper: walk down first child at each level until no more children
@@ -3690,11 +3705,11 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
       });
     }
 
-    // Set tab → I Do, subcategory → first one
-    const firstSub = subcategories.I_Do[0];
-    setActiveTabPersistent("I_Do");
+    // Set tab → first configured section, subcategory → its first one
+    const firstSub = subcategories[firstTab][0];
+    setActiveTabPersistent(firstTab);
     setActiveSubcategoryPersistent(firstSub?.key ?? "");
-    updateURL({ activeTab: "I_Do", activeSubcategory: firstSub?.key ?? "" });
+    updateURL({ activeTab: firstTab, activeSubcategory: firstSub?.key ?? "" });
 
     // Select the node — also flip isNodeSelected so the welcome screen hides
     setIsNodeSelected(true);
@@ -3703,6 +3718,24 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
     setBreadcrumbs(generateBreadcrumbs(deepestNode));
     updateNavState({ currentFolderPath: [], currentFolderId: null });
   }, [courseData, selectedNode, subcategories, findPathToNode, generateBreadcrumbs]);
+
+  // A section with no configured activities is no longer rendered as a tab (see
+  // TabBar in Coursecontent), but `activeTab` can still arrive pointing at one:
+  // from the URL on a deep link, or from the tab this browser remembered for a
+  // course whose activities have since changed. That left the pane stuck on
+  // "Select an Activity" with no tab on screen to click away from. Land on the
+  // first section the course actually configured instead.
+  useEffect(() => {
+    if (!activeTab) return;
+    const available = (["I_Do", "We_Do", "You_Do"] as const)
+      .filter((t) => subcategories[t].length > 0);
+    if (!available.length || available.includes(activeTab)) return;
+    const fallback = available[0];
+    const firstSub = subcategories[fallback][0];
+    setActiveTabPersistent(fallback);
+    setActiveSubcategoryPersistent(firstSub?.key ?? "");
+    updateURL({ activeTab: fallback, activeSubcategory: firstSub?.key ?? "" });
+  }, [activeTab, subcategories]);
 
   useEffect(() => { setBreadcrumbs(generateBreadcrumbs(selectedNode)); }, [selectedNode, courseData, generateBreadcrumbs]);
   useEffect(() => {

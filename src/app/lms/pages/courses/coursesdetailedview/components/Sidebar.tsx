@@ -218,7 +218,7 @@ const TreeModuleRow: React.FC<{
         fontWeight: isActive ? 600 : 500,
         color: isActive ? C.accent : C.text,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        transition: "color 0.13s",
+        transition: "color 0.13s,font-weight 0.13s",
       }}>
         {label}
       </span>

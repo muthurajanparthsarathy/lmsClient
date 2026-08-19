@@ -1,6 +1,5 @@
 "use client"
 
-import React from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 // Count on the left, page size and pager on the right. The window keeps the
@@ -13,20 +12,23 @@ function pageWindow(current: number, total: number): (number | '…')[] {
     return [1, '…', current - 1, current, current + 1, '…', total]
 }
 
-const PAGER_BTN =
-    'w-8 h-8 rounded-control border border-hairline-strong bg-surface text-subtle flex items-center ' +
-    'justify-center hover:border-line-hover hover:text-heading disabled:opacity-40 ' +
+const PAGER_STEP =
+    'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-control border border-hairline-strong bg-surface ' +
+    'text-xs font-medium text-subtle hover:border-line-hover hover:text-heading disabled:opacity-40 ' +
     'disabled:hover:border-hairline-strong disabled:cursor-not-allowed transition-colors duration-150'
 
 export default function TableFooter({
-    from,
-    to,
-    total,
-    pageSize,
-    onPageSize,
     currentPage,
     totalPages,
     onPage,
+    // Kept for API compatibility with the many existing callers even though
+    // the row-size / count strip is no longer rendered — dropping the props
+    // would break every listing page.
+    from: _from,
+    to: _to,
+    total: _total,
+    pageSize: _pageSize,
+    onPageSize: _onPageSize,
 }: {
     from: number
     to: number
@@ -40,73 +42,52 @@ export default function TableFooter({
     const pages = pageWindow(currentPage, totalPages)
 
     return (
-        <div className="flex items-center justify-between gap-4 flex-wrap px-4 sm:px-5 py-3 border-t border-hairline">
-            <p className="text-xs text-subtle">
-                {total === 0
-                    ? 'No entries'
-                    : `Showing ${from} to ${to} of ${total} ${total === 1 ? 'entry' : 'entries'}`}
-            </p>
+        // Just the centred pager row — nothing else. Reference footer has
+        // no page-size selector, no "Showing X of Y" strip, no options
+        // toggle. flex-wrap so a full page-number window reflows on narrow
+        // screens instead of being clipped.
+        <div className="flex flex-wrap items-center justify-center gap-2 px-4 sm:px-5 py-1.5">
+            <button
+                type="button"
+                onClick={() => onPage(currentPage - 1)}
+                disabled={currentPage <= 1}
+                aria-label="Previous page"
+                className={PAGER_STEP}
+            >
+                <ChevronLeft size={13} />
+                <span>Previous</span>
+            </button>
 
-            {/* flex-wrap so a full page-number window (up to 7 buttons +
-                prev/next + the page-size select, ~460px) reflows onto a
-                second line on narrow screens instead of being clipped by
-                the footer row's own overflow. */}
-            <div className="flex flex-wrap items-center justify-end gap-2">
-                <select
-                    value={pageSize}
-                    onChange={(e) => onPageSize(parseInt(e.target.value, 10))}
-                    // The CONTROL recipe minus its h-9/px-3 sizing: the footer
-                    // control is deliberately one step smaller than the filter
-                    // bar's, so the sizes stay literal and only the colour,
-                    // radius and type migrate to tokens.
-                    className="h-8 rounded-control border border-hairline-strong bg-surface text-xs text-ink-700 px-2.5 hover:border-line-hover focus:border-brand focus:ring-2 focus:ring-brand/15 focus:outline-none transition-colors duration-150"
-                    aria-label="Rows per page"
-                >
-                    {[10, 25, 50, 100].map((n) => (
-                        <option key={n} value={n}>{n} / page</option>
-                    ))}
-                </select>
+            {pages.map((p, i) => (
+                p === '…' ? (
+                    <span key={`gap-${i}`} className="w-6 h-7 flex items-center justify-center text-xs text-faint">…</span>
+                ) : (
+                    <button
+                        key={p}
+                        type="button"
+                        onClick={() => onPage(p)}
+                        aria-current={p === currentPage ? 'page' : undefined}
+                        className={`w-7 h-7 rounded-control text-xs font-semibold tabular-nums flex items-center justify-center transition-colors duration-150 ${
+                            p === currentPage
+                                ? 'bg-brand-strong text-white shadow-xs'
+                                : 'border border-hairline-strong bg-surface text-subtle hover:border-line-hover hover:text-heading'
+                        }`}
+                    >
+                        {p}
+                    </button>
+                )
+            ))}
 
-                <button
-                    type="button"
-                    onClick={() => onPage(currentPage - 1)}
-                    disabled={currentPage <= 1}
-                    aria-label="Previous page"
-                    className={PAGER_BTN}
-                >
-                    <ChevronLeft size={15} />
-                </button>
-
-                {pages.map((p, i) => (
-                    p === '…' ? (
-                        <span key={`gap-${i}`} className="w-8 h-8 flex items-center justify-center text-xs text-faint">…</span>
-                    ) : (
-                        <button
-                            key={p}
-                            type="button"
-                            onClick={() => onPage(p)}
-                            aria-current={p === currentPage ? 'page' : undefined}
-                            className={`w-8 h-8 rounded-control text-xs font-semibold tabular-nums flex items-center justify-center transition-colors duration-150 ${
-                                p === currentPage
-                                    ? 'bg-brand-strong text-white shadow-xs'
-                                    : 'border border-hairline-strong bg-surface text-subtle hover:border-line-hover hover:text-heading'
-                            }`}
-                        >
-                            {p}
-                        </button>
-                    )
-                ))}
-
-                <button
-                    type="button"
-                    onClick={() => onPage(currentPage + 1)}
-                    disabled={currentPage >= totalPages}
-                    aria-label="Next page"
-                    className={PAGER_BTN}
-                >
-                    <ChevronRight size={15} />
-                </button>
-            </div>
+            <button
+                type="button"
+                onClick={() => onPage(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+                aria-label="Next page"
+                className={PAGER_STEP}
+            >
+                <span>Next</span>
+                <ChevronRight size={13} />
+            </button>
         </div>
     )
 }

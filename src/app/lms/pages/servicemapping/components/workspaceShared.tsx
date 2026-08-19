@@ -23,6 +23,10 @@ export interface MappingRowVM {
   id: string;
   clientId: string;
   clientName: string;
+  // Populated from the mapping's client — used by the listing to render the
+  // same coloured business-model pill Client Management uses, without a
+  // second fetch.
+  businessModel?: string;
   serviceCode: string;
   service: string;
   models: string[];
@@ -67,6 +71,7 @@ export function buildRowVM(mapping: ServiceMapping, client: MappedClientRef): Ma
     id: mapping._id,
     clientId: client._id,
     clientName: client.clientCompany || "N/A",
+    businessModel: client.businessModel || "",
     serviceCode: mapping.serviceCode || "",
     service: mapping.service || "",
     models: (mapping.serviceModels || []).filter(Boolean),

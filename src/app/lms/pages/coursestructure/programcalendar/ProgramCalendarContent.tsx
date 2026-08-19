@@ -3051,7 +3051,7 @@ export default function ProgramCalendarContent(
                 const isSunday = dObj.getDay() === 0
                 const close = () => setHolidayPrompt(null)
                 return (
-                    <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+                    <motion.div key="holiday-prompt" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
                         onClick={close}
                         className="fixed inset-0 z-overlay bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                         <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
@@ -3140,7 +3140,7 @@ export default function ProgramCalendarContent(
                 const durLabel = dur>0 ? `${Math.floor(dur/60)>0?Math.floor(dur/60)+'h ':''}${dur%60>0?dur%60+'m':''}`.trim() : '—'
                 const sessIdx = daySlots.filter(s=>s.kind==='session').findIndex(s=>s.id===slot.id)
                 return (
-                    <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+                    <motion.div key="timetable-popup" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
                         onClick={()=>setTimetablePopup(null)}
                         className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                         <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
@@ -3181,139 +3181,7 @@ export default function ProgramCalendarContent(
 
             {/* ── Timetable Preview Modal ── */}
             {showTimetableModal && (
-                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
-                    onClick={()=>setShowTimetableModal(false)}
-                    className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-                    <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
-                        onClick={e=>e.stopPropagation()}
-                        className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
-                        <div className="px-5 py-4 bg-brand-700 text-white flex items-center justify-between">
-                            <div>
-                                <p className="text-[11px] font-bold uppercase tracking-wider opacity-80">Session Details</p>
-                                <p className="text-[15px] font-extrabold mt-0.5">Timetable Preview
-                                    {dayEnd>dayStart && <span className="text-brand-200 text-[12px] font-medium ml-2">{minsToDisplay(dayStart)} – {minsToDisplay(dayEnd)}</span>}
-                                </p>
-                            </div>
-                            <button onClick={()=>setShowTimetableModal(false)} className="h-7 w-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors shrink-0"><X className="h-4 w-4"/></button>
-                        </div>
-                        <div className="p-5">
-                            {sortedSlots.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-12 text-center space-y-2">
-                                    <Clock className="h-10 w-10 text-ink-200"/>
-                                    <p className="text-sm text-ink-400">No sessions added yet. Add sessions from Session Details.</p>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm border-collapse border border-ink-200 rounded-lg overflow-hidden">
-                                            <tbody>
-                                                <tr className="bg-ink-50 border-b border-ink-200">
-                                                    <td className="px-3 py-2.5 text-[11px] font-bold text-ink-500 uppercase tracking-wide whitespace-nowrap border-r-2 border-ink-200 bg-ink-100 w-28">Time</td>
-                                                    {sortedSlots.map(slot => {
-                                                        const isSession = slot.kind === 'session'
-                                                        return (
-                                                            <td key={slot.id} onClick={()=>{ setTimetablePopup(slot); setShowTimetableModal(false) }} className={`px-3 py-2.5 text-center border-r border-ink-100 cursor-pointer hover:brightness-95 transition-all ${isSession?'bg-brand-50/60':'bg-warn-50/60'}`}>
-                                                                <p className="text-[11px] font-mono font-semibold text-ink-700 whitespace-nowrap">{minsToDisplay(parseTimeMins(slot.startTime))}</p>
-                                                                <p className="text-[9px] text-ink-300 leading-none my-0.5">↓</p>
-                                                                <p className="text-[11px] font-mono font-semibold text-ink-700 whitespace-nowrap">{minsToDisplay(parseTimeMins(slot.endTime))}</p>
-                                                            </td>
-                                                        )
-                                                    })}
-                                                </tr>
-                                                <tr className="border-b border-ink-200">
-                                                    <td className="px-3 py-2.5 text-[11px] font-bold text-ink-500 uppercase tracking-wide whitespace-nowrap border-r-2 border-ink-200 bg-ink-100">Session</td>
-                                                    {sortedSlots.map(slot => {
-                                                        const isSession = slot.kind === 'session'
-                                                        const sessIdx = daySlots.filter(s=>s.kind==='session').findIndex(s=>s.id===slot.id)
-                                                        return (
-                                                            <td key={slot.id} onClick={()=>{ setTimetablePopup(slot); setShowTimetableModal(false) }} className={`px-3 py-2.5 text-center border-r border-ink-100 cursor-pointer hover:brightness-95 transition-all ${isSession?'bg-white':'bg-warn-50/40'}`}>
-                                                                <div className="flex flex-col items-center gap-1">
-                                                                    {isSession
-                                                                        ? <span className="h-5 w-5 rounded-full bg-brand-600 text-white text-[10px] font-bold inline-flex items-center justify-center">{sessIdx+1}</span>
-                                                                        : <Coffee className="h-3.5 w-3.5 text-warn-500"/>}
-                                                                    <span className={`text-[11px] font-medium leading-tight text-center ${isSession?'text-ink-700':'text-warn-700'}`}>{slot.name}</span>
-                                                                </div>
-                                                            </td>
-                                                        )
-                                                    })}
-                                                </tr>
-                                                <tr>
-                                                    <td className="px-3 py-2.5 text-[11px] font-bold text-ink-500 uppercase tracking-wide whitespace-nowrap border-r-2 border-ink-200 bg-ink-100">Duration</td>
-                                                    {sortedSlots.map(slot => {
-                                                        const dur = durationMins(slot.startTime, slot.endTime)
-                                                        const isSession = slot.kind === 'session'
-                                                        const durLabel = dur>0 ? `${Math.floor(dur/60)>0?Math.floor(dur/60)+'h ':''}${dur%60>0?dur%60+'m':''}`.trim() : '—'
-                                                        return (
-                                                            <td key={slot.id} onClick={()=>{ setTimetablePopup(slot); setShowTimetableModal(false) }} className={`px-3 py-2.5 text-center border-r border-ink-100 cursor-pointer hover:brightness-95 transition-all ${isSession?'bg-white':'bg-warn-50/40'}`}>
-                                                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${isSession?'bg-brand-100 text-brand-700':'bg-warn-50 text-warn-700'}`}>{durLabel}</span>
-                                                            </td>
-                                                        )
-                                                    })}
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="mt-3 flex items-center justify-between">
-                                        <span className="text-[11px] text-ink-400">Click any column to see slot details</span>
-                                        <span className="text-[12px] text-ink-500 font-medium">Teaching Total: <span className="font-bold text-brand-700 bg-brand-100 px-2 py-0.5 rounded-md ml-1">{Math.floor(teachingMins/60)}h {teachingMins%60>0?teachingMins%60+'m':''}</span></span>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </motion.div>
-                </motion.div>
-            )}
-
-            {/* ── Timetable Slot Detail Popup ── */}
-            {timetablePopup && (() => {
-                const slot = timetablePopup
-                const isSession = slot.kind === 'session'
-                const dur = durationMins(slot.startTime, slot.endTime)
-                const durLabel = dur>0 ? `${Math.floor(dur/60)>0?Math.floor(dur/60)+'h ':''}${dur%60>0?dur%60+'m':''}`.trim() : '—'
-                const sessIdx = daySlots.filter(s=>s.kind==='session').findIndex(s=>s.id===slot.id)
-                return (
-                    <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
-                        onClick={()=>setTimetablePopup(null)}
-                        className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-                        <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
-                            onClick={e=>e.stopPropagation()}
-                            className="w-full max-w-xs rounded-2xl bg-white shadow-2xl overflow-hidden">
-                            <div className={`px-5 py-4 ${isSession?'bg-brand-700':'bg-warn-500'} text-white flex items-start justify-between`}>
-                                <div>
-                                    <p className="text-[11px] font-bold uppercase tracking-wider opacity-80">{isSession ? `Session ${sessIdx+1}` : 'Break'}</p>
-                                    <p className="text-[17px] font-extrabold mt-0.5 leading-tight">{slot.name}</p>
-                                </div>
-                                <button onClick={()=>setTimetablePopup(null)} className="h-7 w-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors shrink-0 mt-0.5"><X className="h-4 w-4"/></button>
-                            </div>
-                            <div className="p-5 space-y-3">
-                                <div className="flex items-center justify-between rounded-xl bg-ink-50 border border-ink-100 px-4 py-3">
-                                    <div className="text-center">
-                                        <p className="text-[10px] font-semibold text-ink-400 uppercase tracking-wide mb-0.5">Start</p>
-                                        <p className="text-[16px] font-extrabold text-ink-800 font-mono">{minsToDisplay(parseTimeMins(slot.startTime))}</p>
-                                    </div>
-                                    <div className="text-ink-300 text-lg font-light">→</div>
-                                    <div className="text-center">
-                                        <p className="text-[10px] font-semibold text-ink-400 uppercase tracking-wide mb-0.5">End</p>
-                                        <p className="text-[16px] font-extrabold text-ink-800 font-mono">{minsToDisplay(parseTimeMins(slot.endTime))}</p>
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-[10px] font-semibold text-ink-400 uppercase tracking-wide mb-0.5">Duration</p>
-                                        <p className={`text-[16px] font-extrabold ${isSession?'text-brand-700':'text-warn-700'}`}>{durLabel}</p>
-                                    </div>
-                                </div>
-                                <div className={`rounded-lg border px-3 py-2 text-center text-[12px] font-semibold ${isSession?'bg-brand-50 border-brand-100 text-brand-700':'bg-warn-50 border-warn-50 text-warn-700'}`}>
-                                    {isSession ? 'Teaching Session' : 'Break / Recess'}
-                                </div>
-                                <Button onClick={()=>setTimetablePopup(null)} variant="outline" className="w-full h-9">Close</Button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )
-            })()}
-
-            {/* ── Timetable Preview Modal ── */}
-            {showTimetableModal && (
-                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+                <motion.div key="timetable-modal" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
                     onClick={()=>setShowTimetableModal(false)}
                     className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                     <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
@@ -3398,57 +3266,7 @@ export default function ProgramCalendarContent(
 
             {/* ── Add Holiday Name Modal ── */}
             {showAddNameModal && holidayDate && (
-                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
-                    onClick={()=>setShowAddNameModal(false)}
-                    className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-                    <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
-                        onClick={e=>e.stopPropagation()}
-                        className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
-                        <div className="px-5 py-4 bg-danger-500 text-white flex items-start justify-between">
-                            <div>
-                                <p className="text-[11px] font-bold uppercase tracking-wider opacity-80">Add Holiday</p>
-                                <p className="text-[15px] font-extrabold mt-0.5">{fmtDateLong(new Date(holidayDate+'T00:00:00'))}</p>
-                                <p className="text-[11px] opacity-75">{new Date(holidayDate+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long'})}</p>
-                            </div>
-                            <button onClick={()=>setShowAddNameModal(false)} className="h-7 w-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors shrink-0 mt-0.5"><X className="h-4 w-4"/></button>
-                        </div>
-                        <div className="p-5 space-y-4">
-                            <div className="space-y-1.5">
-                                <Label className="text-[12px] font-bold text-ink-700">Holiday Name <span className="text-danger-500">*</span></Label>
-                                <Input value={holidayName} onChange={e=>setHolidayName(e.target.value)}
-                                    placeholder="e.g. Independence Day" className="h-9 text-sm" autoFocus
-                                    onKeyDown={e=>{ if(e.key==='Enter' && holidayName.trim()){ addHoliday(); setShowAddNameModal(false) } }}/>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label className="text-[12px] font-bold text-ink-700">Duration</Label>
-                                <div className="flex gap-1 bg-ink-100 rounded-lg p-0.5">
-                                    {([
-                                        { v:'full' as const, label:'Full Day' },
-                                        { v:'first-half' as const, label:'1st Half' },
-                                        { v:'second-half' as const, label:'2nd Half' },
-                                    ]).map(({v,label}) => (
-                                        <button key={v} type="button" onClick={()=>setHolidayDuration(v)}
-                                            className={`flex-1 py-1.5 rounded-md text-[11px] font-semibold transition-colors ${holidayDuration===v?'bg-white text-danger-700 shadow-sm':'text-ink-500 hover:text-ink-700'}`}>
-                                            {label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="flex gap-2">
-                                <Button onClick={()=>{ addHoliday(); setShowAddNameModal(false) }} disabled={!holidayName.trim()}
-                                    className="flex-1 h-9 bg-danger-500 hover:bg-danger-700 text-white gap-1.5 disabled:opacity-50">
-                                    <Plus className="h-4 w-4"/> Add Holiday
-                                </Button>
-                                <Button onClick={()=>setShowAddNameModal(false)} variant="outline" className="h-9">Cancel</Button>
-                            </div>
-                        </div>
-                    </motion.div>
-                </motion.div>
-            )}
-
-            {/* ── Add Holiday Name Modal ── */}
-            {showAddNameModal && holidayDate && (
-                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+                <motion.div key="add-holiday-name" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
                     onClick={()=>setShowAddNameModal(false)}
                     className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                     <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
@@ -3498,7 +3316,7 @@ export default function ProgramCalendarContent(
 
             {/* ── Working Days Modal ── */}
             {showWorkingDaysModal && (
-                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+                <motion.div key="working-days-modal" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
                     onClick={()=>setShowWorkingDaysModal(false)}
                     className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                     <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}
@@ -3531,7 +3349,7 @@ export default function ProgramCalendarContent(
 
             {/* ── Holidays Modal ── */}
             {showHolidaysModal && (
-                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
+                <motion.div key="holidays-modal" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
                     onClick={()=>setShowHolidaysModal(false)}
                     className="fixed inset-0 z-modal bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                     <motion.div initial={{opacity:0,scale:0.95,y:8}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.95,y:8}}

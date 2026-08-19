@@ -3050,6 +3050,13 @@ const TabBar: React.FC<{
     You_Do: ClipboardList,
   };
 
+  // Only the pedagogy sections this course actually configured. A course that
+  // picked I Do and You Do activities but left We Do empty gets two tabs: the
+  // empty one used to render anyway and led to a dead "Select an Activity"
+  // pane with no subcategory behind it.
+  const visibleTabs = (["I_Do", "We_Do", "You_Do"] as const)
+    .filter((tabKey) => (subcategories[tabKey]?.length ?? 0) > 0);
+
   return (
     <div
       className="flex-shrink-0"
@@ -3066,7 +3073,7 @@ const TabBar: React.FC<{
         className="flex items-stretch"
         style={{ position: "relative" }}
       >
-        {(["I_Do", "We_Do", "You_Do"] as const).map((tabKey, idx) => {
+        {visibleTabs.map((tabKey, idx) => {
           const cfg = TAB_META[tabKey];
           const isSel = activeTab === tabKey;
           const isDis = !selectedNode;
@@ -3140,7 +3147,7 @@ const TabBar: React.FC<{
               </button>
 
               {/* Vertical divider between tabs */}
-              {idx < 2 && (
+              {idx < visibleTabs.length - 1 && (
                 <span
                   aria-hidden
                   style={{

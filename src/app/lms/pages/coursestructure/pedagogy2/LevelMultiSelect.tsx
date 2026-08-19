@@ -1,17 +1,16 @@
 "use client"
 
-// The Level picker — SINGLE-select. A level cell holds exactly one of
-// Basic / Easy / Medium / Hard; the older multi-select behavior that emitted
-// combined strings like "Easy & Medium" was retired. The value stays a plain
-// string (one of LEVEL_OPTIONS or empty) so the level API and row matcher
-// keep working without transformation.
-//
-// The file/component name stays "LevelMultiSelect" so every existing import
-// keeps compiling; the behavior is what changed.
+// The Level picker — MULTI-select. A level cell can hold any combination of
+// Basic / Easy / Medium / Hard, emitted as a single combined string:
+// picking Basic + Easy gives "Basic & Easy", Easy + Medium gives
+// "Easy & Medium". The value stays a plain string so the level API and the
+// row matcher keep working without transformation — formatLevels always emits
+// LEVEL_OPTIONS order, so the same pair picked in either click order produces
+// one identical string (level rows are matched by string equality).
 
 import React, { useEffect, useRef, useState } from "react"
 import { Check, ChevronDown, X } from "lucide-react"
-import { LEVEL_OPTIONS } from "./constants"
+import { LEVEL_OPTIONS, parseLevels, formatLevels } from "./constants"
 
 export default function LevelMultiSelect({
     value,
@@ -20,8 +19,7 @@ export default function LevelMultiSelect({
     className = "",
     disabled = false,
 }: {
-    /** Exactly one of LEVEL_OPTIONS, or empty string. Legacy combined strings
-     *  ("Easy & Medium") are treated as unset — the user must re-pick. */
+    /** Combined level string — "Easy", "Easy & Medium", or empty. */
     value?: string | null
     onChange: (value: string) => void
     placeholder?: string
@@ -30,8 +28,11 @@ export default function LevelMultiSelect({
 }) {
     const [open, setOpen] = useState(false)
     const rootRef = useRef<HTMLDivElement>(null)
-    // Normalize: only render the current value if it's a known single level.
-    const currentSingle = LEVEL_OPTIONS.find((o) => o === (value ?? "")) ?? ""
+    // Current picks, parsed back out of the combined string.
+    const selected = parseLevels(value)
+    // Re-format for display so a legacy value saved in another order ("Medium &
+    // Easy") still shows the canonical "Easy & Medium".
+    const display = formatLevels(selected)
 
     useEffect(() => {
         if (!open) return
@@ -52,11 +53,13 @@ export default function LevelMultiSelect({
         }
     }, [open])
 
-    // Single-select: clicking a level replaces the current value and closes
-    // the menu. Clicking the already-selected level clears it.
-    const select = (level: string) => {
-        onChange(level === currentSingle ? "" : level)
-        setOpen(false)
+    // Multi-select: clicking a level toggles it and leaves the menu open, so a
+    // pair can be picked in two clicks. Unticking the last one clears the cell.
+    const toggle = (level: string) => {
+        const next = selected.includes(level)
+            ? selected.filter((l) => l !== level)
+            : [...selected, level]
+        onChange(formatLevels(next))
     }
 
     return (
@@ -69,11 +72,11 @@ export default function LevelMultiSelect({
                     ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-[#FDBA74]"}
                     ${open ? "border-[#F97316] ring-1 ring-[#FDBA74]" : ""}`}
             >
-                <span className={currentSingle ? "text-slate-800" : "text-slate-400"}>
-                    {currentSingle || placeholder}
+                <span className={display ? "text-slate-800" : "text-slate-400"}>
+                    {display || placeholder}
                 </span>
                 <span className="flex items-center gap-1">
-                    {currentSingle && !disabled && (
+                    {display && !disabled && (
                         <span
                             role="button"
                             tabIndex={-1}
@@ -96,19 +99,19 @@ export default function LevelMultiSelect({
             {open && (
                 <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
                     {LEVEL_OPTIONS.map((level) => {
-                        const isSelected = currentSingle === level
+                        const isSelected = selected.includes(level)
                         return (
                             <button
                                 key={level}
                                 type="button"
-                                onClick={() => select(level)}
+                                onClick={() => toggle(level)}
                                 className={`flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-xs transition-colors
                                     ${isSelected ? "bg-[#FFF3EA] text-slate-900" : "text-slate-700 hover:bg-slate-50"}`}
                             >
                                 <span className="flex items-center gap-2">
-                                    {/* Radio-style indicator — single choice, not a checkbox. */}
+                                    {/* Checkbox-style indicator — several levels can be on at once. */}
                                     <span
-                                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border transition-colors
+                                        className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition-colors
                                             ${isSelected ? "border-[#F97316] bg-[#F97316] text-white" : "border-slate-300 bg-white"}`}
                                     >
                                         {isSelected && <Check className="h-2.5 w-2.5" />}

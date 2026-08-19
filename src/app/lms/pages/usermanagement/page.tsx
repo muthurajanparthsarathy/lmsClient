@@ -1,6 +1,6 @@
 "use client";
 import { getToken } from "@/lib/session";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loading } from "@/components/loading-ui/loading";
 import {
   Plus,
@@ -36,7 +36,6 @@ import { API_BASE_URL } from "@/lib/http";
 
 // Shared design kit
 import { EmptyState, Modal, pageEnter } from "../../shared/ui";
-import { HeaderStats } from "../../shared/ui/HeaderStats";
 import TableFooter from "../../shared/listing/TableFooter";
 import {
   DropdownMenu,
@@ -96,11 +95,6 @@ const degreeOptions = ["B.Tech", "B.E", "B.Sc", "B.Com", "B.A", "M.Tech", "M.Sc"
 const departmentOptions = ["Computer Science", "Electrical", "Mechanical", "Civil", "Electronics", "Information Technology", "Mathematics", "Physics", "Chemistry"];
 const yearOptions = ["1st Year", "2nd Year", "3rd Year", "4th Year", "5th Year"];
 
-// Shared control recipes (tokens only), matching the shell + listing kit.
-const SECONDARY_BTN =
-  "inline-flex items-center gap-1.5 h-9 px-3.5 rounded-control border border-hairline-strong bg-surface " +
-  "text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150";
-
 const BULK_BTN_BASE =
   "h-7 px-2.5 rounded-full text-xs font-medium disabled:opacity-40 disabled:hover:bg-transparent " +
   "disabled:cursor-not-allowed transition-colors duration-150";
@@ -158,6 +152,12 @@ export default function UserManagementPage() {
   // Show many more rows per page than the old default of 10 — the table is the
   // page's whole purpose here, so it should be full of data on first paint.
   const [pageSize, setPageSize] = useState(25);
+  // Auto-fit: match Client Management. The wrapper's height / row height
+  // decides pageSize, so rows always fill the space between the toolbar and
+  // pagination — no empty band below, no internal scroll. Flips off the
+  // moment the user picks a page size manually.
+  const [autoFitPageSize, setAutoFitPageSize] = useState(true);
+  const tableCardRef = useRef<HTMLDivElement | null>(null);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -561,6 +561,29 @@ export default function UserManagementPage() {
     setCurrentPage((p) => Math.min(p, totalPages));
   }, [pageSize, totalPages]);
 
+  // Auto-fit page size to the table wrapper's available height. Same math as
+  // Client Management: header (32) + row (44) + footer (44). SAFETY subtracts
+  // half a row so the last row never lands under the overflow-hidden edge and
+  // silently rolls to page 2.
+  useEffect(() => {
+    if (!autoFitPageSize) return;
+    const el = tableCardRef.current;
+    if (!el) return;
+    const HEADER_H = 32;
+    const FOOTER_H = 44;
+    const ROW_H = 44;
+    const SAFETY = Math.round(ROW_H / 2);
+    const compute = () => {
+      const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY);
+      const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)));
+      setPageSize((prev) => (prev === fits ? prev : fits));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [autoFitPageSize]);
+
   // Selected ids that still match the current filters.
   //
   // This used to be `selectedIds` intersected with the loaded list. Selection
@@ -907,124 +930,126 @@ export default function UserManagementPage() {
     ...(isSet(selectedBatch) ? [{ key: "batch", label: selectedBatch, onRemove: () => setSelectedBatch("") }] : []),
   ];
 
-  // Fill the viewport: the scroll region caps just short of the footer so many
-  // rows show at once and the header stays put. Reserves extra room when the
-  // chip row and/or the inline filter panel are on screen. dvh keeps it correct
-  // on mobile browser chrome. (UsersTable also enforces a min height, so the
-  // table never collapses even with both open on a short screen.)
-  // Base trimmed 18 → 16 to reclaim the empty band the page reserved below
-  // the table — about one extra row lands in view, and the small breathing
-  // gap the user liked on Course Setup is preserved here too.
-  const tableMaxH = `calc(100dvh - ${16 + (filterChips.length > 0 ? 3 : 0) + (showFilters ? 18 : 0)}rem)`;
-
   const pageContent = (
-    <div className="min-h-full">
+    <div className="min-h-full h-full flex flex-col">
       <Toaster position="top-right" richColors closeButton />
       <motion.div
         variants={pageEnter}
         initial="hidden"
         animate="visible"
-        className="px-4 sm:px-6 md:px-8 pt-5 pb-4"
+        className="flex flex-1 min-h-0 flex-col px-4 sm:px-6 md:px-8 pt-3 pb-3"
       >
 
-        {/* ── Slim header + labelled stat chip ── Matches the Clients /
-            Services / Course Setup pattern: HeaderStats on the right so the
-            count reads as "Users · N" instead of an unlabelled 209 pill
-            floating next to the title. Kept as a single chip because the page
-            fetches only `total`; adding Active/Inactive would need a new
-            server-side count. Breadcrumb lives in the navbar. */}
-        <div className="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-semibold text-heading tracking-[-0.01em]">
-              User Management
-            </h1>
-            <p className="text-sm text-subtle mt-0.5 hidden sm:block">
-              Manage roles, access and status across every account.
-            </p>
-          </div>
-          <HeaderStats
-            loading={isTableLoading}
-            items={[{ label: 'Users', value: totalFiltered }]}
-            skeletonCount={1}
-          />
+        {/* Slim heading — chip strip + subtitle dropped so the header reads
+            just like Client Management. */}
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">
+            User Management
+          </h1>
         </div>
 
-        {/* ── One enterprise toolbar: large search · Filter · overflow · Add User ── */}
-        <div className="mt-4 flex items-center gap-2">
-          {/* Large search — fills the bar */}
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
+        {/* One toolbar: search left · Filter · Export · Print grouped right
+            · vertical divider · Add User (primary). Mirrors Client
+            Management so the two admin lists read the same. */}
+        <div className="no-print mt-3 flex items-center gap-2 flex-wrap min-w-0">
+          {/* Compact search */}
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search users by name, email, degree or department…"
-              className="w-full h-10 pl-10 pr-9 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+              placeholder="Search users…"
+              className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchTerm && (
               <button
                 type="button"
                 aria-label="Clear search"
                 onClick={() => setSearchTerm("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 inline-flex size-6 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
               >
-                <X size={14} />
+                <X size={12} />
               </button>
             )}
           </div>
 
-          {/* Filter — toggles the inline panel on the same screen, badges the active count */}
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            aria-expanded={showFilters}
-            className={`${SECONDARY_BTN} !h-10 relative ${activeFilterCount > 0 || showFilters ? "!border-brand !text-brand-strong !bg-brand-wash" : ""}`}
-          >
-            <Filter className="w-4 h-4" />
-            <span className="hidden sm:inline">Filter</span>
-            {activeFilterCount > 0 && (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-
-          {/* Overflow — secondary actions (Import, Bulk permissions, Export) */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" aria-label="More actions" className={`${SECONDARY_BTN} !h-10 !px-2.5`}>
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={6} className="w-56">
-              {canAddUser && (
-                <DropdownMenuItem onClick={() => setShowBulkUserModal(true)} className="cursor-pointer">
-                  <FileSpreadsheet className="h-4 w-4" /> Import users (Excel)
-                </DropdownMenuItem>
-              )}
-              {canBulkPermission && (
-                <DropdownMenuItem onClick={() => setShowBulkPermissionModal(true)} className="cursor-pointer">
-                  <KeyRound className="h-4 w-4" /> Bulk permissions
-                </DropdownMenuItem>
-              )}
-              {(canAddUser || canBulkPermission) && <DropdownMenuSeparator />}
-              <DropdownMenuItem onClick={() => exportUsers('all')} className="cursor-pointer">
-                <Download className="h-4 w-4" /> Export all (CSV)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Primary — the one visible primary action */}
-          {canAddUser && (
-            <motion.button
+          {/* Secondary-action cluster (Filter · Export · More) pushed right */}
+          <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+            <button
               type="button"
-              onClick={handleAddUserClick}
-              whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-2 h-10 px-3.5 rounded-control bg-brand-strong text-white shadow-xs hover:bg-brand-800 transition-colors duration-150 ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+              onClick={() => setShowFilters((v) => !v)}
+              aria-expanded={showFilters}
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 relative ${activeFilterCount > 0 || showFilters ? "border-brand text-brand-strong bg-brand-wash" : "border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading"}`}
             >
-              <Plus size={16} strokeWidth={2.4} />
-              <span className="text-sm font-semibold hidden sm:inline">Add User</span>
-            </motion.button>
+              <Filter className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Filter</span>
+              {activeFilterCount > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Export — standalone dropdown like Client Management */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Export list"
+                  className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={6} className="w-40">
+                <DropdownMenuItem onClick={() => exportUsers('all')} className="cursor-pointer">
+                  <FileSpreadsheet className="h-4 w-4 text-success-700" /> Export all (CSV)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Overflow — page-specific actions that don't fit elsewhere
+                (Import, Bulk permissions). Kept behind a kebab so the
+                primary row stays clean. */}
+            {(canAddUser || canBulkPermission) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label="More actions" className="inline-flex items-center justify-center h-8 w-8 rounded-control border border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading transition-colors duration-150">
+                    <MoreHorizontal className="w-3.5 h-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={6} className="w-56">
+                  {canAddUser && (
+                    <DropdownMenuItem onClick={() => setShowBulkUserModal(true)} className="cursor-pointer">
+                      <FileSpreadsheet className="h-4 w-4" /> Import users (Excel)
+                    </DropdownMenuItem>
+                  )}
+                  {canBulkPermission && (
+                    <DropdownMenuItem onClick={() => setShowBulkPermissionModal(true)} className="cursor-pointer">
+                      <KeyRound className="h-4 w-4" /> Bulk permissions
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+
+          {/* Primary — Add User, matching Client Management's brand button */}
+          {canAddUser && (
+            <>
+              <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
+              <motion.button
+                type="button"
+                onClick={handleAddUserClick}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+              >
+                <Plus size={14} strokeWidth={2.4} />
+                <span className="text-xs font-semibold hidden sm:inline">Add User</span>
+              </motion.button>
+            </>
           )}
         </div>
 
@@ -1083,9 +1108,11 @@ export default function UserManagementPage() {
           </div>
         )}
 
-        {/* ── The table — the hero. A light card holds a sticky-header scroll
-            region that fills the viewport, so many rows show at once. ── */}
-        <div className="mt-4 bg-surface rounded-xl border border-hairline shadow-xs overflow-hidden">
+        {/* Flat listing — flex-1 min-h-0 lets the wrapper absorb the vertical
+            space between the toolbar and the pagination footer; the auto-fit
+            effect then picks the row count that exactly fills that height, so
+            no scrollbar appears and no empty band sits below the last row. */}
+        <div ref={tableCardRef} className="mt-2 flex flex-1 min-h-0 flex-col">
           <UsersTable
             users={currentUsers}
             isLoading={isTableLoading}
@@ -1101,7 +1128,6 @@ export default function UserManagementPage() {
             renderStatus={renderStatus}
             renderActions={renderActions}
             emptyState={usersEmptyState}
-            maxBodyHeight={tableMaxH}
             showActionsColumn={showActionsColumn}
           />
 
@@ -1112,7 +1138,7 @@ export default function UserManagementPage() {
               to={rangeEnd}
               total={totalFiltered}
               pageSize={pageSize}
-              onPageSize={(n) => { setPageSize(n); setCurrentPage(1); }}
+              onPageSize={(n) => { setAutoFitPageSize(false); setPageSize(n); setCurrentPage(1); }}
               currentPage={safePage}
               totalPages={totalPages}
               onPage={setCurrentPage}
@@ -1256,9 +1282,8 @@ export default function UserManagementPage() {
 
   return userRole === 'admin' || userRole === 'ldhead' || userRole === 'subhead' || userRole === 'programcoordinator'
     ? <DashboardLayout>{pageContent}</DashboardLayout>
-    // noBuiltInPadding: this page's tableMaxH (`100dvh - 16rem`) is tuned to
-    // the admin shell's zero outer padding. Without opting out here, the
-    // StaffLayout wrapper adds ~2.5rem on top and the table overflows the
-    // viewport in POC / trainer roles.
+    // noBuiltInPadding: the flex-1 chain assumes the admin shell's zero outer
+    // padding; StaffLayout would otherwise add ~2.5rem on top and push the
+    // table below the viewport in POC / trainer roles.
     : <StaffLayout noBuiltInPadding>{pageContent}</StaffLayout>;
 }
