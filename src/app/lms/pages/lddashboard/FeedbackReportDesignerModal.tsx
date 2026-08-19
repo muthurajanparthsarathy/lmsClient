@@ -18,11 +18,22 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-    FeedbackCategoryCharts,
+    FeedbackQuestionsChart,
     shortLabelsFor,
-    type CategoryGroup,
+    CATEGORY_COLORS,
+    type CategoryLegendEntry,
     type QuestionBar,
 } from "@/features/feedback/components/FeedbackCategoryCharts";
+
+// Aggregated shape the single-chart FeedbackQuestionsChart consumes.
+type FeedbackChartData = {
+    questions: QuestionBar[];
+    categories: CategoryLegendEntry[];
+    scale: number;
+    scaleMixed: boolean;
+    overallAvg: number;
+    totalN: number;
+};
 import {
     BarChart3,
     ChevronDown,
@@ -614,37 +625,67 @@ export default function FeedbackReportDesignerModal({
             .sort((a, b) => b.avg - a.avg);
     }, [workingResponses]);
 
-    // Per-category per-question rollup for the new small-multiples chart.
+    // Flat per-question rollup for the single FeedbackQuestionsChart.
+    //
     // Walks raw form payloads (not the pooled per-response perCategory maps,
     // which have already collapsed the questionText dimension) and honours the
     // modal's filters by keeping only responses that survived into
-    // workingResponses. Groups are keyed by (category, questionText, scale) so
-    // 4-scale and 5-scale questions with identical wording stay separate — the
-    // trap the audit flagged.
-    const perCategoryQuestions = useMemo<CategoryGroup[]>(() => {
+    // workingResponses. Bars are keyed by (category, questionText, scale) so
+    // 4-scale and 5-scale questions with identical wording stay separate.
+    // Output is pre-sorted by (category, form-order-in-category) so equal
+    // colours cluster and read as visual blocks in the single chart.
+    const feedbackChart = useMemo<FeedbackChartData>(() => {
         const keep = new Set<string>();
         for (const r of workingResponses) {
             keep.add(`${r.formId}::${r.studentId}::${r.submittedAt}`);
         }
+
+        // Preserve first-seen order for both categories and per-category questions
+        // so the chart bars fall in the same order the form authored them.
+        const categoryOrder: string[] = [];
         const cats = new Map<
             string,
-            Map<string, { question: string; sum: number; count: number; scale: number }>
+            Map<
+                string,
+                {
+                    question: string;
+                    sum: number;
+                    count: number;
+                    scale: number;
+                    ord: number;
+                }
+            >
         >();
+        const perCategoryOrdinal = new Map<string, number>();
 
+        // Learn question-order across forms in one pass so we can sort later.
         for (const f of workingForms) {
             const raw: any = f.raw || {};
-            const questions: any[] = Array.isArray(raw.questions) ? raw.questions : [];
-            const catByQ = new Map<string, string>();
-            const scaleByQ = new Map<string, number>();
-            for (const q of questions) {
+            const qs: any[] = Array.isArray(raw.questions) ? raw.questions : [];
+            for (const q of qs) {
                 if (q?.questionType !== "rating" || !q?.questionText) continue;
                 const cat = (q.category || "").toString().trim() || "Other";
                 const scale =
                     Number(q?.ratingConfig?.maxRating) > 0
                         ? Number(q.ratingConfig.maxRating)
                         : 5;
-                catByQ.set(q.questionText, cat);
-                scaleByQ.set(q.questionText, scale);
+                if (!cats.has(cat)) {
+                    cats.set(cat, new Map());
+                    categoryOrder.push(cat);
+                }
+                const perQ = cats.get(cat)!;
+                const qKey = `${q.questionText}|${scale}`;
+                if (!perQ.has(qKey)) {
+                    const nextOrd = (perCategoryOrdinal.get(cat) || 0) + 1;
+                    perCategoryOrdinal.set(cat, nextOrd);
+                    perQ.set(qKey, {
+                        question: q.questionText,
+                        sum: 0,
+                        count: 0,
+                        scale,
+                        ord: nextOrd,
+                    });
+                }
             }
             for (const r of raw.studentResponses || []) {
                 const key = `${f.id}::${r?.studentId || ""}::${r?.submittedAt || ""}`;
@@ -653,60 +694,75 @@ export default function FeedbackReportDesignerModal({
                     if (a?.questionType !== "rating") continue;
                     const v = Number(a?.answer);
                     if (!Number.isFinite(v) || v <= 0) continue;
-                    const cat = catByQ.get(a.questionText);
-                    const scale = scaleByQ.get(a.questionText);
-                    if (!cat || !scale) continue;
-                    const perQ =
-                        cats.get(cat) ??
-                        new Map<
-                            string,
-                            { question: string; sum: number; count: number; scale: number }
-                        >();
-                    // Composite key keeps same-text-different-scale rows apart.
-                    const qKey = `${a.questionText}|${scale}`;
-                    const cell =
-                        perQ.get(qKey) ??
-                        { question: a.questionText, sum: 0, count: 0, scale };
-                    cell.sum += v;
-                    cell.count += 1;
-                    perQ.set(qKey, cell);
-                    cats.set(cat, perQ);
+                    // Match this answer to any (category, scale) cell whose
+                    // questionText equals a.questionText. Same-text different-
+                    // scale rows stay separate because they live under
+                    // different keys.
+                    for (const [cat, perQ] of cats) {
+                        for (const [qKey, cell] of perQ) {
+                            if (cell.question !== a.questionText) continue;
+                            cell.sum += v;
+                            cell.count += 1;
+                            perQ.set(qKey, cell);
+                            cats.set(cat, perQ);
+                        }
+                    }
                 }
             }
         }
 
-        const out: CategoryGroup[] = [];
-        for (const [category, perQ] of cats) {
-            const rows: QuestionBar[] = [];
-            for (const { question, sum, count, scale } of perQ.values()) {
-                if (count === 0) continue;
-                rows.push({
-                    question,
-                    short: "", // assigned below via shortLabelsFor
-                    avg: Math.round((sum / count) * 100) / 100,
-                    n: count,
-                    scale,
+        // Flatten to a single questions[] pre-sorted (category, ord).
+        const questions: QuestionBar[] = [];
+        const legend: CategoryLegendEntry[] = [];
+        // "Other" (the catch-all) sinks to the end so named categories lead.
+        const sortedCats = [...categoryOrder].sort((a, b) => {
+            if (a === "Other" && b !== "Other") return 1;
+            if (b === "Other" && a !== "Other") return -1;
+            return 0;
+        });
+        sortedCats.forEach((category, idx) => {
+            const perQ = cats.get(category)!;
+            const rows = [...perQ.values()]
+                .filter((c) => c.count > 0)
+                .sort((a, b) => a.ord - b.ord);
+            if (rows.length === 0) return;
+            const color = CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
+            legend.push({ name: category, color });
+            for (const cell of rows) {
+                questions.push({
+                    question: cell.question,
+                    short: "", // filled after we know the total count
+                    avg: Math.round((cell.sum / cell.count) * 100) / 100,
+                    n: cell.count,
+                    scale: cell.scale,
+                    category,
                 });
             }
-            if (rows.length === 0) continue;
-            const shorts = shortLabelsFor(rows.map((r) => r.question));
-            rows.forEach((r, i) => (r.short = shorts[i]));
-            const scale = Math.max(...rows.map((r) => r.scale));
-            const scaleMixed = new Set(rows.map((r) => r.scale)).size > 1;
-            const totalN = rows.reduce((s, r) => s + r.n, 0);
-            const weightedAvg = totalN
-                ? Math.round(
-                      (rows.reduce((s, r) => s + r.avg * r.n, 0) / totalN) * 100
-                  ) / 100
-                : 0;
-            out.push({ category, scale, scaleMixed, weightedAvg, totalN, questions: rows });
-        }
-        // "Other" (catch-all) sorts last so real categories lead the grid.
-        return out.sort((a, b) => {
-            if (a.category === "Other" && b.category !== "Other") return 1;
-            if (b.category === "Other" && a.category !== "Other") return -1;
-            return a.category.localeCompare(b.category);
         });
+        const shorts = shortLabelsFor(questions.map((q) => q.question));
+        questions.forEach((q, i) => (q.short = shorts[i]));
+
+        const scale = questions.length
+            ? Math.max(...questions.map((q) => q.scale))
+            : 5;
+        const scaleMixed =
+            new Set(questions.map((q) => q.scale)).size > 1;
+        const totalN = questions.reduce((s, q) => s + q.n, 0);
+        const overallAvg = totalN
+            ? Math.round(
+                  (questions.reduce((s, q) => s + q.avg * q.n, 0) / totalN) *
+                      100
+              ) / 100
+            : 0;
+
+        return {
+            questions,
+            categories: legend,
+            scale,
+            scaleMixed,
+            overallAvg,
+            totalN,
+        };
     }, [workingForms, workingResponses]);
 
     const trainerAverages = useMemo(() => {
@@ -1623,11 +1679,18 @@ export default function FeedbackReportDesignerModal({
                                         <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
                                             <h3 className="text-xs font-semibold text-heading">Parameter averages</h3>
                                             <span className="text-[10px] text-subtle">
-                                                one card per parameter · questions on X · avg on Y
+                                                every question · colour-coded by parameter · avg on Y
                                             </span>
                                         </header>
                                         <div className="p-3">
-                                            <FeedbackCategoryCharts groups={perCategoryQuestions} />
+                                            <FeedbackQuestionsChart
+                                                questions={feedbackChart.questions}
+                                                categories={feedbackChart.categories}
+                                                scale={feedbackChart.scale}
+                                                scaleMixed={feedbackChart.scaleMixed}
+                                                overallAvg={feedbackChart.overallAvg}
+                                                totalN={feedbackChart.totalN}
+                                            />
                                         </div>
                                     </Sec>
                                 ) : null}

@@ -50,9 +50,10 @@ import {
   PARAM_COLORS,
 } from './workbookShared';
 import {
-  FeedbackCategoryCharts,
+  FeedbackQuestionsChart,
   shortLabelsFor,
-  type CategoryGroup,
+  CATEGORY_COLORS,
+  type CategoryLegendEntry,
   type QuestionBar,
 } from '@/features/feedback/components/FeedbackCategoryCharts';
 
@@ -502,55 +503,69 @@ const ReportBody: React.FC<{
     { label: 'Students Responded', value: stats.distinctStudents, tone: STAT_TONES[4] },
   ];
 
-  // Small-multiples input: one CategoryGroup per parameter, questions kept in
-  // form order, each on its own scale. When the form has no categories the
-  // fallback "Other" bucket becomes a single wide card — matches the user's
-  // "single chart with questions on X-axis" rule.
-  const perCategoryGroups = useMemo<CategoryGroup[]>(() => {
-    const cats = new Map<
+  // Flat input for the single FeedbackQuestionsChart. Questions are pre-sorted
+  // by (category, form-order-in-category) so identical colours cluster and
+  // read as visual blocks in the one chart.
+  const feedbackChart = useMemo(() => {
+    // Preserve first-seen category order, then flatten with an index.
+    const catOrder: string[] = [];
+    const byCat = new Map<
       string,
       { question: string; avg: number; n: number; scale: number }[]
     >();
     stats.perQuestionAvg.forEach((r) => {
       if (r.avg <= 0) return;
       const key = r.category || 'Other';
-      const list = cats.get(key) ?? [];
-      list.push({
+      if (!byCat.has(key)) {
+        byCat.set(key, []);
+        catOrder.push(key);
+      }
+      byCat.get(key)!.push({
         question: r.question,
         avg: Math.round(r.avg * 100) / 100,
         n: r.n,
         scale: r.max || stats.ratingScale,
       });
-      cats.set(key, list);
+    });
+    // "Other" sinks to the end so named parameters lead.
+    const sortedCats = [...catOrder].sort((a, b) => {
+      if (a === 'Other' && b !== 'Other') return 1;
+      if (b === 'Other' && a !== 'Other') return -1;
+      return 0;
     });
 
-    const groups: CategoryGroup[] = [];
-    cats.forEach((rows, category) => {
-      if (rows.length === 0) return;
-      const shorts = shortLabelsFor(rows.map((r) => r.question));
-      const questions: QuestionBar[] = rows.map((r, i) => ({
-        question: r.question,
-        short: shorts[i],
-        avg: r.avg,
-        n: r.n,
-        scale: r.scale,
-      }));
-      const scale = Math.max(...questions.map((q) => q.scale));
-      const scaleMixed = new Set(questions.map((q) => q.scale)).size > 1;
-      const totalN = questions.reduce((s, q) => s + q.n, 0);
-      const weightedAvg = totalN
-        ? Math.round(
-            (questions.reduce((s, q) => s + q.avg * q.n, 0) / totalN) * 100
-          ) / 100
-        : 0;
-      groups.push({ category, scale, scaleMixed, weightedAvg, totalN, questions });
+    const questions: QuestionBar[] = [];
+    const categories: CategoryLegendEntry[] = [];
+    sortedCats.forEach((cat, idx) => {
+      const rows = byCat.get(cat)!;
+      const color = CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
+      categories.push({ name: cat, color });
+      for (const r of rows) {
+        questions.push({
+          question: r.question,
+          short: '', // assigned after we know the total count
+          avg: r.avg,
+          n: r.n,
+          scale: r.scale,
+          category: cat,
+        });
+      }
     });
-    // "Other" (the catch-all) sinks to the end so named parameters lead.
-    return groups.sort((a, b) => {
-      if (a.category === 'Other' && b.category !== 'Other') return 1;
-      if (b.category === 'Other' && a.category !== 'Other') return -1;
-      return a.category.localeCompare(b.category);
-    });
+    const shorts = shortLabelsFor(questions.map((q) => q.question));
+    questions.forEach((q, i) => (q.short = shorts[i]));
+
+    const scale = questions.length
+      ? Math.max(...questions.map((q) => q.scale))
+      : stats.ratingScale;
+    const scaleMixed = new Set(questions.map((q) => q.scale)).size > 1;
+    const totalN = questions.reduce((s, q) => s + q.n, 0);
+    const overallAvg = totalN
+      ? Math.round(
+          (questions.reduce((s, q) => s + q.avg * q.n, 0) / totalN) * 100
+        ) / 100
+      : 0;
+
+    return { questions, categories, scale, scaleMixed, overallAvg, totalN };
   }, [stats.perQuestionAvg, stats.ratingScale]);
 
   return (
@@ -575,14 +590,14 @@ const ReportBody: React.FC<{
         ))}
       </div>
 
-      {/* Feedback overview — one compact chart per parameter (or a single card
-          named "Other" when the form has no categories). Questions live on the
-          X-axis of each card, averages on the Y-axis of that card's own scale
-          (4 or 5). Replaces the old wide-bar Parameter / Question chart. */}
+      {/* Feedback overview — ONE chart with every question as a bar, colour
+          coded by parameter, long question labels truncated with "…" (hover
+          for the full text). Replaces the old wide-bar Parameter/Question
+          chart AND the per-parameter small-multiples grid. */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-[12px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
-            Feedback Overview by Parameter
+            Feedback Overview
           </h3>
           {stats.overallAvg > 0 && (
             <span className="text-[10px] text-gray-500">
@@ -593,12 +608,17 @@ const ReportBody: React.FC<{
             </span>
           )}
         </div>
-        <FeedbackCategoryCharts
-          groups={perCategoryGroups}
+        <FeedbackQuestionsChart
+          questions={feedbackChart.questions}
+          categories={feedbackChart.categories}
+          scale={feedbackChart.scale}
+          scaleMixed={feedbackChart.scaleMixed}
+          overallAvg={feedbackChart.overallAvg}
+          totalN={feedbackChart.totalN}
           emptyLabel="No rating data yet"
         />
         <p className="text-[10px] text-gray-400 mt-3">
-          Rating scale: 1 (Very Poor) – {stats.ratingScale} (Excellent) · bars coloured green ≥ 80%, amber ≥ 60%, red below · dashed line marks the 70% passing threshold
+          Rating scale: 1 (Very Poor) – {stats.ratingScale} (Excellent) · hover any bar for the full question · dashed line marks the 70% passing threshold
         </p>
       </div>
 
