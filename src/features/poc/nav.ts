@@ -32,7 +32,7 @@ import type { SidebarItem } from "@/app/lms/shared/ui/navItems";
  */
 export const POC_NAV_ITEMS: SidebarItem[] = [
   {
-    title: "POC Dashboard",
+    title: "Dashboard",
     href: "/lms/pages/poc/dashboard",
     icon: LayoutDashboard,
     iconName: "LayoutDashboard",

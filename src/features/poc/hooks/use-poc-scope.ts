@@ -14,6 +14,22 @@ import { http } from "@/lib/http";
 // reads null as "no filter" and shows every course in the institution. For a
 // POC that behaviour would be a data leak, so an empty result stays empty.
 
+// The `?summary=enrolled` projection ships each course's roster along with two
+// server-computed helpers the dashboard leans on:
+//   - `participantCount` — distinct users across every batch, with dangling
+//     refs already removed server-side (see courseStructure.js:1310).
+//   - `moduleCount` — direct count from the Module1 collection, not derived
+//     from the roster payload.
+// Status on the roster entries is what marks a learner "active" (matches the
+// admin-analytics semantics in pedagogyView.js:1988).
+export interface PocRosterUserRef {
+  _id?: string;
+  status?: string;
+}
+export interface PocRosterEntry {
+  status?: string;
+  user?: PocRosterUserRef | string | null;
+}
 export interface PocCourse {
   _id: string;
   courseName?: string;
@@ -27,7 +43,9 @@ export interface PocCourse {
   serviceType?: string;
   status?: string;
   createdAt?: string;
-  batchAndParticipants?: { users?: unknown[] }[];
+  moduleCount?: number;
+  participantCount?: number;
+  batchAndParticipants?: { users?: PocRosterEntry[] }[];
 }
 
 export interface PocClient {
@@ -141,6 +159,49 @@ export const usePocSummary = () => {
   const active = scheduled.filter((c) => !c.trainingEnd || c.trainingEnd >= today);
   const completed = scheduled.filter((c) => c.trainingEnd && c.trainingEnd < today);
 
+  // Roster-derived learner totals — mirrors the admin analytics semantics
+  // (pedagogyView.js:1988) so the two dashboards agree on what "active" means:
+  // distinct users across a course's batches, then filtered by user.status.
+  let totalLearners = 0;
+  let activeLearners = 0;
+  let totalModules = 0;
+  for (const course of courseRows) {
+    const seen = new Set<string>();
+    const seenActive = new Set<string>();
+    (course.batchAndParticipants ?? []).forEach((batch) => {
+      (batch.users ?? []).forEach((entry) => {
+        const ref = entry?.user;
+        const id =
+          !ref
+            ? null
+            : typeof ref === "string"
+            ? ref
+            : ref._id ?? null;
+        if (!id) return;
+        const key = String(id);
+        seen.add(key);
+        const status =
+          typeof ref === "object" && ref?.status ? ref.status : entry?.status;
+        if (String(status || "").toLowerCase() === "active") seenActive.add(key);
+      });
+    });
+    // Both counts come from the same enumeration so `active` can never exceed
+    // `total`. `participantCount` from the server would be preferable for
+    // totals (it also drops dangling user refs), but there's no matching
+    // server-side active count — mixing the two produced active > total in
+    // practice.
+    totalLearners += seen.size;
+    activeLearners += seenActive.size;
+    totalModules += course.moduleCount ?? 0;
+  }
+
+  // Distinct clients as the admin dashboard measures them — courses with a
+  // resolvable clientName. Falls back to the client-list length if the
+  // course rows never carry the name (older payloads).
+  const clientsFromCourses = new Set(
+    courseRows.map((c) => c.clientName).filter(Boolean) as string[]
+  );
+
   return {
     loading,
     error,
@@ -151,14 +212,27 @@ export const usePocSummary = () => {
     clients: clients.data ?? [],
     services: services.data ?? [],
     attendance: attendanceRows,
+    refetch: () => {
+      courses.refetch();
+      clients.refetch();
+      services.refetch();
+      attendance.refetch();
+    },
+    isFetching:
+      courses.isFetching ||
+      clients.isFetching ||
+      services.isFetching ||
+      attendance.isFetching,
     stats: {
       totalCourses: courseRows.length,
       activeCourses: active.length,
       completedCourses: completed.length,
       unscheduledCourses: courseRows.length - scheduled.length,
-      clients: (clients.data ?? []).length,
+      clients: clientsFromCourses.size || (clients.data ?? []).length,
       services: (services.data ?? []).length,
-      students: attendanceRows.reduce((n, c) => n + (c.totalStudents || 0), 0),
+      students: totalLearners,
+      activeStudents: activeLearners,
+      modules: totalModules,
     },
   };
 };

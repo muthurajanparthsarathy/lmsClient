@@ -10,7 +10,7 @@ import * as LucideIcons from "lucide-react"
 
 import {
   ShieldCheck, Home, User, Bell, BookOpen, FileText, Trophy,
-  GraduationCap, Calendar, MessageSquare, BarChart3, Settings2,
+  GraduationCap, Calendar, MessageSquare, MessageCircle, BarChart3, Settings2,
   Clock, Users, Bookmark, Target, Zap, Layers, Award,
   LayoutDashboard, FolderOpen, ClipboardCheck, Video,
   Activity, TrendingUp, Brain, Sparkles, Flame, X, ChevronDown, ChevronUp,
@@ -38,6 +38,9 @@ const DUOTONE_ICON_MAP: Record<string, any> = {
   schedule: CalendarBlank,
   profile: UserCircle,
   progress: ChartBar,
+  // Student feedback list at /lms/pages/feedback — reuses the same chat
+  // bubble the messages entry uses so the tone matches the rest of the row.
+  feedback: ChatCircleText,
 }
 
 interface SidebarItem {
@@ -147,7 +150,7 @@ const routeKeyOf = (href: string) => {
 // Section grouping config — first group renders without a heading (like the reference design)
 const SECTION_GROUPS: Record<string, string[]> = {
   "": ["dashboard"],
-  "Learning": ["courses", "codinganalytics", "assignments", "grades", "resources"],
+  "Learning": ["courses", "codinganalytics", "assignments", "grades", "resources", "feedback"],
   "Connect": ["messages", "notifications", "schedule"],
   "Account": ["profile", "settings", "help", "progress"],
 }
@@ -358,6 +361,7 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     profile: "My Profile",
     codinganalytics: "Coding Analytics",
     grade: "Grade",
+    feedback: "Feedback",
   }
 
   const buildSidebarItems = (user: UserData, userAnalytics: any): SidebarItem[] => {
@@ -387,6 +391,27 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     // (`student-codinganalytics`), so it appears only when granted — the old
     // always-inject shim is gone. If a `codinganalytics` permission is
     // present it flows through the map above naturally.
+    //
+    // Feedback IS always injected for students: the "Feedback" entry lists
+    // every open feedback form on the student's own courses and mirrors the
+    // per-course Give-feedback button, so it should never depend on a
+    // separate permission being seeded on the user doc. If the admin later
+    // seeds a `feedback` permission we still show the item once (dedup by
+    // route key), so this never doubles up.
+    const feedbackRoute = `${BASE_PATH}feedback`
+    const hasFeedback = items.some((it) => it.href === feedbackRoute)
+    if (!hasFeedback) {
+      items.push({
+        icon: MessageCircle,
+        label: STUDENT_LABEL_OVERRIDES.feedback || "Feedback",
+        href: feedbackRoute,
+        permissionKey: "feedback",
+        isActive: getIsActive(feedbackRoute),
+        count: 0,
+        progress: 0,
+        color: "orange",
+      })
+    }
     return items
   }
 
@@ -408,6 +433,9 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     { icon: Code2, label: "Coding Analytics", href: `${BASE_PATH}codinganalytics`, count: 0, progress: 0 },
     { icon: ClipboardCheck, label: "Assignments", href: `${BASE_PATH}assignments`, count: analytics.attemptedExercises, progress: 0 },
     { icon: Trophy, label: "Grades", href: `${BASE_PATH}grades`, count: analytics.completedCourses, progress: analytics.overallProgress },
+    // Student feedback list — every open feedback form on the student's
+    // courses, with Give feedback / Done actions. Route: /lms/pages/feedback.
+    { icon: MessageCircle, label: "Feedback", href: `${BASE_PATH}feedback`, count: 0, progress: 0 },
     { icon: Bell, label: "Notifications", href: `${BASE_PATH}notifications`, count: 0, progress: 0 },
     { icon: MessageSquare, label: "Messages", href: `${BASE_PATH}messages`, count: 0, progress: 0 },
     { icon: FolderOpen, label: "Resources", href: `${BASE_PATH}resources`, count: analytics.totalModules + analytics.totalTopics, progress: 0 },
@@ -430,6 +458,8 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
       'study-schedule': 'schedule', 'schedule': 'schedule', 'calendar': 'schedule',
       'user-profile': 'profile', 'profile': 'profile',
       'notifications': 'notifications', 'alerts': 'notifications',
+      // Student feedback list (Give feedback / Done actions per course).
+      'feedback': 'feedback', 'student-feedback': 'feedback', 'feedbacks': 'feedback',
     }
     if (routeMappings[routeKey]) routeKey = routeMappings[routeKey]
     return `${BASE_PATH}${routeKey}`

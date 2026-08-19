@@ -81,6 +81,14 @@ const PerformanceReportDesignerModal = dynamic(
   () => import("./PerformanceReportDesignerModal"),
   { ssr: false },
 );
+/* Cross-form feedback designer for #fb-summary — Canva-style overlay that
+   pools responses across selected forms and lets a head pick trainers,
+   batches, rating bands and columns. Same shape as the performance
+   designer so both surfaces feel identical. Dynamic for the same reason. */
+const FeedbackReportDesignerModal = dynamic(
+  () => import("./FeedbackReportDesignerModal"),
+  { ssr: false },
+);
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
 const getToken = () =>
@@ -4158,8 +4166,17 @@ function printReportHtml(title: string, scope: string, inner: string) {
 
 /* Header + scope pickers + Print. Printing flips RPrintCtx first so every
    table renders its FULL filtered set, then snapshots this shell's content. */
-function ReportShell({ title, sub, f, client = true, course = true, actions, children }: {
-  title: string; sub: string; f: ViewFilter; client?: boolean; course?: boolean; actions?: ReactNode; children: ReactNode;
+function ReportShell({ title, sub, f, client = true, course = true, actions, children, hidePrint = false }: {
+  title: string; sub: string; f: ViewFilter; client?: boolean; course?: boolean;
+  /** Pass a plain ReactNode for the header actions, OR pass a function that
+   *  receives the shared doPrint callback so the view can render its own
+   *  Print button inline with its other action buttons. Views that render
+   *  their own Print should also pass `hidePrint`. */
+  actions?: ReactNode | ((doPrint: () => void) => ReactNode);
+  children: ReactNode;
+  /** Suppress the default Print button in the header (rep-performance opts out
+   *  so it can render its own Print next to Detailed / Generate in one group). */
+  hidePrint?: boolean;
 }) {
   const [printing, setPrinting] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -4181,10 +4198,12 @@ function ReportShell({ title, sub, f, client = true, course = true, actions, chi
         right={
           <>
             <ScopeFilters f={f} client={client} course={course} />
-            {actions}
-            <button className="ldc-btn go" type="button" onClick={doPrint} title="Print this report">
-              <Printer size={13} style={{ display: "inline", verticalAlign: "-2px", marginRight: 5 }} />Print
-            </button>
+            {typeof actions === "function" ? actions(doPrint) : actions}
+            {!hidePrint && typeof actions !== "function" ? (
+              <button className="ldc-btn go" type="button" onClick={doPrint} title="Print this report">
+                <Printer size={13} style={{ display: "inline", verticalAlign: "-2px", marginRight: 5 }} />Print
+              </button>
+            ) : null}
           </>
         }
       />
@@ -5179,21 +5198,34 @@ function PerformanceReport({ f }: { f: ViewFilter }) {
   if (loading) return <ReportShell title="Performance Report" sub={PERF_SUB} f={f}><Loading /></ReportShell>;
   if (error) return <ReportShell title="Performance Report" sub={PERF_SUB} f={f}><ErrBox m={error} /></ReportShell>;
 
-  const actions = (
+  // Detailed / Generate / Print stay together as one visual cluster (nowrap)
+  // so they never split across lines when the header wraps. Actions is a
+  // function so ReportShell hands us its doPrint and we can inline the Print
+  // button next to Detailed + Generate — one owned print pipeline, one
+  // visually grouped cluster.
+  const actions = (doPrint: () => void) => (
     <>
       <MultiPick label="Students" options={opts} sel={pick} onChange={setPick} />
-      <button
-        className="ldc-btn green" type="button" title="Open the Report Designer overlay — dynamic filters + downloads"
-        onClick={() => setDesignerOpen(true)}
-      >
-        <SlidersHorizontal size={13} style={ICO} />Detailed report
-      </button>
-      <button
-        className="ldc-btn go" type="button" title="Generate a customized, downloadable report"
-        onClick={() => { setDraft(docCfg ?? perfDefaultCfg()); setOpen(true); }}
-      >
-        <FileText size={13} style={ICO} />Generate
-      </button>
+      <div className="ldc-btn-cluster">
+        <button
+          className="ldc-btn green" type="button" title="Open the Report Designer overlay — dynamic filters + downloads"
+          onClick={() => setDesignerOpen(true)}
+        >
+          <SlidersHorizontal size={13} style={ICO} />Detailed report
+        </button>
+        <button
+          className="ldc-btn go" type="button" title="Generate a customized, downloadable report"
+          onClick={() => { setDraft(docCfg ?? perfDefaultCfg()); setOpen(true); }}
+        >
+          <FileText size={13} style={ICO} />Generate
+        </button>
+        <button
+          className="ldc-btn go" type="button" title="Print this report"
+          onClick={doPrint}
+        >
+          <Printer size={13} style={ICO} />Print
+        </button>
+      </div>
     </>
   );
 
@@ -5673,6 +5705,9 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
   const cs = useCourseStructures();
   // The raw doc of the form opened in the per-form report modal (null = shut).
   const [openDoc, setOpenDoc] = useState<any | null>(null);
+  // Detailed Report designer — Canva-style overlay pooling responses across
+  // every form in scope. Opened by the green Detailed report button.
+  const [designerOpen, setDesignerOpen] = useState(false);
   const sub = "Pick a form to open its full report — responses, ratings, column pickers and PDF / Excel downloads.";
   if (fb.loading || cs.loading) return <ReportShell title="Feedback Report" sub={sub} f={f}><Loading /></ReportShell>;
   if (fb.error) return <ReportShell title="Feedback Report" sub={sub} f={f}><ErrBox m={fb.error} /></ReportShell>;
@@ -5723,8 +5758,19 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
     };
   });
 
+  const scopeStr = scopeLabel(f, f.courseOpts.find((c) => c.id === f.course)?.name) || "All clients · all courses";
+  const actions = (
+    <button
+      className="ldc-btn green" type="button"
+      title="Open the Report Designer overlay — pool forms, filter, download"
+      onClick={() => setDesignerOpen(true)}
+    >
+      <SlidersHorizontal size={13} style={ICO} />Detailed report
+    </button>
+  );
+
   return (
-    <ReportShell title="Feedback Report" sub={sub} f={f}>
+    <ReportShell title="Feedback Report" sub={sub} f={f} actions={actions}>
       <RTable
         title="Feedback forms"
         rows={forms}
@@ -5774,6 +5820,18 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
       />
       {/* Portal-rendered; keyed by form so filters/column picks reset per doc. */}
       <FeedbackFormReportModal key={openDoc ? String(openDoc._id) : "shut"} open={!!openDoc} onClose={() => setOpenDoc(null)} feedback={openDoc} />
+      {/* Cross-form designer — opened by the Detailed report button above.
+          Reuses the same per-form modal for the row-level Open action so the
+          two surfaces stay in lockstep. */}
+      {designerOpen ? (
+        <FeedbackReportDesignerModal
+          open={designerOpen}
+          onClose={() => setDesignerOpen(false)}
+          forms={forms}
+          scopeLabel={scopeStr}
+          onOpenForm={(raw) => setOpenDoc(raw)}
+        />
+      ) : null}
     </ReportShell>
   );
 }
@@ -6217,6 +6275,9 @@ const LDC_CSS = `
 .ldc-btn.go{background:var(--accent); border-color:var(--accent); color:#fff;}
 .ldc-btn.green{background:#0E9F6E; border-color:#0E9F6E; color:#fff;}
 .ldc-btn.green:hover{background:#0B8760; border-color:#0B8760;}
+/* Nowrap grouping for header action buttons — keeps Detailed / Generate /
+   Print sitting together even when the header row wraps. */
+.ldc-btn-cluster{display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap;}
 .ldc-empty{padding:36px 16px; text-align:center; color:var(--muted); font-size:13px;}
 .ldc-empty b{display:block; color:var(--ink); font-weight:650; font-size:14px; margin-bottom:3px;}
 .ldc-empty span{display:block; font-size:12px;}

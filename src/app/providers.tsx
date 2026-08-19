@@ -233,6 +233,19 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
     return { hasAccess: isStudent, requiredPermission: 'studentdashboard' }
   }
 
+  // Student Feedback list at /lms/pages/feedback — every student always
+  // has access to their own open feedback forms, no per-user permission
+  // required. Staff previewing as a student get the same list via the
+  // isDummyStudent flag; anyone else falls through to normal matching so
+  // an admin who explicitly holds the `feedback` module still opens it.
+  if (pathname.startsWith('/lms/pages/feedback')) {
+    const previewingAsStudent = typeof window !== 'undefined'
+      && localStorage.getItem('smartcliff_isDummyStudent') === 'true'
+    if (isStudent || previewingAsStudent) {
+      return { hasAccess: true, requiredPermission: 'feedback' }
+    }
+  }
+
   if (pathname === '/lms/pages/admindashboard') {
     return { hasAccess: !isStudent, requiredPermission: 'admindashboard' }
   }
