@@ -184,7 +184,7 @@ type ViewKey = "stats" | "activities" | "gradePie" | "subcatBars" | "courses" | 
 const VIEWS: { key: ViewKey; label: string; icon: React.FC<{ className?: string }> }[] = [
     { key: "stats", label: "Summary stats", icon: SlidersHorizontal },
     { key: "activities", label: "I Do · We Do · You Do", icon: PieIcon },
-    { key: "gradePie", label: "Grade distribution", icon: PieIcon },
+    { key: "gradePie", label: "Grade distribution", icon: BarChart3 },
     { key: "subcatBars", label: "Sub-category bars", icon: BarChart3 },
     { key: "courses", label: "Courses table", icon: TableIcon },
     { key: "roster", label: "Roster (with grade)", icon: TableIcon },
@@ -1524,12 +1524,17 @@ export default function PerformanceReportDesignerModal({
             }
 
             if (shouldShow("gradePie") && gradeSlices.length > 0) {
+                // Table only — the canvas renders labeled count bars, not a
+                // chart, so there is nothing to rasterise here any more.
                 h2("Grade distribution");
-                await addChartImage("gradePie", gradeSlices.map((g) => ({ label: `${g.name} (${g.value})`, color: g.color })));
                 autoTable(doc, {
                     startY: y,
-                    head: [["Grade", "Students"]],
-                    body: gradeSlices.map((g) => [g.name, String(g.value)]),
+                    head: [["Grade", "Students", "% of scope"]],
+                    body: gradeSlices.map((g) => [
+                        g.name,
+                        String(g.value),
+                        stats.total ? `${Math.round((g.value / stats.total) * 100)}%` : "0%",
+                    ]),
                     styles: { fontSize: 9, cellPadding: 4 },
                     headStyles: { fillColor: [42, 120, 214] },
                     margin: { left: M, right: M },
@@ -2395,37 +2400,37 @@ export default function PerformanceReportDesignerModal({
                                                 bands on the picked %
                                             </span>
                                         </header>
-                                        <div className="h-64">
-                                            {gradeSlices.length === 0 ? (
-                                                <div className="flex h-full items-center justify-center text-xs text-subtle">
-                                                    Nothing to grade in the current selection.
-                                                </div>
-                                            ) : (
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <PieChart>
-                                                        <Pie
-                                                            dataKey="value"
-                                                            nameKey="name"
-                                                            data={gradeSlices}
-                                                            innerRadius={55}
-                                                            outerRadius={90}
-                                                            paddingAngle={2}
-                                                        >
-                                                            {gradeSlices.map((s, i) => (
-                                                                <Cell key={i} fill={s.color} />
-                                                            ))}
-                                                        </Pie>
-                                                        <RTooltip />
-                                                        <RLegend
-                                                            verticalAlign="bottom"
-                                                            height={30}
-                                                            iconType="circle"
-                                                            wrapperStyle={{ fontSize: 11 }}
-                                                        />
-                                                    </PieChart>
-                                                </ResponsiveContainer>
-                                            )}
-                                        </div>
+                                        {/* Plain labeled count bars — the donut this used to be was
+                                            redundant next to the Activities pie and harder to read. */}
+                                        {gradeSlices.length === 0 ? (
+                                            <div className="flex h-40 items-center justify-center text-xs text-subtle">
+                                                Nothing to grade in the current selection.
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col gap-2 p-4">
+                                                {gradeSlices.map((s) => {
+                                                    const pctOfAll = stats.total
+                                                        ? Math.round((s.value / stats.total) * 100)
+                                                        : 0;
+                                                    return (
+                                                        <div key={s.key} className="flex items-center gap-3">
+                                                            <span className="w-24 flex-shrink-0 text-[11px] font-medium text-body">
+                                                                {s.name}
+                                                            </span>
+                                                            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-row-hover">
+                                                                <div
+                                                                    className="h-full rounded-full"
+                                                                    style={{ width: `${pctOfAll}%`, background: s.color }}
+                                                                />
+                                                            </div>
+                                                            <span className="w-20 flex-shrink-0 text-right text-[11px] tabular-nums text-subtle">
+                                                                <b className="text-body">{s.value}</b> · {pctOfAll}%
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </Sec>
                                 ) : null}
 
