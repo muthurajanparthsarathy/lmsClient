@@ -36,9 +36,12 @@ import { Loading } from "@/components/loading-ui/loading";
 
 /* The .ldx block styles a full L&D viewport (flex row, 100vh canvas). Here it
    only exists to carry the palette + control styles the report classes read,
-   so flatten it into a plain padded block that fills whichever shell hosts it. */
+   so flatten it into a plain padded block that fills whichever shell hosts it.
+   `--page` is re-pinned to white: the host shells already paint the gray
+   canvas around their white workspace panel, so the L&D gray inside it read
+   as a gray page. */
 const STANDALONE_CSS = `
-.ldx.ldx-standalone{display:block; min-height:100%; height:auto; background:var(--page); padding:20px 26px 36px;}
+.ldx.ldx-standalone{--page:#ffffff; display:block; min-height:100%; height:auto; background:#ffffff; padding:20px 26px 36px;}
 @media (min-width:1600px){ .ldx.ldx-standalone{padding:24px 36px 40px;} }
 `;
 
