@@ -106,6 +106,11 @@ type Props = {
     baseStudents: PerfStudentRow[];
     baseCourseRows: PerfCourseRow[];
     scopeLabel: string;
+    /** Selected client / course names for the drawer readout — shown as their
+     *  own labeled rows ("Course: X · Client: Y") instead of one vague
+     *  "Scope" string. Empty / "all" means no narrowing. */
+    clientName?: string;
+    courseName?: string;
     /** Set only when the page filter is narrowed to ONE course — enables the
      *  per-assignment / per-question drilldown, which needs the heavy
      *  /getAll/courses-data payload (pedagogy + participant answers). */
@@ -175,14 +180,23 @@ const prettySubcat = (raw: string): string => {
 };
 
 // ─── Views the canvas can render (multi-select). ─────────────────────────
-type ViewKey = "stats" | "gradePie" | "subcatBars" | "courses" | "roster" | "exerciseDetail";
+type ViewKey = "stats" | "activities" | "gradePie" | "subcatBars" | "courses" | "roster" | "exerciseDetail";
 const VIEWS: { key: ViewKey; label: string; icon: React.FC<{ className?: string }> }[] = [
     { key: "stats", label: "Summary stats", icon: SlidersHorizontal },
+    { key: "activities", label: "I Do · We Do · You Do", icon: PieIcon },
     { key: "gradePie", label: "Grade distribution", icon: PieIcon },
     { key: "subcatBars", label: "Sub-category bars", icon: BarChart3 },
     { key: "courses", label: "Courses table", icon: TableIcon },
     { key: "roster", label: "Roster (with grade)", icon: TableIcon },
     { key: "exerciseDetail", label: "Assignment / Assessment detail", icon: Layers },
+];
+
+// Fixed identity colors for the three pedagogy stages — used by the Activities
+// pie + bar so I Do / We Do / You Do read the same in preview and PDF.
+const ACTIVITY_SPLIT: { key: "iDo" | "weDo" | "youDo"; label: string; color: string; hint: string }[] = [
+    { key: "iDo", label: "I Do", color: "#2E90C4", hint: "instructor-led" },
+    { key: "weDo", label: "We Do", color: "#F97316", hint: "guided practice" },
+    { key: "youDo", label: "You Do", color: "#0E9F6E", hint: "independent work" },
 ];
 
 // ─── Roster columns the user can toggle. ─────────────────────────────────
@@ -214,7 +228,7 @@ const COLUMNS: { key: ColKey; label: string; hint: string; r?: boolean }[] = [
 ];
 
 const DEFAULT_COLS: ColKey[] = ["email", "course", "overall", "subcatPct", "grade", "last"];
-const DEFAULT_VIEWS: ViewKey[] = ["stats", "gradePie", "subcatBars", "roster"];
+const DEFAULT_VIEWS: ViewKey[] = ["stats", "activities", "gradePie", "subcatBars", "roster"];
 
 // ─── Per-exercise drilldown (mirrors assignment Dashboard → Reports view) ─
 // Summary columns shown on the outer roster row (like SUMMARY_COLUMNS in
@@ -615,6 +629,8 @@ export default function PerformanceReportDesignerModal({
     baseStudents,
     baseCourseRows,
     scopeLabel,
+    clientName,
+    courseName,
     courseId,
 }: Props) {
     // Designer state
@@ -824,6 +840,27 @@ export default function PerformanceReportDesignerModal({
         const excellent = workingRows.filter((r) => r.gradePct >= 80).length;
         return { total, avgOverall, avgSelected, avgScore, atRisk, notStarted, excellent };
     }, [workingRows]);
+
+    // Per-activity (I Do / We Do / You Do) mean completion across the surviving
+    // rows — the readable split the flat "Avg overall %" card never gave.
+    // null = no student carries that stage (e.g. a course with no I Do work).
+    const activitySplit = useMemo(
+        () =>
+            ACTIVITY_SPLIT.map((a) => {
+                const vals = workingRows
+                    .map((r) => r[a.key] as number | null)
+                    .filter((v): v is number => v !== null);
+                return {
+                    ...a,
+                    avg: vals.length ? Math.round(vals.reduce((x, y) => x + y, 0) / vals.length) : null,
+                    learners: vals.length,
+                };
+            }),
+        [workingRows],
+    );
+    const activityChartRows = activitySplit.filter((a) => a.avg !== null) as Array<
+        (typeof activitySplit)[number] & { avg: number }
+    >;
 
     // ── Per-exercise drilldown data ──────────────────────────────────────
     // Which of the catalogue's exercises are actually selected. `null` = all,
@@ -1115,8 +1152,11 @@ export default function PerformanceReportDesignerModal({
                 h.eachCell((c: any) => (c.style = header));
                 const st: [string, string | number][] = [
                     ["Total students", stats.total],
-                    ["Avg overall %", `${stats.avgOverall}%`],
-                    ["Avg selected %", stats.avgSelected === null ? "—" : `${stats.avgSelected}%`],
+                    // Per-activity averages instead of the blended "Avg overall %".
+                    ...activitySplit.map((a): [string, string] => [
+                        `${a.label} avg % (${a.hint})`,
+                        a.avg === null ? "N/A" : `${a.avg}%`,
+                    ]),
                     ["Avg score %", stats.avgScore === null ? "—" : `${stats.avgScore}%`],
                     ["Excellent (≥80%)", stats.excellent],
                     ["At risk (<40%)", stats.atRisk],
@@ -1124,6 +1164,15 @@ export default function PerformanceReportDesignerModal({
                 ];
                 st.forEach((r) => {
                     const row = ws.addRow(r);
+                    row.eachCell((c: any) => (c.style = bordered));
+                });
+            }
+            if (shouldShow("activities")) {
+                ws.addRow([]);
+                const h = ws.addRow(["Activity", "Avg %", "Learners"]);
+                h.eachCell((c: any) => (c.style = header));
+                activitySplit.forEach((a) => {
+                    const row = ws.addRow([`${a.label} (${a.hint})`, a.avg === null ? "N/A" : `${a.avg}%`, a.learners]);
                     row.eachCell((c: any) => (c.style = bordered));
                 });
             }
@@ -1431,8 +1480,12 @@ export default function PerformanceReportDesignerModal({
                 h2("Summary");
                 const rows: [string, string][] = [
                     ["Total students", String(stats.total)],
-                    ["Avg overall %", `${stats.avgOverall}%`],
-                    ["Avg selected %", stats.avgSelected === null ? "—" : `${stats.avgSelected}%`],
+                    // Per-activity averages instead of the old blended
+                    // "Avg overall %" — mirrors the canvas tiles.
+                    ...activitySplit.map((a): [string, string] => [
+                        `${a.label} avg % (${a.hint})`,
+                        a.avg === null ? "N/A" : `${a.avg}%`,
+                    ]),
                     ["Avg score %", stats.avgScore === null ? "—" : `${stats.avgScore}%`],
                     ["Excellent (≥80%)", String(stats.excellent)],
                     ["At risk (<40%)", String(stats.atRisk)],
@@ -1444,6 +1497,26 @@ export default function PerformanceReportDesignerModal({
                     body: rows,
                     styles: { fontSize: 9, cellPadding: 4 },
                     headStyles: { fillColor: [235, 104, 52] },
+                    margin: { left: M, right: M },
+                });
+                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
+                rule();
+            }
+
+            if (shouldShow("activities") && activityChartRows.length > 0) {
+                h2("Activities — I Do · We Do · You Do");
+                await addChartImage("activitiesPie", activityChartRows.map((a) => ({ label: `${a.label} (${a.avg}%)`, color: a.color })));
+                await addChartImage("activitiesBar");
+                autoTable(doc, {
+                    startY: y,
+                    head: [["Activity", "Avg %", "Learners"]],
+                    body: activitySplit.map((a) => [
+                        `${a.label} (${a.hint})`,
+                        a.avg === null ? "N/A" : `${a.avg}%`,
+                        String(a.learners),
+                    ]),
+                    styles: { fontSize: 9, cellPadding: 4 },
+                    headStyles: { fillColor: [46, 144, 196] },
                     margin: { left: M, right: M },
                 });
                 y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
@@ -1773,13 +1846,21 @@ export default function PerformanceReportDesignerModal({
                         </div>
                     ) : (
                         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-4">
-                            {/* Scope readout */}
+                            {/* Course / Client readout — named rows instead of one
+                                vague "Scope" string, so what the report covers is
+                                obvious at a glance. */}
                             <section>
                                 <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Scope
+                                    Course
+                                </h3>
+                                <div className="rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-[11px] font-medium text-body">
+                                    {courseName || "All courses"}
+                                </div>
+                                <h3 className="mt-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
+                                    Client
                                 </h3>
                                 <div className="rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-[11px] text-body">
-                                    {scopeLabel || "All clients · all courses"}
+                                    {clientName && clientName !== "all" ? clientName : "All clients"}
                                 </div>
                                 <p className="mt-1 text-[10px] text-faint">
                                     Change client / course from the page filters above.
@@ -2192,12 +2273,16 @@ export default function PerformanceReportDesignerModal({
                                             </span>
                                         </header>
                                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
-                                            <Stat label="Avg overall" value={`${stats.avgOverall}%`} />
-                                            <Stat
-                                                label="Avg selected"
-                                                value={stats.avgSelected === null ? "—" : `${stats.avgSelected}%`}
-                                                hint="across picked activities + sub-cats"
-                                            />
+                                            {/* Per-activity averages replace the old flat "Avg overall %"
+                                                card — a single blended number nobody could interpret. */}
+                                            {activitySplit.map((a) => (
+                                                <Stat
+                                                    key={a.key}
+                                                    label={`${a.label} avg`}
+                                                    value={a.avg === null ? "N/A" : `${a.avg}%`}
+                                                    hint={`completion — ${a.hint}`}
+                                                />
+                                            ))}
                                             <Stat
                                                 label="Avg score"
                                                 value={stats.avgScore === null ? "—" : `${stats.avgScore}%`}
@@ -2217,12 +2302,86 @@ export default function PerformanceReportDesignerModal({
                                             />
                                             <Stat label="Not started" value={stats.notStarted} tone="muted" />
                                             <Stat label="Students" value={stats.total} />
-                                            <Stat
-                                                label="Sub-cats"
-                                                value={`${activeSubcatOpts.length}/${filteredSubcatOpts.length}`}
-                                                hint="picked / available"
-                                            />
                                         </div>
+                                    </Sec>
+                                ) : null}
+
+                                {shouldShow("activities") ? (
+                                    <Sec id="activities">
+                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
+                                            <h3 className="text-xs font-semibold text-heading">
+                                                Activities — I Do · We Do · You Do
+                                            </h3>
+                                            <span className="text-[10px] text-subtle">
+                                                avg completion per stage
+                                            </span>
+                                        </header>
+                                        {activityChartRows.length === 0 ? (
+                                            <div className="flex h-40 items-center justify-center text-xs text-subtle">
+                                                No activity progress in the current selection.
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3">
+                                                {/* Pie — how the three stages compare to each other. */}
+                                                <div
+                                                    className="h-60"
+                                                    ref={(el) => { chartRefs.current["activitiesPie"] = el; }}
+                                                >
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <PieChart>
+                                                            <Pie
+                                                                dataKey="avg"
+                                                                nameKey="label"
+                                                                data={activityChartRows}
+                                                                innerRadius={48}
+                                                                outerRadius={82}
+                                                                paddingAngle={2}
+                                                                label={((e: any) => `${e.label}: ${e.avg}%`) as any}
+                                                                labelLine={false}
+                                                            >
+                                                                {activityChartRows.map((a, i) => (
+                                                                    <Cell key={i} fill={a.color} />
+                                                                ))}
+                                                            </Pie>
+                                                            <RTooltip formatter={((v: number) => `${v}%`) as any} />
+                                                            <RLegend
+                                                                verticalAlign="bottom"
+                                                                height={26}
+                                                                iconType="circle"
+                                                                wrapperStyle={{ fontSize: 11 }}
+                                                            />
+                                                        </PieChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                                {/* Bar — each stage against the 0–100% scale. */}
+                                                <div
+                                                    className="h-60"
+                                                    ref={(el) => { chartRefs.current["activitiesBar"] = el; }}
+                                                >
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <BarChart
+                                                            data={activityChartRows.map((a) => ({ name: a.label, avg: a.avg }))}
+                                                            margin={{ top: 20, right: 16, left: 0, bottom: 6 }}
+                                                            barCategoryGap="28%"
+                                                        >
+                                                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+                                                            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                                                            <YAxis
+                                                                tick={{ fontSize: 10 }}
+                                                                domain={[0, 100]}
+                                                                tickFormatter={(v) => `${v}%`}
+                                                            />
+                                                            <RTooltip formatter={((v: number) => `${v}%`) as any} />
+                                                            <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
+                                                                {activityChartRows.map((a, i) => (
+                                                                    <Cell key={i} fill={a.color} />
+                                                                ))}
+                                                            </Bar>
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                        )}
                                     </Sec>
                                 ) : null}
 

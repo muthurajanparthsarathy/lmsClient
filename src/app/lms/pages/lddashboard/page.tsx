@@ -5362,6 +5362,8 @@ export function PerformanceReport({ f }: { f: ViewFilter }) {
           baseStudents={students}
           baseCourseRows={courseRows}
           scopeLabel={scope}
+          clientName={f.client}
+          courseName={f.courseOpts.find((c) => c.id === f.course)?.name}
           courseId={f.course && f.course !== "all" ? f.course : undefined}
         />
       ) : null}
