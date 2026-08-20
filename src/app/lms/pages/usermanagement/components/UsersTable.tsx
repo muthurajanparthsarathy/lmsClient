@@ -61,18 +61,19 @@ const COL = {
   // the leftover crumb; Actions holds a 28 px kebab plus the right
   // gutter, so 6 % keeps the button from bumping the edge.
   check: "w-[4%] pl-4 sm:pl-5 pr-0 text-left",
-  user: "w-[24%] px-3 text-left",
-  // Email absorbs the slack — long institutional addresses were already the
-  // widest content on the row, and Role/Actions only need their content size.
-  email: "w-[32%] px-3 text-left",
-  phone: "w-[10%] px-3 text-left hidden lg:table-cell",
+  user: "w-[22%] px-3 text-left",
+  // Email was hoarding space that Phone and Actions needed.
+  email: "w-[26%] px-3 text-left",
+  // Phone bumped up so 10-digit numbers stop hugging the column's left edge.
+  phone: "w-[14%] px-3 text-left hidden lg:table-cell",
   // Role holds a fixed pill; the longest label ("Super Administrator")
   // fits inside ~150 px, so 12 % is enough on typical viewports.
   role: "w-[12%] px-3 text-left",
   status: "w-[14%] px-3 text-right whitespace-nowrap",
-  // Just enough for a 28 px kebab + a tight right gutter, so it hugs the row
-  // edge instead of floating in dead space.
-  actions: "w-[4%] pl-1 pr-3 sm:pr-4 text-right",
+  // 8 % keeps the 28 px kebab safely inside the list — under 6 % the
+  // browser was expanding this column past its declared width to fit
+  // the button + right gutter, spilling past the container edge.
+  actions: "w-[8%] pl-2 pr-4 sm:pr-5 text-right",
 };
 
 const HEAD_CELL =
