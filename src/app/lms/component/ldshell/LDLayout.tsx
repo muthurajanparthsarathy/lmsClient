@@ -558,7 +558,10 @@ function LDRailFoot() {
   );
 }
 
-const LDX_CSS = `
+// Exported for the standalone Performance Report page (/lms/pages/reports/
+// performance), which renders L&D report components outside this shell and
+// needs the same `.ldx`-scoped palette + control styles.
+export const LDX_CSS = `
 .ldx{
   /* ── Figure/ground, QuikStats-style ─────────────────────────────────────
      The canvas is a COOL light gray and the rail sits ON it rather than

@@ -46,7 +46,14 @@ import { postLogout } from "@/apiServices/activityLog"
 // ONE grouping for every shell. This rail used to carry its own copy, which is
 // why the same nav rendered in a different order with items in different
 // sections depending on which page you were on.
-import { groupSidebarItems, canonicalPermissionKey } from "@/app/lms/shared/ui/navItems"
+import {
+  groupSidebarItems,
+  canonicalPermissionKey,
+  makeSidebarTitler,
+  grantedSectionChildren,
+  QUESTION_BANK_SECTION,
+  PERMISSION_ROUTES,
+} from "@/app/lms/shared/ui/navItems"
 
 // ─── Types + user data ───────────────────────────────────────────────────────
 
@@ -109,6 +116,13 @@ const getIconByName = (iconName: string): any => {
 
 const keyToRoute = (k: string): string => {
   if (!k) return `${BASE_PATH}dashboard`
+  // Modules whose page is NOT at /lms/pages/<key> resolve through the SHARED
+  // map first. This rail's own table below knows nothing about them — it would
+  // dash-normalize "pocdashboard" into /lms/pages/poc-dashboard, a 404, for
+  // any POC who lands on a StaffLayout page (Courses, Feedback, …) while
+  // holding the POC Dashboard module.
+  const shared = PERMISSION_ROUTES[canonicalPermissionKey(k)]
+  if (shared) return shared
   // Canonicalize first: "course_management" is a legacy spelling of the
   // "coursestructure" ROUTE key, and the dash-normalizer below would otherwise
   // turn it into /lms/pages/course-management — a page that does not exist.
@@ -208,31 +222,22 @@ export function StaffSidebar({ isCollapsed, setIsCollapsed }: StaffSidebarProps)
       const u = r.user
       setCurrentUser(u)
 
-      const isStudentRole = (u.role?.originalRole || u.role?.roleValue || "")
-        .toLowerCase()
-        .includes("student")
-
       const perms = [...(u.permissions || [])]
         .filter((p) => p.isActive)
         .sort((a, b) => (a.order || 0) - (b.order || 0))
 
-      // Rename the label for scope-disambiguated pages (Trainer Profile /
-      // Trainer Courses / …) back to their plain user-facing form for the
-      // sidebar — the trainer's shell doesn't need to see "Trainer" prefixed
-      // on every item.
-      const LABEL_OVERRIDES: Record<string, string> = {
-        coursestructure: "Course Management",
-        courses: "Courses",
-        profile: "Profile",
-        notifications: "Notification",
-        attendancemanagement: "Attendance Management",
-        grades: "Grade",
-        "log-activity": "Log Activity",
-      }
+      // Labels come from the SHARED override map (shared/navRoutes.ts), the
+      // same one the admin rail uses. It strips the scope prefix the catalog
+      // needs for the permission modal — "Trainer Profile" → "Profile",
+      // "Staff Dashboard" → "Dashboard" — because this shell already tells you
+      // whose console you are in. This rail used to keep a private copy of the
+      // map, which is how a module ended up under two different names
+      // depending on which page you were on.
+      const titleFor = makeSidebarTitler(perms.map((p) => p.permissionKey))
 
       const items: SidebarItem[] = perms.map((p) => ({
         icon: getIconByName(p.icon || "ShieldCheck"),
-        label: LABEL_OVERRIDES[canonicalPermissionKey(p.permissionKey)] || p.permissionName,
+        label: titleFor(p.permissionKey, p.permissionName),
         href: keyToRoute(p.permissionKey),
         permissionKey: p.permissionKey,
       }))
@@ -241,33 +246,60 @@ export function StaffSidebar({ isCollapsed, setIsCollapsed }: StaffSidebarProps)
       // `staff-logactivity` (key "log-activity") appears here only when the
       // trainer was granted it. No hardcoded injection.
 
-      // Question Bank splits into Internal (institution-scoped) and External
-      // (the shared platform-imported bank). ONE permission — questionbanks —
-      // gates the parent, so anyone who currently sees the entry gains a
-      // second tab; the External page role-gates itself in-file. Mirrors the
-      // admin sidebar's split (navItems.ts) so both shells stay in sync.
-      const qbIdx = items.findIndex(
-        (i) => canonicalPermissionKey(i.permissionKey) === "questionbanks",
+      // Question Bank → one expandable entry over its two grantable pages.
+      // The children come from the SHARED section spec (shared/navRoutes.ts),
+      // the same one the admin rail builds from, and only the pages this
+      // account actually holds are listed. Both shells used to hardcode this
+      // submenu separately, with both children pinned on regardless of grants.
+      const qbChildren = grantedSectionChildren(
+        QUESTION_BANK_SECTION,
+        perms.map((p) => p.permissionKey),
       )
-      if (qbIdx !== -1) {
-        const qb = items[qbIdx]
-        qb.children = [
-          {
-            icon: getIconByName("Library"),
-            label: "Internal Questions",
-            href: "/lms/pages/questionbanks",
-            permissionKey: "questionbanks",
-          },
-          {
-            icon: getIconByName("Globe"),
-            label: "External Questions",
-            href: "/lms/pages/questionbanks/external",
-            permissionKey: "questionbanks",
-          },
-        ]
-        // Parent link opens Internal — the page every existing bookmark and
-        // in-app link (Course Setup, exercise authoring, …) already targets.
-        qb.href = qb.children[0].href
+      if (qbChildren.length > 0) {
+        const qbKeys = QUESTION_BANK_SECTION.children.map((c) => c.key)
+        const qbIdx = items.findIndex((i) =>
+          qbKeys.includes(canonicalPermissionKey(i.permissionKey)),
+        )
+        const merged: SidebarItem = {
+          icon: getIconByName(QUESTION_BANK_SECTION.iconName),
+          label: QUESTION_BANK_SECTION.title,
+          // Parent opens the first child held — Internal when granted, which
+          // is what every existing bookmark and in-app link (Course Setup,
+          // exercise authoring, …) already targets.
+          href: qbChildren[0].href,
+          permissionKey: QUESTION_BANK_SECTION.parentKey,
+          children: qbChildren.map((c) => ({
+            icon: getIconByName(c.iconName),
+            label: c.title,
+            href: c.href,
+            permissionKey: c.key,
+          })),
+        }
+        const rest = items.filter(
+          (i) => !qbKeys.includes(canonicalPermissionKey(i.permissionKey)),
+        )
+        rest.splice(qbIdx, 0, merged)
+        items.length = 0
+        items.push(...rest)
+      }
+
+      // "Report" — the standalone Performance Report (the same report the L&D
+      // console owns, rendered without the L&D shell). Injected for every
+      // staff-shell account rather than permission-driven: the trainer's
+      // client/course pickers are scoped to their own enrolled courses on the
+      // page itself, so there is nothing here an extra grant would guard.
+      if (!items.some((i) => i.href === "/lms/pages/reports/performance")) {
+        const notifIdx = items.findIndex((i) =>
+          canonicalPermissionKey(i.permissionKey).includes("notification"),
+        )
+        const reportItem: SidebarItem = {
+          icon: getIconByName("bar-chart-3"),
+          label: "Report",
+          href: "/lms/pages/reports/performance",
+          permissionKey: "reports",
+        }
+        if (notifIdx >= 0) items.splice(notifIdx, 0, reportItem)
+        else items.push(reportItem)
       }
 
       setSidebarItems(items)

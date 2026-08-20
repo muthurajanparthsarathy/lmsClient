@@ -286,8 +286,15 @@ const IMG_ALIGN_MARGIN: Record<'left' | 'center' | 'right', string> = {
   right: '8px 0 8px auto',
 };
 
-export const RichTextLite = ({ initialHtml, onChange, placeholder, minHeight = 220 }: {
-  initialHtml?: string; onChange: (html: string) => void; placeholder?: string; minHeight?: number;
+export const RichTextLite = ({ initialHtml, onChange, placeholder, minHeight = 220, htmlRef }: {
+  initialHtml?: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  minHeight?: number;
+  /** Optional ref that mirrors the latest sanitized HTML — useful when a
+   *  parent's submit handler runs before React has flushed the onChange
+   *  state update from a fast keystroke-then-click. Written on every emit. */
+  htmlRef?: React.MutableRefObject<string>;
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -314,6 +321,7 @@ export const RichTextLite = ({ initialHtml, onChange, placeholder, minHeight = 2
   const emit = () => {
     const html = stripUnsafe(ref.current?.innerHTML || '');
     setEmpty(!hasContent(html));
+    if (htmlRef) htmlRef.current = html;
     onChange(html);
   };
   const syncImgBox = (img: HTMLImageElement | null = selImg) => {

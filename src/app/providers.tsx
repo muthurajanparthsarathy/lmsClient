@@ -13,6 +13,9 @@ import SmartCliffRingLoader from '@/components/SmartCliffRingLoader'
 import { createQueryClient } from '@/lib/queryClient'
 import { buildQueryPersister, queryPersistOptions } from '@/lib/queryPersister'
 import { fetchCurrentUser } from '@/queries/auth'
+// The gate and the sidebar MUST resolve a permission key to the same route or
+// the rail shows entries that land on Access Restricted.
+import { canonicalPermissionKey, routePrefixesForPermissionKey } from '@/app/lms/shared/navRoutes'
 
 interface Permission {
   permissionName: string;
@@ -178,6 +181,28 @@ const checkPermissionForPath = (path: string, permissionKey: string): boolean =>
   return false
 }
 
+// Extra route prefixes a POC's granted module opens beyond its own page.
+//
+// Only needed where one module legitimately spans more than one folder — the
+// sidebar collapses these into a single entry, so without them a POC holding
+// Course Management could open the list but not a course inside it. Kept
+// POC-local rather than in the shared nav map because these are widenings
+// that only make sense against the POC's server-side scoping.
+const POC_COMPANION_ROUTES: Record<string, string[]> = {
+  // Opening a course from Course Management lands in /lms/pages/courses/*.
+  coursestructure: ['/lms/pages/courses'],
+  // Client Management + Service Mapping render as one tabbed Business
+  // Management section; either key opens all three routes.
+  clientmanagement: ['/lms/pages/businessmanagement', '/lms/pages/servicemapping'],
+  servicemapping: ['/lms/pages/businessmanagement', '/lms/pages/clientmanagement'],
+  businessmanagement: ['/lms/pages/clientmanagement', '/lms/pages/servicemapping'],
+  // Both spellings exist in routes and links.
+  grades: ['/lms/pages/grade'],
+  // Standalone Performance Report — the POC rail carries a static "Report"
+  // entry (buildNavForStoredUser), so the console's core grant opens it.
+  pocdashboard: ['/lms/pages/reports'],
+}
+
 const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; requiredPermission?: string } => {
   const publicRoutes = ['/login', '/login', '/register', '/forgot-password', '/']
   if (publicRoutes.includes(pathname)) return { hasAccess: true }
@@ -185,47 +210,33 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
   const userRole = localStorage.getItem("smartcliff_originalRole") || ''
   const isStudent = userRole.toLowerCase().includes('student')
 
-  // ── POC: closed, role-driven allowlist ──────────────────────────────────
+  // ── POC: closed allowlist, derived from the POC's OWN permissions ───────
   //
-  // Placed FIRST and returning unconditionally. Both matter:
-  //   • Several checks below grant on `!isStudent` alone (admindashboard, logs)
-  //     or unconditionally (live-mcq, codinganalytics). A POC is not a student,
-  //     so any of them sitting above this would let it through.
-  //   • Existing POC accounts carry stale admin permission keys, which the
-  //     matcher further down would honour. The ROLE decides here; those keys
-  //     are never consulted for a POC.
+  // Placed FIRST and returning unconditionally, because several checks below
+  // grant on `!isStudent` alone (admindashboard, logs) or unconditionally
+  // (live-mcq, codinganalytics). A POC is not a student, so any of those
+  // sitting above this would hand it a page nobody granted.
   //
-  // The POC works on the REAL admin pages — the server scopes every read there
-  // to its enrolled courses and refuses every write against records outside
-  // that scope. So the allowlist opens the pages the POC actually uses:
-  // the POC dashboard, Course Management, Attendance, Business Management,
-  // Grades, the L&D report console, Profile and Notifications. Anything else —
-  // User Management, Role Management, Dynamic Field Settings, Audit Logs —
-  // has no per-course scoping and is deliberately absent.
+  // What changed: the list used to be a hardcoded set of route prefixes keyed
+  // off the ROLE. It is now derived from the modules the POC actually holds,
+  // through the SAME route map the sidebar links from — so the rail and the
+  // gate cannot disagree. Grant "POC Dashboard" in Assign Permission and
+  // /lms/pages/poc/dashboard opens; revoke a module and both the rail entry
+  // and the route go away together.
+  //
+  // Existing POC accounts predate this and carry admin-era grants that the
+  // old role-driven list ignored. Those are now live — run
+  // server/scripts/migratePocPermissions.js to clear them.
+  //
+  // The POC works on the REAL admin pages; the server scopes every read there
+  // to its enrolled courses and refuses every write outside that scope
+  // (server/utils/pocScope.js), which is what makes a per-module grant safe.
   if (isPocSession()) {
-    const ALLOWED_PREFIXES = [
-      '/lms/pages/poc',
-      '/lms/pages/coursestructure',
-      '/lms/pages/attendancemanagement',
-      '/lms/pages/businessmanagement',
-      '/lms/pages/clientmanagement',
-      '/lms/pages/servicemapping',
-      '/lms/pages/grades',
-      '/lms/pages/grade',
-      '/lms/pages/lddashboard',
-      '/lms/pages/profile',
-      '/lms/pages/notifications',
-      '/lms/pages/courses',
-      // Approvals: queue is inherently per-user; list endpoints already
-      // pass through pocClientFilter / pocCourseFilter.
-      '/lms/pages/approvals',
-      // Question Banks: internal is per-institution, external is a shared
-      // library that is intentionally global for all roles.
-      '/lms/pages/questionbanks',
-      // Calendar and Logs are NOT here on purpose — both have pre-existing
-      // cross-institution leaks and would show a POC every tenant's data.
-    ]
-    const allowed = ALLOWED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
+    const keys = getActivePermissionKeys().map(canonicalPermissionKey)
+    const allowed = keys.some((key) =>
+      [...routePrefixesForPermissionKey(key), ...(POC_COMPANION_ROUTES[key] ?? [])]
+        .some((p) => pathname === p || pathname.startsWith(p + '/'))
+    )
     return { hasAccess: allowed, requiredPermission: 'poc' }
   }
 
@@ -267,6 +278,14 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
     return { hasAccess: !isStudent }
   }
 
+  // ── Standalone Performance Report — any non-student staff role. The page
+  //    itself scopes what a trainer can pick (only their enrolled clients /
+  //    courses); a POC reaches here via POC_COMPANION_ROUTES above instead
+  //    (the POC branch returns before this line). ────────────────────────────
+  if (pathname.startsWith('/lms/pages/reports')) {
+    return { hasAccess: !isStudent, requiredPermission: 'reports' }
+  }
+
   // ── The feedback manager lives under /coursestructure/feedback but is its
   //    own module: the `feedback` permission alone must open it (roles like
   //    the POC get a Feedback sidebar item without holding `coursestructure`).
@@ -306,6 +325,17 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
   const permissionKeys = getActivePermissionKeys()
 
   if (permissionKeys.length === 0) return { hasAccess: false }
+
+  // Modules whose page is NOT at /lms/pages/<key> — the pattern generator
+  // below can never match those. Read from the same map the sidebar links
+  // from, so whatever a role's own rail points at is a route it can open.
+  // "POC Dashboard" (/lms/pages/poc/dashboard) is the case this exists for.
+  for (const permissionKey of permissionKeys) {
+    const prefixes = routePrefixesForPermissionKey(permissionKey)
+    if (prefixes.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
+      return { hasAccess: true, requiredPermission: permissionKey }
+    }
+  }
 
   for (const permissionKey of permissionKeys) {
     if (checkPermissionForPath(pathname, permissionKey)) {
@@ -424,6 +454,24 @@ function AuthWrapper({ children }: { children: ReactNode }) {
           return
         }
 
+        // A POC landing on either legacy dashboard — a stale bookmark, an old
+        // firstPermissionKey redirect, a hardcoded link — is sent to its own
+        // console rather than shown Access Restricted. Checked BEFORE the gate
+        // because the gate denies those routes for a POC, so the redirect the
+        // sibling block below intends was never reached. Skipped when the POC
+        // was actually granted that dashboard: the rail is permission-driven
+        // now, so a deliberate grant must open the real page.
+        if (isPocSession() && /\/lms\/pages\/(admin|student)dashboard/.test(pathname)) {
+          const keys = getActivePermissionKeys()
+          const grantedThis = pathname.includes('studentdashboard')
+            ? keys.includes('studentdashboard')
+            : keys.includes('admindashboard')
+          if (!grantedThis) {
+            router.push(POC_HOME)
+            return
+          }
+        }
+
         // Check permission for current route
         const { hasAccess, requiredPermission: reqPermission } = hasPermissionForRoute(pathname)
 
@@ -444,13 +492,7 @@ function AuthWrapper({ children }: { children: ReactNode }) {
           const isOnStudentDashboard = pathname.includes('studentdashboard')
           const isOnAdminDashboard = pathname.includes('admindashboard')
 
-          // A POC landing on either legacy dashboard — a stale bookmark, an old
-          // firstPermissionKey redirect, a hardcoded link — is sent to its own
-          // console rather than shown Access Restricted.
-          if (isPocSession() && (isOnAdminDashboard || isOnStudentDashboard)) {
-            router.push(POC_HOME)
-            return
-          }
+          // (The POC redirect for these two routes runs above, before the gate.)
 
           if (isStudent && isOnAdminDashboard) {
             router.push('/lms/pages/studentdashboard')

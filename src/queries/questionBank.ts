@@ -51,6 +51,9 @@ export interface QuestionBankPageParams {
   marks?: string;
   createdAfter?: number;
   search?: string;
+  /** When set, restrict results to questions pinned to this course. Absent
+   *  request → General bank (server drops course-pinned rows automatically). */
+  courseId?: string;
 }
 
 export interface QuestionBankFacets {

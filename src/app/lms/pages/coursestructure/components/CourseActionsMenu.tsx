@@ -3,7 +3,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarDays, ChevronDown, Eye, ListTree, MessageSquare, Pencil, Upload, Users } from 'lucide-react'
+import { CalendarDays, ChevronDown, Eye, GitBranch, ListTree, MessageSquare, Pencil, Upload, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PERMISSION_IDS } from '@/components/permissions'
@@ -24,10 +24,10 @@ export type CourseMenuStatus = {
   hasModuleHours?: boolean
 }
 
-/** Which entries this menu offers. Defaults to all seven. */
-export type CourseMenuItem = 'view' | 'edit' | 'structure' | 'resources' | 'calendar' | 'enrollment' | 'feedback'
+/** Which entries this menu offers. Defaults to all eight. */
+export type CourseMenuItem = 'view' | 'edit' | 'structure' | 'resources' | 'calendar' | 'enrollment' | 'feedback' | 'approval'
 
-const ALL_ITEMS: CourseMenuItem[] = ['view', 'edit', 'structure', 'resources', 'calendar', 'enrollment', 'feedback']
+const ALL_ITEMS: CourseMenuItem[] = ['view', 'edit', 'structure', 'resources', 'calendar', 'enrollment', 'feedback', 'approval']
 
 // Which functionality (as spelled in PermissionModal) each menu item requires.
 // The parent's `items` prop still decides the SET; this only decides which of
@@ -41,6 +41,9 @@ const ITEM_PERMISSION: Record<CourseMenuItem, string> = {
     calendar: 'Program Calendar',
     enrollment: 'Add Participants',
     feedback: 'Add Feedback',
+    // Setting an approval chain is a course-configuration task, so it rides
+    // on Edit Course rather than needing a new permission slot.
+    approval: 'Edit Course',
 }
 
 export default function CourseActionsMenu({
@@ -52,6 +55,7 @@ export default function CourseActionsMenu({
     onCalendar,
     onEnrollment,
     onFeedback,
+    onApproval,
     items = ALL_ITEMS,
     label = 'Actions',
 }: {
@@ -66,6 +70,10 @@ export default function CourseActionsMenu({
     onEnrollment: () => void
     /** Optional — defaults to navigating to the course's feedback manager. */
     onFeedback?: () => void
+    /** Only required when 'approval' is among `items`. Opens the parent-owned
+     *  ApprovalHierarchyModal so the manager can set the ordered role → person
+     *  approvers for this course without leaving Course Management. */
+    onApproval?: () => void
     // The L&D console offers oversight, not authoring, so it asks for the four
     // read-and-plan entries and leaves Edit Course Setup to Course Structure.
     items?: CourseMenuItem[]
@@ -94,11 +102,11 @@ export default function CourseActionsMenu({
     // schedule. Shown disabled (with the hint) until then, never hidden.
     const canPlan = hasStructure && Boolean(status.hasModuleHours)
 
-    const WIDTH = 224
-    // h-9 items + container padding/border. The count is known before paint,
+    const WIDTH = 200
+    // h-8 items + container padding/border. The count is known before paint,
     // which is what lets the flip decision below happen without measuring the
     // rendered menu.
-    const EST_HEIGHT = allowedItems.length * 36 + 10
+    const EST_HEIGHT = allowedItems.length * 32 + 10
 
     // Measured before paint so the menu never appears at the wrong spot for a
     // frame and then jumps.
@@ -186,6 +194,16 @@ export default function CourseActionsMenu({
             onClick: onFeedback ?? (() => router.push(`/lms/pages/coursestructure/feedback?courseId=${status.id}`)),
             enabled: true, hint: '',
         },
+        approval: {
+            // The former standalone Approvals page is retired; this action
+            // opens the same modal (ApprovalHierarchyModal) with this course
+            // already pinned, so the manager configures the chain in place.
+            label: 'Set Approval',
+            icon: <GitBranch size={14} />,
+            onClick: onApproval ?? (() => {}),
+            enabled: Boolean(onApproval),
+            hint: 'Approval configuration is not available in this context',
+        },
     }
     const ITEMS = allowedItems.map((key) => ALL[key])
 
@@ -215,7 +233,7 @@ export default function CourseActionsMenu({
                             disabled={!item.enabled}
                             title={item.enabled ? undefined : item.hint}
                             onClick={() => { if (item.enabled) { setOpen(false); item.onClick() } }}
-                            className={`w-full h-9 px-3 flex items-center gap-2.5 text-sm text-left transition-colors ${
+                            className={`w-full h-8 px-2.5 flex items-center gap-2 text-xs text-left transition-colors ${
                                 item.enabled
                                     ? 'text-body hover:bg-brand-wash hover:text-brand-strong'
                                     : 'text-ink-300 cursor-not-allowed'
@@ -242,10 +260,10 @@ export default function CourseActionsMenu({
                 type="button"
                 onClick={() => setOpen((o) => !o)}
                 aria-expanded={open}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control border border-brand-300 bg-brand-100 text-brand-700 text-sm font-semibold hover:bg-brand-200 transition-colors"
+                className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-brand-500/30 bg-brand-wash text-brand-strong text-2xs font-semibold hover:bg-brand-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
             >
                 {label}
-                <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+                <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
             {menu}
         </div>

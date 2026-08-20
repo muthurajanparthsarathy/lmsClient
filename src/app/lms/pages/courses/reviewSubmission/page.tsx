@@ -265,7 +265,19 @@ interface Exercise {
   _subModuleId?: string;
   _subTopicId?: string;
   isGraded?: boolean;
-
+  // How submissions to this exercise are scored. "manual" means a trainer has
+  // to grade every submission by hand; "testcase" / "ai" mean the score was
+  // already computed at Submit time, so the trainer is only ever looking at a
+  // result, not producing one. Absent on legacy exercises authored before the
+  // field existed — those keep the manual (Review / Start Grading) treatment.
+  evaluationMethod?: {
+    method?: 'manual' | 'testcase' | 'ai';
+    ai?: {
+      criteria?: string[];
+      testCasesCountMode?: 'common' | 'perQuestion';
+      testCasesCount?: number;
+    };
+  } | null;
 }
 
 interface SubmissionQuestion {
@@ -1176,12 +1188,30 @@ export default function EnhancedSubmissionReview() {
   // can type the score directly instead of clicking the pencil first. Reads
   // the exercise's stored evaluationMethod (falls through to false when
   // absent / non-manual so auto-corrected values stay locked as before).
-  const isManualEvalExercise = (ex: any): boolean => {
-    const m = ex?.evaluationMethod?.method
+  // Reads the exercise's stored evaluation method. Returns '' when the
+  // exercise predates the field (73 of the 92 live exercises at time of
+  // writing) or stores something unrecognised — callers must decide what an
+  // unknown method means for them rather than guessing here.
+  const getExerciseEvalMethod = (ex: any): 'manual' | 'testcase' | 'ai' | '' => {
+    const raw = ex?.evaluationMethod?.method
       || ex?.evaluationMethod
       || ex?.evaluationSettings?.method
       || '';
-    return String(m).toLowerCase() === 'manual';
+    const m = String(raw).toLowerCase();
+    return m === 'manual' || m === 'testcase' || m === 'ai' ? m : '';
+  };
+  const isManualEvalExercise = (ex: any): boolean =>
+    getExerciseEvalMethod(ex) === 'manual';
+  // Test-case and AI exercises are scored by the pipeline at Submit time, so
+  // there is no grading for the trainer to do — the row shows "Auto Evaluated"
+  // and "View Details" instead of "Review" / "Start Grading". Only an EXPLICIT
+  // testcase/ai method flips this: an exercise with no `evaluationMethod` is
+  // left on the manual path so legacy exercises don't silently lose their
+  // Start Grading button. Trainers can still override a score from inside the
+  // console — this only changes how the list advertises the work.
+  const isAutoEvalExercise = (ex: any): boolean => {
+    const m = getExerciseEvalMethod(ex);
+    return m === 'testcase' || m === 'ai';
   };
   const [viewMode, setViewMode] = useState<'list' | 'grading'>('list');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -1229,6 +1259,9 @@ const isNonGraded = !!(
   selectedExercise?.isGraded === false ||  // Now this will detect isGraded: false
   getDynamicExerciseTotal(selectedExercise) === 0
 );
+// Whether THIS exercise was auto-scored (Test Case / AI) rather than left for
+// a trainer to grade by hand. Drives the status badge and the row action.
+const isAutoEvaluated = isAutoEvalExercise(selectedExercise);
   // --- HELPER: Map Language for Monaco ---
   const getMonacoLanguage = (lang: string) => {
     const languageMap: { [key: string]: string } = {
@@ -1604,7 +1637,9 @@ const isNonGraded = !!(
         type: 'exercise'
       },
       {
-        title: 'Grading Console',
+        // Auto-scored exercises aren't a grading queue — the trainer is
+        // reading a result, not producing one.
+        title: isAutoEvalExercise(exercise) ? 'Submission Details' : 'Grading Console',
         icon: <Award className="h-3.5 w-3.5" />,
         type: 'grading'
       }
@@ -3008,7 +3043,11 @@ builtins.input = _async_input
                     >
                       <option value="all">All Status</option>
                       <option value="not_submitted">Not Submitted</option>
-                      <option value="review">Review</option>
+                      {/* Same bucket either way (`getParticipantStatus` returns
+                          'review' for anything a trainer hasn't saved a grade
+                          on) — only the label follows the exercise's
+                          evaluation method, so it matches the row badges. */}
+                      <option value="review">{isAutoEvaluated ? 'Auto Evaluated' : 'Review'}</option>
                       <option value="evaluated">Evaluated</option>
                     </select>
                   </div>
@@ -3196,8 +3235,13 @@ builtins.input = _async_input
                         )}
                         <TableCell className="px-4 py-3">
                           {hasSubmissions ? (
-                            <Badge className={`font-bold text-[9px] uppercase tracking-wider py-0.5 px-2 border-none rounded ${isEvaluated ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"} ${inter.className}`}>
-                              {isEvaluated ? 'Evaluated' : 'Review'}
+                            /* Three states, not two. "Evaluated" = a trainer
+                               saved a grade. "Auto Evaluated" = the Test Case
+                               / AI pipeline already scored it at Submit, so
+                               nothing is waiting on the trainer. "Review" =
+                               a Manual exercise still awaiting grading. */
+                            <Badge className={`font-bold text-[9px] uppercase tracking-wider py-0.5 px-2 border-none rounded ${isEvaluated ? "bg-emerald-50 text-emerald-600" : isAutoEvaluated ? "bg-indigo-50 text-indigo-600" : "bg-amber-50 text-amber-600"} ${inter.className}`}>
+                              {isEvaluated ? 'Evaluated' : isAutoEvaluated ? 'Auto Evaluated' : 'Review'}
                             </Badge>
                           ) : (
                             <Badge variant="outline" className={`text-[9px] uppercase tracking-wider font-bold text-slate-400 bg-slate-50 border-slate-200 py-0.5 px-2 rounded ${inter.className}`}>
@@ -3234,7 +3278,12 @@ builtins.input = _async_input
                               >
                                 Not Submitted Yet
                               </Button>
-                            ) : (isEvaluated || isNonGraded) ? (
+                            ) : (isEvaluated || isNonGraded || isAutoEvaluated) ? (
+                              /* Already scored (by a trainer, by the Test Case
+                                 / AI pipeline) or not graded at all — there is
+                                 no grading to start, so the action opens the
+                                 console read-first as "View Details". The
+                                 console itself still allows an override. */
                               <Button
                                 size="sm"
                                 onClick={() => handleStartGrading(participant)}
@@ -3661,16 +3710,14 @@ builtins.input = _async_input
                       const descHtml = typeof rawDesc === "string"
                         ? rawDesc
                         : (rawDesc && typeof rawDesc.text === "string" ? rawDesc.text : "")
-                      // Sample examples — same 3-tier fallback as
+                      // Sample examples — same fallback as
                       // multi-file-code-editor.tsx:
-                      //   1) testCases with isSample && !isHidden
-                      //   2) any non-hidden testCases
-                      //   3) legacy sampleInput / sampleOutput
+                      //   1) ALL non-hidden testCases (forms flag only the
+                      //      first case isSample, so preferring flagged ones
+                      //      showed a single case no matter how many exist)
+                      //   2) legacy sampleInput / sampleOutput
                       const _tcs: any[] = (q as any)?.testCases || []
-                      const _explicit = _tcs.filter((tc) => tc.isSample === true && tc.isHidden !== true)
-                      const _visible = _explicit.length > 0
-                        ? _explicit
-                        : _tcs.filter((tc) => tc.isHidden !== true)
+                      const _visible = _tcs.filter((tc) => tc.isHidden !== true)
                       const examples: Array<{ input: string; output: string; explanation?: string }> = _visible.length > 0
                         ? _visible
                             .map((tc: any) => ({
@@ -4400,14 +4447,58 @@ builtins.input = _async_input
                   <span className="text-[10px] font-bold text-amber-700">Grader failed — grade manually</span>
                 )}
               </div>
-              {isTC && (
-                <div className="text-xs font-semibold text-slate-700">
-                  Passed <span className="text-emerald-700 font-extrabold">{b?.testcase?.passed ?? 0}</span>
-                  {' / '}
-                  <span className="text-slate-700">{b?.testcase?.total ?? 0}</span>
-                  {' test cases'}
-                </div>
-              )}
+              {isTC && (() => {
+                const tcPassed = Number(b?.testcase?.passed ?? 0);
+                const tcTotal = Number(b?.testcase?.total ?? 0);
+                const tcFailedCount = Math.max(0, tcTotal - tcPassed);
+                // Per-case rows — present on submissions scored after the
+                // breakdown started recording them; older ones only carry
+                // counts, so the hover falls back to a plain explanation.
+                const tcCases: any[] = Array.isArray(b?.testcase?.cases) ? b.testcase.cases : [];
+                const failedCases = tcCases.filter((c: any) => !c?.passed);
+                return (
+                  <div>
+                    <div className="text-xs font-semibold text-slate-700">
+                      Passed <span className="text-emerald-700 font-extrabold">{tcPassed}</span>
+                      {' / '}
+                      <span className="text-slate-700">{tcTotal}</span>
+                      {' test cases'}
+                    </div>
+                    {tcFailedCount > 0 && (
+                      <div className="relative group inline-block mt-1">
+                        <span className="text-[11px] font-bold text-rose-600 cursor-help border-b border-dashed border-rose-300">
+                          ✗ {tcFailedCount} failed test case{tcFailedCount > 1 ? 's' : ''} — hover to view
+                        </span>
+                        {/* Hover popover — which cases failed, with input /
+                            expected / got. Hidden cases are fine to show here:
+                            this panel is trainer-only. */}
+                        <div className="absolute left-0 bottom-full mb-1.5 z-50 hidden group-hover:block w-[340px] max-h-[260px] overflow-y-auto rounded-lg border border-rose-200 bg-white shadow-xl p-2">
+                          {failedCases.length > 0 ? failedCases.map((c: any, i: number) => (
+                            <div key={i} className={`text-[10px] py-1.5 ${i > 0 ? 'border-t border-slate-100' : ''}`}>
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="font-bold text-slate-700">Test #{(c.index ?? i) + 1}</span>
+                                {c.hidden && (
+                                  <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-slate-100 text-slate-500">Hidden</span>
+                                )}
+                                <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-rose-100 text-rose-700">✗ Fail</span>
+                              </div>
+                              {String(c.input || '') !== '' && (
+                                <div className="text-slate-500"><span className="font-semibold text-slate-600">input:</span> <span className="font-mono break-all whitespace-pre-wrap">{String(c.input).length > 120 ? String(c.input).slice(0, 120) + '…' : c.input}</span></div>
+                              )}
+                              <div className="text-slate-500"><span className="font-semibold text-slate-600">expected:</span> <span className="font-mono break-all whitespace-pre-wrap">{String(c.expectedOutput ?? '').length > 120 ? String(c.expectedOutput).slice(0, 120) + '…' : (c.expectedOutput ?? '')}</span></div>
+                              <div className="text-slate-500"><span className="font-semibold text-slate-600">got:</span> <span className="font-mono break-all whitespace-pre-wrap text-rose-600">{String(c.actualOutput ?? '').length > 120 ? String(c.actualOutput).slice(0, 120) + '…' : (String(c.actualOutput ?? '') || '(no output)')}</span></div>
+                            </div>
+                          )) : (
+                            <p className="text-[10px] text-slate-500 py-1">
+                              Per-case details aren&apos;t stored on this submission (scored before detail recording was added). Use Rerun to re-score and capture them.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {isAI && !aiFailed && (
                 <div className="space-y-2">
                   {/* Score split summary: two halves that total the score input */}
@@ -4722,22 +4813,39 @@ builtins.input = _async_input
                       </div>
                     )}
 
-                    {!qIsMCQ && (
-                      <div className="grid grid-cols-2 gap-4">
-                        {q.sampleInput && (
-                          <div className="space-y-2">
-                            <h3 className={`text-[10px] font-bold text-slate-500 uppercase tracking-widest ${inter.className}`}>Input Pattern</h3>
-                            <div className="bg-slate-900 p-3 rounded-lg border border-slate-800"><pre className="text-[10px] font-mono text-emerald-400 whitespace-pre-wrap">{q.sampleInput}</pre></div>
-                          </div>
-                        )}
-                        {q.sampleOutput && (
-                          <div className="space-y-2">
-                            <h3 className={`text-[10px] font-bold text-slate-500 uppercase tracking-widest ${inter.className}`}>Expected Output</h3>
-                            <div className="bg-slate-900 p-3 rounded-lg border border-slate-800"><pre className="text-[10px] font-mono text-indigo-400 whitespace-pre-wrap">{q.sampleOutput}</pre></div>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {!qIsMCQ && (() => {
+                      // ALL non-hidden testCases, falling back to the legacy
+                      // sampleInput / sampleOutput pair — same rule as the
+                      // grading panel, so the modal never shows fewer cases.
+                      const mTcs: any[] = ((q as any)?.testCases || []).filter((tc: any) => tc.isHidden !== true)
+                      const mPairs: Array<{ input: string; output: string }> = mTcs.length > 0
+                        ? mTcs
+                            .map((tc: any) => ({ input: tc.input ?? tc.testInput ?? '', output: tc.expectedOutput ?? tc.output ?? '' }))
+                            .filter((p: any) => p.input || p.output)
+                        : (q.sampleInput || q.sampleOutput)
+                          ? [{ input: q.sampleInput || '', output: q.sampleOutput || '' }]
+                          : []
+                      return mPairs.length > 0 ? (
+                        <div className="space-y-3">
+                          {mPairs.map((p, pi) => (
+                            <div key={pi} className="grid grid-cols-2 gap-4">
+                              {p.input && (
+                                <div className="space-y-2">
+                                  <h3 className={`text-[10px] font-bold text-slate-500 uppercase tracking-widest ${inter.className}`}>Input Pattern{mPairs.length > 1 ? ` — Test ${pi + 1}` : ''}</h3>
+                                  <div className="bg-slate-900 p-3 rounded-lg border border-slate-800"><pre className="text-[10px] font-mono text-emerald-400 whitespace-pre-wrap">{p.input}</pre></div>
+                                </div>
+                              )}
+                              {p.output && (
+                                <div className="space-y-2">
+                                  <h3 className={`text-[10px] font-bold text-slate-500 uppercase tracking-widest ${inter.className}`}>Expected Output{mPairs.length > 1 ? ` — Test ${pi + 1}` : ''}</h3>
+                                  <div className="bg-slate-900 p-3 rounded-lg border border-slate-800"><pre className="text-[10px] font-mono text-indigo-400 whitespace-pre-wrap">{p.output}</pre></div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null
+                    })()}
                   </div>
                 </ScrollArea>
               );

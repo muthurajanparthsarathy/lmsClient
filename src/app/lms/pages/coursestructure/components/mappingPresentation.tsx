@@ -13,6 +13,9 @@ export interface MappingRowVM {
   mapping: ServiceMapping;
   id: string;
   clientName: string;
+  // Short business-model code (B2B / B2I / B2C). The full "Business to Business"
+  // wording sits in the tooltip; the cell shows just the acronym.
+  businessModel: string;
   serviceCode: string;
   service: string;
   models: string[];

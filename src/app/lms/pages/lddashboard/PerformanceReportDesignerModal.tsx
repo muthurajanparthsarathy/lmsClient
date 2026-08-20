@@ -670,6 +670,12 @@ export default function PerformanceReportDesignerModal({
     }, [courseData]);
 
     const downloadRef = useRef<HTMLDivElement>(null);
+    // Live preview section nodes, keyed by ViewKey. The PDF export rasterises
+    // the recharts <svg> found inside chart sections (gradePie, subcatBars) so
+    // the downloaded file carries the SAME graphs the canvas shows — the
+    // tables alone used to stand in for them. Same pattern as the Attendance
+    // Detailed Report modal (AttendanceReportModal.svgToPng).
+    const chartRefs = useRef<Record<string, HTMLElement | null>>({});
 
     // Close download menu on outside click.
     useEffect(() => {
@@ -1283,6 +1289,44 @@ export default function PerformanceReportDesignerModal({
         }
     };
 
+    // Rasterise a rendered chart section into a PNG data URL: serialise the
+    // recharts <svg>, load it into an <img>, draw onto a 2× canvas for crisp
+    // print. No extra deps (html2canvas isn't installed). Ported verbatim from
+    // features/attendancemanagement/AttendanceReportModal.tsx.
+    const svgToPng = async (container: HTMLElement | null): Promise<{ dataUrl: string; width: number; height: number } | null> => {
+        if (!container) return null;
+        const svg = container.querySelector("svg");
+        if (!svg) return null;
+        const box = svg.getBoundingClientRect();
+        const clone = svg.cloneNode(true) as SVGSVGElement;
+        // Recharts sizes via ResponsiveContainer at runtime, so the cloned
+        // SVG needs explicit dimensions or img.decode() falls over.
+        clone.setAttribute("width", String(Math.max(1, Math.round(box.width))));
+        clone.setAttribute("height", String(Math.max(1, Math.round(box.height))));
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        const xml = new XMLSerializer().serializeToString(clone);
+        const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        try {
+            const img = new Image();
+            img.decoding = "async";
+            img.src = url;
+            await img.decode();
+            const scale = 2;
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(box.width * scale));
+            canvas.height = Math.max(1, Math.round(box.height * scale));
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return null;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            return { dataUrl: canvas.toDataURL("image/png"), width: box.width, height: box.height };
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    };
+
     const downloadPdf = async () => {
         if (busy) return;
         setBusy("pdf");
@@ -1318,6 +1362,48 @@ export default function PerformanceReportDesignerModal({
                 doc.setTextColor(17, 24, 39);
                 doc.text(t, M, y);
                 y += 14;
+            };
+            // Embed the live chart exactly as the canvas shows it (the data
+            // table still follows as the numeric appendix). `legend` re-draws
+            // the on-screen legend with jsPDF primitives — recharts renders
+            // its legend as an HTML div OUTSIDE the svg, so the capture alone
+            // would ship an unlabeled pie.
+            const addChartImage = async (key: string, legend?: Array<{ label: string; color: string }>) => {
+                const shot = await svgToPng(chartRefs.current[key]);
+                if (!shot) return;
+                const pageH = doc.internal.pageSize.getHeight();
+                const ratio = shot.width / shot.height;
+                let w = pageW - M * 2;
+                let h = w / ratio;
+                if (h > pageH - M * 2) { h = pageH - M * 2; w = h * ratio; }
+                if (y + h > pageH - M) { doc.addPage(); y = M; }
+                doc.addImage(shot.dataUrl, "PNG", M, y, w, h);
+                y += h + 6;
+                if (legend && legend.length > 0) {
+                    if (y + 14 > pageH - M) { doc.addPage(); y = M; }
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(8.5);
+                    let x = M;
+                    for (const item of legend) {
+                        const label = item.label;
+                        const itemW = 10 + doc.getTextWidth(label) + 14;
+                        if (x + itemW > pageW - M) { x = M; y += 12; }
+                        const rgb = hexToRgb(item.color);
+                        doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+                        doc.circle(x + 3, y - 3, 3, "F");
+                        doc.setTextColor(55, 65, 81);
+                        doc.text(label, x + 10, y);
+                        x += itemW;
+                    }
+                    y += 12;
+                }
+                y += 4;
+            };
+            const hexToRgb = (hex: string): [number, number, number] => {
+                const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+                if (!m) return [107, 114, 128];
+                const n = parseInt(m[1], 16);
+                return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
             };
 
             // Header
@@ -1362,6 +1448,7 @@ export default function PerformanceReportDesignerModal({
 
             if (shouldShow("gradePie") && gradeSlices.length > 0) {
                 h2("Grade distribution");
+                await addChartImage("gradePie", gradeSlices.map((g) => ({ label: `${g.name} (${g.value})`, color: g.color })));
                 autoTable(doc, {
                     startY: y,
                     head: [["Grade", "Students"]],
@@ -1376,6 +1463,7 @@ export default function PerformanceReportDesignerModal({
 
             if (shouldShow("subcatBars") && subcatBars.length > 0) {
                 h2("Sub-category performance");
+                await addChartImage("subcatBars");
                 autoTable(doc, {
                     startY: y,
                     head: [["Activity · sub-category", "Avg %", "Learners"]],
@@ -1581,7 +1669,10 @@ export default function PerformanceReportDesignerModal({
     // Small wrapper so preview sections can carry a top-right × like the
     // Attendance Detailed Report modal.
     const Sec: React.FC<{ id: ViewKey; children: React.ReactNode }> = ({ id, children }) => (
-        <section className="relative rounded-tile border border-hairline bg-surface">
+        <section
+            className="relative rounded-tile border border-hairline bg-surface"
+            ref={(el) => { chartRefs.current[id] = el; }}
+        >
             <button
                 type="button"
                 aria-label="Remove from preview"

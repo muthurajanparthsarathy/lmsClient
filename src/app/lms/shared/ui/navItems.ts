@@ -10,10 +10,15 @@ import {
     UserCircle,
     Settings,
 } from "lucide-react";
-// Value import, but `features/poc/nav` imports only the SidebarItem TYPE back
-// from here — type imports are erased, so there is no runtime cycle.
-import { POC_NAV_ITEMS } from "@/features/poc/nav";
 import * as LucideIcons from "lucide-react";
+import {
+    canonicalPermissionKey,
+    routeForPermissionKey,
+    makeSidebarTitler,
+    grantedSectionChildren,
+    QUESTION_BANK_SECTION,
+} from "../navRoutes";
+import { isPocRoleValue } from "@/lib/session";
 
 // Define types for permissions
 export interface UserPermission {
@@ -65,10 +70,18 @@ export const ADMIN_SIDEBAR_KEYS = [
     "notifications",        // Notification — promoted to 2nd; carries the red
                             //                blinking unread indicator now that
                             //                the corner bell is retired
+    "pocdashboard",         // POC Dashboard — only for an admin explicitly
+                            //                 granted it; groups into Overview
+                            //                 next to the Admin Dashboard
     "usermanagement",       // User Management
     "coursestructure",      // Course Management
-    "approvals",            // Approvals (assessment/assignment review queue)
-    "questionbanks",        // Question Banks
+    // approvals removed — the per-course "Set Approval" action lives inside
+    // the Actions dropdown on each course row in Course Management now, next
+    // to the other course-scoped operations.
+    "questionbanks",        // Question Bank › Internal Questions
+    "questionbanksexternal",// Question Bank › External Questions — both keys
+                            //                 listed so the merger below can
+                            //                 pick up whichever are granted
     "profile",              // Profiles
     "calendar",             // Calendar
     "clientmanagement",     // Business Management (Client Management tab)
@@ -84,28 +97,22 @@ export const ADMIN_SIDEBAR_KEYS = [
     // control accessed from within a Course, not a rail entry.
 ];
 
-// Stored permission keys that mean the same module as a canonical key.
-//
-// The key is what the route is built from (`/lms/pages/<key>`), so a grant
-// carrying a variant spelling lands on a page that does not exist. Course
-// Management is the case that bites: the module's ROUTE key is
-// "coursestructure", but hand-made and pre-catalog grants spelled it after the
-// module's NAME ("course_management"), which routed to a 404.
-//
-// Normalizing here rather than renaming the folder keeps every existing
-// /lms/pages/coursestructure link — deep links, breadcrumbs, the Actions menu —
-// working untouched.
-const KEY_ALIASES: Record<string, string> = {
-    coursemanagement: "coursestructure",
-    course_management: "coursestructure",
-    "course-management": "coursestructure",
-};
-
-/** The canonical permission key for a stored one. Case/separator insensitive. */
-export const canonicalPermissionKey = (key: string | undefined): string => {
-    const lower = (key || "").toLowerCase();
-    return KEY_ALIASES[lower] ?? KEY_ALIASES[lower.replace(/[-_\s]/g, "")] ?? lower;
-};
+// Permission key → route lives in ONE lucide-free module so the route gate and
+// the landing-page redirects (which sit above the LMS shell) can import it
+// without pulling this file's `import * as LucideIcons` into the root bundle.
+// Re-exported here so every existing importer of navItems keeps working.
+export {
+    canonicalPermissionKey,
+    routeForPermissionKey,
+    routePrefixesForPermissionKey,
+    sidebarTitleFor,
+    makeSidebarTitler,
+    grantedSectionChildren,
+    QUESTION_BANK_SECTION,
+    PERMISSION_ROUTES,
+    PERMISSION_ROUTE_GROUPS,
+    SIDEBAR_TITLE_OVERRIDES,
+} from "../navRoutes";
 
 export const isAdminRole = (userData: UserData | null): boolean => {
     const r = userData?.role;
@@ -199,42 +206,23 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
             .filter((p): p is UserPermission => !!p);
     }
 
-    // Permissions whose real page does NOT live at /lms/pages/<key>.
-    // `feedback` opens the per-course feedback manager (it shows a
-    // pick-a-course state when opened without a courseId).
-    const ROUTE_OVERRIDES: Record<string, string> = {
-        feedback: "/lms/pages/coursestructure/feedback",
-    };
-
-    // Sidebar label overrides — the permission catalog's names are chosen for
-    // the assign-permission modal (e.g. the scope-prefixed "Trainer Profile"
-    // that disambiguates from "Profile"), but the sidebar reads better with the
-    // route's plain user-facing name. Applied AFTER the whitelist so the
-    // trainer/student sidebar still sees its own scope's entry, just under the
-    // friendlier label.
-    //
-    // `coursestructure` is the ROUTE key only (/lms/pages/coursestructure); the
-    // module is called Course Management everywhere a human reads it, so the
-    // override is here to pin that name even on older grants that still carry
-    // the pre-rename "Manage" in storage.
-    const TITLE_OVERRIDES: Record<string, string> = {
-        coursestructure: "Course Management",
-        courses: "Courses",
-        profile: "Profile",
-        notifications: "Notification",
-        attendancemanagement: "Attendance Management",
-        grades: "Grade",
-        "log-activity": "Log Activity",
-    };
+    // Rail labels come from the shared map in ../navRoutes — the staff rail
+    // reads the same one, so a module cannot show under two different names
+    // depending on which shell you are in. Built from THIS rail's keys (after
+    // the whitelist, so it reflects what will actually render) because the
+    // short "Dashboard" label is conditional on there being only one.
+    const titleFor = makeSidebarTitler(
+        sortedPermissions.filter(p => p.isActive).map(p => p.permissionKey),
+    );
 
     sortedPermissions.forEach((permission) => {
         if (permission.isActive) {
             const IconComponent = getIconByName(permission.icon || "ShieldCheck");
             const routeKey = canonicalPermissionKey(permission.permissionKey);
-            const route = ROUTE_OVERRIDES[routeKey] || `/lms/pages/${routeKey}`;
+            const route = routeForPermissionKey(routeKey);
 
             items.push({
-                title: TITLE_OVERRIDES[routeKey] || permission.permissionName,
+                title: titleFor(routeKey, permission.permissionName),
                 href: route,
                 icon: IconComponent,
                 iconName: permission.icon || "ShieldCheck",
@@ -250,39 +238,51 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
     // into a single parent at the first one's position. (An older data shape
     // may already carry a single "businessmanagement" permission — treat it the
     // same so it, too, gets the two tabs.)
-    // Question Bank splits into Internal (institution-scoped, one doc per
-    // tenant) and External (the shared platform-imported bank at
-    // /lms/pages/questionbanks/external). Only ONE permission — questionbanks
-    // — exists, so anyone who currently sees the entry keeps seeing it and
-    // simply gains a second tab. The External page role-gates itself on
-    // admin / super_admin, so surfacing the tab to non-admins is harmless.
-    const qbIdx = items.findIndex(
-        (i) => (i.permissionKey || "").toLowerCase() === "questionbanks",
+    // Question Bank → one expandable entry over its two grantable pages,
+    // Internal (institution-scoped, one doc per tenant) and External (the
+    // shared platform-imported bank). Both children are PERMISSION-DRIVEN now:
+    // the submenu carries only the pages this account was actually granted, so
+    // ticking "External Questions" in the modal is what puts that row in the
+    // rail. It used to pin both children on whenever `questionbanks` was held.
+    const qbItems = grantedSectionChildren(
+        QUESTION_BANK_SECTION,
+        items.map(i => i.permissionKey),
     );
-    if (qbIdx !== -1) {
-        const qb = items[qbIdx];
-        const qbChildren: SidebarItem[] = [
-            {
-                title: "Internal Questions",
-                href: "/lms/pages/questionbanks",
-                icon: getIconByName("Library"),
-                iconName: "Library",
-                color: qb.color,
-                permissionKey: "questionbanks",
-            },
-            {
-                title: "External Questions",
-                href: "/lms/pages/questionbanks/external",
-                icon: getIconByName("Globe"),
-                iconName: "Globe",
-                color: qb.color,
-                permissionKey: "questionbanks",
-            },
-        ];
-        qb.children = qbChildren;
-        // Parent link opens Internal — the page every existing bookmark and
-        // in-app link (Course Setup, exercise authoring, ...) already targets.
-        qb.href = qbChildren[0].href;
+    if (qbItems.length > 0) {
+        const qbIdx = items.findIndex(i =>
+            QUESTION_BANK_SECTION.children.some(
+                c => c.key === canonicalPermissionKey(i.permissionKey),
+            ),
+        );
+        const sectionColor = items[qbIdx].color;
+        const children: SidebarItem[] = qbItems.map(c => ({
+            title: c.title,
+            href: c.href,
+            icon: getIconByName(c.iconName),
+            iconName: c.iconName,
+            color: sectionColor,
+            permissionKey: c.key,
+        }));
+        const merged: SidebarItem = {
+            title: QUESTION_BANK_SECTION.title,
+            // Parent opens the first child held — Internal when it is granted,
+            // which is what every existing bookmark and in-app link (Course
+            // Setup, exercise authoring, …) already targets.
+            href: children[0].href,
+            icon: getIconByName(QUESTION_BANK_SECTION.iconName),
+            iconName: QUESTION_BANK_SECTION.iconName,
+            color: sectionColor,
+            hasChevron: false,
+            permissionKey: QUESTION_BANK_SECTION.parentKey,
+            children,
+        };
+        const qbKeys = QUESTION_BANK_SECTION.children.map(c => c.key);
+        const rest = items.filter(
+            i => !qbKeys.includes(canonicalPermissionKey(i.permissionKey)),
+        );
+        rest.splice(qbIdx, 0, merged);
+        items.length = 0;
+        items.push(...rest);
     }
 
     const MERGED_KEYS = ["clientmanagement", "servicemapping", "businessmanagement"];
@@ -384,34 +384,54 @@ function systemSettingsMerge(items: SidebarItem[]): SidebarItem[] {
     return filtered;
 }
 
-/**
- * Mirror of `isAdminRole` for the Point-of-Contact role.
- *
- * Exact matches only — no substring test. A role literally named "POC Manager"
- * is not necessarily this role, and the loose `.includes('poc')` used by a few
- * older call sites is a bug we are not propagating here.
- */
-export const isPocRole = (userData: UserData | null): boolean => {
-    const r = userData?.role;
-    if (!r) return false;
-    return [r.roleValue, r.originalRole, r.renameRole]
-        .map(v => (v || "").toLowerCase().replace(/[\s\-_]/g, ""))
-        .some(v => v === "poc" || v === "pointofcontact");
-};
+// (A POC role test used to live here, purely to branch this module's nav
+// derivation onto a hardcoded POC list. Nav no longer branches on role, so it
+// is gone — `isPocRoleValue` / `isPocSession` in lib/session.ts remain the one
+// place that answers "is this a POC?", for the route gate and login landing.)
 
 /**
  * The nav for a STORED user — what the shells that read localStorage (Sidebar,
  * CommandPalette) should call instead of `buildSidebarItems` directly.
  *
- * A role with a dedicated static console returns that console's nav. POC is the
- * case this exists for: its permission documents still carry admin keys, so the
- * permission-derived path would hand it the entire admin rail — and the command
- * palette, which shares this derivation, would offer the very routes the rail
- * is hiding.
+ * EVERY role derives its rail the same way: from the permissions that role's
+ * account actually holds. There is no hardcoded per-role nav any more — POC
+ * used to return a static list from `features/poc/nav.ts`, which meant an
+ * admin could grant a POC a module in the permission modal and the rail would
+ * ignore it. Adding, removing or reordering a POC's (or anyone's) sidebar is
+ * now purely an Assign Permission action.
+ *
+ * Only ONE role-derived rule survives: admin / super admin keep the curated
+ * ADMIN_SIDEBAR_KEYS whitelist and its fixed order, because those accounts
+ * hold the entire catalog and the rail would otherwise be unusable.
  */
 export const buildNavForStoredUser = (userData: UserData | null): SidebarItem[] => {
-    if (isPocRole(userData)) return POC_NAV_ITEMS;
-    return buildSidebarItems(userData?.permissions || [], isAdminRole(userData));
+    const items = buildSidebarItems(userData?.permissions || [], isAdminRole(userData));
+
+    // ── POC rail adjustments (role-scoped presentation, not permissions) ────
+    // The POC console doesn't surface Attendance Management or Grades even
+    // when the account still carries those admin-era grants, and it gets a
+    // "Report" entry — the same Performance Report the L&D console owns,
+    // rendered standalone at /lms/pages/reports/performance (no L&D shell).
+    // The route gate allows it via POC_COMPANION_ROUTES in providers.tsx.
+    const role: any = userData?.role;
+    const isPoc = [role?.roleValue, role?.originalRole, role?.renameRole, typeof role === "string" ? role : null]
+        .some(isPocRoleValue);
+    if (!isPoc) return items;
+
+    const HIDDEN_FOR_POC = new Set(["attendancemanagement", "grades", "grade"]);
+    const kept = items.filter(i => !HIDDEN_FOR_POC.has(canonicalPermissionKey(i.permissionKey)));
+    if (!kept.some(i => i.href === "/lms/pages/reports/performance")) {
+        kept.push({
+            title: "Report",
+            href: "/lms/pages/reports/performance",
+            icon: LucideIcons.BarChart3,
+            iconName: "bar-chart-3",
+            color: "indigo",
+            hasChevron: false,
+            permissionKey: "reports",
+        });
+    }
+    return kept;
 };
 
 /* ── Grouping (design-brief §4) ──────────────────────────────────────────────
@@ -443,8 +463,11 @@ const GROUP_BY_KEY: Record<string, string> = {
     students: "Management",
     coursestructure: "Learning",
     courses: "Learning",
+    // Standalone Performance Report (POC + trainer rails).
+    reports: "Learning",
     approvals: "Learning",
     questionbanks: "Learning",
+    questionbanksexternal: "Learning",
     feedback: "Learning",
     grades: "Learning",
     calendar: "Learning",

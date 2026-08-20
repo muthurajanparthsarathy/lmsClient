@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 import { toast, ToastContainer } from "react-toastify";
 import { showErrorToast } from "@/components/ui/toastUtils";
 import { isPocSession, isPocRoleValue, isPocRoute, POC_HOME } from "@/lib/session";
+// Same route map the sidebar links from, so the post-login landing page can
+// never point at a folder that does not exist (POC Dashboard, Feedback).
+import { routeForPermissionKey } from "@/app/lms/shared/navRoutes";
 
 interface Permission {
   permissionName: string;
@@ -161,7 +164,7 @@ const SmartCliffLogin = () => {
       const existingRoleValue = localStorage.getItem("smartcliff_roleValue");
       const originalRole = localStorage.getItem("smartcliff_originalRole");
       if (firstPermissionKey) {
-        redirectPath = `/lms/pages/${firstPermissionKey}`;
+        redirectPath = routeForPermissionKey(firstPermissionKey);
       } else if (existingRole && existingRoleValue) {
         const userRole = originalRole?.toLowerCase() || existingRoleValue?.toLowerCase() || existingRole?.toLowerCase() || "";
         if (userRole === "student" || userRole.includes("student")) redirectPath = "/lms/pages/studentdashboard";
@@ -270,7 +273,7 @@ const SmartCliffLogin = () => {
         }
         if (redirectTo) { window.location.href = redirectTo; return; }
         const firstPermissionKey = localStorage.getItem("smartcliff_firstPermissionKey");
-        if (firstPermissionKey) { window.location.href = `/lms/pages/${firstPermissionKey}`; return; }
+        if (firstPermissionKey) { window.location.href = routeForPermissionKey(firstPermissionKey); return; }
         const roleForRedirect = originalRoleValue || userRoleValue;
         window.location.href = roleForRedirect.includes("student") ? "/lms/pages/studentdashboard" : "/lms/pages/admindashboard";
       } catch (error) {

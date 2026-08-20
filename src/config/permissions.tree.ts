@@ -102,6 +102,31 @@ export const PERMISSION_TREE: PermissionNode[] = [
     page("admin-dashboard", "admindashboard", "Admin Dashboard",
       { icon: "Home", color: "indigo", aliases: ["admindashboard"], defaultSelected: true }),
 
+    // POC console landing page.
+    //
+    // It sits in the ADMIN bucket because that is the tab an admin uses when
+    // assigning a Point of Contact its modules — classifyRole() files POC
+    // alongside admin/coordinator — and because the page itself IS an admin
+    // dashboard, just scoped server-side to the courses, clients and services
+    // that POC is enrolled in (server/utils/pocScope.js).
+    //
+    // `pocdashboard` is the ROUTE key, but the page does NOT live at
+    // /lms/pages/pocdashboard. PERMISSION_ROUTES in
+    // app/lms/shared/ui/navItems.ts maps it to /lms/pages/poc/dashboard, and
+    // the sidebar, the command palette and the route guard all read that one
+    // map — so granting this permission is the whole wiring: the rail entry
+    // appears, it navigates to the real page, and the gate lets it through.
+    // No `children` — deliberately a flat, non-expandable row in the modal,
+    // exactly like Admin Dashboard above it. The dashboard is one screen you
+    // either have or don't; splitting it into per-section toggles gave admins
+    // four checkboxes that only ever hid parts of a page they had already
+    // granted.
+    page("admin-poc-dashboard", "pocdashboard", "POC Dashboard", {
+      icon: "LayoutDashboard", color: "orange",
+      description: "Point-of-Contact console — courses, learners, clients and services inside the POC's own scope",
+      aliases: ["pocdashboard", "poc-dashboard", "admin-pocdashboard"],
+    }),
+
     page("admin-usermanagement", "usermanagement", "User Management", {
       icon: "Users", color: "blue",
       description: "Manage users and access",
@@ -171,14 +196,44 @@ export const PERMISSION_TREE: PermissionNode[] = [
     page("admin-approvals", "approvals", "Approvals",
       { icon: "ClipboardCheck", color: "amber" }),
 
-    page("admin-question-banks", "questionbanks", "Question Bank", {
-      icon: "MessageCircleQuestion", color: "slate",
-      children: [
-        fn("Create Question"),
-        fn("View Details", { defaultSelected: true }),
-        fn("Edit"),
-        fn("Delete"),
-        fn("Deactivate"),
+    // Question Bank is a CONTAINER with two grantable pages under it, so the
+    // modal reads the same shape the sidebar renders:
+    //
+    //   Question Bank
+    //     Internal Questions   → Create Question · View Details · Edit ·
+    //                            Delete · Deactivate
+    //     External Questions
+    //
+    // It used to be a single page with those five functions directly on it,
+    // which meant the two banks could not be granted separately even though
+    // they are separate screens with separate rail entries. The Internal page
+    // deliberately keeps the OLD page id (`admin-question-banks`) and the old
+    // key (`questionbanks`): every `can(PERMISSION_IDS.ADMIN_QUESTION_BANKS,
+    // …)` call in features/questionbanks and every already-issued grant
+    // resolves to it unchanged. Only the display name moved, from
+    // "Question Bank" to "Internal Questions".
+    container("admin-question-banks-group", "Question Bank", {
+      icon: "MessageCircleQuestion", children: [
+        page("admin-question-banks", "questionbanks", "Internal Questions", {
+          icon: "Library", color: "slate",
+          description: "Institution's own question bank — one document per tenant",
+          aliases: ["Question Bank"],
+          children: [
+            fn("Create Question"),
+            fn("View Details", { defaultSelected: true }),
+            fn("Edit"),
+            fn("Delete"),
+            fn("Deactivate"),
+          ],
+        }),
+        // No functions: the External bank is a shared, platform-imported
+        // library (~5k Exercism/CP questions) that every tenant reads and only
+        // admin / super_admin may write — the page role-gates its own actions
+        // in-file. This permission decides whether the rail entry appears.
+        page("admin-question-banks-external", "questionbanksexternal", "External Questions", {
+          icon: "Globe", color: "slate",
+          description: "Shared platform-imported bank, common to every institution",
+        }),
       ],
     }),
 

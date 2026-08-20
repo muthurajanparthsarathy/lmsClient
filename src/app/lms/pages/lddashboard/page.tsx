@@ -124,7 +124,7 @@ const VIEWS: LDView[] = [
  * to a list and the list opens already narrowed. `onClient`/`onCourse` let a
  * row drill further in without the user going back to the filter bar.
  */
-type ViewFilter = {
+export type ViewFilter = {
   client: string;
   course: string;
   /* Option lists for the page-owned ScopeFilters pickers. */
@@ -5127,7 +5127,7 @@ function PerfDocView({ cfg, model, genAt, onRemove, onCustomize, onClose }: {
 
 const PERF_SUB = "";
 
-function PerformanceReport({ f }: { f: ViewFilter }) {
+export function PerformanceReport({ f }: { f: ViewFilter }) {
   const { loading, error, data } = useStaffAnalytics((j) => j?.data ?? null);
   const [pick, setPick] = useState<Set<string> | null>(null);
   const [open, setOpen] = useState(false);
@@ -6303,7 +6303,10 @@ export default function LDConsole() {
   );
 }
 
-const LDC_CSS = `
+// Exported (with PerformanceReport and type ViewFilter) for the standalone
+// report page at /lms/pages/reports/performance — POC + trainer rails open the
+// SAME Performance Report there without entering the L&D shell.
+export const LDC_CSS = `
 .ldc-head{margin-bottom:16px; display:flex; align-items:flex-start; column-gap:16px; row-gap:10px; flex-wrap:wrap;}
 .ldc-head.nosub{margin-bottom:9px;}
 /* flex-basis 0, not auto: with auto, a long sub line sets the block's basis to

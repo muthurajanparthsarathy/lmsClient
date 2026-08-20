@@ -131,11 +131,13 @@ export const getInstitution = (): string | null =>
 
 // ─── Point of Contact ─────────────────────────────────────────────────────
 //
-// The POC console is decided by ROLE, never by the stored permission keys.
-// Existing POC accounts still carry admin grants (admindashboard,
-// usermanagement, coursestructure, …), so anything keying on permissions would
-// hand a POC the admin experience. Every POC decision — the route gate, the
-// login redirect, shell selection, nav derivation — comes through here.
+// WHAT a POC can see is decided by its granted permissions, like every other
+// role: the sidebar, the command palette and the route gate all derive from
+// `smartcliff_permissions` (see app/lms/shared/ui/navItems.ts). The helpers
+// below answer only WHO — "is this session a POC?" — which two things still
+// need: the post-login landing page, and the fact that a POC's allowlist is
+// evaluated strictly from its own grants instead of the blanket
+// "any non-student" rules other roles fall through to.
 
 const normalizeRole = (v: unknown): string =>
   String(v ?? "").trim().toLowerCase().replace(/[\s\-_]/g, "");
@@ -164,7 +166,12 @@ export const isPocSession = (): boolean => {
     .some(isPocRoleValue);
 };
 
-/** The POC console's landing route. */
+/**
+ * The POC console's landing route — the page behind the `pocdashboard`
+ * permission (Assign Permission ▸ Admin ▸ POC Dashboard). A POC must hold that
+ * module to open it; the route map that pairs the two lives in
+ * app/lms/shared/ui/navItems.ts as PERMISSION_ROUTES.
+ */
 export const POC_HOME = "/lms/pages/poc/dashboard";
 
 /** Does this path belong to the POC console? */

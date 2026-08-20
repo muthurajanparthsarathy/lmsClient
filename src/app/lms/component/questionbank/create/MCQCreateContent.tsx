@@ -9,7 +9,7 @@
  * bank-page modal for now).
  */
 
-import React, { forwardRef, useImperativeHandle, useState } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Plus, Trash2, GripVertical, ImagePlus, X } from 'lucide-react';
 import {
   SectionCard, Label, ChipInput, DifficultySegmented, ProblemTypePicker,
@@ -46,6 +46,11 @@ const nid = () => seq++;
 const MCQCreateContent = forwardRef<CreateContentHandle, object>((_props, ref) => {
   const [mcqType, setMcqType] = useState<McqType>('multiple_choice');
   const [titleHtml, setTitleHtml] = useState('');
+  // Ref mirrors titleHtml — read at submit time so we don't lose a keystroke
+  // when the user types then immediately clicks Create before React has
+  // flushed the state update (produced the "MCQ question title text is
+  // required" server error on every fast create).
+  const titleHtmlRef = useRef('');
   const [options, setOptions] = useState<OptDraft[]>([
     { id: nid(), text: '', isCorrect: false },
     { id: nid(), text: '', isCorrect: false },
@@ -93,7 +98,10 @@ const MCQCreateContent = forwardRef<CreateContentHandle, object>((_props, ref) =
   useImperativeHandle(ref, () => ({
     submit: () => {
       const e: Record<string, string> = {};
-      const titleText = plainTextOf(titleHtml);
+      // Prefer the DOM-mirroring ref over the React state so a keystroke
+      // typed just before the click isn't lost to React's async render.
+      const currentTitleHtml = titleHtmlRef.current || titleHtml;
+      const titleText = plainTextOf(currentTitleHtml);
       if (!titleText) e.title = 'Question text is required';
       if (isChoice) {
         const filled = options.filter(o => o.text.trim());
@@ -116,7 +124,7 @@ const MCQCreateContent = forwardRef<CreateContentHandle, object>((_props, ref) =
         questionCategory: 'MCQ',
         questionType: 'mcq',
         isActive: true,
-        mcqQuestionTitle: { text: titleHtml },
+        mcqQuestionTitle: { text: currentTitleHtml },
         mcqQuestionType: mcqType,
         mcqQuestionDifficulty: difficulty,
         mcqQuestionOptionsPerRow: optionsPerRow,
@@ -162,8 +170,16 @@ const MCQCreateContent = forwardRef<CreateContentHandle, object>((_props, ref) =
     <div className="flex min-h-0 flex-1">
       {/* ── Content column (~68%) — own scroll ── */}
       <div className="min-w-0 flex-1 space-y-4 overflow-y-auto p-5">
-        <SectionCard title="Question" required>
-          <RichTextLite placeholder="Write the question here... (toolbar: code snippets, images)" minHeight={110} onChange={setTitleHtml} />
+        {/* Labelled "Question Title" so it matches the server's error copy
+            ("MCQ question title text is required") — the field is the same
+            RichTextLite, but the label made it look like something else. */}
+        <SectionCard title="Question Title" required>
+          <RichTextLite
+            placeholder="Write the question here... (toolbar: code snippets, images)"
+            minHeight={110}
+            onChange={setTitleHtml}
+            htmlRef={titleHtmlRef}
+          />
           <FieldError msg={errs.title} />
         </SectionCard>
 

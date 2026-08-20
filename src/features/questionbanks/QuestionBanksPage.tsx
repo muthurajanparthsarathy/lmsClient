@@ -1,12 +1,14 @@
 'use client';
 
 import { Loading } from "@/components/loading-ui/loading";
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  AlertCircle, ChevronDown, CircleCheck,
-  ListChecks, Plus, SlidersHorizontal, Terminal, X,
-  Search, MoreHorizontal, Download, List, Rows3, Trash2, Power,
+  AlertCircle, ArrowLeft, ChevronDown, CircleCheck,
+  GraduationCap, ListChecks, Plus, Settings2, SlidersHorizontal, Terminal, X,
+  Search, Download, Trash2, Power,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { fetchCourseStructuresSummary } from '@/apiServices/createCourseStucture';
 import { motion, AnimatePresence } from 'framer-motion';
 import MCQFields from '@/app/lms/component/questionbank/MCQFields';
 import CreateQuestionModal from '@/app/lms/component/questionbank/create/CreateQuestionModal';
@@ -27,7 +29,6 @@ import QuestionsTable from './QuestionsTable';
 import QuestionDetailDrawer from './QuestionDetailDrawer';
 import QuestionFilterPanel from './QuestionFilterPanel';
 import TableFooter from '@/app/lms/shared/listing/TableFooter';
-import { HeaderStats } from '@/app/lms/shared/ui/HeaderStats';
 import { getDifficulty, getQuestionTitleText } from './lib';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSION_IDS } from '@/components/permissions';
@@ -205,6 +206,22 @@ export default function QuestionBankPage() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  // Auto-fit: the list wrapper's height / row height decides pageSize, so rows
+  // that don't fit spill onto the next page instead of scrolling internally.
+  // Flips off when the user picks a size manually.
+  const [autoFitPageSize, setAutoFitPageSize] = useState(true);
+  const tableCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Tabs: General (bank-wide questions) vs Course Specific (per-course bank).
+  // Course-specific starts on the course picker; clicking Manage on a course
+  // opens the same questions UI scoped to that course id.
+  const [activeTab, setActiveTab] = useState<'general' | 'courses'>('general');
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [selectedCourseName, setSelectedCourseName] = useState<string>('');
+  // Course-picker paging (independent of the questions list's paging above).
+  const [coursesPage, setCoursesPage] = useState(1);
+  const [coursesPageSize, setCoursesPageSize] = useState(15);
+  const [coursesSearch, setCoursesSearch] = useState('');
 
   // The search box filtered on every keystroke while the whole bank sat in
   // memory. It is a request now, so it is debounced — short enough to still
@@ -214,6 +231,71 @@ export default function QuestionBankPage() {
     const t = setTimeout(() => setDebouncedSearch(filters.search), 300);
     return () => clearTimeout(t);
   }, [filters.search]);
+
+  // Courses used to seed the Course Specific tab picker. Fetched only when
+  // that tab is active — the General tab never triggers this call.
+  const { data: coursesRes, isLoading: isLoadingCourses } = useQuery({
+    queryKey: ['courseStructures', 'summary'],
+    queryFn: fetchCourseStructuresSummary,
+    staleTime: 5 * 60 * 1000,
+    enabled: activeTab === 'courses' && !selectedCourseId,
+  });
+  const courseRows: Array<{ _id: string; courseName: string; courseCode?: string; clientName?: string }> = useMemo(() => {
+    const raw = (coursesRes as { data?: unknown } | undefined);
+    const list = Array.isArray(raw?.data) ? raw!.data as unknown[] : Array.isArray(raw) ? (raw as unknown[]) : [];
+    return (list as Array<Record<string, unknown>>).map((c) => ({
+      _id: String(c._id || c.id || ''),
+      courseName: String(c.courseName || ''),
+      courseCode: c.courseCode ? String(c.courseCode) : undefined,
+      // The summary payload flattens the client to a name string for listing.
+      clientName: c.clientName ? String(c.clientName) : (typeof c.client === 'object' && c.client ? String((c.client as { clientCompany?: string }).clientCompany || '') : ''),
+    })).filter((r) => r._id && r.courseName);
+  }, [coursesRes]);
+  const filteredCourseRows = useMemo(() => {
+    const q = coursesSearch.trim().toLowerCase();
+    if (!q) return courseRows;
+    return courseRows.filter((r) =>
+      r.courseName.toLowerCase().includes(q) ||
+      (r.courseCode || '').toLowerCase().includes(q) ||
+      (r.clientName || '').toLowerCase().includes(q)
+    );
+  }, [courseRows, coursesSearch]);
+  const coursesTotal = filteredCourseRows.length;
+  const coursesTotalPages = Math.max(1, Math.ceil(coursesTotal / coursesPageSize));
+  const coursesPageSafe = Math.min(coursesPage, coursesTotalPages);
+  const currentCoursePage = useMemo(
+    () => filteredCourseRows.slice((coursesPageSafe - 1) * coursesPageSize, coursesPageSafe * coursesPageSize),
+    [filteredCourseRows, coursesPageSafe, coursesPageSize]
+  );
+
+  // Reset the questions page whenever the course scope flips (into a course
+  // or back out to General), so the footer doesn't try to render page 3 of a
+  // list that only has 12 rows.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCourseId]);
+
+  // Auto-fit page size to the list wrapper. Same math the other admin lists
+  // use: header 32 + row 44 + footer 44 - half a row of safety so the last
+  // visible row never lands under the overflow-hidden edge.
+  useEffect(() => {
+    if (!autoFitPageSize) return;
+    const el = tableCardRef.current;
+    if (!el) return;
+    const HEADER_H = 32;
+    const FOOTER_H = 44;
+    const ROW_H = 44;
+    const SAFETY = Math.round(ROW_H / 2);
+    const compute = () => {
+      const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY);
+      const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)));
+      setPageSize((prev) => (prev === fits ? prev : fits));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [autoFitPageSize]);
 
   // ── Lifecycle ──
   useEffect(() => {
@@ -254,11 +336,15 @@ export default function QuestionBankPage() {
       marks: filters.marks,
       ...(createdAfter ? { createdAfter } : {}),
       search: debouncedSearch,
+      // Course scope — the server drops course-pinned questions on the General
+      // tab and only surfaces the matching course's on the Course Specific
+      // tab, so the list is authoritative on both views.
+      ...(selectedCourseId ? { courseId: selectedCourseId } : {}),
     }),
     [
       currentPage, pageSize, filters.questionType, filters.category,
       filters.difficulty, filters.isActive, filters.createdBy, filters.marks,
-      createdAfter, debouncedSearch,
+      createdAfter, debouncedSearch, selectedCourseId,
     ],
   );
 
@@ -278,6 +364,9 @@ export default function QuestionBankPage() {
   // did.
   const isLoading = isListLoading || isSavingMcq;
 
+  // The server does the course scoping now (queryParams sends courseId when
+  // the Course Specific view has one pinned; the list endpoint drops
+  // course-pinned rows on the General tab). No client-side post-filter.
   const pageQuestions = useMemo(() => pageData?.questions ?? [], [pageData]);
 
   // Facets come from the server over the WHOLE bank, not this page: the
@@ -287,9 +376,8 @@ export default function QuestionBankPage() {
   // offer it as the Category field's options.
   const categories = useMemo(() => pageData?.facets.categories ?? [], [pageData]);
 
-  // ── Pagination ── All four numbers are the server's. `totalFiltered` is the
-  // count of rows matching the filters, which is what the footer's
-  // `filteredQuestions.length` used to be.
+  // ── Pagination ── All four numbers come straight from the server, which is
+  // authoritative for both the General bank and any course-scoped view.
   const totalFiltered = pageData?.total ?? 0;
   const totalPages = pageData?.totalPages ?? 1;
   const safePage = Math.min(currentPage, totalPages);
@@ -415,19 +503,6 @@ export default function QuestionBankPage() {
       showToast('Failed to update status', 'error');
     }
   };
-
-  // ── Stats ── Counted server-side over the whole bank, which is what these
-  // four chips always showed — they are deliberately NOT scoped to the filters
-  // or to the visible page.
-  const stats = useMemo(() => {
-    const s = pageData?.facets.stats;
-    return [
-      { label: 'Total', value: s?.total ?? 0 },
-      { label: 'MCQ', value: s?.mcq ?? 0 },
-      { label: 'Programming', value: s?.programming ?? 0 },
-      { label: 'Active', value: s?.active ?? 0 },
-    ];
-  }, [pageData]);
 
   // ── Presentation-only derivations ──
   const activeFilterCount = [
@@ -665,96 +740,253 @@ export default function QuestionBankPage() {
         variants={pageEnter}
         initial="hidden"
         animate="visible"
-        className="flex min-h-0 flex-1 flex-col px-4 sm:px-6 md:px-8 pt-5 pb-4"
+        className="flex min-h-0 flex-1 flex-col px-4 sm:px-6 md:px-8 pt-3 pb-3"
       >
-        {/* ── Slim header + compact stat chips ──
-            Right-side chips use the shared HeaderStats primitive so the strip
-            reserves the same `mr-8` clearance as every other admin listing
-            page. Without that gap the last chip (Active) slides under the
-            corner-pinned NotificationBell rendered by DashboardLayout /
-            StaffLayout. flex-nowrap on the desktop rail lets the heading
-            column shrink instead of pushing the chip strip onto a new line. */}
-        <div className="flex flex-wrap items-start justify-between gap-4 md:flex-nowrap">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-semibold tracking-[-0.01em] text-heading sm:text-lg">Question Bank</h1>
-          </div>
-          <HeaderStats loading={isLoading} items={stats} skeletonCount={4} />
+        {/* Slim heading — chip strip dropped, matching Client Management. */}
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-base font-semibold tracking-[-0.01em] text-heading sm:text-lg">Question Bank</h1>
         </div>
 
-        {/* ── One toolbar: search · Filter · density toggle · overflow · Create ── */}
-        <div className="mt-4 flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
+        {/* Tab strip: General bank vs Course Specific. Course Specific opens
+            on a course picker; picking a course reveals the same questions
+            UI below (scoped to that course). */}
+        <div className="mt-3 flex gap-1 border-b border-hairline">
+          {([
+            { key: 'general' as const, label: 'General' },
+            { key: 'courses' as const, label: 'Course Specific' },
+          ]).map((t) => {
+            const active = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => {
+                  setActiveTab(t.key);
+                  if (t.key === 'general') {
+                    setSelectedCourseId(null);
+                    setSelectedCourseName('');
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 px-3 h-8 -mb-px border-b-2 text-xs font-medium transition-colors ${
+                  active
+                    ? 'border-brand-strong text-brand-strong'
+                    : 'border-transparent text-subtle hover:text-heading'
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Course picker (only when Course Specific is open AND no course is
+            selected). Manage on a row swaps in the same questions UI, pinned
+            to that course. */}
+        {activeTab === 'courses' && !selectedCourseId && (
+          <div className="mt-3 flex flex-1 min-h-0 flex-col">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <div className="relative flex-1 min-w-[220px] max-w-md">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+                <input
+                  type="text"
+                  value={coursesSearch}
+                  onChange={(e) => { setCoursesSearch(e.target.value); setCoursesPage(1); }}
+                  placeholder="Search courses…"
+                  className="h-8 w-full rounded-control border border-hairline-strong bg-surface pl-8 pr-8 text-xs text-body placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
+                />
+                {coursesSearch && (
+                  <button type="button" aria-label="Clear search" onClick={() => setCoursesSearch('')} className="absolute right-2 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading"><X size={12} /></button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-2 flex flex-1 min-h-0 flex-col overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+                  <thead className="sticky top-0 z-sticky">
+                    <tr>
+                      <th className="h-8 w-[4%] pl-4 sm:pl-5 pr-0 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline">#</th>
+                      <th className="h-8 w-[46%] px-3 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline">Course Name</th>
+                      <th className="h-8 w-[16%] px-3 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline">Course Code</th>
+                      <th className="h-8 w-[22%] px-3 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline">Client</th>
+                      <th className="h-8 w-[12%] pl-2 pr-4 sm:pr-5 text-right text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoadingCourses ? (
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <tr key={i} className="border-b border-hairline">
+                          <td className="h-11 px-3 align-middle"><div className="h-3 w-4 rounded bg-ink-100 animate-pulse" /></td>
+                          <td className="h-11 px-3 align-middle"><div className="h-3 w-3/4 rounded bg-ink-100 animate-pulse" /></td>
+                          <td className="h-11 px-3 align-middle"><div className="h-3 w-16 rounded bg-ink-100 animate-pulse" /></td>
+                          <td className="h-11 px-3 align-middle"><div className="h-3 w-24 rounded bg-ink-100 animate-pulse" /></td>
+                          <td className="h-11 pl-2 pr-4 sm:pr-5 align-middle text-right"><div className="ml-auto h-7 w-20 rounded-control bg-ink-100 animate-pulse" /></td>
+                        </tr>
+                      ))
+                    ) : currentCoursePage.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center">
+                          <div className="mx-auto flex max-w-sm flex-col items-center gap-2 text-subtle">
+                            <GraduationCap size={28} className="text-faint" />
+                            <p className="text-sm font-medium text-heading">
+                              {coursesSearch ? 'No courses match your search' : 'No courses to manage'}
+                            </p>
+                            <p className="text-xs">
+                              {coursesSearch ? 'Try a different term.' : 'Set up a course in Course Management first — it will appear here.'}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      currentCoursePage.map((c, i) => (
+                        <tr key={c._id} className="group border-b border-hairline last:border-0 hover:bg-row-hover transition-colors">
+                          <td className="h-11 pl-4 sm:pl-5 pr-0 align-middle text-[12px] text-faint tabular-nums">{(coursesPageSafe - 1) * coursesPageSize + i + 1}</td>
+                          <td className="h-11 px-3 align-middle text-[12px] font-medium text-heading">
+                            <span className="block truncate" title={c.courseName}>{c.courseName}</span>
+                          </td>
+                          <td className="h-11 px-3 align-middle text-[12px] text-body">
+                            {c.courseCode
+                              ? <span className="block truncate tabular-nums" title={c.courseCode}>{c.courseCode}</span>
+                              : <span className="text-line-muted">—</span>}
+                          </td>
+                          <td className="h-11 px-3 align-middle text-[12px] text-body">
+                            {c.clientName
+                              ? <span className="block truncate" title={c.clientName}>{c.clientName}</span>
+                              : <span className="text-line-muted">—</span>}
+                          </td>
+                          <td className="h-11 pl-2 pr-4 sm:pr-5 align-middle text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedCourseId(c._id); setSelectedCourseName(c.courseName); }}
+                              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-brand-500/30 bg-brand-wash text-brand-strong text-2xs font-semibold hover:bg-brand-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                            >
+                              <Settings2 size={12} /> Manage
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!isLoadingCourses && coursesTotal > 0 && (
+                <TableFooter
+                  from={(coursesPageSafe - 1) * coursesPageSize + 1}
+                  to={Math.min(coursesPageSafe * coursesPageSize, coursesTotal)}
+                  total={coursesTotal}
+                  pageSize={coursesPageSize}
+                  onPageSize={(n) => { setCoursesPageSize(n); setCoursesPage(1); }}
+                  currentPage={coursesPageSafe}
+                  totalPages={coursesTotalPages}
+                  onPage={setCoursesPage}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* When we're on the General tab OR a course has been picked, render
+            the questions UI. A slim "Back to courses" strip surfaces when a
+            course is pinned. */}
+        {(activeTab === 'general' || selectedCourseId) && (<>
+        {selectedCourseId && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => { setSelectedCourseId(null); setSelectedCourseName(''); }}
+              className="inline-flex items-center gap-1.5 text-xs text-subtle hover:text-heading transition-colors"
+            >
+              <ArrowLeft size={13} /> Back to courses
+            </button>
+            <span className="text-xs text-line-muted">·</span>
+            <span className="text-xs font-medium text-heading truncate max-w-[420px]" title={selectedCourseName}>
+              {selectedCourseName}
+            </span>
+          </div>
+        )}
+
+        {/* One toolbar: search left · Filter · Export grouped right ·
+            vertical divider · Create Question (primary). Same layout the
+            other admin lists use. */}
+        <div className="no-print mt-3 flex items-center gap-2 flex-wrap min-w-0">
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
             <input
               type="text"
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              placeholder="Search questions by title, description or category…"
-              className="h-10 w-full rounded-control border border-hairline-strong bg-surface pl-10 pr-9 text-sm text-body placeholder:text-faint transition-colors duration-150 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
+              placeholder="Search questions…"
+              className="h-8 w-full rounded-control border border-hairline-strong bg-surface pl-8 pr-8 text-xs text-body placeholder:text-faint transition-colors duration-150 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
             />
             {filters.search && (
-              <button type="button" aria-label="Clear search" onClick={() => setFilters({ ...filters, search: '' })} className="absolute right-2.5 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-chip text-faint transition-colors duration-150 hover:bg-ink-100 hover:text-heading"><X size={14} /></button>
+              <button type="button" aria-label="Clear search" onClick={() => setFilters({ ...filters, search: '' })} className="absolute right-2 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-chip text-faint transition-colors duration-150 hover:bg-ink-100 hover:text-heading"><X size={12} /></button>
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            aria-expanded={showFilters}
-            className={`relative inline-flex h-10 items-center gap-1.5 rounded-control border px-3.5 text-sm font-medium shadow-xs transition-colors duration-150 ${activeFilterCount > 0 || showFilters ? 'border-brand bg-brand-wash text-brand-strong' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            <span className="hidden sm:inline">Filter</span>
-            {activeFilterCount > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold tabular-nums text-white">{activeFilterCount}</span>}
-          </button>
+          {/* Secondary-action cluster pushed right */}
+          <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              aria-expanded={showFilters}
+              className={`relative inline-flex h-8 items-center gap-1.5 rounded-control border px-2.5 text-xs font-medium transition-colors duration-150 ${activeFilterCount > 0 || showFilters ? 'border-brand bg-brand-wash text-brand-strong' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Filter</span>
+              {activeFilterCount > 0 && <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold tabular-nums text-white">{activeFilterCount}</span>}
+            </button>
 
-          <div className="hidden h-10 items-center rounded-control border border-hairline-strong bg-surface p-0.5 sm:flex" role="group" aria-label="Density">
-            <button type="button" onClick={() => setDensity('list')} aria-pressed={density === 'list'} title="List view" className={`flex h-8 w-8 items-center justify-center rounded-chip transition-colors duration-150 ${density === 'list' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}><List className="h-4 w-4" /></button>
-            <button type="button" onClick={() => setDensity('compact')} aria-pressed={density === 'compact'} title="Compact view" className={`flex h-8 w-8 items-center justify-center rounded-chip transition-colors duration-150 ${density === 'compact' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}><Rows3 className="h-4 w-4" /></button>
-          </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" aria-label="More actions" className="inline-flex h-10 items-center justify-center rounded-control border border-hairline-strong bg-surface px-2.5 text-body shadow-xs transition-colors duration-150 hover:bg-row-hover hover:text-heading"><MoreHorizontal className="h-4 w-4" /></button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={6} className="w-52">
-              <DropdownMenuItem onSelect={() => { void exportCsv('all'); }} className="cursor-pointer"><Download className="h-4 w-4" /> Export all (CSV)</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Primary — Create Question (MCQ / Programming). Both items keep their
-              exact open-modal side effects. */}
-          {canCreate && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <motion.button
+                <button
                   type="button"
-                  whileTap={{ scale: 0.98 }}
-                  className="flex h-10 flex-shrink-0 items-center gap-2 rounded-control bg-brand-strong pl-3.5 pr-3 text-white shadow-xs transition-colors duration-150 ease-standard hover:bg-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                  aria-label="Export list"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
                 >
-                  <Plus size={16} strokeWidth={2.4} />
-                  <span className="hidden text-sm font-semibold sm:inline">Create Question</span>
-                  <span className="ml-0.5 hidden h-4 w-px bg-white/30 sm:block" aria-hidden="true" />
-                  <ChevronDown size={15} strokeWidth={2.4} className="opacity-90" />
-                </motion.button>
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" sideOffset={6} className="w-72 p-1.5">
-                <DropdownMenuItem onSelect={openCreateMcq} className="items-start gap-3 rounded-tile p-2.5">
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-tile bg-info-50"><ListChecks size={16} className="text-info-700" /></span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-heading">MCQ question</span>
-                    <span className="mt-0.5 block text-xs text-subtle">Choice, matching, ordering, numeric and more</span>
-                  </span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={openCreateProgramming} className="items-start gap-3 rounded-tile p-2.5">
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-tile bg-brand-wash"><Terminal size={16} className="text-brand-strong" /></span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-heading">Programming question</span>
-                    <span className="mt-0.5 block text-xs text-subtle">Core programming, frontend and database</span>
-                  </span>
-                </DropdownMenuItem>
+              <DropdownMenuContent align="end" sideOffset={6} className="w-52">
+                <DropdownMenuItem onSelect={() => { void exportCsv('all'); }} className="cursor-pointer"><Download className="h-4 w-4" /> Export all (CSV)</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
+
+          {canCreate && (
+            <>
+              <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.98 }}
+                    className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-control bg-brand-strong pl-3 pr-2 text-white shadow-sm transition-colors duration-150 ease-standard hover:bg-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                  >
+                    <Plus size={14} strokeWidth={2.4} />
+                    <span className="hidden text-xs font-semibold sm:inline">Create Question</span>
+                    <span className="ml-0.5 hidden h-4 w-px bg-white/30 sm:block" aria-hidden="true" />
+                    <ChevronDown size={13} strokeWidth={2.4} className="opacity-90" />
+                  </motion.button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={6} className="w-72 p-1.5">
+                  <DropdownMenuItem onSelect={openCreateMcq} className="items-start gap-3 rounded-tile p-2.5">
+                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-tile bg-info-50"><ListChecks size={16} className="text-info-700" /></span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-heading">MCQ question</span>
+                      <span className="mt-0.5 block text-xs text-subtle">Choice, matching, ordering, numeric and more</span>
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={openCreateProgramming} className="items-start gap-3 rounded-tile p-2.5">
+                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-tile bg-brand-wash"><Terminal size={16} className="text-brand-strong" /></span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-heading">Programming question</span>
+                      <span className="mt-0.5 block text-xs text-subtle">Core programming, frontend and database</span>
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
           )}
         </div>
 
@@ -782,12 +1014,9 @@ export default function QuestionBankPage() {
           </div>
         )}
 
-        {/* ── Question list (the hero) ──
-            flex-1 min-h-0 flex-col so the card fills whatever height is left
-            after the header/toolbar/chips. Inside, QuestionsTable's row
-            body claims flex-1 (its own overflow-auto), and the pagination
-            footer keeps its natural height pinned at the bottom. */}
-        <div className="mt-4 flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl border border-hairline bg-surface shadow-xs">
+        {/* Flat listing — no card border, matching Client Management. The ref
+            drives the auto-fit page size. */}
+        <div ref={tableCardRef} className="mt-2 flex flex-1 min-h-0 flex-col overflow-hidden">
           <QuestionsTable
             questions={pageQuestions}
             isLoading={isLoading}
@@ -815,13 +1044,14 @@ export default function QuestionBankPage() {
               to={rangeEnd}
               total={totalFiltered}
               pageSize={pageSize}
-              onPageSize={(n) => { setPageSize(n); setCurrentPage(1); }}
+              onPageSize={(n) => { setAutoFitPageSize(false); setPageSize(n); setCurrentPage(1); }}
               currentPage={safePage}
               totalPages={totalPages}
               onPage={setCurrentPage}
             />
           )}
         </div>
+        </>)}
       </motion.div>
 
       {/* Floating bulk actions — appear only after selecting questions. Rendered
@@ -890,6 +1120,10 @@ export default function QuestionBankPage() {
           qType={premiumCreate}
           onClose={() => setPremiumCreate(null)}
           onCreated={refreshQuestions}
+          // When a course is pinned via the Course Specific tab, tag the
+          // newly-created question with that courseId so it appears in the
+          // course's scoped list instead of the General list.
+          courseId={selectedCourseId || undefined}
         />
       )}
     </div>

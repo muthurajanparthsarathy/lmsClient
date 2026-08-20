@@ -917,10 +917,13 @@ export default function MultiFileCodeEditor({
 
         log("system", `🧪 Running ${cases.length} test case${cases.length > 1 ? "s" : ""}…`)
         let passed = 0
-        const perCase: Array<{ passed: boolean; hidden: boolean }> = []
+        // input/expected/actual ride along so the Review page can show the
+        // trainer WHICH cases failed, not just the count.
+        const perCase: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> = []
         for (let i = 0; i < cases.length; i++) {
           const tc = cases[i]
           const label = tc.isHidden ? `Hidden test #${i + 1}` : `Test #${i + 1}`
+          const base = { index: i, hidden: !!tc.isHidden, input: tc.input ?? "", expectedOutput: tc.expectedOutput ?? "" }
           try {
             const result = await runOnPiston({
               language: selectedLanguage as any,
@@ -928,20 +931,21 @@ export default function MultiFileCodeEditor({
               stdin: tc.input ?? "",
             })
             if (result.compileError) {
-              perCase.push({ passed: false, hidden: !!tc.isHidden })
+              perCase.push({ ...base, passed: false, actualOutput: `compile: ${result.compileError.split("\n")[0]}` })
               log("error", `✗ ${label} failed — compile: ${result.compileError.split("\n")[0]}`)
             } else {
               const ok = norm(result.stdout) === norm(tc.expectedOutput ?? "")
-              perCase.push({ passed: ok, hidden: !!tc.isHidden })
+              const actual = (result.stdout || "").trim() || result.stderr || ""
+              perCase.push({ ...base, passed: ok, actualOutput: actual })
               if (ok) { passed++; log("success", `✓ ${label} passed`) }
               else if (tc.isHidden) log("error", `✗ ${label} failed`)
               else log(
                 "error",
-                `✗ ${label} failed — expected: ${tc.expectedOutput ?? ""} | got: ${(result.stdout || "").trim() || result.stderr || "(no output)"}`,
+                `✗ ${label} failed — expected: ${tc.expectedOutput ?? ""} | got: ${actual || "(no output)"}`,
               )
             }
           } catch (e: any) {
-            perCase.push({ passed: false, hidden: !!tc.isHidden })
+            perCase.push({ ...base, passed: false, actualOutput: `(execution error: ${e?.message || e})` })
             log("error", `✗ ${label} failed (execution error: ${e?.message || e})`)
           }
           // Same soft rate-limit guard the single-file grader uses against the
@@ -950,7 +954,7 @@ export default function MultiFileCodeEditor({
         }
         submitScore = Math.round((passed / cases.length) * maxMarks * 100) / 100
         submitStatus = passed === cases.length ? "solved" : "submitted"
-        evaluationBreakdown = { method: "testcase", testcase: { passed, total: cases.length } }
+        evaluationBreakdown = { method: "testcase", testcase: { passed, total: cases.length, cases: perCase } }
         log(
           passed === cases.length ? "success" : "info",
           `🏁 Passed ${passed}/${cases.length} — Score: ${submitScore}/${maxMarks}`,
@@ -1203,15 +1207,13 @@ export default function MultiFileCodeEditor({
     <span className="text-[10px] text-gray-500 font-mono flex-shrink-0">Q {currentQuestionIndex + 1}/{questions.length || 1}</span>
   )
 
-  // Build examples list — 3-tier fallback to handle any question shape:
-  //   1. testCases with isSample === true && isHidden !== true (preferred — matches code-editor.tsx logic)
-  //   2. Any non-hidden testCases (when isSample flag isn't set on the question)
-  //   3. Legacy sampleInput / sampleOutput strings
+  // Build examples list — fallback to handle any question shape:
+  //   1. ALL non-hidden testCases (matches code-editor.tsx logic — the forms
+  //      only flag the first case isSample, so preferring flagged samples
+  //      collapsed a multi-case question to one example)
+  //   2. Legacy sampleInput / sampleOutput strings
   const _tcs: any[] = (currentQuestion as any)?.testCases || []
-  const _explicitSamples = _tcs.filter((tc: any) => tc.isSample === true && tc.isHidden !== true)
-  const _visibleTcs = _explicitSamples.length > 0
-    ? _explicitSamples
-    : _tcs.filter((tc: any) => tc.isHidden !== true)
+  const _visibleTcs = _tcs.filter((tc: any) => tc.isHidden !== true)
   const examples: Array<{ input: string; output: string; explanation?: string }> = _visibleTcs.length > 0
     ? _visibleTcs
         .map((tc: any) => ({

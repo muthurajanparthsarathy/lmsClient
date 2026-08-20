@@ -8,11 +8,11 @@ import DashboardLayout from "@/app/lms/component/layout";
  * one the rest of the app has, where shell selection is copy-pasted into seven
  * page files and a new role silently falls through to the trainer rail.
  *
- * It mounts DashboardLayout, but a POC does NOT get the admin sidebar: the rail
- * derives its items through `buildNavForStoredUser`, which returns the
- * dedicated POC_NAV_ITEMS for this role. Same chrome and design system, an
- * entirely different navigation structure — not the admin nav with entries
- * hidden.
+ * It mounts DashboardLayout, whose rail is derived from the signed-in
+ * account's OWN permissions via `buildNavForStoredUser` — there is no POC
+ * sidebar constant any more. A POC sees exactly the modules an admin granted
+ * it in Assign Permission, and "POC Dashboard" is one of those modules
+ * (permission key `pocdashboard`, routed here by PERMISSION_ROUTES).
  */
 export default function PocConsoleLayout({ children }: { children: React.ReactNode }) {
   return <DashboardLayout>{children}</DashboardLayout>;

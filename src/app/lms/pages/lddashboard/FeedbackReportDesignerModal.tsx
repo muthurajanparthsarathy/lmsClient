@@ -449,6 +449,44 @@ export default function FeedbackReportDesignerModal({
     const [anonSel, setAnonSel] = useState<Set<string> | null>(null);
     const [removed, setRemoved] = useState<Set<ViewKey>>(new Set());
     const downloadRef = useRef<HTMLDivElement>(null);
+    // Live preview section nodes, keyed by ViewKey. The PDF export rasterises
+    // the recharts <svg> inside chart sections (distPie, paramBars,
+    // trainerBars) so the download carries the SAME graphs the canvas shows.
+    // Same pattern as AttendanceReportModal.svgToPng.
+    const chartRefs = useRef<Record<string, HTMLElement | null>>({});
+
+    // Serialise a section's recharts <svg> → <img> → 2× canvas → PNG data URL.
+    const svgToPng = async (container: HTMLElement | null): Promise<{ dataUrl: string; width: number; height: number } | null> => {
+        if (!container) return null;
+        const svg = container.querySelector("svg");
+        if (!svg) return null;
+        const box = svg.getBoundingClientRect();
+        const clone = svg.cloneNode(true) as SVGSVGElement;
+        clone.setAttribute("width", String(Math.max(1, Math.round(box.width))));
+        clone.setAttribute("height", String(Math.max(1, Math.round(box.height))));
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        const xml = new XMLSerializer().serializeToString(clone);
+        const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        try {
+            const img = new Image();
+            img.decoding = "async";
+            img.src = url;
+            await img.decode();
+            const scale = 2;
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(box.width * scale));
+            canvas.height = Math.max(1, Math.round(box.height * scale));
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return null;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            return { dataUrl: canvas.toDataURL("image/png"), width: box.width, height: box.height };
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    };
 
     // Download menu closes on outside click.
     useEffect(() => {
@@ -1150,6 +1188,48 @@ export default function FeedbackReportDesignerModal({
                 doc.text(t, M, y);
                 y += 14;
             };
+            // Embed the live chart exactly as the canvas shows it (the data
+            // table still follows as the numeric appendix). `legend` re-draws
+            // the on-screen legend with jsPDF primitives — recharts renders
+            // its legend as an HTML div OUTSIDE the svg, so the capture alone
+            // would ship an unlabeled pie.
+            const addChartImage = async (key: string, legend?: Array<{ label: string; color: string }>) => {
+                const shot = await svgToPng(chartRefs.current[key]);
+                if (!shot) return;
+                const pageH = doc.internal.pageSize.getHeight();
+                const ratio = shot.width / shot.height;
+                let w = pageW - M * 2;
+                let h = w / ratio;
+                if (h > pageH - M * 2) { h = pageH - M * 2; w = h * ratio; }
+                if (y + h > pageH - M) { doc.addPage(); y = M; }
+                doc.addImage(shot.dataUrl, "PNG", M, y, w, h);
+                y += h + 6;
+                if (legend && legend.length > 0) {
+                    if (y + 14 > pageH - M) { doc.addPage(); y = M; }
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(8.5);
+                    let x = M;
+                    for (const item of legend) {
+                        const label = item.label;
+                        const itemW = 10 + doc.getTextWidth(label) + 14;
+                        if (x + itemW > pageW - M) { x = M; y += 12; }
+                        const rgb = hexToRgb(item.color);
+                        doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+                        doc.circle(x + 3, y - 3, 3, "F");
+                        doc.setTextColor(55, 65, 81);
+                        doc.text(label, x + 10, y);
+                        x += itemW;
+                    }
+                    y += 12;
+                }
+                y += 4;
+            };
+            const hexToRgb = (hex: string): [number, number, number] => {
+                const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+                if (!m) return [107, 114, 128];
+                const n = parseInt(m[1], 16);
+                return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+            };
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(16);
@@ -1187,6 +1267,7 @@ export default function FeedbackReportDesignerModal({
             }
             if (shouldShow("distPie") && distribution.some((d) => d.value > 0)) {
                 h2("Rating distribution");
+                await addChartImage("distPie", distribution.filter((d) => d.value > 0).map((d) => ({ label: `${d.name} (${d.value})`, color: d.color })));
                 autoTable(doc, {
                     startY: y,
                     head: [["Rating", "Responses"]],
@@ -1200,6 +1281,7 @@ export default function FeedbackReportDesignerModal({
             }
             if (shouldShow("paramBars") && parameterAverages.length > 0) {
                 h2("Parameter averages");
+                await addChartImage("paramBars");
                 autoTable(doc, {
                     startY: y,
                     head: [["Parameter", "Avg", "Answers"]],
@@ -1213,6 +1295,7 @@ export default function FeedbackReportDesignerModal({
             }
             if (shouldShow("trainerBars") && trainerAverages.length > 0) {
                 h2("Trainer averages");
+                await addChartImage("trainerBars");
                 autoTable(doc, {
                     startY: y,
                     head: [["Trainer", "Avg", "Responses"]],
@@ -1250,6 +1333,50 @@ export default function FeedbackReportDesignerModal({
                     headStyles: { fillColor: [124, 92, 252] },
                     margin: { left: M, right: M },
                 });
+                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
+            }
+
+            // Comments & suggestions — was on the canvas and in the Excel
+            // export but missing from the PDF entirely. Same "every comment,
+            // not just the capped preview" rebuild the Excel sheet does.
+            if (shouldShow("comments")) {
+                const allComments: typeof commentRows = [];
+                workingResponses.forEach((r, i) => {
+                    r.texts.forEach((t, j) => {
+                        allComments.push({
+                            key: `${r.formId}:${i}:${j}`,
+                            form: r.form,
+                            course: r.course,
+                            trainer: r.trainer,
+                            student: r.isAnonymous ? "Anonymous" : r.studentName,
+                            date: r.submittedAt,
+                            question: t.question,
+                            text: t.text,
+                        });
+                    });
+                });
+                allComments.sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0));
+                if (allComments.length > 0) {
+                    doc.addPage();
+                    y = M;
+                    h2(`Comments & suggestions (${allComments.length})`);
+                    autoTable(doc, {
+                        startY: y,
+                        head: [["Date", "Student", "Form", "Trainer", "Question", "Comment"]],
+                        body: allComments.map((c) => [
+                            c.date ? new Date(c.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—",
+                            c.student,
+                            c.form,
+                            c.trainer && c.trainer !== "Course-level" ? c.trainer : "—",
+                            c.question,
+                            c.text,
+                        ]),
+                        styles: { fontSize: 7.5, cellPadding: 2.5 },
+                        headStyles: { fillColor: [217, 119, 6] },
+                        columnStyles: { 5: { cellWidth: 220 } },
+                        margin: { left: M, right: M },
+                    });
+                }
             }
 
             const pages = (doc as any).internal.pages.length - 1;
@@ -1272,7 +1399,10 @@ export default function FeedbackReportDesignerModal({
     if (!open) return null;
 
     const Sec: React.FC<{ id: ViewKey; children: React.ReactNode }> = ({ id, children }) => (
-        <section className="relative rounded-tile border border-hairline bg-surface">
+        <section
+            className="relative rounded-tile border border-hairline bg-surface"
+            ref={(el) => { chartRefs.current[id] = el; }}
+        >
             <button
                 type="button"
                 aria-label="Remove from preview"

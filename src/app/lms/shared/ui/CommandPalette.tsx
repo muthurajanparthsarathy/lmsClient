@@ -80,8 +80,8 @@ export function CommandPalette({ open, onOpenChange, onSignOut, className }: Com
     useEffect(() => {
         if (!open) return;
         // Same derivation the sidebar uses, so the palette can never offer a
-        // route the rail hides — including for a POC, whose stored permission
-        // keys still name admin modules.
+        // route the rail hides. Both read the signed-in account's own granted
+        // permissions — no role branches on either side.
         setGroups(groupSidebarItems(buildNavForStoredUser(readStoredUserData())));
     }, [open]);
 

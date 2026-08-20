@@ -102,7 +102,7 @@ const AnimCollapse: React.FC<{ open: boolean; children: React.ReactNode }> = ({ 
 /* ─── Shared primitives ──────────────────────────────────────────────────── */
 const SectionLabel: React.FC<{ label: string }> = ({ label }) => (
   <div style={{
-    fontFamily: C.font, fontSize: 11.5, fontWeight: 600,  // Reduced from 10.5/700
+    fontFamily: C.font, fontSize: 11.5, fontWeight: 500,  // Reduced from 10.5/700
     letterSpacing: "0.03em",  // Reduced from 0.04em
     color: C.textGhost, padding: "16px 16px 8px",
     marginTop: 4,
@@ -146,6 +146,7 @@ const NavItem: React.FC<{
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      title={label}
       style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "10px 16px", borderRadius: 8, margin: "2px 8px",
@@ -162,7 +163,7 @@ const NavItem: React.FC<{
         {icon}
       </div>
       <span style={{
-        fontFamily: C.font, fontSize: 14, fontWeight: active ? 500 : 400,  // Reduced from 13.5/600/500
+        fontFamily: C.font, fontSize: 14, fontWeight: active ? 400 : 300,  // Reduced from 13.5/600/500
         color: active ? C.text : C.textMuted, flex: 1,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>
@@ -185,6 +186,7 @@ const TreeModuleRow: React.FC<{
       onClick={onToggle}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      title={label}
       style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: pl, borderRadius: 10, margin: "0 8px",
@@ -215,7 +217,7 @@ const TreeModuleRow: React.FC<{
       <span style={{
         fontFamily: C.font, flex: 1,
         fontSize: depth === 0 ? 14 : 13.5,
-        fontWeight: isActive ? 600 : 500,
+        fontWeight: isActive ? 500 : 400,
         color: isActive ? C.accent : C.text,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         transition: "color 0.13s,font-weight 0.13s",
@@ -236,6 +238,7 @@ const SubtopicRow: React.FC<{
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      title={title}
       style={{
         display: "flex", alignItems: "center", gap: 10,
         paddingLeft: 14, paddingRight: 12, paddingTop: 8, paddingBottom: 8,
@@ -256,7 +259,7 @@ const SubtopicRow: React.FC<{
       }} />
       <span style={{
         fontFamily: C.font, fontSize: 13.5, flex: 1,  // Reduced from 12.5
-        fontWeight: isSelected ? 500 : 400,  // Reduced from 600/400
+        fontWeight: isSelected ? 400 : 300,  // Reduced from 600/400
         color: isSelected ? C.text : C.textFaint,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>
@@ -287,6 +290,7 @@ const LeafRow: React.FC<{
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      title={title}
       style={{
         display: "flex", alignItems: "center", gap: 9,
         padding: "6px 10px", borderRadius: 10, margin: "0 8px",
@@ -311,7 +315,7 @@ const LeafRow: React.FC<{
       </div>
       <span style={{
         fontFamily: C.font, fontSize: 13.5, flex: 1,
-        fontWeight: isSelected ? 600 : 500,
+        fontWeight: isSelected ? 500 : 400,
         color: isSelected ? C.accent : C.text,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
       }}>
@@ -400,7 +404,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{
-            fontFamily: C.font, fontSize: 14, fontWeight: 500,  // Reduced from 13/600
+            fontFamily: C.font, fontSize: 14, fontWeight: 400,  // Reduced from 13/600
             color: C.text, overflow: "hidden", textOverflow: "ellipsis",
             whiteSpace: "nowrap", letterSpacing: "-0.01em",
           }}>

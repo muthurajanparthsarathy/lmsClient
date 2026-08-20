@@ -7,10 +7,12 @@ import {
   CheckSquare, Code2, Layers, HelpCircle, BookOpen,
   Calendar, Hourglass, Lock, CheckCircle, Code,
   Info, Target, Settings, FileText, BarChart2, Shield, Cpu,
-  Search, Filter, ChevronDown, ChevronLeft, ChevronRight, Eye,
+  Search, SlidersHorizontal, Filter, ChevronDown, ChevronLeft, ChevronRight, Eye,
   MoreVertical, ArrowUpDown, ArrowUp, ArrowDown
 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import DataTable, { type Column as DTColumn } from "@/app/lms/shared/listing/DataTable"
+import TableFooter from "@/app/lms/shared/listing/TableFooter"
 
 // Shared Poppins-first font stack for this roster-style list.
 const LIST_FONT = "'Poppins','Poppins','Segoe UI','Roboto',system-ui,-apple-system,BlinkMacSystemFont,sans-serif"
@@ -1196,20 +1198,171 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
     router.push(`/lms/pages/courses/coursesdetailedview/exercisegrade?${queryParams.toString()}`)
   }
 
-  // ── Empty state (no exercises at all, before any filter) ─────────────────────
-  if (!exercises || exercises.filter(ex => isExerciseFullyConfigured(ex)).length === 0) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-        <div className="mb-4 p-5 rounded-2xl" style={{ background: 'rgba(249,115,22,0.05)', border: '1.5px dashed rgba(249,115,22,0.2)' }}>
-          <BookOpen size={28} style={{ color: 'rgba(249,115,22,0.35)' }} />
-        </div>
-        <h3 className="text-[14px] font-bold mb-1" style={{ color: '#1a1a2e' }}>No Exercises Yet</h3>
-        <p className="text-[12px] max-w-xs leading-relaxed" style={{ color: '#8b8b9e' }}>
-          Exercises for this section haven't been added yet.
-        </p>
-      </div>
-    )
-  }
+  // ── Filter/toolbar bookkeeping shared with the DataTable render ──
+  const hasActiveFilters = !!searchQuery || filterLevel !== "all" || filterStatus.length > 0
+  const activeFilterCount = (filterLevel !== "all" ? 1 : 0) + filterStatus.length
+  const hasAnyExercises = !!exercises && exercises.filter(ex => isExerciseFullyConfigured(ex)).length > 0
+
+  // ── Columns for the shared DataTable (matches Client Management styling) ──
+  const columns: DTColumn<Exercise>[] = [
+    {
+      key: 'num',
+      label: '#',
+      className: 'w-[5%] pl-4 pr-2 text-left text-xs text-faint tabular-nums align-middle whitespace-nowrap',
+      skeletonWidth: '20px',
+      render: (_ex, i) => startIdx + i + 1,
+    },
+    {
+      key: 'id',
+      label: 'ID',
+      className: 'w-[8%] px-3 text-left align-middle',
+      skeletonWidth: '40px',
+      render: (ex) => (
+        <span className="text-[11px] font-mono text-subtle truncate block" title={ex.exerciseInformation.exerciseId}>
+          {ex.exerciseInformation.exerciseId}
+        </span>
+      ),
+    },
+    {
+      key: 'name',
+      label: 'Assignment Name',
+      sortKey: 'name',
+      className: 'w-[27%] px-3 text-left align-middle',
+      skeletonWidth: '80%',
+      render: (ex) => {
+        const name = ex.exerciseInformation.exerciseName || 'N/A'
+        const desc = ex.exerciseInformation.description
+          ? ex.exerciseInformation.description.replace(/<[^>]*>/g, '').substring(0, 80)
+          : ''
+        return (
+          <div className="flex flex-col justify-center min-w-0">
+            <span className="block truncate font-medium text-heading" title={name}>{name}</span>
+            {desc && <span className="block truncate mt-0.5 text-[10.5px] text-faint">{desc}</span>}
+          </div>
+        )
+      },
+    },
+    {
+      key: 'start',
+      label: 'Start Date',
+      sortKey: 'start',
+      className: 'w-[14%] px-3 text-left align-middle',
+      skeletonWidth: '75%',
+      render: (ex) => (
+        <span className="text-[11.5px] text-body flex items-center gap-1 whitespace-nowrap"
+          title={ex.availabilityPeriod?.startDate ? formatDateTime(ex.availabilityPeriod.startDate) : ''}>
+          <Calendar size={11} className="text-faint flex-shrink-0" />
+          {ex.availabilityPeriod?.startDate
+            ? `${new Date(ex.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(ex.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+            : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'end',
+      label: 'End Date',
+      sortKey: 'end',
+      className: 'w-[14%] px-3 text-left align-middle',
+      skeletonWidth: '75%',
+      render: (ex) => (
+        <span className="text-[11.5px] text-body flex items-center gap-1 whitespace-nowrap"
+          title={ex.availabilityPeriod?.endDate ? formatDateTime(ex.availabilityPeriod.endDate) : ''}>
+          <Clock size={11} className="text-faint flex-shrink-0" />
+          {ex.availabilityPeriod?.endDate
+            ? `${new Date(ex.availabilityPeriod.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(ex.availabilityPeriod.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+            : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'level',
+      label: 'Level',
+      sortKey: 'level',
+      className: 'w-[8%] px-3 text-left align-middle',
+      render: (ex) => {
+        const d = getDifficultyStyle(ex.exerciseInformation.exerciseLevel)
+        return (
+          <span className="inline-flex items-center text-[10px] font-semibold tracking-wide px-2 py-0.5 rounded-full border"
+            style={{ background: d.bg, color: d.color, borderColor: d.border }}>
+            {d.label}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortKey: 'status',
+      className: 'w-[9%] px-3 text-left align-middle',
+      render: (ex) => {
+        const canStart = getExerciseAvailability(ex).canStart
+        return (
+          <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium px-2.5 py-1 rounded-full"
+            style={canStart
+              ? { background: '#ecfdf3', color: '#15803d' }
+              : { background: '#f1f5f9', color: '#64748b' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: canStart ? '#22c55e' : '#94a3b8' }} />
+            {canStart ? 'Active' : 'Inactive'}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'action',
+      label: 'Action',
+      className: 'w-[15%] pl-2 pr-4 text-center align-middle whitespace-nowrap',
+      render: (ex) => {
+        const availability = getExerciseAvailability(ex)
+        const isGraded = ex.isGraded !== false
+        const submissionAttempts = getSubmissionAttempts(ex)
+        const testSubmissions = getTestSubmissions(ex, studentAnswers, method, subcategory)
+        const isCompleted = testSubmissions >= 1
+        const limitReached = testSubmissions >= submissionAttempts
+        const canRetake = isCompleted && !limitReached && availability.canStart
+        return (
+          <div className="flex items-center justify-center gap-1">
+            <div className="flex flex-col items-center gap-0.5">
+              {!availability.canStart ? (
+                <span className="text-[10px] font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
+                  {isCompleted ? 'Submitted' : 'Not Submitted'}
+                </span>
+              ) : limitReached ? (
+                <span className="text-[10px] font-semibold" style={{ color: '#15803d' }}>Submitted</span>
+              ) : canRetake ? (
+                <>
+                  <button
+                    onClick={e => handleStartClick(ex, e)}
+                    className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
+                    style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
+                    Re Submit
+                  </button>
+                  <span className="text-[9px] font-medium" style={{ color: '#15803d' }}>Submitted</span>
+                </>
+              ) : (
+                <button
+                  onClick={e => handleStartClick(ex, e)}
+                  className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
+                  style={isGraded
+                    ? { background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', cursor: 'pointer' }
+                    : { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', cursor: 'pointer' }}
+                  onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
+                  onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
+                  Start
+                </button>
+              )}
+            </div>
+            <RowActionsMenu
+              exercise={ex}
+              onGrade={handleGradeClick}
+              isGradeEnabled={hasExerciseBeenAttempted(ex, studentAnswers, method, subcategory)}
+            />
+          </div>
+        )
+      },
+    },
+  ]
 
   // ── Table ────────────────────────────────────────────────────────────────────
   return (
@@ -1277,120 +1430,131 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
         document.body
       )}
 
-      {/* Exercise List — roster-style list (see sample) */}
-      <div ref={cardRef} className="flex flex-col h-full" style={{
-        fontFamily: LIST_FONT,
-        border: '1px solid #e8eaf0',
-        borderRadius: 14,
-        boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.05)',
-        overflow: 'hidden',
-        background: '#ffffff',
-        margin: '0 2px',
-      }}>
+      {/* ── Assignments listing: shared DataTable + TableFooter shell that matches
+             Client Management's design tokens and toolbar layout. ── */}
+      <div
+        ref={cardRef}
+        className="flex flex-col h-full min-h-0 rounded-xl border border-hairline bg-surface overflow-hidden shadow-xs mx-0.5"
+        style={{ fontFamily: LIST_FONT }}
+      >
 
-        {/* ── Header: title (left) + search & filter (right) ── */}
-        <div className="flex-none flex items-center gap-3 px-4 py-3 bg-white" style={{ borderBottom: '1px solid #eef0f4' }}>
-
-          {/* Title / count */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="flex items-center justify-center" style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(249,115,22,0.10)', color: '#f97316' }}>
-              <FileText size={15} />
+        {/* ── Toolbar: title/count · search · filter · (optional) show-header ── */}
+        <div className="flex-none flex items-center gap-2 px-4 py-3 border-b border-hairline flex-wrap min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-tile bg-brand-wash text-brand-strong flex-shrink-0">
+              <FileText size={14} />
             </span>
-            <span className="text-[13px] font-semibold" style={{ color: '#1a1a2e' }}>
-              Total Assignments: <span style={{ color: '#f97316' }}>{filteredExercises.length}</span>
-            </span>
+            <h2 className="text-sm font-semibold text-heading tracking-[-0.01em] whitespace-nowrap m-0">
+              Assignments
+              <span className="ml-2 inline-flex items-center h-5 min-w-5 px-1.5 rounded-full bg-brand-wash text-brand-strong text-[10.5px] font-semibold tabular-nums">
+                {filteredExercises.length}
+              </span>
+            </h2>
           </div>
 
           <div className="flex-1" />
 
-          {/* Search */}
-          <div className="relative" style={{ width: 220, maxWidth: '40%' }}>
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#bcbccc' }} />
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
             <input
               type="text"
-              placeholder="Search assignments…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-7 h-8 text-[12px] rounded-lg outline-none transition-all"
-              style={{ background: '#f8fafc', border: '1px solid #e4e4ed', color: '#1a1a2e' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(249,115,22,0.08)'; e.currentTarget.style.background = '#fff' }}
-              onBlur={e => { e.currentTarget.style.borderColor = '#e4e4ed'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#f8fafc' }}
+              placeholder="Search assignments…"
+              className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery("")}
-                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#bcbccc', cursor: 'pointer', lineHeight: 0, border: 'none', background: 'none', padding: 0 }}>
-                <X size={11} />
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+              >
+                <X size={12} />
               </button>
             )}
           </div>
 
-          {/* Filter */}
           <div className="relative" ref={filterRef}>
             <button
-              onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-              className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-medium transition-all"
-              style={{
-                border: (filterLevel !== "all" || filterStatus.length > 0) ? '1px solid rgba(249,115,22,0.35)' : '1px solid #e4e4ed',
-                background: (filterLevel !== "all" || filterStatus.length > 0) ? 'rgba(249,115,22,0.06)' : '#f8fafc',
-                color: (filterLevel !== "all" || filterStatus.length > 0) ? '#f97316' : '#64748b',
-                cursor: 'pointer',
-              }}>
-              <Filter size={12} />
+              type="button"
+              onClick={() => setShowFilterDropdown((v) => !v)}
+              aria-expanded={showFilterDropdown}
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 ${
+                activeFilterCount > 0 || showFilterDropdown
+                  ? 'border-brand text-brand-strong bg-brand-wash'
+                  : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>Filter</span>
-              {(filterLevel !== "all" || filterStatus.length > 0) && (
-                <span className="w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ background: '#f97316' }}>
-                  {(filterLevel !== "all" ? 1 : 0) + filterStatus.length}
+              {activeFilterCount > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-[10px] font-bold text-white tabular-nums">
+                  {activeFilterCount}
                 </span>
               )}
-              <ChevronDown size={11} className={`transition-transform ${showFilterDropdown ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-3 h-3 transition-transform ${showFilterDropdown ? 'rotate-180' : ''}`} />
             </button>
 
             {showFilterDropdown && (
-              <div className="absolute top-full right-0 mt-1.5 w-60 rounded-xl bg-white z-50 p-3 space-y-3"
-                style={{ border: '1px solid #e4e4ed', boxShadow: '0 8px 24px rgba(26,26,46,0.12)' }}>
+              <div className="absolute top-full right-0 mt-1.5 w-64 rounded-xl bg-surface z-40 p-3 space-y-3 border border-hairline-strong shadow-lg">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Level</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-subtle">Level</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {["all", "beginner", "intermediate", "advanced", "hard", "medium"].map(level => (
-                      <button key={level} onClick={() => setFilterLevel(level)}
-                        className="px-2 py-0.5 rounded-md text-[11px] font-medium border transition-all"
-                        style={filterLevel === level
-                          ? { background: '#f97316', color: '#fff', borderColor: '#f97316', cursor: 'pointer' }
-                          : { background: '#fff', color: '#6b6b7e', borderColor: '#e4e4ed', cursor: 'pointer' }}>
-                        {level === "all" ? "All" : level.charAt(0).toUpperCase() + level.slice(1)}
+                    {['all', 'beginner', 'intermediate', 'advanced', 'hard', 'medium'].map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => setFilterLevel(level)}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors duration-150 ${
+                          filterLevel === level
+                            ? 'bg-brand-strong text-white border-brand-strong'
+                            : 'bg-surface text-body border-hairline-strong hover:border-line-hover hover:text-heading'
+                        }`}
+                      >
+                        {level === 'all' ? 'All' : level.charAt(0).toUpperCase() + level.slice(1)}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Status</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-subtle">Status</p>
                   <div className="flex flex-wrap gap-1.5">
                     {[
-                      { val: "active",        label: "Active" },
-                      { val: "inactive",      label: "Inactive" },
-                      { val: "submitted",     label: "Submitted" },
-                      { val: "not-submitted", label: "Not Submitted" },
+                      { val: 'active', label: 'Active' },
+                      { val: 'inactive', label: 'Inactive' },
+                      { val: 'submitted', label: 'Submitted' },
+                      { val: 'not-submitted', label: 'Not Submitted' },
                     ].map(({ val, label }) => {
                       const selected = filterStatus.includes(val)
                       return (
-                        <button key={val}
-                          onClick={() => setFilterStatus(prev =>
-                            selected ? prev.filter(s => s !== val) : [...prev, val]
-                          )}
-                          className="px-2 py-0.5 rounded-md text-[11px] font-medium border transition-all"
-                          style={selected
-                            ? { background: '#f97316', color: '#fff', borderColor: '#f97316', cursor: 'pointer' }
-                            : { background: '#fff', color: '#6b6b7e', borderColor: '#e4e4ed', cursor: 'pointer' }}>
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() =>
+                            setFilterStatus((prev) => (selected ? prev.filter((s) => s !== val) : [...prev, val]))
+                          }
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors duration-150 ${
+                            selected
+                              ? 'bg-brand-strong text-white border-brand-strong'
+                              : 'bg-surface text-body border-hairline-strong hover:border-line-hover hover:text-heading'
+                          }`}
+                        >
                           {label}
                         </button>
                       )
                     })}
                   </div>
                 </div>
-                {(filterLevel !== "all" || filterStatus.length > 0) && (
-                  <button onClick={() => { setFilterLevel("all"); setFilterStatus([]) }}
-                    className="w-full py-1.5 rounded-lg text-[11px] font-medium transition-all"
-                    style={{ border: '1px solid #e4e4ed', color: '#6b6b7e', background: '#fafafa', cursor: 'pointer' }}>
+                {(filterLevel !== 'all' || filterStatus.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterLevel('all')
+                      setFilterStatus([])
+                    }}
+                    className="w-full py-1.5 rounded-control text-[11px] font-medium border border-hairline-strong text-subtle bg-canvas hover:text-heading transition-colors duration-150"
+                  >
                     Clear Filters
                   </button>
                 )}
@@ -1398,314 +1562,123 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             )}
           </div>
 
-          {/* Show Header — appears next to Filter when TopBar is hidden */}
           {isHeaderHidden && onShowHeader && (
             <button
+              type="button"
               onClick={onShowHeader}
               title="Show header"
-              style={{
-                width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '1px solid #bbf7d0', background: '#f0fdf4',
-                color: '#16a34a', cursor: 'pointer', transition: 'all .15s',
-              }}
-              onMouseEnter={e => {
-                const el = e.currentTarget as HTMLElement
-                el.style.background = '#dcfce7'; el.style.borderColor = '#86efac'
-              }}
-              onMouseLeave={e => {
-                const el = e.currentTarget as HTMLElement
-                el.style.background = '#f0fdf4'; el.style.borderColor = '#bbf7d0'
-              }}
+              className="inline-flex items-center justify-center size-8 rounded-control border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors duration-150"
             >
               <Eye size={13} />
             </button>
           )}
         </div>
 
-        {/* ── Active filters chips ── */}
-        {(searchQuery || filterLevel !== "all" || filterStatus.length > 0) && (
-          <div className="flex-none flex flex-wrap items-center gap-2 px-4 py-1.5"
-            style={{ background: 'rgba(249,115,22,0.04)', borderBottom: '1px solid rgba(249,115,22,0.12)' }}>
-            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#f97316' }}>Filters:</span>
+        {/* ── Active filter chips ── */}
+        {hasActiveFilters && (
+          <div className="flex-none flex flex-wrap items-center gap-2 px-4 py-2 border-b border-hairline bg-brand-wash/50">
             {searchQuery && (
-              <button onClick={() => setSearchQuery("")}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full transition-all"
-                style={{ background: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)', cursor: 'pointer' }}>
-                "{searchQuery}" <X size={9} />
-              </button>
+              <span className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong">
+                “{searchQuery}”
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearchQuery('')}
+                  className="inline-flex size-4 items-center justify-center rounded-full hover:bg-brand-500/20 transition-colors duration-150"
+                >
+                  <X size={11} />
+                </button>
+              </span>
             )}
-            {filterLevel !== "all" && (
-              <button onClick={() => setFilterLevel("all")}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full capitalize transition-all"
-                style={{ background: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)', cursor: 'pointer' }}>
-                {filterLevel} <X size={9} />
-              </button>
+            {filterLevel !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong capitalize">
+                {filterLevel}
+                <button
+                  type="button"
+                  aria-label="Clear level filter"
+                  onClick={() => setFilterLevel('all')}
+                  className="inline-flex size-4 items-center justify-center rounded-full hover:bg-brand-500/20 transition-colors duration-150"
+                >
+                  <X size={11} />
+                </button>
+              </span>
             )}
-            {filterStatus.map(s => (
-              <button key={s} onClick={() => setFilterStatus(prev => prev.filter(x => x !== s))}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full capitalize transition-all"
-                style={{ background: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)', cursor: 'pointer' }}>
-                {s === 'not-submitted' ? 'Not Submitted' : s.charAt(0).toUpperCase() + s.slice(1)} <X size={9} />
-              </button>
+            {filterStatus.map((s) => (
+              <span
+                key={s}
+                className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong"
+              >
+                {s === 'not-submitted' ? 'Not Submitted' : s.charAt(0).toUpperCase() + s.slice(1)}
+                <button
+                  type="button"
+                  aria-label={`Remove ${s} filter`}
+                  onClick={() => setFilterStatus((prev) => prev.filter((x) => x !== s))}
+                  className="inline-flex size-4 items-center justify-center rounded-full hover:bg-brand-500/20 transition-colors duration-150"
+                >
+                  <X size={11} />
+                </button>
+              </span>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('')
+                setFilterLevel('all')
+                setFilterStatus([])
+              }}
+              className="text-xs font-medium text-subtle hover:text-heading transition-colors duration-150 ml-0.5"
+            >
+              Clear all
+            </button>
           </div>
         )}
 
-        {/* ── Table area ── */}
-        <div ref={tableAreaRef} className="flex-1 min-h-0 bg-white roster-scroll" style={{ overflow: 'auto' }}>
-          {filteredExercises.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-              <div className="mb-4 p-5 rounded-2xl" style={{ background: 'rgba(249,115,22,0.05)', border: '1.5px dashed rgba(249,115,22,0.2)' }}>
-                <BookOpen size={28} style={{ color: 'rgba(249,115,22,0.35)' }} />
-              </div>
-              <h3 className="text-[14px] font-bold mb-1" style={{ color: '#1a1a2e' }}>No exercises found</h3>
-              <p className="text-[12px] max-w-xs leading-relaxed" style={{ color: '#8b8b9e' }}>
-                Try adjusting your search or clearing the filters.
-              </p>
+        {/* ── Table + pagination ── */}
+        <div ref={tableAreaRef} className="flex flex-1 min-h-0 flex-col">
+          <DataTable
+            rows={pagedExercises}
+            columns={columns}
+            rowKey={(ex) => ex._id}
+            sortKey={sortColumn}
+            sortDir={sortDir}
+            onSort={(key) => handleSort(key as 'name' | 'start' | 'end' | 'level' | 'status')}
+            isLoading={false}
+            isFiltered={hasActiveFilters}
+            fixedLayout
+            fillHeight
+            emptyTitle={hasAnyExercises ? 'No exercises found' : 'No exercises yet'}
+            emptyHint={
+              hasAnyExercises
+                ? 'Try adjusting your search or clearing the filters.'
+                : "Exercises for this section haven't been added yet."
+            }
+            emptyAction={hasActiveFilters ? 'Clear filters' : undefined}
+            onEmptyAction={
+              hasActiveFilters
+                ? () => {
+                    setSearchQuery('')
+                    setFilterLevel('all')
+                    setFilterStatus([])
+                  }
+                : undefined
+            }
+          />
+
+          {filteredExercises.length > 0 && totalPages > 1 && (
+            <div className="border-t border-hairline bg-canvas">
+              <TableFooter
+                from={startIdx + 1}
+                to={Math.min(startIdx + ITEMS_PER_PAGE, filteredExercises.length)}
+                total={filteredExercises.length}
+                pageSize={ITEMS_PER_PAGE}
+                onPageSize={() => {}}
+                currentPage={safePage}
+                totalPages={totalPages}
+                onPage={setCurrentPage}
+              />
             </div>
-          ) : (
-            <table className="w-full border-collapse text-sm table-fixed">
-              <thead style={{ position: 'sticky', top: 0, zIndex: 5 }}>
-                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #eef0f4' }}>
-                  {([
-                    { label: '#',               cls: 'w-9 pl-4 pr-2', key: null },
-                    { label: 'ID',              cls: 'w-[72px] px-3', key: null },
-                    { label: 'Assignment Name', cls: 'px-3', key: 'name' as const },
-                    { label: 'Start Date',      cls: 'w-[150px] pl-0 pr-2', key: 'start' as const },
-                    { label: 'End Date',        cls: 'w-[150px] pl-0 pr-2', key: 'end' as const },
-                    { label: 'Level',           cls: 'w-[100px] pl-0 pr-2', key: 'level' as const },
-                    { label: 'Status',          cls: 'w-[85px] pl-0 pr-2 text-center', key: 'status' as const },
-                    { label: 'Action',          cls: 'w-[95px] px-3 text-center', key: null },
-                  ] as const).map(h => {
-                    const isSorted = h.key && sortColumn === h.key
-                    return (
-                      <th key={h.label}
-                        className={`py-3 text-left select-none ${h.cls}`}
-                        style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.02em', color: isSorted ? '#f97316' : '#94a3b8', textTransform: 'uppercase' }}>
-                        {h.key ? (
-                          <button
-                            type="button"
-                            onClick={() => handleSort(h.key as 'name' | 'start' | 'end' | 'level' | 'status')}
-                            className="inline-flex items-center gap-1"
-                            title={`Sort by ${h.label}`}
-                            style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit' }}>
-                            {h.label}
-                            {isSorted
-                              ? (sortDir === 'asc'
-                                  ? <ArrowUp size={11} style={{ color: '#f97316' }} />
-                                  : <ArrowDown size={11} style={{ color: '#f97316' }} />)
-                              : <ArrowUpDown size={11} style={{ color: '#cbd5e1' }} />}
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1">{h.label}</span>
-                        )}
-                      </th>
-                    )
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {pagedExercises.map((exercise, idx) => {
-                  const availability = getExerciseAvailability(exercise)
-                  const isGraded = exercise.isGraded !== false
-                  const typeInfo = getExerciseTypeInfo(exercise)
-                  const diff = getDifficultyStyle(exercise.exerciseInformation.exerciseLevel)
-                  const submissionAttempts = getSubmissionAttempts(exercise)
-                  const testSubmissions = getTestSubmissions(exercise, studentAnswers, method, subcategory)
-                  const isCompleted = testSubmissions >= 1
-                  const limitReached = testSubmissions >= submissionAttempts
-                  const canRetake = isCompleted && !limitReached && availability.canStart
-                  const canStart = (availability.canStart && !isCompleted) || canRetake
-                  const rowNum = startIdx + idx + 1
-                  const isHovered = hoveredRow === exercise._id
-
-                  return (
-                    <tr key={exercise._id}
-                      style={{
-                        borderBottom: '1px solid #e8edf2',
-                        background: isHovered
-                          ? 'linear-gradient(90deg, rgba(249,115,22,0.04) 0%, rgba(249,115,22,0.01) 100%)'
-                          : '#ffffff',
-                        transition: 'background 0.15s ease, box-shadow 0.15s ease',
-                        boxShadow: isHovered ? 'inset 3px 0 0 #f97316' : 'none',
-                      }}
-                      onMouseEnter={() => setHoveredRow(exercise._id)}
-                      onMouseLeave={() => setHoveredRow(null)}>
-
-                      {/* # */}
-                      <td className="pl-4 pr-2 py-3 align-middle">
-                        <span className="text-[11px] font-mono"
-                          style={{ color: isHovered ? '#f97316' : '#bcbccc', fontWeight: isHovered ? 600 : 400, transition: 'color 0.15s' }}>
-                          {rowNum}
-                        </span>
-                      </td>
-
-                      {/* ID */}
-                      <td className="px-3 py-3 align-middle">
-                        <span className="text-[11px] font-mono truncate block" style={{ color: '#8b8b9e' }}>
-                          {exercise.exerciseInformation.exerciseId}
-                        </span>
-                      </td>
-
-                      {/* Name */}
-                      <td className="px-3 py-3 align-middle min-w-0">
-                        <div className="flex flex-col justify-center min-w-0">
-                          <span className="text-[12.5px] font-semibold truncate block"
-                            title={exercise.exerciseInformation.exerciseName}
-                            style={{ color: isHovered ? '#ea580c' : '#1a1a2e', transition: 'color 0.15s' }}>
-                            {exercise.exerciseInformation.exerciseName}
-                          </span>
-                          {exercise.exerciseInformation.description && (
-                            <span className="text-[10.5px] truncate block mt-0.5" style={{ color: '#8b8b9e' }}>
-                              {exercise.exerciseInformation.description.replace(/<[^>]*>/g, '').substring(0, 80)}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Start Date */}
-                      <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-[11px] flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
-                          <Calendar size={10} style={{ flexShrink: 0, color: '#94a3b8' }} />
-                          {exercise.availabilityPeriod?.startDate
-                            ? `${new Date(exercise.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
-                            : '—'}
-                        </span>
-                      </td>
-
-                      {/* End Date */}
-                      <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-[11px] flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
-                          <Clock size={10} style={{ flexShrink: 0, color: '#94a3b8' }} />
-                          {exercise.availabilityPeriod?.endDate
-                            ? `${new Date(exercise.availabilityPeriod.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
-                            : '—'}
-                        </span>
-                      </td>
-
-                      {/* Level */}
-                      <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="inline-flex items-center text-[10px] font-bold tracking-wide px-2 py-0.5 rounded-full border"
-                          style={{ background: diff.bg, color: diff.color, borderColor: diff.border }}>
-                          {diff.label}
-                        </span>
-                      </td>
-
-                      {/* Status — Active / Inactive only */}
-                      <td className="pl-0 pr-2 py-3 align-middle text-center">
-                        <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold px-2.5 py-1 rounded-full"
-                          style={availability.canStart
-                            ? { background: '#ecfdf3', color: '#15803d' }
-                            : { background: '#f1f5f9', color: '#64748b' }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: availability.canStart ? '#22c55e' : '#94a3b8', flexShrink: 0 }} />
-                          {availability.canStart ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-
-                      {/* Action */}
-                      <td className="px-3 py-3 align-middle text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <div className="flex flex-col items-center gap-0.5">
-                            {/* Inactive: text only */}
-                            {!availability.canStart ? (
-                              <span className="text-[10px] font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
-                                {isCompleted ? 'Submitted' : 'Not Submitted'}
-                              </span>
-                            ) : limitReached ? (
-                              /* Active, all attempts used */
-                              <span className="text-[10px] font-semibold" style={{ color: '#15803d' }}>Submitted</span>
-                            ) : canRetake ? (
-                              /* Active, submitted, retake available */
-                              <>
-                                <button
-                                  onClick={e => handleStartClick(exercise, e)}
-                                  className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
-                                  style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }}
-                                  onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
-                                  onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-                                  Re Submit
-                                </button>
-                                <span className="text-[9px] font-medium" style={{ color: '#15803d' }}>Submitted</span>
-                              </>
-                            ) : (
-                              /* Active, not submitted yet */
-                              <button
-                                onClick={e => handleStartClick(exercise, e)}
-                                className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
-                                style={isGraded
-                                  ? { background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', cursor: 'pointer' }
-                                  : { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', cursor: 'pointer' }}
-                                onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
-                                onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-                                Start
-                              </button>
-                            )}
-                          </div>
-                          <RowActionsMenu
-                            exercise={exercise}
-                            onGrade={handleGradeClick}
-                            isGradeEnabled={hasExerciseBeenAttempted(exercise, studentAnswers, method, subcategory)}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
           )}
         </div>
-
-        {/* ── Pagination ── */}
-        {filteredExercises.length > 0 && (
-          <div className="flex-none px-4 py-2.5 flex items-center justify-between" style={{ borderTop: '1.5px solid #e8eaf0', background: 'linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%)' }}>
-            <div className="text-[11px]" style={{ color: '#8b8b9e' }}>
-              Showing{' '}
-              <span className="font-semibold" style={{ color: '#1a1a2e' }}>{startIdx + 1}</span>
-              {' '}–{' '}
-              <span className="font-semibold" style={{ color: '#1a1a2e' }}>{Math.min(startIdx + ITEMS_PER_PAGE, filteredExercises.length)}</span>
-              {' '}of{' '}
-              <span className="font-semibold" style={{ color: '#1a1a2e' }}>{filteredExercises.length}</span>
-              {' '}exercises
-            </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
-                  className="h-6 w-6 rounded-md flex items-center justify-center transition-all disabled:opacity-30"
-                  style={{ color: '#8b8b9e', cursor: safePage === 1 ? 'not-allowed' : 'pointer' }}
-                  onMouseEnter={e => { if (safePage !== 1) { e.currentTarget.style.color = '#f97316'; e.currentTarget.style.background = 'rgba(249,115,22,0.08)' } }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#8b8b9e'; e.currentTarget.style.background = 'transparent' }}>
-                  <ChevronLeft size={13} />
-                </button>
-                <div className="flex gap-0.5">
-                  {getPageNums().map((p, i) =>
-                    p === '...' ? (
-                      <span key={`e-${i}`} className="px-1 text-[11px] self-center" style={{ color: '#bcbccc' }}>…</span>
-                    ) : (
-                      <button key={p} onClick={() => setCurrentPage(p as number)}
-                        className="h-6 w-6 rounded-md text-[11px] font-semibold transition-all"
-                        style={safePage === p
-                          ? { background: '#f97316', color: '#fff', boxShadow: '0 2px 6px rgba(249,115,22,0.3)', cursor: 'default' }
-                          : { color: '#6b6b7e', cursor: 'pointer' }}
-                        onMouseEnter={e => { if (safePage !== p) { e.currentTarget.style.background = 'rgba(249,115,22,0.08)'; e.currentTarget.style.color = '#f97316' } }}
-                        onMouseLeave={e => { if (safePage !== p) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b6b7e' } }}>
-                        {p}
-                      </button>
-                    )
-                  )}
-                </div>
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
-                  className="h-6 w-6 rounded-md flex items-center justify-center transition-all disabled:opacity-30"
-                  style={{ color: '#8b8b9e', cursor: safePage === totalPages ? 'not-allowed' : 'pointer' }}
-                  onMouseEnter={e => { if (safePage !== totalPages) { e.currentTarget.style.color = '#f97316'; e.currentTarget.style.background = 'rgba(249,115,22,0.08)' } }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#8b8b9e'; e.currentTarget.style.background = 'transparent' }}>
-                  <ChevronRight size={13} />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </>
   )

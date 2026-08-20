@@ -13,7 +13,7 @@
 // mapping; this module only decides which of them is being configured.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState, useEffect } from 'react'
+import React, { useMemo, useRef, useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -59,9 +59,17 @@ export default function CourseStructurePage() {
     const { data: deepLinkMapping } = useServiceMapping(
         wantsDeepLink ? (openMappingId as string) : undefined
     )
+    // A ref so the deep-link effect only opens each id ONCE. Without it, the
+    // Back button needs two clicks: setStage('list') runs, but router.replace
+    // hasn't cleared ?openMappingId from the URL yet, so on the next render
+    // the effect sees wantsDeepLink=true again and re-opens the hierarchy.
+    // Resetting the ref inside onBack lets a genuine re-visit still work.
+    const openedDeepLinkRef = useRef<string | null>(null)
     useEffect(() => {
         if (!wantsDeepLink || !deepLinkMapping) return
         if (deepLinkMapping._id !== openMappingId) return
+        if (openedDeepLinkRef.current === openMappingId) return
+        openedDeepLinkRef.current = openMappingId
         setStage({ name: 'hierarchy', mapping: deepLinkMapping })
     }, [openMappingId, deepLinkMapping, wantsDeepLink])
 
@@ -187,9 +195,10 @@ export default function CourseStructurePage() {
     return (
         <DashboardLayout>
             {/* No page-canvas background at all: the shell's white workspace
-                panel is the ground. The old gray sunken fill and the brand
-                radial glow both read as stains on it. */}
-            <div className="h-full min-h-0 overflow-y-auto">
+                panel is the ground. flex flex-col lets the list stage's own
+                flex-1 chain propagate down to the table, so pagination lands
+                at the true viewport bottom instead of leaving an empty band. */}
+            <div className="h-full min-h-0 flex flex-col">
                 <AnimatePresence mode="wait" initial={false}>
                     <motion.div
                         key={stage.name}
@@ -197,6 +206,7 @@ export default function CourseStructurePage() {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: dir * -16 }}
                         transition={{ duration: 0.2, ease: 'easeOut' }}
+                        className="flex flex-1 min-h-0 flex-col"
                     >
                         {stage.name === 'list' && (
                             // Self-fetching: the list owns its own search,
@@ -227,6 +237,16 @@ export default function CourseStructurePage() {
                                 // it would re-open this hierarchy the moment the
                                 // list mounts, making Back to clients a no-op.
                                 onBack={() => {
+                                    // Do NOT clear openedDeepLinkRef here — the
+                                    // URL hasn't dropped ?openMappingId yet, so
+                                    // the very next render would see the ref
+                                    // cleared and re-open the hierarchy (which
+                                    // is exactly the "back doesn't work" bug
+                                    // the user reported). The ref stays set for
+                                    // this component's lifetime; a genuine
+                                    // re-visit from another page remounts the
+                                    // component and gets a fresh ref, so this
+                                    // doesn't break the deep-link on re-entry.
                                     setStage({ name: 'list' })
                                     router.replace('/lms/pages/coursestructure')
                                 }}

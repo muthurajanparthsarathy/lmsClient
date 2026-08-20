@@ -63,7 +63,12 @@ export interface RerunUpdate {
   // Same shape submitAnswer accepts; see UserModel.evaluationBreakdownSchema.
   evaluationBreakdown?: {
     method: 'testcase' | 'ai';
-    testcase?: { passed: number; total: number };
+    testcase?: {
+      passed: number;
+      total: number;
+      // Per-case results so Review can show which cases failed.
+      cases?: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }>;
+    };
     ai?: unknown;
   };
   note?: string;

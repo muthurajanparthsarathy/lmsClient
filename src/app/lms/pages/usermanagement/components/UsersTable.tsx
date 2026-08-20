@@ -47,19 +47,12 @@ interface UsersTableProps {
 // is what keeps every row exactly one line tall and the table inside its
 // container (no horizontal scrollbar) — the Client Management arrangement.
 //
-// Checkbox and Actions hold a fixed pixel width (both wrap one control, which
-// doesn't grow), four columns take percentages, and Status is left WIDTH-LESS
-// on purpose: under fixed layout the one auto column absorbs whatever is left
-// over, so px + % never have to add up to exactly 100 at every container
-// width. Give Status a width too and the leftover piles into the first column
-// instead, as a gap beside the checkbox. Status is the right column to hand it
-// to — it is right-aligned, so the slack lands invisibly to its left.
+// Every column is a percentage and they sum to exactly 100, so the table
+// fills its container edge-to-edge with no horizontal scrollbar. Size each
+// column to its widest CONTENT *and its header label* — under fixed layout +
+// the wrapper's overflow-hidden there is no reflow to save a column that is
+// too narrow, the text is simply cut off.
 const COL = {
-  // All widths as percentages summing to 100 so `table-layout: fixed`
-  // fills the container edge-to-edge. Status renders a Switch + an
-  // "Active"/"Inactive" label (~110 px) so it needs a real slice, not
-  // the leftover crumb; Actions holds a 28 px kebab plus the right
-  // gutter, so 6 % keeps the button from bumping the edge.
   check: "w-[4%] pl-4 sm:pl-5 pr-0 text-left",
   user: "w-[22%] px-3 text-left",
   // Email was hoarding space that Phone and Actions needed.
@@ -147,11 +140,17 @@ export function UsersTable({
 
   return (
     <div
-      // flex-1 min-h-0 absorbs the vertical space between the toolbar and
-      // the pagination footer; the caller's auto-fit effect picks a page
-      // size that fills that space exactly, so overflow-hidden is safe
-      // (no scrollbar, no empty band).
-      className="flex-1 min-h-0 overflow-hidden"
+      // flex-1 min-h-0 absorbs the vertical space between the toolbar and the
+      // pagination footer.
+      //
+      // overflow-y-auto, NOT overflow-hidden: the page size is a fixed 10 now
+      // rather than auto-fitted to this element's height, so on a short
+      // viewport the last rows no longer fit. Hidden would drop them with no
+      // scrollbar and no other clue — the user would just see 7 of 10 rows and
+      // a footer claiming 10. The sticky header stays pinned inside the scroll
+      // container. overflow-x stays clipped: table-layout is fixed at 100 %
+      // width, so there is nothing to scroll sideways to.
+      className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
     >
       <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
         <thead className="sticky top-0 z-sticky">

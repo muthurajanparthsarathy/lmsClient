@@ -52,7 +52,7 @@ function outputsMatch(actual: string, expected: string): boolean {
 }
 
 export type RerunItemOutcome =
-  | { kind: 'scored'; passed: number; total: number; score: number; status: 'solved' | 'attempted' | 'submitted' }
+  | { kind: 'scored'; passed: number; total: number; score: number; status: 'solved' | 'attempted' | 'submitted'; cases?: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> }
   | { kind: 'skipped'; reason: 'manual' | 'ai-not-yet-supported' | 'no-code' | 'unsupported-language' }
   | { kind: 'errored'; reason: string };
 
@@ -91,18 +91,27 @@ async function runOne({ submission, question, evaluationMethod }: RunOneArgs): P
 
   let passed = 0;
   const total = testCases.length;
+  // Per-case record — the Review page shows the trainer which cases failed.
+  const cases: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> = [];
 
   // Run each test case in sequence. Sequential avoids hammering the free
   // Piston endpoint and keeps memory bounded.
-  for (const tc of testCases) {
+  for (let i = 0; i < testCases.length; i++) {
+    const tc = testCases[i];
+    let ok = false;
+    let actual = '';
     try {
       const result = await executeCodeAction(code, langId, tc.input || '');
+      actual = (result.output || '').trim() || result.error || '';
       if (!result.error && outputsMatch(result.output || '', tc.expectedOutput || '')) {
         passed++;
+        ok = true;
       }
     } catch (err) {
       // Per-testcase error → count as failure, keep going.
+      actual = '(execution error)';
     }
+    cases.push({ index: i, passed: ok, hidden: !!(tc as any).isHidden, input: tc.input || '', expectedOutput: tc.expectedOutput || '', actualOutput: actual });
   }
 
   const questionMaxScore = Number(question.score) || 100;
@@ -110,7 +119,7 @@ async function runOne({ submission, question, evaluationMethod }: RunOneArgs): P
   const score = Math.round(rawScore);
   const status: 'solved' | 'submitted' = passed === total && total > 0 ? 'solved' : 'submitted';
 
-  return { kind: 'scored', passed, total, score, status };
+  return { kind: 'scored', passed, total, score, status, cases };
 }
 
 export interface RerunBatchOptions {
@@ -192,7 +201,7 @@ export async function runRerunBatch(opts: RerunBatchOptions): Promise<RerunBatch
         status: outcome.status,
         evaluationBreakdown: {
           method: 'testcase',
-          testcase: { passed: outcome.passed, total: outcome.total },
+          testcase: { passed: outcome.passed, total: outcome.total, cases: outcome.cases || [] },
         },
         note: 'client-side rerun',
       });

@@ -3,6 +3,10 @@ import { getToken } from "@/lib/session";
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+// One map decides where a permission key's page lives — see navItems.ts.
+// Without it, a module whose page is not at /lms/pages/<key> (POC Dashboard,
+// Feedback) lands the user on a route that does not exist.
+import { routeForPermissionKey } from '@/app/lms/shared/navRoutes'
 
 export default function HomePage() {
   const router = useRouter()
@@ -31,7 +35,7 @@ export default function HomePage() {
       // Priority 1: stored first permission key (fastest path)
       const firstPermissionKey = localStorage.getItem('smartcliff_firstPermissionKey')
       if (firstPermissionKey) {
-        router.replace(`/lms/pages/${firstPermissionKey}`)
+        router.replace(routeForPermissionKey(firstPermissionKey))
         return
       }
 
@@ -51,7 +55,7 @@ export default function HomePage() {
           if (permissionKey) {
             // Cache it for next time
             localStorage.setItem('smartcliff_firstPermissionKey', permissionKey)
-            router.replace(`/lms/pages/${permissionKey}`)
+            router.replace(routeForPermissionKey(permissionKey))
             return
           }
         }

@@ -178,28 +178,42 @@ function pageIsDefault(pageId: string): boolean {
 // minimal permission set matching what its role would need to sign in and be
 // productive. The admin then extends this via Assign Permission.
 
-export type RoleClassification = "admin" | "trainer" | "student";
+export type RoleClassification = "admin" | "poc" | "trainer" | "student";
 
 // Free-form role labels (renameRole / originalRole / roleValue) from the DB
-// resolve to one of three buckets. "Everything else" (LMS admin, super admin,
-// HR, manager, POC, coordinator, program coordinator, …) falls into `admin`,
-// so a newly-added coordinator gets the same admin baseline as an admin does.
+// resolve to one of four buckets. "Everything else" (LMS admin, super admin,
+// HR, manager, coordinator, program coordinator, …) falls into `admin`, so a
+// newly-added coordinator gets the same admin baseline as an admin does.
+//
+// POC is matched EXACTLY (after stripping separators), never by substring —
+// same rule as `isPocRoleValue` in lib/session.ts. A role literally named
+// "POC Manager" is not this role and must not inherit the POC baseline.
 export function classifyRole(roleName: string | undefined): RoleClassification {
   const r = (roleName || "").toLowerCase();
+  const exact = r.trim().replace(/[\s\-_]/g, "");
+  if (exact === "poc" || exact === "pointofcontact") return "poc";
   if (r.includes("student")) return "student";
   if (r.includes("trainer")) return "trainer";
   return "admin";
 }
 
 // The page ids we pre-grant per role. Keep in sync with the user's spec:
-//   - admin / POC / program coordinator → Admin Dashboard + Profile
-//   - trainer                            → Staff Dashboard + Courses + Profile
-//                                          (Log Activity is opt-in — admin
-//                                          must grant it explicitly)
-//   - student                            → Student Dashboard + Courses +
-//                                          Profile
+//   - admin / program coordinator → Admin Dashboard + Profile
+//   - POC                         → POC Dashboard + Profile. NOT the Admin
+//                                   Dashboard: a POC's rail is derived from
+//                                   exactly these grants now, and seeding
+//                                   `admindashboard` is what used to put a POC
+//                                   on a page its own gate refuses. Everything
+//                                   else (Course Management, Attendance,
+//                                   Business Management, …) is granted
+//                                   deliberately in Assign Permission.
+//   - trainer                     → Staff Dashboard + Courses + Profile
+//                                   (Log Activity is opt-in — admin must
+//                                   grant it explicitly)
+//   - student                     → Student Dashboard + Courses + Profile
 const ROLE_DEFAULT_PAGE_IDS: Record<RoleClassification, string[]> = {
   admin: ["admin-dashboard", "admin-profile"],
+  poc: ["admin-poc-dashboard", "admin-profile"],
   trainer: ["staff-dashboard", "staff-courses", "staff-profile"],
   student: ["student-dashboard", "student-courses", "student-profile"],
 };

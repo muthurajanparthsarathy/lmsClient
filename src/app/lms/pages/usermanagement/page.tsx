@@ -149,14 +149,14 @@ export default function UserManagementPage() {
   const selectedIds = useMemo(() => Object.keys(selectedRows), [selectedRows]);
   const [sortKey, setSortKey] = useState<string>("");
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  // Show many more rows per page than the old default of 10 — the table is the
-  // page's whole purpose here, so it should be full of data on first paint.
-  const [pageSize, setPageSize] = useState(25);
-  // Auto-fit: match Client Management. The wrapper's height / row height
-  // decides pageSize, so rows always fill the space between the toolbar and
-  // pagination — no empty band below, no internal scroll. Flips off the
-  // moment the user picks a page size manually.
-  const [autoFitPageSize, setAutoFitPageSize] = useState(true);
+  // A FIXED 10 rows per page.
+  //
+  // This used to default to 25 and then auto-fit to the wrapper's height, so
+  // the row count changed with the window and no two screens showed the same
+  // page. A stable, predictable page is worth more here than filling every
+  // pixel — "page 3" should mean the same 10 users on a laptop and a monitor.
+  // The footer's page-size control still overrides it per session.
+  const [pageSize, setPageSize] = useState(10);
   const tableCardRef = useRef<HTMLDivElement | null>(null);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -561,28 +561,9 @@ export default function UserManagementPage() {
     setCurrentPage((p) => Math.min(p, totalPages));
   }, [pageSize, totalPages]);
 
-  // Auto-fit page size to the table wrapper's available height. Same math as
-  // Client Management: header (32) + row (44) + footer (44). SAFETY subtracts
-  // half a row so the last row never lands under the overflow-hidden edge and
-  // silently rolls to page 2.
-  useEffect(() => {
-    if (!autoFitPageSize) return;
-    const el = tableCardRef.current;
-    if (!el) return;
-    const HEADER_H = 32;
-    const FOOTER_H = 44;
-    const ROW_H = 44;
-    const SAFETY = Math.round(ROW_H / 2);
-    const compute = () => {
-      const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY);
-      const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)));
-      setPageSize((prev) => (prev === fits ? prev : fits));
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [autoFitPageSize]);
+  // (The height-driven auto-fit effect that lived here is gone — pageSize is
+  // fixed at 10 above. The table wrapper still flexes; it just no longer
+  // rewrites the page size as the window resizes.)
 
   // Selected ids that still match the current filters.
   //
@@ -1138,7 +1119,7 @@ export default function UserManagementPage() {
               to={rangeEnd}
               total={totalFiltered}
               pageSize={pageSize}
-              onPageSize={(n) => { setAutoFitPageSize(false); setPageSize(n); setCurrentPage(1); }}
+              onPageSize={(n) => { setPageSize(n); setCurrentPage(1); }}
               currentPage={safePage}
               totalPages={totalPages}
               onPage={setCurrentPage}

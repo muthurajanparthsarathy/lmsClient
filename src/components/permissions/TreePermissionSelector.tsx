@@ -225,6 +225,49 @@ function isInCategory(
   return categoryOf([...parents, node]) === cat;
 }
 
+// ─── Indentation ──────────────────────────────────────────────────────────
+//
+// ONE step per nesting level, applied ONCE — by the wrapper a parent puts
+// around its children. Rows themselves keep a constant padding and never add
+// `depth * n` of their own.
+//
+// That double-count is what this replaces. Containers indented at
+// `8 + depth * 18` INSIDE a wrapper already offset by `12 + depth * 18`, while
+// pages used a different step (`depth * 16`) and their function grid a third
+// (`20 + depth * 16`). The steps disagreed and the depth was counted twice, so
+// by the third level a function's checkbox landed slightly LEFT of its own
+// page's checkbox — "Add Client" sitting outdented from "Client Management".
+//
+// The target, with every level exactly one step in from its parent:
+//
+//   Business Management
+//       Client Management
+//           Add Client
+//
+const INDENT_STEP = 20;
+
+// Row geometry, so the offsets below are derived rather than eyeballed.
+// A container/page row starts at ROW_PAD and renders a chevron plus the flex
+// gap before its checkbox. A function row has neither — it carries its own
+// label padding instead. Every children wrapper draws a 1px rail, which sits
+// inside its margin and pushes content over by that much.
+const ROW_PAD = 8;
+const CHEVRON_W = 16;
+const ROW_GAP = 8;
+const FN_LABEL_PAD = 8;
+const RAIL_W = 1;
+// A function label carries `border` (transparent until selected) — 1px that
+// still occupies layout, so it counts toward the offset like the rail does.
+const FN_LABEL_BORDER = 1;
+
+/** How far a container/page row's checkbox sits from that row's left edge. */
+const ROW_TICK_X = ROW_PAD + CHEVRON_W + ROW_GAP;                        // 32
+/** Margin on a children wrapper — one step, less the rail it draws. */
+const CHILD_WRAP_INDENT = INDENT_STEP - RAIL_W;                          // 19
+/** Margin on a page's function grid — one step past that page's checkbox. */
+const FN_GRID_INDENT =
+    ROW_TICK_X + INDENT_STEP - RAIL_W - FN_LABEL_PAD - FN_LABEL_BORDER; // 42
+
 // ─── Rendering ────────────────────────────────────────────────────────────
 
 interface RowState {
@@ -267,7 +310,7 @@ function ContainerRow({
             ? "flex items-center gap-2 px-2 py-2 rounded-md bg-gray-100/70 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700"
             : "flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer"
         }
-        style={{ paddingLeft: 8 + depth * 18 }}
+        style={{ paddingLeft: ROW_PAD }}
       >
         <button
           type="button"
@@ -311,8 +354,8 @@ function ContainerRow({
         // Left-border rail makes the parent → child relationship unambiguous
         // even when siblings render at the same indent depth.
         <div
-          className="mt-1 border-l border-gray-200 dark:border-gray-700 ml-3"
-          style={{ marginLeft: 12 + depth * 18 }}
+          className="mt-1 border-l border-gray-200 dark:border-gray-700"
+          style={{ marginLeft: CHILD_WRAP_INDENT }}
         >
           {node.children.map((child) =>
             renderNode({
@@ -333,20 +376,20 @@ function ContainerRow({
   );
 }
 
+// A page row carries no depth of its own: whatever container wraps it has
+// already applied the indent for this level.
 function PageRow({
   node,
   selection,
   onChange,
   rowState,
   allowedFunctions,
-  depth,
 }: {
   node: PermissionNode;
   selection: SelectionState;
   onChange: (s: SelectionState) => void;
   rowState: RowState;
   allowedFunctions?: Record<string, string[]>;
-  depth: number;
 }) {
   const enabled = !!selection[node.id];
   // Resolve the per-page allow-list via node.id first, then any alias — so an
@@ -368,7 +411,7 @@ function PageRow({
             ? "bg-orange-50 dark:bg-orange-950/30"
             : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
         }`}
-        style={{ paddingLeft: 8 + depth * 16 }}
+        style={{ paddingLeft: ROW_PAD }}
       >
         {totalFns > 0 ? (
           <button
@@ -412,14 +455,16 @@ function PageRow({
         )}
       </div>
       {isOpen && functions.length > 0 && (
-        <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-1">
+        <div
+          className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-1 border-l border-gray-200 dark:border-gray-700"
+          style={{ marginLeft: FN_GRID_INDENT }}
+        >
           {functions.map((f) => {
             const on = selection[node.id]?.has(f.id) ?? false;
             return (
               <label
                 key={f.id}
                 onClick={() => onChange(toggleFunction(selection, node, f.id))}
-                style={{ marginLeft: 20 + depth * 16 }}
                 className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer border ${
                   on
                     ? "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300"
@@ -464,7 +509,7 @@ function renderNode(args: {
   }
   if (node.kind === "page") {
     if (!pageAllowed(node, allowedIds)) return null;
-    return <PageRow key={node.id} node={node} selection={args.selection} onChange={args.onChange} rowState={args.rowState} allowedFunctions={args.allowedFunctions} depth={args.depth} />;
+    return <PageRow key={node.id} node={node} selection={args.selection} onChange={args.onChange} rowState={args.rowState} allowedFunctions={args.allowedFunctions} />;
   }
   return null;
 }

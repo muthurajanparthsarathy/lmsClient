@@ -374,14 +374,14 @@ const convertExerciseToProblems = (exercise: Exercise): ProblemData[] => {
         title: question.title || `Question ${index + 1}`,
         description: getDescriptionHtml(question),   // ← use helper
         difficulty: (question?.difficulty?.charAt(0).toUpperCase() + question?.difficulty?.slice(1)) as "Easy" | "Medium" | "Hard",
-        // 3-tier examples fallback:
-        //   1. testCases flagged isSample === true && !isHidden (preferred — strict)
-        //   2. any non-hidden testCases (when no testCase is flagged isSample)
-        //   3. legacy sampleInput / sampleOutput strings
+        // Examples fallback:
+        //   1. ALL non-hidden testCases. (Previously isSample-flagged cases were
+        //      preferred, but the authoring forms only flag the FIRST test case
+        //      as sample — so a question with 3 added cases showed just one.)
+        //   2. legacy sampleInput / sampleOutput strings
         examples: (() => {
             const tcs: any[] = question.testCases || [];
-            const explicit = tcs.filter((tc: any) => tc.isSample === true && tc.isHidden !== true);
-            const visible = explicit.length > 0 ? explicit : tcs.filter((tc: any) => tc.isHidden !== true);
+            const visible = tcs.filter((tc: any) => tc.isHidden !== true);
             if (visible.length > 0) {
                 return visible
                     .map((tc: any) => ({
@@ -2632,39 +2632,47 @@ function solve() {
     // returns { passed, total, score, maxMarks }. Streams per-case pass/fail
     // to the terminal so the student sees why the score is what it is.
     // A question with no test cases returns { score: 0 } and warns.
-    const verifyTestCasesAndScore = async (): Promise<{ passed: number; total: number; score: number; maxMarks: number }> => {
+    const verifyTestCasesAndScore = async (): Promise<{ passed: number; total: number; score: number; maxMarks: number; cases: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> }> => {
         const liveQuestion: any = (exercise as any)?.questions?.[currentProblemIndex] ?? currentQuestion;
         const testCases: any[] = liveQuestion?.testCases || [];
         const maxMarks = getCurrentQuestionMaxMarks();
+        // Per-case record kept for the trainer's Review page — it shows
+        // "Passed 1/2" plus WHICH cases failed (input/expected/got on hover).
+        const cases: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> = [];
         if (testCases.length === 0) {
             addTerminalLog('warning', '⚠️ No test cases configured for this question — score not auto-evaluated.');
-            return { passed: 0, total: 0, score: 0, maxMarks };
+            return { passed: 0, total: 0, score: 0, maxMarks, cases };
         }
         addTerminalLog('system', `🧪 Running ${testCases.length} test case${testCases.length > 1 ? 's' : ''}...`);
         let passed = 0;
         for (let i = 0; i < testCases.length; i++) {
             const tc = testCases[i];
             const label = tc.isHidden ? `Hidden test #${i + 1}` : `Test #${i + 1}`;
+            let ok = false;
+            let actual = '';
             try {
                 const res = await runCodeForGrading(tc.input ?? '');
-                const ok = normalizeOutput(res.output) === normalizeOutput(tc.expectedOutput ?? '');
+                actual = res.output?.trim() || res.error || '';
+                ok = normalizeOutput(res.output) === normalizeOutput(tc.expectedOutput ?? '');
                 if (ok) {
                     passed++;
                     addTerminalLog('success', `✓ ${label} passed`);
                 } else if (tc.isHidden) {
                     addTerminalLog('error', `✗ ${label} failed`);
                 } else {
-                    addTerminalLog('error', `✗ ${label} failed — expected: ${tc.expectedOutput ?? ''} | got: ${res.output?.trim() || res.error || '(no output)'}`);
+                    addTerminalLog('error', `✗ ${label} failed — expected: ${tc.expectedOutput ?? ''} | got: ${actual || '(no output)'}`);
                 }
             } catch {
+                actual = '(execution error)';
                 addTerminalLog('error', `✗ ${label} failed (execution error)`);
             }
+            cases.push({ index: i, passed: ok, hidden: !!tc.isHidden, input: tc.input ?? '', expectedOutput: tc.expectedOutput ?? '', actualOutput: actual });
             // Soft rate-limit guard for the public Piston API
             if (i < testCases.length - 1) await new Promise(r => setTimeout(r, 300));
         }
         const score = Math.round((passed / testCases.length) * maxMarks * 100) / 100;
         addTerminalLog(passed === testCases.length ? 'success' : 'info', `🏁 Passed ${passed}/${testCases.length} — Score: ${score}/${maxMarks}`);
-        return { passed, total: testCases.length, score, maxMarks };
+        return { passed, total: testCases.length, score, maxMarks, cases };
     };
 
     // --- Submission ---
@@ -2967,12 +2975,13 @@ function solve() {
             let submitBreakdown: any = null;
 
             if (method === 'testcase') {
-                const { passed, total, score } = await verifyTestCasesAndScore();
+                const { passed, total, score, cases } = await verifyTestCasesAndScore();
                 submitScore = score;
                 submitStatus = (total > 0 && passed === total) ? 'solved' : 'submitted';
                 // Empty test-case list → total === 0; still record the fact so Review
                 // shows "0/0 (no test cases configured)" instead of no breakdown.
-                submitBreakdown = { method: 'testcase', testcase: { passed, total } };
+                // `cases` carries per-case pass/fail so Review can show WHICH failed.
+                submitBreakdown = { method: 'testcase', testcase: { passed, total, cases } };
             } else if (method === 'ai') {
                 addTerminalLog('system', '🤖 Running AI evaluation…');
                 const liveQ: any = (exercise as any)?.questions?.[currentProblemIndex] ?? currentQuestion;

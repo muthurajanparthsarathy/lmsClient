@@ -1,38 +1,32 @@
 'use client';
 
-// The Question Bank listing as a premium selectable list (List / Compact
-// density) — replaces the plain data table. Purely presentational: every action
-// funnels into the exact same page callbacks, and the optimistic toggle
-// busy-state (togglingId) is preserved.
+// Question Bank listing — proper multi-column table (matches Client Management
+// density: h-8 header @ text-[10px], h-11 row @ text-[12px], flat wrapper).
+// Every field the row previously stacked as a chip is now its own column.
 
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  BookOpen, Eye, ListChecks, MoreVertical, Pencil, Power, SearchX, Tag, Terminal, Trash2, Calendar, User,
+  BookOpen, Eye, ListChecks, MoreVertical, Pencil, Power, SearchX, Terminal, Trash2,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { EmptyState, StatusPill } from '@/app/lms/shared/ui';
+import { EmptyState } from '@/app/lms/shared/ui';
 import type { Question } from '@/apiServices/type/question';
 import {
-  difficultyTone, formatDifficulty, getDescriptionText, getDifficulty,
+  formatDifficulty, getDescriptionText, getDifficulty,
   getQuestionTitleText, getQuestionTypeInfo, getScore, isMcqQuestion, stripHtml,
 } from './lib';
-
-const fmtShort = (iso?: string) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-};
 
 interface QuestionsTableProps {
   questions: Question[];
   isLoading: boolean;
   isFiltered: boolean;
-  density: 'list' | 'compact';
+  // Kept for API compatibility with QuestionBanksPage; the row layout is now
+  // a single-line table and no longer varies by density.
+  density?: 'list' | 'compact';
   selectedIds: string[];
   onSelectionChange: (ids: string[]) => void;
   onPreview: (question: Question) => void;
@@ -42,7 +36,7 @@ interface QuestionsTableProps {
   onClearFilters: () => void;
   onCreateMcq: () => void;
   onCreateProgramming: () => void;
-  maxBodyHeight: string;
+  maxBodyHeight?: string;
   canView?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
@@ -50,29 +44,24 @@ interface QuestionsTableProps {
   canCreate?: boolean;
 }
 
-function TypeBadge({ q }: { q: Question }) {
-  const info = getQuestionTypeInfo(q);
-  const Icon = info.icon;
-  return <StatusPill tone={info.tone} className="whitespace-nowrap"><Icon size={11} aria-hidden="true" />{info.label}</StatusPill>;
-}
+// Widths as percentages summing to 100 — `table-layout: fixed` fills the
+// container edge-to-edge with no horizontal scrollbar; long values truncate.
+// Status / Created By / Created columns dropped — status lives in the kebab,
+// and the audit columns crowded out the real content.
+const COL = {
+  check: 'w-[4%] pl-4 sm:pl-5 pr-0 text-left',
+  num: 'w-[4%] px-3 text-left',
+  title: 'w-[32%] px-3 text-left',
+  type: 'w-[12%] px-3 text-left',
+  category: 'w-[18%] px-3 text-left',
+  difficulty: 'w-[14%] px-3 text-left',
+  marks: 'w-[8%] px-3 text-left',
+};
 
-function MetaChips({ q }: { q: Question }) {
-  const difficulty = getDifficulty(q);
-  const score = getScore(q);
-  const showScore = isMcqQuestion(q) || score > 0;
-  return (
-    <>
-      <StatusPill tone={difficultyTone(difficulty)} dot>{formatDifficulty(difficulty)}</StatusPill>
-      {showScore && <span className="inline-flex h-[22px] items-center rounded-chip bg-ink-100 px-2 text-2xs font-semibold tabular-nums text-ink-700">{score} marks</span>}
-      {q.questionCategory && (
-        <span className="inline-flex h-[22px] max-w-[160px] items-center gap-1 rounded-chip border border-hairline bg-canvas px-2 text-2xs text-body">
-          <Tag size={10} className="shrink-0 text-faint" aria-hidden="true" />
-          <span className="truncate">{q.questionCategory}</span>
-        </span>
-      )}
-    </>
-  );
-}
+const HEAD_CELL =
+  'h-8 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline whitespace-nowrap';
+const BODY_CELL = 'h-11 align-middle text-[12px] text-body';
+const ACTIONS_HEAD = 'w-[8%] no-print pl-2 pr-4 sm:pr-5 text-right';
 
 function RowActions({ q, onPreview, onEdit, onDelete, onToggleStatus, canView, canEdit, canDelete, canToggle }: {
   q: Question;
@@ -91,20 +80,20 @@ function RowActions({ q, onPreview, onEdit, onDelete, onToggleStatus, canView, c
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button type="button" aria-label="Question actions" className="inline-flex size-7 items-center justify-center rounded-chip text-subtle transition-colors duration-150 hover:bg-ink-100 hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 data-[state=open]:bg-ink-100 data-[state=open]:text-heading">
-          <MoreVertical size={15} />
+          <MoreVertical size={14} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="w-44">
-        {canView && <DropdownMenuItem onSelect={() => onPreview(q)}><Eye size={15} /> View details</DropdownMenuItem>}
-        {canEdit && <DropdownMenuItem onSelect={() => onEdit(q)}><Pencil size={15} /> Edit</DropdownMenuItem>}
+        {canView && <DropdownMenuItem onSelect={() => onPreview(q)}><Eye size={14} /> View details</DropdownMenuItem>}
+        {canEdit && <DropdownMenuItem onSelect={() => onEdit(q)}><Pencil size={14} /> Edit</DropdownMenuItem>}
         {canToggle && (
           <DropdownMenuItem onSelect={() => q._id && onToggleStatus(q._id, !q.isActive)}>
-            <Power size={15} className={q.isActive ? undefined : 'text-success-700'} /> {q.isActive ? 'Archive (deactivate)' : 'Activate'}
+            <Power size={14} className={q.isActive ? undefined : 'text-success-700'} /> {q.isActive ? 'Archive (deactivate)' : 'Activate'}
           </DropdownMenuItem>
         )}
         {showSeparator && <DropdownMenuSeparator />}
         {canDelete && (
-          <DropdownMenuItem variant="destructive" onSelect={() => q._id && onDelete(q._id)}><Trash2 size={15} /> Delete</DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={() => q._id && onDelete(q._id)}><Trash2 size={14} /> Delete</DropdownMenuItem>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -112,24 +101,15 @@ function RowActions({ q, onPreview, onEdit, onDelete, onToggleStatus, canView, c
 }
 
 export default function QuestionsTable({
-  questions, isLoading, isFiltered, density, selectedIds, onSelectionChange,
-  onPreview, onEdit, onDelete, onToggleStatus, onClearFilters, onCreateMcq, onCreateProgramming, maxBodyHeight,
+  questions, isLoading, isFiltered, selectedIds, onSelectionChange,
+  onPreview, onEdit, onDelete, onToggleStatus, onClearFilters, onCreateMcq, onCreateProgramming,
   canView = true, canEdit = true, canDelete = true, canToggle = true, canCreate = true,
 }: QuestionsTableProps) {
-  const [togglingId, setTogglingId] = useState<string | null>(null);
-
-  const handleToggle = async (id: string, next: boolean) => {
-    setTogglingId(id);
-    try { await onToggleStatus(id, next); } finally { setTogglingId(null); }
-  };
-
   const ids = questions.map((q, i) => q._id || `q-${i}`);
   const allSelected = ids.length > 0 && ids.every((id) => selectedIds.includes(id));
   const someSelected = ids.some((id) => selectedIds.includes(id));
   const toggleAll = () => onSelectionChange(allSelected ? selectedIds.filter((id) => !ids.includes(id)) : Array.from(new Set([...selectedIds, ...ids])));
   const toggleOne = (id: string) => onSelectionChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
-
-  const compact = density === 'compact';
 
   if (!isLoading && questions.length === 0) {
     return (
@@ -141,118 +121,157 @@ export default function QuestionsTable({
             icon={BookOpen}
             title="No questions yet"
             message="Build your assessment library by creating an MCQ or programming question."
-            primaryAction={canCreate ? <Button size="sm" onClick={onCreateMcq}><ListChecks size={15} /> New MCQ question</Button> : undefined}
-            secondaryAction={canCreate ? <Button size="sm" variant="outline" onClick={onCreateProgramming}><Terminal size={15} /> New programming question</Button> : undefined}
+            primaryAction={canCreate ? <Button size="sm" onClick={onCreateMcq}><ListChecks size={14} /> New MCQ question</Button> : undefined}
+            secondaryAction={canCreate ? <Button size="sm" variant="outline" onClick={onCreateProgramming}><Terminal size={14} /> New programming question</Button> : undefined}
           />
         )}
       </div>
     );
   }
 
+  const headerCheckboxRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = someSelected && !allSelected;
+    }
+  }, [someSelected, allSelected]);
+
+  const COL_SPAN = 8;
+
   return (
-    // Panel-height layout: the card wrapper (in QuestionBanksPage) gives us
-    // a bounded flex slot; header keeps its natural height, body flex-1's
-    // and scrolls internally. That way the outer page never scrolls and
-    // the pagination footer under this card stays in view.
     <div className="flex h-full min-h-0 flex-col">
-      {/* Header */}
-      <div className="flex flex-shrink-0 items-center gap-3 border-b border-hairline bg-canvas px-4 py-2">
-        <input
-          type="checkbox"
-          aria-label="Select all questions"
-          checked={allSelected}
-          ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-          onChange={toggleAll}
-          disabled={isLoading || questions.length === 0}
-          className="size-4 rounded border-hairline-strong accent-brand"
-        />
-        <span className="text-2xs font-semibold uppercase tracking-wider text-subtle">Question</span>
-        <span className="ml-auto text-2xs font-semibold uppercase tracking-wider text-subtle">Status</span>
-        <span className="w-7" />
-      </div>
-
-      {/* Body — flex-1 min-h-0 so the rows scroll internally while the
-          card's pagination footer stays pinned. `maxBodyHeight` is left
-          on the prop shape for API stability (callers may still pass a
-          viewport-height calc) but a bounded parent makes the flex chain
-          the source of truth for how tall the scroll region ends up. */}
-      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar" style={maxBodyHeight && maxBodyHeight !== 'none' ? { maxHeight: maxBodyHeight } : undefined}>
-        {isLoading ? (
-          Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className={`flex items-center gap-3 border-b border-hairline px-4 ${compact ? 'py-2.5' : 'py-4'}`}>
-              <div className="size-4 shrink-0 animate-pulse rounded bg-ink-100" style={{ animationDelay: `${i * 55}ms` }} />
-              <div className="flex-1 space-y-2">
-                <div className="h-3 w-2/5 animate-pulse rounded bg-ink-100" style={{ animationDelay: `${i * 55}ms` }} />
-                {!compact && <div className="h-2.5 w-3/5 animate-pulse rounded bg-ink-100" style={{ animationDelay: `${i * 55}ms` }} />}
-                <div className="flex gap-1.5"><div className="h-5 w-20 animate-pulse rounded-full bg-ink-100" /><div className="h-5 w-16 animate-pulse rounded-full bg-ink-100" /></div>
-              </div>
-              <div className="h-6 w-16 shrink-0 animate-pulse rounded-full bg-ink-100" />
-            </div>
-          ))
-        ) : (
-          questions.map((q, i) => {
-            const id = q._id || `q-${i}`;
-            const selected = selectedIds.includes(id);
-            const title = getQuestionTitleText(q);
-            const snippet = stripHtml(getDescriptionText(q));
-            return (
-              <motion.div
-                key={id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.16, delay: Math.min(i, 10) * 0.015 }}
-                className={`group flex gap-3 border-b border-hairline transition-colors duration-150 last:border-0 ${compact ? 'items-center px-4 py-2.5' : 'items-start px-4 py-4'} ${selected ? 'bg-brand-wash/50' : 'hover:bg-row-hover'}`}
-              >
+      {/* overflow-hidden — the parent page's auto-fit picks a page size that
+          fits the flex slot, so a scrollbar would only appear during transient
+          layout shifts. Rows that don't fit paginate to the next page instead
+          of scrolling within the list. */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+          <thead className="sticky top-0 z-sticky">
+            <tr>
+              <th className={`${HEAD_CELL} ${COL.check}`}>
                 <input
+                  ref={headerCheckboxRef}
                   type="checkbox"
-                  aria-label={`Select ${title || 'question'}`}
-                  checked={selected}
-                  onChange={() => toggleOne(id)}
-                  className={`size-4 shrink-0 rounded border-hairline-strong accent-brand ${compact ? '' : 'mt-1'}`}
+                  aria-label="Select all questions"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  disabled={isLoading || questions.length === 0}
+                  className="size-4 rounded border-hairline-strong accent-brand cursor-pointer align-middle disabled:opacity-40"
                 />
-                <span className={`shrink-0 text-2xs tabular-nums text-faint ${compact ? '' : 'mt-1'}`}>{i + 1}</span>
-
-                <button type="button" onClick={() => onPreview(q)} title="Preview question" className="min-w-0 flex-1 text-left focus-visible:outline-none">
-                  <span className="block truncate text-sm font-medium text-heading transition-colors duration-150 group-hover:text-brand-strong">{title || 'Untitled Question'}</span>
-                  {!compact && snippet && <span className="mt-0.5 line-clamp-2 block text-xs text-subtle">{snippet}</span>}
-                  <span className={`flex flex-wrap items-center gap-1.5 ${compact ? '' : 'mt-2'}`}>
-                    <TypeBadge q={q} />
-                    <MetaChips q={q} />
-                  </span>
-                </button>
-
-                {!compact && (
-                  <div className="hidden shrink-0 flex-col items-end gap-1 text-2xs text-subtle lg:flex">
-                    <span className="inline-flex items-center gap-1 whitespace-nowrap"><Calendar size={11} className="text-faint" /> {fmtShort(q.updatedAt || q.createdAt)}</span>
-                    {q.createdBy && <span className="inline-flex max-w-[140px] items-center gap-1 truncate"><User size={11} className="text-faint" /> <span className="truncate">{q.createdBy}</span></span>}
-                  </div>
-                )}
-
-                <div className={`flex shrink-0 items-center gap-2 ${compact ? '' : 'mt-0.5'}`} onClick={(e) => e.stopPropagation()}>
-                  {canToggle && (
-                    <Switch
-                      checked={q.isActive || false}
-                      disabled={togglingId === id}
-                      onCheckedChange={() => q._id && handleToggle(q._id, !q.isActive)}
-                      aria-label={q.isActive ? 'Deactivate question' : 'Activate question'}
-                    />
-                  )}
-                  <RowActions
-                    q={q}
-                    onPreview={onPreview}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                    onToggleStatus={onToggleStatus}
-                    canView={canView}
-                    canEdit={canEdit}
-                    canDelete={canDelete}
-                    canToggle={canToggle}
-                  />
-                </div>
-              </motion.div>
-            );
-          })
-        )}
+              </th>
+              <th className={`${HEAD_CELL} ${COL.num}`}>#</th>
+              <th className={`${HEAD_CELL} ${COL.title}`}>Title</th>
+              <th className={`${HEAD_CELL} ${COL.type}`}>Type</th>
+              <th className={`${HEAD_CELL} ${COL.category}`}>Category</th>
+              <th className={`${HEAD_CELL} ${COL.difficulty}`}>Difficulty</th>
+              <th className={`${HEAD_CELL} ${COL.marks}`}>Marks</th>
+              <th className={`${HEAD_CELL} ${ACTIONS_HEAD}`}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 8 }).map((_, i) => (
+                <tr key={i} className="border-b border-hairline">
+                  <td className={`${COL.check} ${BODY_CELL}`}>
+                    <div className="size-4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                  <td className={`${COL.num} ${BODY_CELL}`}>
+                    <div className="h-3 w-4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                  <td className={`${COL.title} ${BODY_CELL}`}>
+                    <div className="h-3 w-3/4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                  <td className={`${COL.type} ${BODY_CELL}`}>
+                    <div className="h-3 w-16 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                  <td className={`${COL.category} ${BODY_CELL}`}>
+                    <div className="h-3 w-20 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                  <td className={`${COL.difficulty} ${BODY_CELL}`}>
+                    <div className="h-3 w-16 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                  <td className={`${COL.marks} ${BODY_CELL}`}>
+                    <div className="h-3 w-8 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                  <td className={`${ACTIONS_HEAD} ${BODY_CELL}`}>
+                    <div className="ml-auto size-4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  </td>
+                </tr>
+              ))
+            ) : (
+              questions.map((q, i) => {
+                const id = q._id || `q-${i}`;
+                const selected = selectedIds.includes(id);
+                const title = getQuestionTitleText(q);
+                const snippet = stripHtml(getDescriptionText(q));
+                const typeInfo = getQuestionTypeInfo(q);
+                const difficulty = getDifficulty(q);
+                const score = getScore(q);
+                const showScore = isMcqQuestion(q) || score > 0;
+                return (
+                  <motion.tr
+                    key={id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.16, delay: Math.min(i, 10) * 0.015 }}
+                    className={`group border-b border-hairline last:border-0 transition-colors duration-150 ${selected ? 'bg-brand-wash/50 hover:bg-brand-wash' : 'hover:bg-row-hover'}`}
+                  >
+                    <td className={`${COL.check} ${BODY_CELL}`}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${title || 'question'}`}
+                        checked={selected}
+                        onChange={() => toggleOne(id)}
+                        className="size-4 rounded border-hairline-strong accent-brand cursor-pointer align-middle"
+                      />
+                    </td>
+                    <td className={`${COL.num} ${BODY_CELL} text-faint tabular-nums`}>{i + 1}</td>
+                    <td className={`${COL.title} ${BODY_CELL} font-medium text-heading`}>
+                      <button
+                        type="button"
+                        onClick={() => onPreview(q)}
+                        title={snippet ? `${title || 'Untitled Question'} — ${snippet}` : (title || 'Untitled Question')}
+                        className="block w-full truncate text-left hover:text-brand-strong focus-visible:outline-none"
+                      >
+                        {title || 'Untitled Question'}
+                      </button>
+                    </td>
+                    <td className={`${COL.type} ${BODY_CELL}`}>
+                      <span className="block truncate" title={typeInfo.label}>{typeInfo.label}</span>
+                    </td>
+                    <td className={`${COL.category} ${BODY_CELL}`}>
+                      {q.questionCategory
+                        ? <span className="block truncate" title={q.questionCategory}>{q.questionCategory}</span>
+                        : <span className="text-line-muted">—</span>}
+                    </td>
+                    <td className={`${COL.difficulty} ${BODY_CELL}`}>{formatDifficulty(difficulty)}</td>
+                    <td className={`${COL.marks} ${BODY_CELL} tabular-nums`}>{showScore ? score : '—'}</td>
+                    <td className={`${ACTIONS_HEAD} ${BODY_CELL}`}>
+                      <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+                        <RowActions
+                          q={q}
+                          onPreview={onPreview}
+                          onEdit={onEdit}
+                          onDelete={onDelete}
+                          onToggleStatus={onToggleStatus}
+                          canView={canView}
+                          canEdit={canEdit}
+                          canDelete={canDelete}
+                          canToggle={canToggle}
+                        />
+                      </div>
+                    </td>
+                  </motion.tr>
+                );
+              })
+            )}
+            {!isLoading && questions.length === 0 && (
+              <tr>
+                <td colSpan={COL_SPAN} className="py-12" />
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

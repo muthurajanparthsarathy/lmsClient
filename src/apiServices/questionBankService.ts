@@ -33,12 +33,16 @@ const cleanSimpleQuestionPayload = (question: Partial<Question>): Partial<Questi
   };
 
   if (isMcq) {
-    return {
-      ...baseFields,
-      questionTitle: question.questionTitle || '',
-      options: question.options || [],
-      correctAnswer: question.correctAnswer || '',
-    };
+    // The premium Create MCQ modal builds the full `mcqQuestion*` payload
+    // (mcqQuestionTitle, mcqQuestionType, mcqQuestionOptions, …); the older
+    // MCQFields modal built `questionTitle` / `options` / `correctAnswer`.
+    // The original cleaner picked ONLY the legacy trio, which silently threw
+    // every mcqQuestion* field away — the server then rejected the request
+    // with "MCQ question title text is required" even after the user typed a
+    // valid title. Pass the whole authored payload through and let the server
+    // build the processedQuestion from it — the server already picks only
+    // what it stores.
+    return { ...question, ...baseFields };
   }
 
   // Programming family: programming (core) / frontend / database
@@ -110,6 +114,9 @@ export const questionBankService = {
     // Epoch ms. Computed in the browser because the Created-Date presets are
     // derived from the user's local clock.
     createdAfter?: number;
+    // When set, restrict results to questions pinned to this course (Course
+    // Specific tab → Manage). Absent → General bank.
+    courseId?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters) {

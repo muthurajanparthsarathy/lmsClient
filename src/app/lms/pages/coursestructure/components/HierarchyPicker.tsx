@@ -9,6 +9,7 @@ import type { ServiceMapping } from '@/apiServices/serviceMappingService'
 import { DataTable, type Column } from '../../../shared/listing/DataTable'
 import { EmptyState } from '../../../shared/ui'
 import CourseActionsMenu from './CourseActionsMenu'
+import ApprovalHierarchyModal from '../../../component/ApprovalHierarchyModal'
 import {
     buildBatchTree, buildPhaseTree, buildTree, groupCourses, looseCourses,
     placementLabel, runsInLabel, unplacedCourses,
@@ -25,13 +26,13 @@ import { PERMISSION_IDS } from '@/components/permissions'
 // and a flat table, which is faster to scan when you only care about status.
 // Depth in the tree is carried by indentation, hairline connector rails and
 // type size together.
-// Sizes are per DEPTH, not per level name, so the batch hierarchy that Placement
-// Training uses steps down at the same rate as the degree one.
+// Sizes are per DEPTH — trimmed one step across the board to match the
+// compact Client Management typography (base/lg heading, sm body).
 const SIZE = {
-    degree: 'text-lg',       // depth 1
-    department: 'text-md',   // depth 2
-    semester: 'text-base',   // depth 3
-    course: 'text-base',
+    degree: 'text-sm',       // depth 1
+    department: 'text-sm',   // depth 2
+    semester: 'text-sm',     // depth 3
+    course: 'text-sm',
 }
 
 type CourseStatus = { id: string; moduleCount: number; participantCount: number; courseCode: string; hasModuleHours?: boolean } | null
@@ -41,8 +42,8 @@ type ViewMode = 'tree' | 'table'
 // having to infer depth from indentation alone.
 function LevelLabel({ label, value, className }: { label: string; value: string; className: string }) {
     return (
-        <span className={`${className} font-bold text-heading truncate`}>
-            <span className="text-faint font-semibold">{label} : </span>
+        <span className={`${className} font-semibold text-heading truncate`}>
+            <span className="text-faint font-medium">{label} : </span>
             {value}
         </span>
     )
@@ -82,9 +83,9 @@ function SetupButton({ onClick }: { onClick: () => void }) {
         <button
             type="button"
             onClick={onClick}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control bg-gradient-to-b from-brand-400 to-brand-600 text-white text-sm font-semibold shadow-brand hover:brightness-105 active:scale-[.98] transition-all flex-shrink-0 whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-chip bg-brand-strong text-white text-2xs font-semibold hover:bg-brand-800 transition-colors flex-shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
         >
-            <Settings2 size={14} /> Setup Course
+            <Settings2 size={12} /> Setup Course
         </button>
     )
 }
@@ -247,6 +248,10 @@ export default function HierarchyPicker({
     onCourseEnrollment: (courseId: string) => void
 }) {
     const [view, setView] = useState<ViewMode>('tree')
+    // Local state for the "Set Approval" modal — the ApprovalHierarchyModal
+    // is a single mount per hierarchy page. Row actions just set which course
+    // it should open with.
+    const [approvalFor, setApprovalFor] = useState<{ id: string; name: string } | null>(null)
     // The Setup Course button (first-time setup for a "Not set up" course) is
     // shown when the signed-in admin holds ANY Course Management → Manage
     // functionality — Add Course was removed from the tree, so gating on a
@@ -362,6 +367,7 @@ export default function HierarchyPicker({
                     onResources={() => onCourseResources(status.id)}
                     onCalendar={() => onProgramCalendar(status.id)}
                     onEnrollment={() => onCourseEnrollment(status.id)}
+                    onApproval={() => setApprovalFor({ id: status.id, name: course.courseName })}
                 />
             )
         }
@@ -437,26 +443,26 @@ export default function HierarchyPicker({
         )
     }
 
-    // Flat view: every course once, with where it runs collapsed into one cell.
+    // Flat view — column widths as percentages summing to 100 so `fixedLayout`
+    // fills the container with no horizontal scrollbar; long values truncate
+    // with the full text in the tooltip.
     const tableColumns: Column<CourseGroup>[] = [
         {
             key: 'sno',
             label: '#',
-            className: 'w-[56px] pl-4 sm:pl-5 pr-2 text-left',
+            className: 'w-[4%] pl-4 sm:pl-5 pr-2 text-left',
             skeletonWidth: '20px',
             render: (_c, i) => <span className="text-xs text-faint tabular-nums">{i + 1}</span>,
         },
         {
             key: 'course',
             label: 'Course Name',
-            className: 'w-[26%] px-3 text-left',
+            className: 'w-[30%] px-3 text-left',
             render: (c) => {
                 const code = statusFor(c.courseName, c.path)?.courseCode
-                // The tooltip repeats the code because a truncated cell clips the
-                // suffix first, and the code is the part worth recovering.
                 return (
                     <span
-                        className="text-sm font-semibold text-heading truncate block"
+                        className="text-[12px] font-medium text-heading truncate block"
                         title={code ? `${c.courseName} (${code})` : c.courseName}
                     >
                         {c.courseName}
@@ -468,42 +474,41 @@ export default function HierarchyPicker({
         {
             key: 'category',
             label: 'Category',
-            className: 'w-[18%] px-3 text-left',
+            className: 'w-[16%] px-3 text-left',
             render: (c) => (
                 c.category
-                    ? <span className="inline-flex items-center h-[22px] px-2 rounded-chip bg-ink-100 text-ink-500 text-2xs font-medium">{c.category}</span>
-                    : <span className="text-2xs text-ink-300">—</span>
+                    ? <span className="block truncate text-[12px] text-body" title={c.category}>{c.category}</span>
+                    : <span className="text-xs text-line-muted">—</span>
             ),
         },
         {
             key: 'runs',
             label: 'Runs In',
-            className: 'w-[28%] px-3 text-left',
+            className: 'w-[26%] px-3 text-left',
             render: (c) => {
-                // Describes whichever hierarchy the mapping has — semesters for
-                // Degree Program, phases for new-shape Placement Training,
-                // batches and phases for the older non-degree shapes.
                 const text = runsInLabel(c, batchTree, phaseTree)
-                return <span className="text-sm text-ink-600 truncate block" title={text}>{text}</span>
+                return <span className="text-[12px] text-body truncate block" title={text}>{text}</span>
             },
         },
         {
             key: 'status',
             label: 'Status',
-            className: 'w-[13%] px-3 text-left',
+            className: 'w-[10%] px-3 text-left',
             render: (c) => <StatusPill status={statusFor(c.courseName, c.path)} />,
         },
         {
             key: 'actions',
             label: 'Actions',
-            className: 'w-[150px] pl-3 pr-4 sm:pr-5 text-left',
-            skeletonWidth: '110px',
+            className: 'w-[14%] pl-3 pr-4 sm:pr-5 text-right whitespace-nowrap',
+            skeletonWidth: '90px',
             render: (c) => actionsFor(c),
         },
     ]
 
     return (
-        <div className="px-6 py-5 md:px-8 space-y-4 max-w-[1680px] mx-auto">
+        // Tight gutters — the list uses the full workspace width instead of
+        // being caged inside a 1680 px max container with wide side margins.
+        <div className="px-3 sm:px-4 pt-3 pb-3 space-y-3">
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
                     <button
@@ -511,39 +516,42 @@ export default function HierarchyPicker({
                         onClick={onBack}
                         className="inline-flex items-center gap-1.5 text-xs text-subtle hover:text-heading transition-colors"
                     >
-                        <ArrowLeft size={14} /> Back to clients
+                        <ArrowLeft size={13} /> Back to clients
                     </button>
-                    <h1 className="mt-1.5 text-2xl font-semibold text-heading tracking-[-0.01em]">
+                    {/* Client Management heading size — text-base sm:text-lg
+                        font-semibold, so the two pages share one baseline. */}
+                    <h1 className="mt-1 text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">
                         {clientName}
                     </h1>
-                    <p className="text-sm text-subtle mt-0.5">
+                    <p className="text-xs text-subtle mt-0.5">
                         {[mapping.service, (mapping.serviceModels || []).join(' · '), mapping.year]
                             .filter(Boolean).join(' · ')}
                     </p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-tile bg-surface border border-hairline text-xs text-subtle shadow-xs">
-                        <CircleCheck size={13} className="text-success-500" />
+                <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs text-subtle">
+                        <CircleCheck size={12} className="text-success-500" />
                         {configured} of {groups.length} configured
                     </span>
 
-                    {/* Same courses, two readings: the tree answers "where does
-                        this run", the table answers "what still needs doing". */}
-                    <div className="inline-flex rounded-tile border border-hairline-strong bg-surface overflow-hidden shadow-xs">
+                    {/* Compact segmented toggle — Client Management chip
+                        density (h-8, text-xs), flat surface + brand-orange
+                        active pill instead of the loud gradient. */}
+                    <div className="inline-flex rounded-control border border-hairline-strong bg-surface overflow-hidden">
                         {([
-                            { key: 'tree' as const, label: 'Hierarchy', icon: <Network size={13} /> },
-                            { key: 'table' as const, label: 'Table', icon: <Table2 size={13} /> },
+                            { key: 'tree' as const, label: 'Hierarchy', icon: <Network size={12} /> },
+                            { key: 'table' as const, label: 'Table', icon: <Table2 size={12} /> },
                         ]).map((v) => (
                             <button
                                 key={v.key}
                                 type="button"
                                 onClick={() => setView(v.key)}
                                 aria-pressed={view === v.key}
-                                className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold transition-colors ${
+                                className={`inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium transition-colors ${
                                     view === v.key
-                                        ? 'bg-gradient-to-b from-brand-400 to-brand-600 text-white'
-                                        : 'text-subtle hover:bg-row-hover'
+                                        ? 'bg-brand-strong text-white'
+                                        : 'text-body hover:bg-row-hover'
                                 }`}
                             >
                                 {v.icon} {v.label}
@@ -571,7 +579,8 @@ export default function HierarchyPicker({
                     />
                 </div>
             ) : view === 'table' ? (
-                <div className="bg-surface rounded-xl border border-hairline shadow-xs overflow-hidden">
+                // Flat listing — no card border, matching Client Management.
+                <div>
                     <DataTable<CourseGroup>
                         rows={groups}
                         columns={tableColumns}
@@ -585,7 +594,7 @@ export default function HierarchyPicker({
                         emptyHint="Add them in Map Service first."
                         emptyAction="Back to clients"
                         onEmptyAction={onBack}
-                        minWidth={860}
+                        fixedLayout
                         maxHeight="calc(100vh - 300px)"
                     />
                 </div>
@@ -712,6 +721,19 @@ export default function HierarchyPicker({
                         )
                     })()}
                 </div>
+            )}
+
+            {/* Approval chain modal — opened from any course's Actions menu.
+                Same modal the retired /approvals page mounted; passing the
+                course id + name pins it to this course. */}
+            {approvalFor && (
+                <ApprovalHierarchyModal
+                    open
+                    onClose={() => setApprovalFor(null)}
+                    courseId={approvalFor.id}
+                    courseName={approvalFor.name}
+                    clientName={clientName}
+                />
             )}
         </div>
     )

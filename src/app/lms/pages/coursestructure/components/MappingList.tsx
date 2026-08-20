@@ -1,9 +1,9 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-    Search, SlidersHorizontal, List, LayoutGrid, Download, ExternalLink, X, BookOpen, SearchX,
+    Search, SlidersHorizontal, Download, ExternalLink, X, BookOpen, SearchX,
     Printer, FileSpreadsheet, FileText, ChevronDown, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -14,7 +14,6 @@ import {
     DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '../../../shared/ui'
-import { HeaderStats } from '../../../shared/ui/HeaderStats'
 import TableFooter from '../../../shared/listing/TableFooter'
 import {
     useServiceMappingsPage,
@@ -93,6 +92,11 @@ const SERVER_SORT_KEY: Record<string, string> = {
 // placement).
 const toRowVM = (m: ServiceMapping): MappingRowVM => {
     const { configured = 0, total = 0 } = m.setupProgress || {}
+    // Business model comes off the populated client. The list endpoint
+    // aggregates it via $lookup — falls back to '' when the field is empty.
+    const businessModel = typeof m.client === 'string'
+        ? ''
+        : ((m.client as { businessModel?: string } | undefined)?.businessModel || '')
     return {
         courses: Array.from(
             new Set(groupCourses(m).map((g) => g.courseName.trim()).filter(Boolean))
@@ -100,6 +104,7 @@ const toRowVM = (m: ServiceMapping): MappingRowVM => {
         mapping: m,
         id: m._id,
         clientName: clientNameOf(m) || 'N/A',
+        businessModel,
         serviceCode: m.serviceCode || '',
         service: m.service || '',
         models: (m.serviceModels || []).filter(Boolean),
@@ -138,12 +143,42 @@ export default function MappingList({
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
     const [currentPage, setCurrentPage] = useState(1)
     const [pageSize, setPageSize] = useState(25)
+    // Auto-fit page size — matches Client Management + User Management. The
+    // wrapper's height / row height picks pageSize, so rows always fill the
+    // gap between the toolbar and the pagination footer. Flips off the moment
+    // the user picks a size manually.
+    const [autoFitPageSize, setAutoFitPageSize] = useState(true)
+    const tableCardRef = useRef<HTMLDivElement | null>(null)
 
     // Typing is now a request, so it waits for a pause.
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedSearch(search), 500)
         return () => clearTimeout(timer)
     }, [search])
+
+    // Auto-fit page size to the table wrapper. Same math as Client Management:
+    // header 32 + row 44 + footer 44, minus half a row of safety so the last
+    // visible row never lands under the overflow-hidden edge and rolls to
+    // page 2 silently.
+    useEffect(() => {
+        if (!autoFitPageSize) return
+        if (viewMode !== 'table') return
+        const el = tableCardRef.current
+        if (!el) return
+        const HEADER_H = 32
+        const FOOTER_H = 44
+        const ROW_H = 44
+        const SAFETY = Math.round(ROW_H / 2)
+        const compute = () => {
+            const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY)
+            const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)))
+            setPageSize((prev) => (prev === fits ? prev : fits))
+        }
+        compute()
+        const ro = new ResizeObserver(compute)
+        ro.observe(el)
+        return () => ro.disconnect()
+    }, [autoFitPageSize, viewMode])
 
     // What the server is asked for. The cutoff is resolved HERE rather than per
     // render: as a live `Date.now()` it would differ on every render and churn
@@ -787,20 +822,13 @@ export default function MappingList({
         />
     )
 
-    // Reserve viewport room for the chrome above the table: base header/toolbar/
-    // footer, plus the chip row and the inline filter panel when they are open.
-    // Base trimmed from 17.5 → 15 after the header lost its subtitle line —
-    // reclaims ~2.5rem (about one extra row) while keeping the intentional
-    // breathing room below the footer that the user asked to preserve.
-    const tableMaxH = `calc(100dvh - ${15 + (filterChips.length > 0 ? 2.5 : 0) + (showFilters ? 14 : 0)}rem)`
-
     const footer = !isLoading && totalRows > 0 && (
         <TableFooter
             from={totalRows === 0 ? 0 : (safePage - 1) * pageSize + 1}
             to={Math.min(safePage * pageSize, totalRows)}
             total={totalRows}
             pageSize={pageSize}
-            onPageSize={(n) => { setPageSize(n); setCurrentPage(1) }}
+            onPageSize={(n) => { setAutoFitPageSize(false); setPageSize(n); setCurrentPage(1) }}
             currentPage={safePage}
             totalPages={totalPages}
             onPage={setCurrentPage}
@@ -808,137 +836,98 @@ export default function MappingList({
     )
 
     return (
-        <div className="px-4 sm:px-6 lg:px-8 pt-5 pb-4">
-            {/* ── Slim header + compact stat chips ── */}
-            {/* flex-nowrap on md+ so the chip strip stays anchored right;
-                left column shrinks (flex-1 min-w-0) so its long subtitle
-                wraps within its own column instead of pushing the strip
-                down onto a new line. */}
-            <div className="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
-                <div className="min-w-0 flex-1">
-                    {/* Heading size matched to Client Management + Service
-                        Mapping so the baseline is identical across the LMS. */}
-                    <h1 className="text-xl sm:text-2xl font-semibold text-heading tracking-[-0.01em]">Course Setup</h1>
-                </div>
-                {/* Right-aligned stat strip via shared HeaderStats — same
-                    primitive as Client Management + Service Mapping. */}
-                <HeaderStats
-                    loading={isLoading}
-                    items={[
-                        { label: 'Mapped', value: mappedCount },
-                        { label: 'Courses', value: totalCourses },
-                        { label: 'Configured', value: configuredCount },
-                        { label: 'Pending', value: pending },
-                    ]}
-                />
+        <div className="flex flex-1 min-h-0 flex-col px-4 sm:px-6 lg:px-8 pt-3 pb-3">
+            {/* Slim heading — chip strip dropped to match Client Management. */}
+            <div className="flex items-center justify-between gap-4">
+                <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">Course Setup</h1>
             </div>
 
-            {/* ── One toolbar: search · Filter · view toggle · overflow ── */}
-            <div className="mt-4 flex items-center gap-2">
-                <div className="relative w-full max-w-xs">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
+            {/* One toolbar: search left · Filter · Export · Print grouped
+                right · vertical divider · Service Mapping (primary). Same
+                layout the other admin lists now use. */}
+            <div className="no-print mt-3 flex items-center gap-2 flex-wrap min-w-0">
+                <div className="relative flex-1 min-w-[220px] max-w-md">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
                     <input
                         type="text"
                         value={search}
-                        // No page reset here: the request is keyed off the
-                        // DEBOUNCED term, and resetting now would fire a page-1
-                        // request for the search the user has already left.
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder="Search client, course, service…"
-                        className="w-full h-10 pl-10 pr-9 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+                        className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
                     />
                     {search && (
                         <button
                             type="button"
                             aria-label="Clear search"
                             onClick={() => setSearch('')}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 inline-flex size-6 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
                         >
-                            <X size={14} />
+                            <X size={12} />
                         </button>
                     )}
                 </div>
 
-                {/* Filter — toggles the inline panel on the same screen */}
-                <button
-                    type="button"
-                    onClick={() => setShowFilters((v) => !v)}
-                    aria-expanded={showFilters}
-                    className={`inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border text-sm font-medium shadow-xs transition-colors duration-150 relative ${activeFilterCount > 0 || showFilters ? 'border-brand text-brand-strong bg-brand-wash' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
-                >
-                    <SlidersHorizontal className="w-4 h-4" />
-                    <span className="hidden sm:inline">Filter</span>
-                    {activeFilterCount > 0 && (
-                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
-                            {activeFilterCount}
-                        </span>
-                    )}
-                </button>
-
-                {/* View toggle */}
-                <div className="hidden sm:flex items-center p-0.5 rounded-control border border-hairline-strong bg-surface h-10">
+                {/* Secondary-action cluster pushed right */}
+                <div className="ml-auto flex items-center gap-1.5 flex-wrap">
                     <button
                         type="button"
-                        onClick={() => setViewMode('table')}
-                        title="Table view"
-                        aria-label="Table view"
-                        className={`h-8 w-8 rounded-chip flex items-center justify-center transition-colors duration-150 ${viewMode === 'table' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}
+                        onClick={() => setShowFilters((v) => !v)}
+                        aria-expanded={showFilters}
+                        className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 relative ${activeFilterCount > 0 || showFilters ? 'border-brand text-brand-strong bg-brand-wash' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'}`}
                     >
-                        <List className="w-4 h-4" />
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Filter</span>
+                        {activeFilterCount > 0 && (
+                            <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
+                                {activeFilterCount}
+                            </span>
+                        )}
                     </button>
+
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                type="button"
+                                aria-label="Export list"
+                                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Export</span>
+                                <ChevronDown className="w-3 h-3" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" sideOffset={6} className="w-40">
+                            <DropdownMenuItem onClick={() => openPicker('csv')} className="cursor-pointer">
+                                <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openPicker('pdf')} className="cursor-pointer">
+                                <FileText className="h-4 w-4 text-danger-500" /> PDF
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
                     <button
                         type="button"
-                        onClick={() => setViewMode('card')}
-                        title="Card view"
-                        aria-label="Card view"
-                        className={`h-8 w-8 rounded-chip flex items-center justify-center transition-colors duration-150 ${viewMode === 'card' ? 'bg-brand-wash text-brand-strong' : 'text-faint hover:text-heading'}`}
+                        onClick={() => openPicker('print')}
+                        title="Print — pick which clients to include"
+                        className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
                     >
-                        <LayoutGrid className="w-4 h-4" />
+                        <Printer className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Print</span>
                     </button>
                 </div>
 
-                {/* Export dropdown (CSV / PDF) — opens the client-picker
-                    popup, then produces the per-client-per-page file. */}
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <button
-                            type="button"
-                            aria-label="Export list"
-                            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
-                        >
-                            <Download className="w-4 h-4" />
-                            <span className="hidden sm:inline">Export</span>
-                            <ChevronDown className="w-3.5 h-3.5" />
-                        </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" sideOffset={6} className="w-40">
-                        <DropdownMenuItem onClick={() => openPicker('csv')} className="cursor-pointer">
-                            <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openPicker('pdf')} className="cursor-pointer">
-                            <FileText className="h-4 w-4 text-danger-500" /> PDF
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-
-                <button
-                    type="button"
-                    onClick={() => openPicker('print')}
-                    title="Print — pick which clients to include"
-                    className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
-                >
-                    <Printer className="w-4 h-4" />
-                    <span className="hidden sm:inline">Print</span>
-                </button>
-
+                {/* Primary — Service Mapping shortcut. Divider matches the
+                    Add-button treatment on the other pages. */}
+                <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
                 <button
                     type="button"
                     onClick={goServiceMapping}
                     title="Open Service Mapping"
-                    className="ml-auto inline-flex items-center gap-1.5 h-10 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body shadow-xs hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                    className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
                 >
-                    <ExternalLink className="w-4 h-4" />
-                    <span className="hidden sm:inline">Service Mapping</span>
+                    <ExternalLink size={14} strokeWidth={2.4} />
+                    <span className="text-xs font-semibold hidden sm:inline">Service Mapping</span>
                 </button>
             </div>
 
@@ -994,7 +983,8 @@ export default function MappingList({
                 that anything is happening. A dim is the whole signal. */}
             {viewMode === 'table' ? (
                 <div
-                    className={`mt-4 bg-surface rounded-xl border border-hairline shadow-xs overflow-hidden transition-opacity duration-150 ${isFetching && !isLoading ? 'opacity-60' : ''}`}
+                    ref={tableCardRef}
+                    className={`mt-2 flex flex-1 min-h-0 flex-col transition-opacity duration-150 ${isFetching && !isLoading ? 'opacity-60' : ''}`}
                 >
                     <MappingTable
                         rows={rows}
@@ -1004,10 +994,7 @@ export default function MappingList({
                         sortDir={sortDir}
                         onSort={handleSort}
                         onOpen={onOpen}
-                        onCopyServiceId={copyServiceId}
-                        onOpenServiceMapping={goServiceMapping}
                         emptyState={emptyState}
-                        maxBodyHeight={tableMaxH}
                     />
                     {footer}
                 </div>

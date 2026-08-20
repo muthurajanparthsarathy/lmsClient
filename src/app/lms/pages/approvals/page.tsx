@@ -40,7 +40,7 @@ import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "../../component/layout";
 import ApprovalHierarchyModal from "../../component/ApprovalHierarchyModal";
 import TableFooter from "@/app/lms/shared/listing/TableFooter";
-import { ArrowLeft, ChevronRight, Search, Users } from "lucide-react";
+import { ArrowLeft, ChevronRight, Info, Search, Users } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { queryKeys } from "@/lib/queryKeys";
 import { useClients } from "@/apiServices/clientManagementService";
@@ -234,7 +234,7 @@ export default function ApprovalsPage() {
     [coursesForSelectedClient, safeCoursesPage, pageSize],
   );
 
-  const tabBtn = (id: Tab, label: string) => (
+  const tabBtn = (id: Tab, label: string, hint?: string) => (
     <button
       type="button"
       onClick={() => {
@@ -244,13 +244,27 @@ export default function ApprovalsPage() {
         if (id !== "chains") setSelectedClient(null);
         setSearch("");
       }}
-      className={`px-3.5 py-2 text-sm rounded-t-md border-b-2 -mb-px transition-colors ${
+      className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-sm rounded-t-md border-b-2 -mb-px transition-colors ${
         tab === id
           ? "border-orange-500 text-orange-700 font-bold"
           : "border-transparent text-gray-500 hover:text-gray-800"
       }`}
     >
       {label}
+      {hint && (
+        <span
+          // Nested <button> is invalid; a span with a title attribute
+          // gives the same hover tooltip and stays screen-reader-friendly
+          // via aria-label.
+          role="img"
+          aria-label={hint}
+          title={hint}
+          className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Info size={13} />
+        </span>
+      )}
     </button>
   );
 
@@ -296,23 +310,21 @@ export default function ApprovalsPage() {
       {/* Root flex column — consumes <main>'s bounded height so children
           can share it. h-full/min-h-0/flex-col are all load-bearing. */}
       <div className="flex flex-col h-full min-h-0 min-w-0 p-6 max-w-6xl">
-        {/* Title header — natural height, sits above the card. */}
+        {/* Title header — single heading, Client Management size. */}
         <div className="shrink-0 mb-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Approvals
-          </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">
+          <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">
             Approvals
           </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Review items waiting on you, and configure who approves for each course, per client.
-          </p>
         </div>
 
         {/* Tab strip — natural height. */}
         <div className="shrink-0 flex gap-1 border-b border-gray-200 mb-4">
           {tabBtn("queue", "Queue")}
-          {tabBtn("chains", "Approval chains")}
+          {tabBtn(
+            "chains",
+            "Approval chains",
+            "Configure who approves what: pick a client, then set the ordered list of role → person approvers for each course. Students only see resources once every step in the chain has signed off.",
+          )}
         </div>
 
         {/* Chains toolbar (search / breadcrumb / back) — natural height,

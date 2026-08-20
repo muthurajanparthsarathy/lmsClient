@@ -21,6 +21,7 @@ const CreateQuestionModal = ({
   onClose,
   onCreated,
   bankSource = 'internal',
+  courseId,
 }: {
   qType: CreateQType;
   defaultSubType?: 'core' | 'frontend' | 'database';
@@ -34,6 +35,11 @@ const CreateQuestionModal = ({
    * MCQ image uploads are refused at save time on that source.
    */
   bankSource?: 'internal' | 'external';
+  /**
+   * When set, the created question is pinned to this course — it lives under
+   * the Course Specific tab for that course only. Omit for the General bank.
+   */
+  courseId?: string | null;
 }) => {
   const contentRef = useRef<CreateContentHandle>(null);
   const [saving, setSaving] = useState(false);
@@ -50,6 +56,12 @@ const CreateQuestionModal = ({
     if (!result?.ok || !result.payload) {
       toast.error('Fix the highlighted fields first.');
       return;
+    }
+    // Pin the question to a course when the modal was opened from the Course
+    // Specific view. Merged here rather than inside each content component so
+    // MCQ + Programming share the same wiring.
+    if (courseId) {
+      result.payload.courseId = courseId;
     }
     setSaving(true);
     try {

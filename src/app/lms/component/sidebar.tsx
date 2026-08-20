@@ -95,11 +95,12 @@ export function Sidebar({ className }: SidebarProps) {
                 setCurrentUser(userData);
 
                 setUserPermissions(userData?.permissions || []);
-                // Roles with a dedicated static console (POC) get theirs;
-                // everyone else keeps the permission-derived rail. Going
-                // through the shared helper rather than buildSidebarItems is
-                // what stops a POC's stale admin permission keys rendering the
-                // admin rail on any page that mounts this shell.
+                // EVERY role's rail comes from the permissions this account
+                // holds — there is no per-role nav constant any more. Grant or
+                // revoke a module in Assign Permission and the rail follows on
+                // the next sign-in. Going through the shared helper (rather
+                // than buildSidebarItems) keeps the command palette on exactly
+                // the same item set.
                 setSidebarItems(buildNavForStoredUser(userData));
             } catch (error) {
                 console.error("Error loading user data from localStorage:", error);
@@ -237,14 +238,32 @@ export function Sidebar({ className }: SidebarProps) {
                                             // so there the parent stays a plain link and the
                                             // pages are reached through it instead.
                                             const subItems = isCollapsed ? [] : (item.children || []);
-                                            // Show the section's tabs (Clients / Services) by default so the
-                                            // submenu is visible without having to expand it first; the user
-                                            // can still collapse it with the chevron.
-                                            const submenuOpen = subItems.length > 0 && (openMenus[itemKey] ?? true);
+                                            // Parent + submenu behavior:
+                                            //   - Closed by default; clicking the parent toggles it.
+                                            //   - Auto-opens ONLY when the user is already inside the
+                                            //     section (a child matches the current route), so they
+                                            //     can see where they are.
+                                            //   - No subitem is preselected — the parent itself does not
+                                            //     navigate, so nothing is picked until the user clicks a
+                                            //     specific child.
+                                            const hasActiveChild = subItems.some((c) => onRoute(c.href));
+                                            const submenuOpen = subItems.length > 0 && (openMenus[itemKey] ?? hasActiveChild);
+                                            const isParentToggle = subItems.length > 0;
 
                                             const row = (
                                                 <div
-                                                    onClick={() => handleItemClick(item)}
+                                                    onClick={() => {
+                                                        if (isParentToggle) {
+                                                            // Pure disclosure: open/close the submenu, do
+                                                            // NOT navigate. The parent's own href only
+                                                            // points at the first child, so navigating on
+                                                            // click would auto-select that child — which
+                                                            // is exactly what the user asked us to stop.
+                                                            setOpenMenus((prev) => ({ ...prev, [itemKey]: !submenuOpen }));
+                                                        } else {
+                                                            handleItemClick(item);
+                                                        }
+                                                    }}
                                                     className={cn(
                                                         "relative flex items-center rounded-[10px] cursor-pointer group transition-colors duration-150 border",
                                                         isCollapsed
