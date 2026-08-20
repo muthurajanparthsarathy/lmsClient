@@ -28,7 +28,7 @@ export function DashboardSkeleton() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard loading label="Total Courses" value={0} icon={BookOpen} hint=" " />
                 <StatCard loading label="Total Learners" value={0} icon={Users} hint=" " />
-                <StatCard loading label="Learner Engagement" value={0} icon={TrendingUp} hint=" " />
+                <StatCard loading label=" Engagement" value={0} icon={TrendingUp} hint=" " />
                 <StatCard loading label="Clients" value={0} icon={Building2} hint=" " />
             </div>
 
