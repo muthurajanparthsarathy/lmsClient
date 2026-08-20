@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Search, Filter, Loader, Check, ChevronRight, ChevronLeft, BookOpen, Code, Database, Layout, AlertCircle } from 'lucide-react';
+import { X, Search, Filter, Loader, Check, ChevronRight, ChevronLeft, BookOpen, Code, Database, Layout, AlertCircle, Globe, GraduationCap } from 'lucide-react';
 import { questionBankService } from '@/apiServices/questionBankService';
+import { fetchCourseStructuresSummary } from '@/apiServices/createCourseStucture';
 import { toast } from 'react-toastify';
 import { Question } from '../../QuestionsView';
 
@@ -51,9 +52,59 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
   const [selectedQuestions, setSelectedQuestions] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
 
+  // ── Bank scope: General vs Course Specific ──
+  // Mirrors the authoring-side picker: before any questions list, ask WHICH
+  // bank to browse. General = questions with no courseId; Course = one
+  // course's own bank (questions authored under Course Specific → Manage).
+  const [scope, setScope] = useState<'general' | 'course' | null>(null);
+  const [scopeCourse, setScopeCourse] = useState<{ id: string; name: string } | null>(null);
+  const [courseSearch, setCourseSearch] = useState('');
+  const scopeReady = scope === 'general' || (scope === 'course' && !!scopeCourse);
+  const [courseRows, setCourseRows] = useState<Array<{ id: string; name: string; code: string; client: string }>>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+
+  // Lazy course list for the chooser's second step.
   useEffect(() => {
-    fetchQuestionBank();
-  }, []);
+    if (scope !== 'course' || scopeCourse || courseRows.length > 0) return;
+    let cancelled = false;
+    setCoursesLoading(true);
+    fetchCourseStructuresSummary()
+      .then((raw: any) => {
+        if (cancelled) return;
+        const list = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
+        setCourseRows(
+          (list as Array<Record<string, unknown>>)
+            .map((c) => ({
+              id: String(c._id || c.id || ''),
+              name: String(c.courseName || ''),
+              code: c.courseCode ? String(c.courseCode) : '',
+              client: c.clientName
+                ? String(c.clientName)
+                : (typeof c.client === 'object' && c.client
+                    ? String((c.client as { clientCompany?: string }).clientCompany || '')
+                    : ''),
+            }))
+            .filter((r) => r.id && r.name),
+        );
+      })
+      .catch(() => { if (!cancelled) toast.error('Failed to load courses'); })
+      .finally(() => { if (!cancelled) setCoursesLoading(false); });
+    return () => { cancelled = true; };
+  }, [scope, scopeCourse, courseRows.length]);
+
+  const filteredCourseRows = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    if (!q) return courseRows;
+    return courseRows.filter((r) =>
+      r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q) || r.client.toLowerCase().includes(q));
+  }, [courseRows, courseSearch]);
+
+  // Fetch only once a scope is chosen, so the empty-bank toast can't fire
+  // while the chooser is still open.
+  useEffect(() => {
+    if (scopeReady) fetchQuestionBank();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeReady, scope, scopeCourse?.id]);
 
   const fetchQuestionBank = async () => {
     setLoading(true);
@@ -61,11 +112,18 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
       const response = await questionBankService.getAllQuestions({
         isActive: true
       });
-      
+
       if (response && response.success) {
-        const questionsData = response.questions || [];
+        // Scope filter — General keeps only unpinned questions, Course keeps
+        // only the chosen course's. Applied at the source so search, quotas
+        // and select-all all operate on the scoped set.
+        const questionsData = (response.questions || []).filter((q: any) =>
+          scope === 'course'
+            ? String(q.courseId || '') === (scopeCourse?.id || '')
+            : !q.courseId,
+        );
         setQuestions(questionsData);
-        
+
         if (questionsData.length === 0) {
           toast.info('No questions found in question bank');
         }
@@ -353,6 +411,20 @@ const getQuestionTitle = (question: any): string => {
                 Select questions to add to "{exerciseData.exerciseName}"
               </p>
             </div>
+            {/* Scope chip — names the bank being browsed; Change reopens the chooser. */}
+            {scopeReady && (
+              <button
+                type="button"
+                onClick={() => { setScope(null); setScopeCourse(null); setCourseSearch(''); setQuestions([]); }}
+                title="Change which bank you're picking from"
+                className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700 transition-colors hover:bg-purple-100"
+              >
+                {scope === 'course'
+                  ? <><GraduationCap className="h-3 w-3" /><span className="max-w-[200px] truncate">{scopeCourse?.name}</span></>
+                  : <><Globe className="h-3 w-3" /> General</>}
+                <span className="font-normal text-purple-500">· Change</span>
+              </button>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -362,6 +434,107 @@ const getQuestionTitle = (question: any): string => {
           </button>
         </div>
 
+        {/* ── Scope chooser — first step ── */}
+        {!scopeReady && scope === null && (
+          <div className="flex flex-1 items-center justify-center p-8">
+            <div className="w-full max-w-xl">
+              <h3 className="text-center text-base font-bold text-gray-900">Which bank do you want to pick from?</h3>
+              <p className="mt-1 text-center text-xs text-gray-500">
+                General holds reusable questions for the whole institution. Course Specific holds questions authored for one course.
+              </p>
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setScope('general')}
+                  className="flex flex-col items-center gap-2.5 rounded-2xl border border-gray-200 bg-white p-6 text-center transition-all hover:border-purple-300 hover:shadow-sm"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
+                    <Globe className="h-5 w-5" />
+                  </span>
+                  <span className="text-sm font-bold text-gray-900">General</span>
+                  <span className="text-[11.5px] leading-snug text-gray-500">The institution-wide bank — questions reusable in any course.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScope('course')}
+                  className="flex flex-col items-center gap-2.5 rounded-2xl border border-gray-200 bg-white p-6 text-center transition-all hover:border-purple-300 hover:shadow-sm"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
+                    <GraduationCap className="h-5 w-5" />
+                  </span>
+                  <span className="text-sm font-bold text-gray-900">Course Specific</span>
+                  <span className="text-[11.5px] leading-snug text-gray-500">Pick a course, then choose from the questions authored for it.</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Course picker — second step of Course Specific ── */}
+        {!scopeReady && scope === 'course' && (
+          <div className="flex flex-1 flex-col p-5 min-h-0">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setScope(null); setCourseSearch(''); }}
+                className="flex items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2 py-1 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-100"
+              >
+                <ChevronLeft className="h-3 w-3" /> Back
+              </button>
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  placeholder="Search courses…"
+                  className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                />
+              </div>
+              <span className="text-xs text-gray-500">{filteredCourseRows.length} course{filteredCourseRows.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            <div className="mt-3 flex-1 overflow-y-auto rounded-xl border border-gray-200">
+              {coursesLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader className="h-6 w-6 animate-spin text-purple-600" />
+                </div>
+              ) : filteredCourseRows.length === 0 ? (
+                <div className="py-12 text-center">
+                  <GraduationCap className="mx-auto mb-2 h-9 w-9 text-gray-300" />
+                  <p className="text-sm font-medium text-gray-900">
+                    {courseSearch ? 'No courses match your search' : 'No courses found'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    {courseSearch ? 'Try a different term.' : 'Set up a course in Course Management first.'}
+                  </p>
+                </div>
+              ) : (
+                filteredCourseRows.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setScopeCourse({ id: c.id, name: c.name })}
+                    className="flex w-full items-center gap-3 border-b border-gray-100 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-purple-50/50"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                      <GraduationCap className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-gray-900">{c.name}</span>
+                      <span className="block truncate text-xs text-gray-500">
+                        {[c.code, c.client].filter(Boolean).join(' · ') || '—'}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {scopeReady && (<>
         {/* Search and Filter */}
         <div className="px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
@@ -524,6 +697,7 @@ const getQuestionTitle = (question: any): string => {
             </button>
           </div>
         </div>
+        </>)}
       </div>
     </div>
   );

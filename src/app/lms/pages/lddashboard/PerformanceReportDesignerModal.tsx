@@ -1295,7 +1295,11 @@ export default function PerformanceReportDesignerModal({
     // features/attendancemanagement/AttendanceReportModal.tsx.
     const svgToPng = async (container: HTMLElement | null): Promise<{ dataUrl: string; width: number; height: number } | null> => {
         if (!container) return null;
-        const svg = container.querySelector("svg");
+        // MUST target the recharts surface: the section's × remove button is a
+        // lucide icon — also an <svg>, and FIRST in DOM order — so a bare
+        // querySelector("svg") captures a giant ✗ instead of the chart.
+        const svg = container.querySelector(".recharts-wrapper svg.recharts-surface")
+            || container.querySelector(".recharts-wrapper svg");
         if (!svg) return null;
         const box = svg.getBoundingClientRect();
         const clone = svg.cloneNode(true) as SVGSVGElement;

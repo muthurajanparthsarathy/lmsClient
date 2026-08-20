@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Search, Filter, Loader, Check, ChevronRight, ChevronLeft, ChevronDown, BookOpen, Code, Database, Layout, AlertCircle, Plus, List, LayoutGrid } from 'lucide-react';
+import { X, Search, Filter, Loader, Check, ChevronRight, ChevronLeft, ChevronDown, BookOpen, Code, Database, Layout, AlertCircle, Plus, List, LayoutGrid, Globe, GraduationCap } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useQuestionBankQuery, useOtherPlatformQuestionBankQuery } from '@/queries/questionBank';
+import { fetchCourseStructuresSummary } from '@/apiServices/createCourseStucture';
 import { PROBLEM_TYPES } from '../../questionbank/create/createShared';
 // IMPORTANT: use react-hot-toast (the same toaster mounted in app/layout.tsx).
 // react-toastify's ToastContainer is NOT mounted in this app, so toasts from
@@ -108,6 +110,50 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
   // sites. `enabled` keeps the request pattern identical to the old
   // `bankSource === 'otherPlatform' ? … : …` branch — only one ever runs.
   const isOtherPlatform = bankSource === 'otherPlatform';
+
+  // ── Bank scope: General vs Course Specific ──
+  // The internal bank now carries course-pinned questions (courseId on the
+  // subdoc). Before listing anything, the picker asks WHICH bank to browse:
+  // General (questions with no courseId) or one course's own bank. The Other
+  // Platform bank has no course concept, so it skips the chooser entirely.
+  const [scope, setScope] = useState<'general' | 'course' | null>(isOtherPlatform ? 'general' : null);
+  const [scopeCourse, setScopeCourse] = useState<{ id: string; name: string } | null>(null);
+  const [courseSearch, setCourseSearch] = useState('');
+  const scopeReady = isOtherPlatform || scope === 'general' || (scope === 'course' && !!scopeCourse);
+
+  // Courses for the chooser — summary projection, fetched only while the
+  // course step is actually open.
+  const coursesQuery = useQuery({
+    queryKey: ['courseStructures', 'summary'],
+    queryFn: fetchCourseStructuresSummary,
+    staleTime: 5 * 60 * 1000,
+    enabled: !isOtherPlatform && scope === 'course' && !scopeCourse,
+  });
+  const courseRows = useMemo(() => {
+    const raw = coursesQuery.data as { data?: unknown } | unknown[] | undefined;
+    const list = Array.isArray((raw as { data?: unknown[] })?.data)
+      ? (raw as { data: unknown[] }).data
+      : Array.isArray(raw) ? raw : [];
+    return (list as Array<Record<string, unknown>>)
+      .map((c) => ({
+        id: String(c._id || c.id || ''),
+        name: String(c.courseName || ''),
+        code: c.courseCode ? String(c.courseCode) : '',
+        client: c.clientName
+          ? String(c.clientName)
+          : (typeof c.client === 'object' && c.client
+              ? String((c.client as { clientCompany?: string }).clientCompany || '')
+              : ''),
+      }))
+      .filter((r) => r.id && r.name);
+  }, [coursesQuery.data]);
+  const filteredCourseRows = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    if (!q) return courseRows;
+    return courseRows.filter((r) =>
+      r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q) || r.client.toLowerCase().includes(q));
+  }, [courseRows, courseSearch]);
+
   const PAGE_SIZE = 25;
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
@@ -184,8 +230,17 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
     const rows = isOtherPlatform
       ? ((pagedQuery.data?.questions || []) as any[])
       : ((authoredQuery.data || []) as any[]);
-    return rows.filter((q: any) => q.isActive !== false) as Question[];
-  }, [isOtherPlatform, pagedQuery.data, authoredQuery.data]);
+    const active = rows.filter((q: any) => q.isActive !== false);
+    if (isOtherPlatform) return active as Question[];
+    // Scope filter — General keeps only unpinned questions, Course keeps only
+    // the chosen course's. Applied here so everything downstream (facets,
+    // difficulty counts, quotas, selection) sees only the chosen scope.
+    return active.filter((q: any) =>
+      scope === 'course'
+        ? String(q.courseId || '') === (scopeCourse?.id || '')
+        : !q.courseId
+    ) as Question[];
+  }, [isOtherPlatform, pagedQuery.data, authoredQuery.data, scope, scopeCourse]);
 
 
   // Update filterType when prop changes
@@ -196,12 +251,14 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
   }, [filterByType]);
 
   // An empty bank used to raise a toast from the fetcher; keep that, once per
-  // resolved fetch rather than on every render.
+  // resolved fetch rather than on every render. Gated on scopeReady so the
+  // General/Course chooser step doesn't fire it prematurely.
   useEffect(() => {
+    if (!scopeReady) return;
     if (!activeQuery.isLoading && !activeQuery.isError && questions.length === 0) {
       toast('No questions found in question bank', { icon: 'ℹ️' });
     }
-  }, [activeQuery.isLoading, activeQuery.isError, questions.length]);
+  }, [activeQuery.isLoading, activeQuery.isError, questions.length, scopeReady]);
 
   useEffect(() => {
     if (activeQuery.isError) {
@@ -671,13 +728,129 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
                 Assignment: <span className="font-medium text-body">{exerciseData.exerciseName}</span>
               </p>
             </div>
+            {/* Scope chip — names the bank being browsed; Change re-opens the
+                chooser without losing selections already made. */}
+            {!isOtherPlatform && scopeReady && (
+              <button
+                type="button"
+                onClick={() => { setScope(null); setScopeCourse(null); setCourseSearch(''); }}
+                title="Change which bank you're picking from"
+                className="ml-1 inline-flex h-7 items-center gap-1.5 rounded-full border border-brand-500/30 bg-brand-wash px-2.5 text-[11px] font-semibold text-brand-strong transition-colors hover:bg-brand-wash-hover"
+              >
+                {scope === 'course'
+                  ? <><GraduationCap className="h-3 w-3" /><span className="max-w-[220px] truncate">{scopeCourse?.name}</span></>
+                  : <><Globe className="h-3 w-3" /> General</>}
+                <span className="font-normal text-brand-strong/70">· Change</span>
+              </button>
+            )}
           </div>
           <button onClick={onClose} className="rounded-lg p-1 text-faint transition-colors hover:bg-row-hover hover:text-subtle" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
 
+        {/* ── Scope chooser — shown before any questions list ── */}
+        {!scopeReady && scope === null && (
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+            <div className="w-full max-w-2xl">
+              <h3 className="text-center text-[16px] font-bold text-heading">Which bank do you want to pick from?</h3>
+              <p className="mt-1 text-center text-[12px] text-subtle">
+                General holds reusable questions for the whole institution. Course Specific holds questions authored for one course.
+              </p>
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setScope('general')}
+                  className="group flex flex-col items-center gap-2.5 rounded-[14px] border border-[#E8EAF2] bg-white p-6 text-center transition-all hover:border-brand-500/40 hover:shadow-sm"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-brand-wash text-brand-strong">
+                    <Globe className="h-5 w-5" />
+                  </span>
+                  <span className="text-[13.5px] font-bold text-heading">General</span>
+                  <span className="text-[11.5px] leading-snug text-subtle">The institution-wide bank — questions reusable in any course.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScope('course')}
+                  className="group flex flex-col items-center gap-2.5 rounded-[14px] border border-[#E8EAF2] bg-white p-6 text-center transition-all hover:border-brand-500/40 hover:shadow-sm"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-brand-wash text-brand-strong">
+                    <GraduationCap className="h-5 w-5" />
+                  </span>
+                  <span className="text-[13.5px] font-bold text-heading">Course Specific</span>
+                  <span className="text-[11.5px] leading-snug text-subtle">Pick a course, then choose from the questions authored for it.</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Course picker — second step of the Course Specific path ── */}
+        {!scopeReady && scope === 'course' && (
+          <div className="flex min-h-0 flex-1 flex-col p-4">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setScope(null); setCourseSearch(''); }}
+                className="flex items-center gap-1 rounded-[8px] border border-brand-500/30 bg-brand-wash px-2 py-1 text-[11.5px] font-semibold text-brand-strong transition-colors hover:bg-brand-wash-hover"
+              >
+                <ChevronLeft className="h-3 w-3" /> Back
+              </button>
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+                <input
+                  type="text"
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  placeholder="Search courses…"
+                  className="h-9 w-full rounded-[10px] border border-[#E5E7EB] bg-white pl-8 pr-3 text-[12.5px] text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
+                />
+              </div>
+              <span className="text-[11.5px] text-subtle">{filteredCourseRows.length} course{filteredCourseRows.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            <div className="mt-3 flex-1 overflow-y-auto rounded-[12px] border border-[#E8EAF2]">
+              {coursesQuery.isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader className="h-6 w-6 animate-spin text-brand-strong" />
+                </div>
+              ) : filteredCourseRows.length === 0 ? (
+                <div className="py-12 text-center">
+                  <GraduationCap className="mx-auto mb-2 h-9 w-9 text-gray-300" />
+                  <p className="text-[13px] font-medium text-heading">
+                    {courseSearch ? 'No courses match your search' : 'No courses found'}
+                  </p>
+                  <p className="mt-0.5 text-[11.5px] text-subtle">
+                    {courseSearch ? 'Try a different term.' : 'Set up a course in Course Management first.'}
+                  </p>
+                </div>
+              ) : (
+                filteredCourseRows.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setScopeCourse({ id: c.id, name: c.name })}
+                    className="flex w-full items-center gap-3 border-b border-[#F1F2F7] px-3.5 py-2.5 text-left transition-colors last:border-0 hover:bg-row-hover"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-brand-wash text-brand-strong">
+                      <GraduationCap className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-semibold text-heading">{c.name}</span>
+                      <span className="block truncate text-[11px] text-subtle">
+                        {[c.code, c.client].filter(Boolean).join(' · ') || '—'}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Body — filters rail + question list, independent scrolls */}
+        {scopeReady && (
         <div className="flex min-h-0 flex-1 gap-3 p-3">
           {/* ── Filters rail ── */}
           <aside className="w-[26%] min-w-[225px] shrink-0 overflow-y-auto rounded-[14px] border border-[#E8EAF2] p-3.5">
@@ -929,8 +1102,20 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
         </div>
           </div>
         </div>
+        )}
 
-        {/* Footer — sticky, compact */}
+        {/* Footer — sticky, compact. While the scope chooser is open only a
+            Cancel is offered; the selection footer needs a questions list. */}
+        {!scopeReady ? (
+          <div className="flex h-[52px] shrink-0 items-center justify-end border-t border-[#E8EAF2] bg-white px-4">
+            <button
+              onClick={onClose}
+              className="h-9 rounded-[10px] border border-[#D7DCE5] bg-white px-4 text-[12.5px] font-semibold text-body transition-colors hover:bg-row-hover"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
         <div className="flex h-[52px] shrink-0 items-center justify-between border-t border-[#E8EAF2] bg-white px-4">
           <div className="flex items-center gap-2">
             <span className={`inline-flex h-7 items-center gap-1.5 rounded-[8px] px-2.5 text-[12px] font-semibold ${selectedQuestions.size > 0 ? 'bg-brand-wash text-brand-strong' : 'bg-[#F3F4F8] text-subtle'}`}>
@@ -965,6 +1150,7 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
