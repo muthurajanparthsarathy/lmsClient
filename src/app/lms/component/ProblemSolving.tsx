@@ -3823,7 +3823,16 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
               </>
             )}
 
-            {/* Review Submissions - Only show when exercise is complete */}
+            {/* Review Submissions + Grade — paired siblings so they appear
+                together whenever the exercise is complete, and both
+                enable at the same moment (submissionStatusMap[_id] flips
+                true the first time a student has an ExamSession row for
+                this exercise). Before the first student joins the two
+                stay visible-but-disabled — same behaviour Review
+                Submissions already had. Grade deep-links into the
+                Grades student list for this exercise, skipping the outer
+                exercises picker; `returnTo` carries the current URL so
+                Back returns to the assignment list. */}
             {exerciseComplete && (
               <>
                 <DropdownMenuItem
@@ -3833,6 +3842,28 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                   style={{ color: '#1a1a2e', fontFamily: JKT.fontFamily }}>
                   <BarChart3 className="h-3.5 w-3.5" style={{ color: submissionStatusMap[exercise._id] ? '#fb923c' : '#bcbccc' }} />
                   Review Submissions
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    if (!courseId) {
+                      toast.error('Course context is missing — cannot open the grades view.');
+                      return;
+                    }
+                    const here = typeof window !== 'undefined'
+                      ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+                      : '';
+                    const q = new URLSearchParams({
+                      exerciseId: exercise._id,
+                      openTab: 'students',
+                      ...(here ? { returnTo: here } : {}),
+                    }).toString();
+                    router.push(`/lms/pages/grades/${courseId}?${q}`);
+                  }}
+                  className="cursor-pointer text-xs gap-2"
+                  disabled={!submissionStatusMap[exercise._id]}
+                  style={{ color: '#1a1a2e', fontFamily: JKT.fontFamily }}>
+                  <GraduationCap className="h-3.5 w-3.5" style={{ color: submissionStatusMap[exercise._id] ? '#059669' : '#bcbccc' }} />
+                  Grade
                 </DropdownMenuItem>
                 <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
               </>
@@ -3851,38 +3882,6 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                     style={{ background: 'rgba(242,119,87,0.1)', color: '#e0623f', border: '1px solid rgba(242,119,87,0.2)' }}>
                     {exercise.questions?.length ?? 0}
                   </span>
-                </DropdownMenuItem>
-                <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
-              </>
-            )}
-
-            {/* Grade — deep-link into the Grades student list for THIS
-                exercise so the trainer skips the outer exercises picker.
-                Gated on submissionStatusMap[_id] (server-flagged true the
-                moment any student has an ExamSession row for this
-                exercise) — before that there's nothing to grade. Same
-                completion signal Review Submissions uses. `returnTo` is
-                the current URL so the Grades page's Back lands back
-                here instead of at the client picker. */}
-            {submissionStatusMap[exercise._id] && (
-              <>
-                <DropdownMenuItem
-                  onClick={() => {
-                    if (!courseId) return;
-                    const here = typeof window !== 'undefined'
-                      ? `${window.location.pathname}${window.location.search}${window.location.hash}`
-                      : '';
-                    const q = new URLSearchParams({
-                      exerciseId: exercise._id,
-                      openTab: 'students',
-                      ...(here ? { returnTo: here } : {}),
-                    }).toString();
-                    router.push(`/lms/pages/grades/${courseId}?${q}`);
-                  }}
-                  className="cursor-pointer text-xs gap-2"
-                  style={{ color: '#1a1a2e', fontFamily: JKT.fontFamily }}>
-                  <GraduationCap className="h-3.5 w-3.5" style={{ color: '#059669' }} />
-                  Grade
                 </DropdownMenuItem>
                 <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
               </>
