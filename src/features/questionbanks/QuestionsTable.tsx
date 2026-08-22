@@ -36,6 +36,10 @@ interface QuestionsTableProps {
   onClearFilters: () => void;
   onCreateMcq: () => void;
   onCreateProgramming: () => void;
+  /** Skeleton rows to draw while loading. Pass the page size so the placeholder
+   *  is the same height as the list that replaces it — otherwise the table
+   *  jumps as the real rows land. */
+  skeletonRows?: number;
   maxBodyHeight?: string;
   canView?: boolean;
   canEdit?: boolean;
@@ -103,6 +107,7 @@ function RowActions({ q, onPreview, onEdit, onDelete, onToggleStatus, canView, c
 export default function QuestionsTable({
   questions, isLoading, isFiltered, selectedIds, onSelectionChange,
   onPreview, onEdit, onDelete, onToggleStatus, onClearFilters, onCreateMcq, onCreateProgramming,
+  skeletonRows = 8,
   canView = true, canEdit = true, canDelete = true, canToggle = true, canCreate = true,
 }: QuestionsTableProps) {
   const ids = questions.map((q, i) => q._id || `q-${i}`);
@@ -140,11 +145,16 @@ export default function QuestionsTable({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* overflow-hidden — the parent page's auto-fit picks a page size that
-          fits the flex slot, so a scrollbar would only appear during transient
-          layout shifts. Rows that don't fit paginate to the next page instead
-          of scrolling within the list. */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* overflow-y-auto, NOT overflow-hidden. The internal bank auto-fits its
+          page size to this slot, so it rarely overflows — but the External bank
+          asks for a FIXED 10 rows, and on a short viewport the last rows do not
+          fit. Hidden dropped them with no scrollbar and no other clue: the grid
+          showed 8 rows while the footer paged in tens. The sticky header stays
+          pinned inside the scroll container.
+
+          overflow-x stays clipped: table-layout is fixed at 100 % width, so
+          there is nothing to scroll sideways to. */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
           <thead className="sticky top-0 z-sticky">
             <tr>
@@ -170,7 +180,7 @@ export default function QuestionsTable({
           </thead>
           <tbody>
             {isLoading ? (
-              Array.from({ length: 8 }).map((_, i) => (
+              Array.from({ length: Math.max(1, skeletonRows) }).map((_, i) => (
                 <tr key={i} className="border-b border-hairline">
                   <td className={`${COL.check} ${BODY_CELL}`}>
                     <div className="size-4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />

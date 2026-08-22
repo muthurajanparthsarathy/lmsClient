@@ -1,7 +1,7 @@
 'use client';
 
 import { Loading } from "@/components/loading-ui/loading";
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   AlertCircle, ArrowLeft, ChevronDown, CircleCheck,
   GraduationCap, ListChecks, Plus, Settings2, SlidersHorizontal, Terminal, X,
@@ -34,6 +34,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSION_IDS } from '@/components/permissions';
 import {
   useQuestionBankPageQuery,
+  usePrefetchQuestionBankPage,
   useInvalidateQuestionBank,
   useDeleteQuestionMutation,
   useToggleQuestionStatusMutation,
@@ -204,13 +205,20 @@ export default function QuestionBankPage() {
   const [selectedRows, setSelectedRows] = useState<Record<string, Question>>({});
   const selectedIds = useMemo(() => Object.keys(selectedRows), [selectedRows]);
 
+  // A FIXED 10 rows per page, matching the External bank next door. This is
+  // the `limit` that goes over the wire — getAllQuestionsbank slices the bank
+  // to it and returns those 10 — so it is the request size, not a display
+  // trim.
+  //
+  // This replaces an auto-fit that measured the list wrapper and derived a
+  // page size from its height. Auto-fit meant the page size (and so the
+  // request, and so the React Query cache key) depended on the viewport: two
+  // windows of different heights never shared a cache entry, a resize refetched
+  // the list, and nothing could be prefetched or persisted under a stable key.
+  // A fixed 10 that SCROLLS when it doesn't fit costs one scrollbar and buys
+  // all of that back.
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  // Auto-fit: the list wrapper's height / row height decides pageSize, so rows
-  // that don't fit spill onto the next page instead of scrolling internally.
-  // Flips off when the user picks a size manually.
-  const [autoFitPageSize, setAutoFitPageSize] = useState(true);
-  const tableCardRef = useRef<HTMLDivElement | null>(null);
+  const [pageSize, setPageSize] = useState(10);
 
   // Tabs: General (bank-wide questions) vs Course Specific (per-course bank).
   // Course-specific starts on the course picker; clicking Manage on a course
@@ -275,28 +283,6 @@ export default function QuestionBankPage() {
     setCurrentPage(1);
   }, [selectedCourseId]);
 
-  // Auto-fit page size to the list wrapper. Same math the other admin lists
-  // use: header 32 + row 44 + footer 44 - half a row of safety so the last
-  // visible row never lands under the overflow-hidden edge.
-  useEffect(() => {
-    if (!autoFitPageSize) return;
-    const el = tableCardRef.current;
-    if (!el) return;
-    const HEADER_H = 32;
-    const FOOTER_H = 44;
-    const ROW_H = 44;
-    const SAFETY = Math.round(ROW_H / 2);
-    const compute = () => {
-      const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY);
-      const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)));
-      setPageSize((prev) => (prev === fits ? prev : fits));
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [autoFitPageSize]);
-
   // ── Lifecycle ──
   useEffect(() => {
     const role = localStorage.getItem('smartcliff_roleValue');
@@ -357,6 +343,15 @@ export default function QuestionBankPage() {
   // page's own `filteredQuestions`, checked against it over live data across
   // every filter, every page size and every deep page.
   const { data: pageData, isLoading: isListLoading } = useQuestionBankPageQuery(queryParams);
+
+  // Warm page N+1 while page N is on screen, under the key the query itself
+  // would use, so "Next" resolves out of the cache instead of over the wire.
+  const prefetchPage = usePrefetchQuestionBankPage();
+  useEffect(() => {
+    const pages = pageData?.totalPages ?? 1;
+    if (currentPage >= pages) return;
+    prefetchPage({ ...queryParams, page: currentPage + 1 });
+  }, [prefetchPage, queryParams, currentPage, pageData?.totalPages]);
 
   // `keepPreviousData` keeps `isLoading` false once the first page has landed,
   // so paging and filtering swap rows in place instead of flashing the
@@ -1014,9 +1009,10 @@ export default function QuestionBankPage() {
           </div>
         )}
 
-        {/* Flat listing — no card border, matching Client Management. The ref
-            drives the auto-fit page size. */}
-        <div ref={tableCardRef} className="mt-2 flex flex-1 min-h-0 flex-col overflow-hidden">
+        {/* Flat listing — no card border, matching Client Management. The page
+            size is fixed at 10 now, so this slot no longer gets measured; when
+            10 rows don't fit, QuestionsTable's body scrolls. */}
+        <div className="mt-2 flex flex-1 min-h-0 flex-col overflow-hidden">
           <QuestionsTable
             questions={pageQuestions}
             isLoading={isLoading}
@@ -1031,6 +1027,7 @@ export default function QuestionBankPage() {
             onClearFilters={clearFilters}
             onCreateMcq={openCreateMcq}
             onCreateProgramming={openCreateProgramming}
+            skeletonRows={pageSize}
             maxBodyHeight={tableMaxH}
             canView={canView}
             canEdit={canEdit}
@@ -1044,7 +1041,7 @@ export default function QuestionBankPage() {
               to={rangeEnd}
               total={totalFiltered}
               pageSize={pageSize}
-              onPageSize={(n) => { setAutoFitPageSize(false); setPageSize(n); setCurrentPage(1); }}
+              onPageSize={(n) => { setPageSize(n); setCurrentPage(1); }}
               currentPage={safePage}
               totalPages={totalPages}
               onPage={setCurrentPage}

@@ -164,6 +164,10 @@ export const questionBankService = {
     sort?: string;
     // Admin External-page-only filter — the picker never sends it.
     createdBy?: string;
+    // 'admin' tells the endpoint this caller renders none of the picker's
+    // filter-rail facets, which is what lets it serve the page as an indexed
+    // skip/limit instead of reading the whole collection to count them.
+    facets?: 'admin';
   }) => {
     const params = new URLSearchParams();
     if (filters) {

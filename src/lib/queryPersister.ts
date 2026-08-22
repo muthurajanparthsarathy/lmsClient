@@ -96,6 +96,7 @@ const NON_PERSISTED_KEYS = new Set<string>([
   // grows without bound — the sibling other-platform bank is already
   // 5148 questions / 9.2 MB, and an authored bank scales the same way, so
   // this must never compete for the ~5 MB localStorage budget.
+  // ONE narrow exception is re-admitted below — see `isReadmittedEntry`.
   "questionBank",
   // Attendance records are per-course/per-range slices that go stale as soon
   // as anyone marks a day.
@@ -107,17 +108,80 @@ const NON_PERSISTED_KEYS = new Set<string>([
   "feedback",
 ]);
 
+/** Hard ceiling on a single re-admitted entry (see `isReadmittedEntry`). A
+ *  root lands in NON_PERSISTED_KEYS because SOMETHING under it is huge, so an
+ *  entry allowed back in has to prove it is small before it is written. 512 KB
+ *  is ~10 % of the 5 MB localStorage budget for the origin — generous for a
+ *  10-row page, tight enough that an unexpectedly fat payload is dropped
+ *  instead of evicting the rest of the cache. */
+const READMITTED_MAX_BYTES = 512 * 1024;
+
+/** The two server-paginated question-bank listings, by their queryKey's second
+ *  element: the institution's own bank (/lms/pages/questionbanks) and the
+ *  global external bank (/lms/pages/questionbanks/external). */
+const PAGED_BANK_KEYS = new Set(["paged", "otherPlatformPaged"]);
+
+/** Every axis either bank's listing can narrow on. All must be at their empty
+ *  default for an entry to count as "the view the page lands on". `courseId`
+ *  and `createdAfter` are absent rather than empty when unset, which `!v`
+ *  handles either way. */
+const BANK_FILTER_PARAMS = [
+  "questionType", "category", "difficulty", "isActive",
+  "createdBy", "marks", "search", "createdAfter", "courseId",
+] as const;
+
+/**
+ * Narrow exceptions to NON_PERSISTED_KEYS: entries under an excluded root that
+ * are individually small AND worth having on first paint.
+ *
+ * Today that means the two Question Bank listings' FIRST page with no filters
+ * applied — the view each of those routes lands on every time it mounts. The
+ * "questionBank" root is excluded because the UNPAGINATED reads under it are
+ * megabytes (the external bank alone is 5148 questions / 9.2 MB, and the
+ * institution bank is one embedded array that grows without bound); a
+ * server-paginated 10-row page is not, and persisting it is the difference
+ * between those pages painting instantly on a hard reload and re-running their
+ * request from scratch.
+ *
+ * Deliberately narrow — page 1, unfiltered only:
+ *   • Page state is component state, so a reload always lands back on page 1.
+ *     Persisting pages 2..N would buy nothing a reload can use while letting a
+ *     long paging session write hundreds of entries into localStorage.
+ *   • Filters and the (debounced) search are part of the key, so admitting
+ *     them would mint a fresh persisted entry per distinct search term.
+ * Pages 2..N and every filtered view still cache normally IN MEMORY for the
+ * hook's gcTime — they just don't outlive the tab.
+ */
+const isReadmittedEntry = (queryKey: readonly unknown[]): boolean => {
+  if (queryKey[0] !== "questionBank") return false;
+  if (typeof queryKey[1] !== "string" || !PAGED_BANK_KEYS.has(queryKey[1])) return false;
+  const params = queryKey[2] as Record<string, unknown> | undefined;
+  if (!params || typeof params !== "object") return false;
+  if (params.page !== 1) return false;
+  return BANK_FILTER_PARAMS.every((k) => !params[k]);
+};
+
 /**
  * Filter function passed to the persister's dehydrateOptions. Returns
  * `true` to persist the query, `false` to skip it.
  */
 const shouldDehydrateQuery = (query: Query) => {
-  // The first element of the queryKey is conventionally the "root" name.
-  const root = Array.isArray(query.queryKey) ? query.queryKey[0] : undefined;
-  if (typeof root === "string" && NON_PERSISTED_KEYS.has(root)) return false;
   // Only persist successful query data — failed/loading queries would just
   // re-trigger their network call anyway on next mount.
-  return query.state.status === "success";
+  if (query.state.status !== "success") return false;
+  // The first element of the queryKey is conventionally the "root" name.
+  const root = Array.isArray(query.queryKey) ? query.queryKey[0] : undefined;
+  if (typeof root === "string" && NON_PERSISTED_KEYS.has(root)) {
+    if (!isReadmittedEntry(query.queryKey)) return false;
+    // Cheap here BECAUSE the predicate above matches at most a couple of
+    // entries — never run this over the whole cache.
+    try {
+      return JSON.stringify(query.state.data).length <= READMITTED_MAX_BYTES;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 };
 
 /**

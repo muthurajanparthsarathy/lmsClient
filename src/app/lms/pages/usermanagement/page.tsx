@@ -751,10 +751,10 @@ export default function UserManagementPage() {
             onCheckedChange={(checked) => toggleStatus(user.id, checked ? "active" : "inactive")}
             aria-label={isActive ? 'Deactivate user' : 'Activate user'}
             title={isActive ? 'Active — switch off to deactivate' : 'Inactive — switch on to activate'}
-            className="data-[state=checked]:bg-success-500 data-[state=unchecked]:bg-ink-200"
+            className="scale-90 data-[state=checked]:bg-success-500 data-[state=unchecked]:bg-ink-200"
           />
         )}
-        <span className={`text-xs font-medium ${isActive ? 'text-success-700' : 'text-subtle'} ${isToggling ? 'animate-pulse' : ''}`}>
+        <span className={`text-[11px] font-medium ${isActive ? 'text-success-700' : 'text-subtle'} ${isToggling ? 'animate-pulse' : ''}`}>
           {isActive ? 'Active' : 'Inactive'}
         </span>
       </div>
@@ -924,7 +924,7 @@ export default function UserManagementPage() {
         {/* Slim heading — chip strip + subtitle dropped so the header reads
             just like Client Management. */}
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">
+          <h1 className="text-sm sm:text-base font-semibold text-heading tracking-[-0.01em]">
             User Management
           </h1>
         </div>
@@ -941,7 +941,7 @@ export default function UserManagementPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search users…"
-              className="w-full h-9 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+              className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-[13px] text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchTerm && (
               <button

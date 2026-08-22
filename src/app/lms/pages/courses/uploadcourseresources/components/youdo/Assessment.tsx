@@ -1522,15 +1522,26 @@ export default function Assessment({
                               "Check Answers" menu item, so the courses-page
                               dropdown shouldn't lead to the (now bypassed)
                               participants-list view. */}
-                          {/* Manage Questions only appears once every step
-                              of the create wizard has been saved — an
-                              assessment with missing config can't hold a
-                              coherent question set, and the old always-on
-                              menu item let users drop into a questions view
-                              for a half-configured record. `complete` is
-                              derived from isAssessmentComplete(rawEx) at
-                              the top of the row map. */}
-                          {complete && (
+                          {/* Manage Questions — shown whenever the assessment
+                              has already been through the question-setup
+                              step of the wizard (has questions saved, or is
+                              section-based with sections defined). The
+                              earlier `{complete && ...}` gate over-hid the
+                              row: `isAssessmentComplete(rawEx)` requires
+                              schedule + marks + question counts to all
+                              agree, and returned false on some rows the
+                              user considered "done" (e.g. approvalScope =
+                              settings_and_questions with the question set
+                              still empty). Fall back to the raw-exercise
+                              lookup because `asm` is the slim view record
+                              and its `questions` field is a number, not the
+                              full array. */}
+                          {(
+                            complete
+                              || (asm.questions ?? 0) > 0
+                              || (rawEx?.sectionConfigs && Object.keys(rawEx.sectionConfigs).length > 0)
+                              || (Array.isArray(rawEx?.questions) && rawEx.questions.length > 0)
+                          ) && (
                             <DropItem
                               icon={<Settings size={11} />} label="Manage Questions"
                               onClick={() => handleManageQuestion(asm)}

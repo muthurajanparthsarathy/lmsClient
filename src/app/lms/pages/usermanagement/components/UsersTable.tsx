@@ -13,8 +13,14 @@ import { User } from "./types";
 // status toggles and row actions all arrive as props from page.tsx.
 //
 // Its METRICS are deliberately DataTable's, so this directory and the Client
-// Management listing read as the same table on two routes: 36px header, 48px
-// row, 28px avatar, one line per row. Email used to sit under the name in a
+// Management listing read as the same table on two routes: 32px header, 44px
+// row, 24px avatar, 12px cell text, one line per row — the whole set taken
+// down one uniform notch so the grid at 100 % browser zoom reads the way the
+// old one did at 90 %. Scale the WHOLE set together if you touch it (and the
+// shared DataTable with it): a shorter row still carrying 16px text just
+// crowds — the ratio is what keeps it legible.
+//
+// Email used to sit under the name in a
 // two-line cell, which cost 16px of row height on every row and left the
 // address in a different place than every other listing puts it — it is now
 // its own column, exactly as in Client Management.
@@ -76,7 +82,7 @@ const HEAD_CELL =
 // every cell) so the four admin lists read as one system.
 const BODY_CELL = "h-11 align-middle text-[12px] text-body";
 // Skeleton bar, matching DataTable's.
-const BAR = "h-3 rounded bg-ink-100 animate-pulse";
+const BAR = "h-2.5 rounded bg-ink-100 animate-pulse";
 
 function SortButton({
   label,
@@ -100,12 +106,12 @@ function SortButton({
       {label}
       {active ? (
         dir === "asc" ? (
-          <ChevronUp size={13} className="text-brand" />
+          <ChevronUp size={12} className="text-brand" />
         ) : (
-          <ChevronDown size={13} className="text-brand" />
+          <ChevronDown size={12} className="text-brand" />
         )
       ) : (
-        <ChevronsUpDown size={13} className="text-line-muted" />
+        <ChevronsUpDown size={12} className="text-line-muted" />
       )}
     </button>
   );
@@ -165,7 +171,7 @@ export function UsersTable({
                 checked={allPageSelected}
                 onChange={onToggleAllPage}
                 disabled={isLoading || users.length === 0}
-                className="size-4 rounded border-hairline-strong accent-brand cursor-pointer align-middle disabled:opacity-40"
+                className="size-[14px] rounded border-hairline-strong accent-brand cursor-pointer align-middle disabled:opacity-40"
               />
             </th>
             <th className={`${HEAD_CELL} ${COL.user}`}>
@@ -195,11 +201,11 @@ export function UsersTable({
             Array.from({ length: Math.max(6, Math.min(skeletonRows, 14)) }).map((_, i) => (
               <tr key={i} className="border-b border-hairline">
                 <td className={`${COL.check} ${BODY_CELL}`}>
-                  <div className="size-4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  <div className="size-[14px] rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
                 </td>
                 <td className={`${COL.user} ${BODY_CELL}`}>
-                  <div className="flex items-center gap-2.5">
-                    <div className="size-7 rounded-full bg-ink-100 animate-pulse flex-shrink-0" style={{ animationDelay: `${i * 55}ms` }} />
+                  <div className="flex items-center gap-2">
+                    <div className="size-6 rounded-full bg-ink-100 animate-pulse flex-shrink-0" style={{ animationDelay: `${i * 55}ms` }} />
                     <div className={`${BAR} w-[70%]`} style={{ animationDelay: `${i * 55}ms` }} />
                   </div>
                 </td>
@@ -210,14 +216,14 @@ export function UsersTable({
                   <div className={`${BAR} w-[70%]`} style={{ animationDelay: `${i * 55}ms` }} />
                 </td>
                 <td className={`${COL.role} ${BODY_CELL}`}>
-                  <div className="h-6 w-[80%] rounded-full bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  <div className="h-[22px] w-[80%] rounded-full bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
                 </td>
                 <td className={`${COL.status} ${BODY_CELL}`}>
-                  <div className="ml-auto h-6 w-[75%] rounded-full bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                  <div className="ml-auto h-[22px] w-[75%] rounded-full bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
                 </td>
                 {showActionsColumn && (
                   <td className={`${COL.actions} ${BODY_CELL}`}>
-                    <div className="ml-auto size-4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                    <div className="ml-auto size-[14px] rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
                   </td>
                 )}
               </tr>
@@ -248,7 +254,7 @@ export function UsersTable({
                       aria-label={`Select ${fullName}`}
                       checked={isSelected}
                       onChange={() => onToggleOne(user.id)}
-                      className="size-4 rounded border-hairline-strong accent-brand cursor-pointer align-middle"
+                      className="size-[14px] rounded border-hairline-strong accent-brand cursor-pointer align-middle"
                     />
                   </td>
                   <td className={`${COL.user} ${BODY_CELL}`}>
@@ -271,9 +277,9 @@ export function UsersTable({
                     {/* max-w-full + an inner truncate: the pill is a fixed-height
                         capsule, so a long role must clip INSIDE it — wrapping
                         would break out of it vertically and cost the row its
-                        48px. The ellipsis has to live on a text element; a flex
+                        44px. The ellipsis has to live on a text element; a flex
                         container clips without the "…". */}
-                    <StatusPill tone={roleTone(user.role)} className="max-w-full">
+                    <StatusPill tone={roleTone(user.role)} className="max-w-full h-[22px] px-2 text-[11px]">
                       <span className="truncate" title={user.role}>{user.role}</span>
                     </StatusPill>
                   </td>

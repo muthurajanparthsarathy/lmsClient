@@ -45,6 +45,7 @@ import { HeaderStats } from '@/app/lms/shared/ui/HeaderStats';
 import { getDifficulty, getQuestionTitleText } from './lib';
 import {
   useOtherPlatformBankPageQuery,
+  usePrefetchOtherPlatformBankPage,
   useInvalidateOtherPlatformBank,
   useDeleteOtherPlatformQuestionMutation,
   useToggleOtherPlatformQuestionStatusMutation,
@@ -157,7 +158,11 @@ export default function ExternalQuestionsPage() {
   const [selectedRows, setSelectedRows] = useState<Record<string, Question>>({});
   const selectedIds = useMemo(() => Object.keys(selectedRows), [selectedRows]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  // 10 rows per page. This is the number that goes over the wire as `limit`,
+  // not a slice of a larger response — the server pages the collection and
+  // returns exactly these 10 (see getAllOtherPlatformQuestions), so the page
+  // costs the same whether the bank holds 5,000 questions or 500,000.
+  const [pageSize, setPageSize] = useState(10);
 
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
@@ -206,6 +211,18 @@ export default function ExternalQuestionsPage() {
   );
 
   const { data: pageData, isLoading: isListLoading } = useOtherPlatformBankPageQuery(queryParams);
+
+  // Warm page N+1 as soon as page N is on screen, under the identical key the
+  // query would use — so "Next" reads straight out of the cache. Paging BACK
+  // needs nothing extra: those entries are already cached for the hook's
+  // gcTime, and React Query serves them without a request.
+  const prefetchPage = usePrefetchOtherPlatformBankPage();
+  useEffect(() => {
+    const totalPages = pageData?.totalPages ?? 1;
+    if (currentPage >= totalPages) return;
+    prefetchPage({ ...queryParams, page: currentPage + 1 });
+  }, [prefetchPage, queryParams, currentPage, pageData?.totalPages]);
+
   const isLoading = isListLoading || isSavingMcq;
   const pageQuestions = useMemo(() => pageData?.questions ?? [], [pageData]);
   const categories = useMemo(() => pageData?.facets.categories ?? [], [pageData]);
@@ -673,6 +690,7 @@ export default function ExternalQuestionsPage() {
             onClearFilters={clearFilters}
             onCreateMcq={openCreateMcq}
             onCreateProgramming={openCreateProgramming}
+            skeletonRows={pageSize}
             maxBodyHeight={tableMaxH}
             canView
             canEdit

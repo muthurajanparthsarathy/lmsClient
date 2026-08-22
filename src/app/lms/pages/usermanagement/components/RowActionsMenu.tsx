@@ -70,9 +70,9 @@ export function RowActionsMenu({
         <button
           type="button"
           aria-label="Row actions"
-          className="inline-flex size-7 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 data-[state=open]:bg-ink-100 data-[state=open]:text-heading"
+          className="inline-flex size-6 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 data-[state=open]:bg-ink-100 data-[state=open]:text-heading"
         >
-          <MoreVertical size={15} />
+          <MoreVertical size={14} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="w-48">

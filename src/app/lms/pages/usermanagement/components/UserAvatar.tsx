@@ -8,9 +8,8 @@ export function UserAvatar({
   size?: "xs" | "sm" | "md" | "lg";
 }) {
   const sizeCls = {
-    // xs is the table-row size — 28px, matching the avatar in the Client
-    // Management listing so both directories read as one system.
-    xs: "w-7 h-7 text-2xs",
+    // xs is the table-row size — 24px, sized against the grid's 44px row.
+    xs: "w-6 h-6 text-2xs",
     sm: "w-8 h-8 text-xs",
     md: "w-9 h-9 text-sm",
     lg: "w-11 h-11 text-md",

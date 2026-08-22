@@ -23,6 +23,7 @@ import { questionApi } from '@/apiServices/question';
 // blue rings that used to sit inside this file for the "Loading assessment…"
 // and "Loading questions…" states — those read off-theme and off-brand.
 import { Loading } from '@/components/loading-ui/loading';
+import TableFooter from '@/app/lms/shared/listing/TableFooter';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // See Assessment.tsx for the same rationale — keys stay `blue*`, values
@@ -695,10 +696,14 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
   const [filterDifficulty, setFilterDifficulty] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
   const [filterType, setFilterType] = useState<'all' | 'mcq' | 'programming' | 'frontend' | 'database'>('all');
   const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null);
-  // Pagination for long question lists — 10 per page keeps the Manage
-  // Questions area viewable without excessive scroll for large exercises.
-  const PAGE_SIZE = 10;
+  // Pagination — page size auto-fits the visible list area (see the
+  // ResizeObserver effect below) so the list never scrolls: rows past
+  // the fit spill onto the next page, and the TableFooter stays pinned
+  // at the workspace's bottom edge. Manual pick pins the size.
+  const [pageSize, setPageSize] = useState(10);
+  const [autoFitPageSize, setAutoFitPageSize] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const tableBodyRef = useRef<HTMLDivElement | null>(null);
   // Guard so the "auto-skip" branch (0 or 1 usable source) never fires twice in
   // a single addQ.step === 'source' visit (StrictMode double-render safe).
   const autoSkipAppliedRef = useRef<string | null>(null);
@@ -732,14 +737,14 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
     exerciseType: sectionConfigs[key].exerciseType,
   })).sort((a, b) => a.order - b.order);
 
-  // Set first section as default
-  useEffect(() => {
-    if (sections.length > 0 && !selectedSection) {
-      setSelectedSection(sections[0].id);
-    }
-  }, [sections.length]);
+  // Default is "All Sections" (selectedSection = null). The earlier
+  // auto-pick-first-section effect was removed so a fresh mount now
+  // shows every section's questions in one flat list — same behaviour
+  // as picking `All difficulty` or `All types` in the other selects.
 
-  // When section changes, set default sub-type for Combined sections
+  // When section changes, set default sub-type for Combined sections;
+  // clear the sub-type when "All Sections" is chosen (Combined only
+  // makes sense inside one specific section).
   useEffect(() => {
     if (selectedSection) {
       const cfg = sectionConfigs[selectedSection];
@@ -748,6 +753,8 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
       } else {
         setSelectedSubType(null);
       }
+    } else {
+      setSelectedSubType(null);
     }
   }, [selectedSection]);
 
@@ -808,12 +815,24 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
       }
     } catch (err) {
       console.error('Failed to fetch questions:', err);
-      toast.error('Failed to load questions');
-      // Same fallback on error — never leave the button perpetually disabled.
+      // Only toast when there's no preloaded fallback to hand over — if
+      // the parent handed us a full exercise with real sectionConfigs
+      // and a questions array, we can still render the whole screen from
+      // that copy, so the network failure is not user-visible. The toast
+      // used to fire every time and made "manage questions" look broken
+      // even when the on-screen data was still correct.
       const fb = preloadedExercise || assessment;
+      const preloadedHasEnough = !!preloadedExercise && (
+        !!preloadedExercise.exerciseInformation
+        || Array.isArray(preloadedExercise.questions)
+        || (preloadedExercise.sectionConfigs && Object.keys(preloadedExercise.sectionConfigs).length > 0)
+      );
+      if (!preloadedHasEnough) toast.error('Failed to load questions');
       fullExerciseRef.current = fb;
       setFullExercise(fb);
-      setQuestions([]);
+      // If preloaded has questions, keep them on screen; else empty list.
+      const pq = Array.isArray(preloadedExercise?.questions) ? preloadedExercise.questions : [];
+      setQuestions(pq);
     } finally {
       setLoading(false);
     }
@@ -1163,16 +1182,38 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
   const sortedQuestions = [...filteredQuestions].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
 
   // Pagination derivations — always safe against filter/search churn.
-  const totalPages = Math.max(1, Math.ceil(sortedQuestions.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(sortedQuestions.length / pageSize));
   const safePage = Math.min(Math.max(1, currentPage), totalPages);
-  const pageStart = (safePage - 1) * PAGE_SIZE;
-  const pageEnd = Math.min(pageStart + PAGE_SIZE, sortedQuestions.length);
+  const pageStart = (safePage - 1) * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, sortedQuestions.length);
   const paginatedQuestions = sortedQuestions.slice(pageStart, pageEnd);
   // Reset to page 1 when filters/search/section/subtype/list-size change so
   // the trainer never lands on a stale empty page.
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, filterDifficulty, filterType, selectedSection, selectedSubType, questions.length]);
+
+  // Auto-fit page size to the visible tbody region — measures its
+  // clientHeight and picks the largest itemsPerPage whose h-11 rows all
+  // fit above the pagination footer with a half-row safety margin. Rows
+  // past the fit spill onto the next page (no scroll bar surfaces on
+  // this list). Turns off the moment the user picks a size manually.
+  useEffect(() => {
+    if (!autoFitPageSize) return;
+    const el = tableBodyRef.current;
+    if (!el) return;
+    const ROW_H = 44;
+    const SAFETY = Math.round(ROW_H / 2);
+    const compute = () => {
+      const budget = Math.max(0, el.clientHeight - SAFETY);
+      const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)));
+      setPageSize(prev => (prev === fits ? prev : fits));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [autoFitPageSize, loading]);
 
   const mcqCount = questions.filter(q =>
     (q.sectionId === selectedSection || q.sectionName === selectedSection) && q.questionType === 'mcq'
@@ -1464,30 +1505,63 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
 
   return (
     <div className="flex flex-col h-full" style={{ background: T.bg, fontFamily: "'Poppins', sans-serif" }}>
-      {/* Header */}
-      <div className="flex-shrink-0 bg-white px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${T.border}` }}>
-        <div className="flex items-center gap-3">
-          <button onClick={onBack}
-            className="h-8 w-8 rounded-lg flex items-center justify-center transition-all"
-            style={{ color: T.textSub }}
-            onMouseEnter={e => { e.currentTarget.style.background = T.pageBg; e.currentTarget.style.color = T.textMain; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textSub; }}>
-            <ArrowLeft size={16} />
-          </button>
-          <div>
-            <h2 className="text-sm font-bold" style={{ color: T.textMain }}>Manage Questions</h2>
-            <p className="text-[10px]" style={{ color: T.textMuted }}>{assessment?.exerciseInformation?.exerciseName}</p>
-          </div>
-        </div>
-        <div className="relative" onMouseEnter={() => setShowSlotTip(true)} onMouseLeave={() => setShowSlotTip(false)}>
+      {/* Header — Back + title on the left, Add Question primary on the
+          right. Repainted onto the Client Management / Assessment button
+          rhythm: h-8 pill buttons on design system tokens (brand-strong
+          for the primary, subtle for the icon-only Back). Left/right
+          gutter matches the toolbar and list below. */}
+      <div className="flex-shrink-0 bg-surface px-3 sm:px-4 md:px-6 pt-3 pb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
           <button
+            type="button"
+            onClick={onBack}
+            title="Back"
+            className="inline-flex items-center justify-center h-8 w-8 rounded-control border border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+          >
+            <ArrowLeft size={14} />
+          </button>
+          {/* Title carries the assessment's name so the trainer always
+              knows WHICH assessment they're managing — the previous
+              subtitle read `assessment?.exerciseInformation?.exerciseName`
+              which is undefined on the slim `assessment` view record
+              handed in from the list (that field only exists on the full
+              exercise doc). Falls back through the full doc / preloaded
+              copy / slim record so it's never blank. */}
+          {(() => {
+            const asmName = assessment?.name
+              || fullExercise?.exerciseInformation?.exerciseName
+              || preloadedExercise?.exerciseInformation?.exerciseName
+              || 'Untitled Assessment';
+            const asmId = assessment?.id
+              || fullExercise?.exerciseInformation?.exerciseId
+              || preloadedExercise?.exerciseInformation?.exerciseId
+              || '';
+            return (
+              <div className="min-w-0">
+                <p className="text-2xs font-semibold uppercase tracking-wider text-faint">Manage Questions</p>
+                <h2 className="text-sm font-semibold text-heading tracking-[-0.01em] truncate flex items-center gap-2">
+                  <span className="truncate" title={asmName}>{asmName}</span>
+                  {asmId && (
+                    <span
+                      className="inline-flex items-center h-4 px-1.5 rounded-full bg-brand-wash text-brand-strong text-2xs font-semibold tabular-nums flex-shrink-0"
+                      title={`Exercise ID · ${asmId}`}
+                    >
+                      {asmId}
+                    </span>
+                  )}
+                </h2>
+              </div>
+            );
+          })()}
+        </div>
+        <div className="relative flex-shrink-0" onMouseEnter={() => setShowSlotTip(true)} onMouseLeave={() => setShowSlotTip(false)}>
+          <button
+            type="button"
             onClick={() => { if (!addQuestionDisabled) handleOpenAddQuestion(); }}
             disabled={addQuestionDisabled}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white transition-all"
-            style={{ background: addQuestionDisabled ? '#b9b9c6' : T.blue, boxShadow: addQuestionDisabled ? 'none' : `0 2px 8px ${T.blue}40`, cursor: addQuestionDisabled ? 'not-allowed' : 'pointer', opacity: addQuestionDisabled ? 0.9 : 1 }}
-            onMouseEnter={e => { if (!addQuestionDisabled) { e.currentTarget.style.background = T.blueDark; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-            onMouseLeave={e => { e.currentTarget.style.background = addQuestionDisabled ? '#b9b9c6' : T.blue; e.currentTarget.style.transform = 'none'; }}>
-            <Plus size={12} /> Add Question
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus size={14} strokeWidth={2.4} /> <span className="text-xs font-semibold">Add Question</span>
           </button>
 
           {/* Slot-status tooltip (hover) — MCQ count and/or programming per-level / total */}
@@ -1537,106 +1611,101 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
         </div>
       </div>
 
-      {/* Section Tabs */}
-      {sections.length > 0 && (
-        <div className="flex-shrink-0 px-4 pt-3 border-b" style={{ borderColor: T.border, background: T.bg }}>
-          <div className="flex gap-1 overflow-x-auto">
-            {sections.map(section => (
-              <button
-                key={section.id}
-                onClick={() => setSelectedSection(section.id)}
-                className="px-4 py-2 text-[11px] font-semibold rounded-t-lg transition-all whitespace-nowrap"
-                style={{
-                  color: selectedSection === section.id ? T.blue : T.textMuted,
-                  borderBottom: selectedSection === section.id ? `2px solid ${T.blue}` : '2px solid transparent',
-                  background: selectedSection === section.id ? T.blueLight : 'transparent',
-                }}>
-                {section.name}
-                {section.exerciseType === 'Combined' && (
-                  <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded" style={{ background: T.blueLight, color: T.blue }}>
-                    Combined
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Toolbar — one row: Search (flex-grows on the left) · Difficulty ·
+          Type · Section · (optional Combined MCQ/Programming Type when a
+          specific section is picked) · filter-count chip. Section sits
+          alongside the other filter selects and adopts the same neutral
+          shape (border-hairline-strong bg-surface) — only lighting up
+          brand-wash when a specific section is chosen, so the default
+          "All sections" reads identical to "All types" instead of
+          shouting for attention on the left. */}
+      {(sections.length > 0 || (!loading && questions.length > 0)) && (
+        <div className="flex-shrink-0 px-3 sm:px-4 md:px-6 pt-3 pb-2 flex items-center gap-2 flex-wrap min-w-0 bg-surface">
+          {!loading && questions.length > 0 && (
+            <div className="relative flex-1 min-w-[220px] max-w-md">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
+              <input
+                placeholder="Search questions…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="h-8 w-full pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )}
 
-      {/* Sub-tabs for Combined sections */}
-      {isCurrentSectionCombined && selectedSection && (
-        <div className="flex-shrink-0 px-4 pt-2 pb-2" style={{ background: T.bg, borderBottom: `1px solid ${T.border}` }}>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSelectedSubType('mcq')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
-              style={{
-                background: selectedSubType === 'mcq' ? T.blueLight : 'transparent',
-                color: selectedSubType === 'mcq' ? T.blue : T.textMuted,
-                border: `1px solid ${selectedSubType === 'mcq' ? T.blue + '40' : 'transparent'}`,
-              }}>
-              <CheckCircle size={11} />MCQ
-              <span className="text-[9px] ml-0.5" style={{ color: T.textHint }}>({mcqCount})</span>
-            </button>
-            <button
-              onClick={() => setSelectedSubType('programming')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-all"
-              style={{
-                background: selectedSubType === 'programming' ? T.blueLight : 'transparent',
-                color: selectedSubType === 'programming' ? T.blue : T.textMuted,
-                border: `1px solid ${selectedSubType === 'programming' ? T.blue + '40' : 'transparent'}`,
-              }}>
-              <Code size={11} />Programming
-              <span className="text-[9px] ml-0.5" style={{ color: T.textHint }}>({programmingCount})</span>
-            </button>
-          </div>
-        </div>
-      )}
+          {!loading && questions.length > 0 && (
+            <>
+              <select
+                value={filterDifficulty}
+                onChange={e => setFilterDifficulty(e.target.value as any)}
+                className={`h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${filterDifficulty !== 'all' ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
+                style={{ minWidth: 130 }}
+              >
+                <option value="all">All difficulty</option>
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+              <select
+                value={filterType}
+                onChange={e => setFilterType(e.target.value as any)}
+                className={`h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${filterType !== 'all' ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
+                style={{ minWidth: 120 }}
+              >
+                <option value="all">All types</option>
+                <option value="mcq">MCQ</option>
+                <option value="programming">Programming</option>
+                <option value="frontend">Frontend</option>
+                <option value="database">Database</option>
+              </select>
+            </>
+          )}
 
-      {/* Search + filter toolbar (parity with QuestionsView.tsx list toolbar) */}
-      {!loading && questions.length > 0 && (
-        <div className="flex-shrink-0 px-4 py-2 flex items-center gap-2" style={{ background: T.bg, borderBottom: `1px solid ${T.border}` }}>
-          <div className="relative flex-1 min-w-0 max-w-sm">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: T.textHint }} />
-            <input
-              placeholder="Search questions…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-7 pr-7 h-7 w-full text-[12px] rounded-lg outline-none transition-all"
-              style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textMain }}
-              onFocus={e => { e.currentTarget.style.borderColor = T.blue; e.currentTarget.style.background = '#fff'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.pageBg; }}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')}
-                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: T.textHint, background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 0 }}>
-                <X size={11} />
-              </button>
-            )}
-          </div>
-          <select
-            value={filterDifficulty}
-            onChange={e => setFilterDifficulty(e.target.value as any)}
-            className="h-7 text-[11px] rounded-lg px-2 outline-none"
-            style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textMain, cursor: 'pointer' }}>
-            <option value="all">All difficulty</option>
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-          <select
-            value={filterType}
-            onChange={e => setFilterType(e.target.value as any)}
-            className="h-7 text-[11px] rounded-lg px-2 outline-none"
-            style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textMain, cursor: 'pointer' }}>
-            <option value="all">All types</option>
-            <option value="mcq">MCQ</option>
-            <option value="programming">Programming</option>
-            <option value="frontend">Frontend</option>
-            <option value="database">Database</option>
-          </select>
-          {(searchQuery || filterDifficulty !== 'all' || filterType !== 'all') && (
-            <span className="text-[10px] px-2 py-1 rounded-full font-semibold" style={{ background: T.blueLight, color: T.blue }}>
+          {sections.length > 0 && (
+            <>
+              <select
+                value={selectedSection || ''}
+                onChange={e => setSelectedSection(e.target.value || null)}
+                title="Section"
+                className={`h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${selectedSection ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
+                style={{ minWidth: 120 }}
+              >
+                <option value="">All sections</option>
+                {sections.map(section => (
+                  <option key={section.id} value={section.id}>
+                    {section.name}
+                    {section.exerciseType === 'Combined' ? ' · Combined' : ''}
+                  </option>
+                ))}
+              </select>
+
+              {isCurrentSectionCombined && selectedSection && (
+                <select
+                  value={selectedSubType || 'mcq'}
+                  onChange={e => setSelectedSubType(e.target.value as 'mcq' | 'programming')}
+                  title="Type"
+                  className="h-8 rounded-control border border-brand bg-brand-wash text-brand-strong px-2.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+                  style={{ minWidth: 120 }}
+                >
+                  <option value="mcq">MCQ ({mcqCount})</option>
+                  <option value="programming">Programming ({programmingCount})</option>
+                </select>
+              )}
+            </>
+          )}
+
+          {!loading && questions.length > 0 && (searchQuery || filterDifficulty !== 'all' || filterType !== 'all' || selectedSection) && (
+            <span className="ml-auto inline-flex items-center h-6 px-2 rounded-full border border-brand-500/30 bg-brand-wash text-2xs font-medium text-brand-strong tabular-nums">
               {sortedQuestions.length} / {questions.length}
             </span>
           )}
@@ -1649,8 +1718,9 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
           the row list scrolls independently (flex-1 overflow-auto). Before this,
           the footer lived INSIDE the overflow-auto container and scrolled with
           the content, so on long lists the trainer had to scroll all the way
-          down to reach it. */}
-      <div className="flex-1 overflow-auto">
+          down to reach it. Horizontal gutter matches the header / toolbar
+          above so nothing steps out of the workspace's alignment. */}
+      <div ref={tableBodyRef} className="flex-1 min-h-0 overflow-hidden px-3 sm:px-4 md:px-6">
         {loading ? (
           // Full-panel loading state — same shared <Loading /> the first-load
           // block above uses. Takes the whole content area so it reads as a
@@ -1674,23 +1744,28 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
             <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Click "Add Question" to create one</p>
           </div>
         ) : (
-          <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${T.border}`, background: T.bg }}>
-            {/* Table Header */}
-            <div className="grid grid-cols-12 gap-3 px-4 py-2.5" style={{ background: T.pageBg, borderBottom: `1px solid ${T.border}` }}>
+          // Flat list — no card chrome / rounded border, so the list
+          // matches Assessment's flat panel. Rows are separated by the
+          // hairline tokens the shared DataTable rhythm uses.
+          <div className="bg-surface">
+            {/* Table Header — h-8 bg-canvas, uppercase text-subtle labels,
+                matching the DataTable / Assessment header rhythm. */}
+            <div className="grid grid-cols-12 gap-3 h-8 items-center bg-canvas border-b border-hairline">
               {['#', 'Question', '', '', '', 'Type', '', 'Difficulty', '', 'Marks', 'Actions'].map((h, i) => (
-                i === 0 ? <div key={i} className="col-span-1 text-[9px] font-black uppercase tracking-wide" style={{ color: T.textMuted }}>{h}</div> :
-                i === 1 ? <div key={i} className="col-span-5 text-[9px] font-black uppercase tracking-wide" style={{ color: T.textMuted }}>{h}</div> :
-                i === 5 ? <div key={i} className="col-span-2 text-[9px] font-black uppercase tracking-wide" style={{ color: T.textMuted }}>{h}</div> :
-                i === 7 ? <div key={i} className="col-span-2 text-[9px] font-black uppercase tracking-wide" style={{ color: T.textMuted }}>{h}</div> :
-                i === 9 ? <div key={i} className="col-span-1 text-[9px] font-black uppercase tracking-wide text-center" style={{ color: T.textMuted }}>{h}</div> :
-                i === 10 ? <div key={i} className="col-span-1 text-[9px] font-black uppercase tracking-wide text-center" style={{ color: T.textMuted }}>{h}</div> :
+                i === 0 ? <div key={i} className="col-span-1 text-[10px] font-semibold uppercase tracking-wider text-subtle">{h}</div> :
+                i === 1 ? <div key={i} className="col-span-5 text-[10px] font-semibold uppercase tracking-wider text-subtle">{h}</div> :
+                i === 5 ? <div key={i} className="col-span-2 text-[10px] font-semibold uppercase tracking-wider text-subtle">{h}</div> :
+                i === 7 ? <div key={i} className="col-span-2 text-[10px] font-semibold uppercase tracking-wider text-subtle">{h}</div> :
+                i === 9 ? <div key={i} className="col-span-1 text-[10px] font-semibold uppercase tracking-wider text-subtle text-center">{h}</div> :
+                i === 10 ? <div key={i} className="col-span-1 text-[10px] font-semibold uppercase tracking-wider text-subtle text-center">{h}</div> :
                 null
               ))}
             </div>
-            {/* Cleaner header */}
-            <div className="hidden" />
 
-            {/* Rows */}
+            {/* Rows — h-11 hairline-bounded, text-[12px] text-body, no
+                font-bold. Hover uses bg-row-hover; no coloured left
+                border since we're dropping the coloured accent for CM
+                parity. */}
             {paginatedQuestions.map((q, i) => {
               // Preserve the global row number across pages so the # column
               // stays consistent when the trainer navigates page-by-page.
@@ -1701,32 +1776,23 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
               return (
                 <div
                   key={q._id}
-                  className="grid grid-cols-12 gap-3 px-4 py-3 transition-all"
-                  style={{
-                    // Drop the divider on the last row of the CURRENT page,
-                    // not the last row overall — otherwise mid-list pages
-                    // always render a bottom border on their last visible row.
-                    borderBottom: i === paginatedQuestions.length - 1 ? 'none' : `1px solid ${T.border}`,
-                    background: isHovered ? T.warm : T.bg,
-                    borderLeft: isHovered ? `2px solid ${T.blue}` : '2px solid transparent',
-                  }}
+                  className={`grid grid-cols-12 gap-3 h-11 items-center px-0 transition-colors duration-150 ${i === paginatedQuestions.length - 1 ? '' : 'border-b border-hairline'} bg-surface hover:bg-row-hover`}
                   onMouseEnter={() => setHoveredRow(q._id)}
                   onMouseLeave={() => setHoveredRow(null)}>
                   <div className="col-span-1 flex items-center">
-                    <span className="text-[11px] font-mono" style={{ color: isHovered ? T.blue : T.textHint }}>{idx + 1}</span>
+                    <span className="text-[12px] text-faint tabular-nums">{idx + 1}</span>
                   </div>
                   <div className="col-span-5 flex flex-col justify-center min-w-0">
                     <div className="flex items-center min-w-0">
-                      <span className="text-[12px] font-semibold truncate" style={{ color: T.textMain }}>{getQuestionTitle(q)}</span>
+                      <span className="text-[12px] text-body truncate" title={getQuestionTitle(q)}>{getQuestionTitle(q)}</span>
                       <SourceBadge source={(q as any).source} />
                       <ApprovalPill status={(q as any).approval?.status} />
                     </div>
-                    <div className="text-[10px] truncate mt-0.5" style={{ color: T.textMuted }}>{getQuestionDesc(q)}</div>
                   </div>
                   <div className="col-span-2 flex items-center"><TypeBadge type={q.questionType} /></div>
                   <div className="col-span-2 flex items-center"><DiffBadge level={diff} /></div>
                   <div className="col-span-1 flex items-center justify-center">
-                    <span className="text-[11px] font-bold" style={{ color: T.textMain }}>{getScore(q)}</span>
+                    <span className="text-[12px] text-body tabular-nums">{getScore(q)}</span>
                   </div>
                   <div className="col-span-1 flex items-center justify-center">
                     <button
@@ -1737,10 +1803,8 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
                           prev?.id === q._id ? null : { id: q._id, el }
                         );
                       }}
-                      className="p-1.5 rounded-lg transition-all"
-                      style={{ color: isHovered ? T.blue : T.textHint }}
-                      onMouseEnter={e => { e.currentTarget.style.background = T.pageBg; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                      className="p-1.5 rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+                    >
                       <MoreVertical size={13} />
                     </button>
                     {openDrop?.id === q._id && (
@@ -1773,68 +1837,29 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
         )}
       </div>
 
-      {/* Pagination footer — pinned at the bottom of the panel, outside the
-          overflow-auto so it stays visible no matter how long the list is. */}
-      {!loading && sortedQuestions.length > PAGE_SIZE && (() => {
-        const pages: (number | 'ellipsis')[] = [];
-        if (totalPages <= 7) {
-          for (let p = 1; p <= totalPages; p++) pages.push(p);
-        } else {
-          pages.push(1);
-          if (safePage > 3) pages.push('ellipsis');
-          const from = Math.max(2, safePage - 1);
-          const to = Math.min(totalPages - 1, safePage + 1);
-          for (let p = from; p <= to; p++) pages.push(p);
-          if (safePage < totalPages - 2) pages.push('ellipsis');
-          pages.push(totalPages);
-        }
-        return (
-          <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: T.bg, borderTop: `1px solid ${T.border}` }}>
-            <span className="text-[11px]" style={{ color: T.textMuted }}>
-              Showing <span className="font-bold" style={{ color: T.textMain }}>{pageStart + 1}</span>
-              {'–'}<span className="font-bold" style={{ color: T.textMain }}>{pageEnd}</span>
-              {' of '}<span className="font-bold" style={{ color: T.textMain }}>{sortedQuestions.length}</span>
-              {sortedQuestions.length !== questions.length && (
-                <span style={{ color: T.textHint }}> (filtered from {questions.length})</span>
-              )}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={safePage <= 1}
-                className="h-7 w-7 rounded-md flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: T.pageBg, border: `1px solid ${T.border}`, color: T.textSub, cursor: safePage <= 1 ? 'not-allowed' : 'pointer' }}
-                title="Previous page">
-                <ChevronLeft size={13} />
-              </button>
-              {pages.map((p, i) => p === 'ellipsis' ? (
-                <span key={`e-${i}`} className="px-1.5 text-[11px]" style={{ color: T.textHint }}>…</span>
-              ) : (
-                <button
-                  key={p}
-                  onClick={() => setCurrentPage(p as number)}
-                  className="h-7 min-w-7 px-2 rounded-md text-[11px] font-bold transition-all"
-                  style={{
-                    background: p === safePage ? T.blue : T.pageBg,
-                    color: p === safePage ? '#fff' : T.textSub,
-                    border: `1px solid ${p === safePage ? T.blue : T.border}`,
-                    cursor: 'pointer',
-                  }}>
-                  {p}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={safePage >= totalPages}
-                className="h-7 w-7 rounded-md flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: T.pageBg, border: `1px solid ${T.border}`, color: T.textSub, cursor: safePage >= totalPages ? 'not-allowed' : 'pointer' }}
-                title="Next page">
-                <ChevronRight size={13} />
-              </button>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Pagination — the shared TableFooter Client Management, User
+          Management, Service Mapping and Assessment use. Pinned at the
+          bottom of the workspace as a flex-shrink-0 sibling of the
+          scroll region above; the pager stays centred regardless of
+          data. */}
+      {!loading && sortedQuestions.length > 0 && (
+        <div className="flex-shrink-0 border-t border-hairline bg-surface px-3 sm:px-4 md:px-6">
+          <TableFooter
+            from={sortedQuestions.length === 0 ? 0 : pageStart + 1}
+            to={pageEnd}
+            total={sortedQuestions.length}
+            pageSize={pageSize}
+            onPageSize={(n) => {
+              setAutoFitPageSize(false);
+              setPageSize(n);
+              setCurrentPage(1);
+            }}
+            currentPage={safePage}
+            totalPages={totalPages || 1}
+            onPage={(p) => setCurrentPage(Math.min(Math.max(1, p), totalPages || 1))}
+          />
+        </div>
+      )}
 
       {/* ── Section Picker ── */}
       {addQ.step === 'section' && addQ.exercise && (

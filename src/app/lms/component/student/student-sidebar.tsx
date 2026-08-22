@@ -145,7 +145,7 @@ const routeKeyOf = (href: string) => {
 // rendered — grouping only fixes the order of a flat list.
 const SECTION_GROUPS: Record<string, string[]> = {
   "": ["dashboard"],
-  "Learning": ["courses", "codinganalytics", "assignments", "grades", "resources", "feedback"],
+  "Learning": ["courses", "codinganalytics", "assignments", "resources", "feedback"],
   "Connect": ["messages", "notifications", "studentcalendar"],
   "Account": ["profile", "settings", "help", "progress"],
 }
@@ -409,7 +409,6 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     notifications: "Notification",
     profile: "My Profile",
     codinganalytics: "Coding Analytics",
-    grade: "Grade",
     feedback: "Feedback",
     // Every spelling an admin might have seeded for the same module — they
     // all route to the student calendar below, so they must all read the
@@ -423,25 +422,32 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     if (!user?.permissions?.length) return getDefaultSidebarItems(userAnalytics)
     const sorted = [...user.permissions].filter(p => p.isActive).sort((a, b) => (a.order || 0) - (b.order || 0))
     if (!sorted.length) return getDefaultSidebarItems(userAnalytics)
-    const items = sorted.map(permission => {
-      const route = permissionKeyToRoute(permission.permissionKey)
-      const { count, progress } = getDynamicDataForPermission(permission.permissionKey, userAnalytics)
-      // The dashboard permission should always read "Dashboard" and link to the
-      // real student dashboard page, regardless of how it's named/keyed in admin data.
-      const isDashboard = routeKeyOf(route) === 'dashboard'
-      const keyLower = permission.permissionKey?.toLowerCase() || ''
-      return {
-        icon: getIconByName(permission.icon || "ShieldCheck"),
-        label: isDashboard
-          ? "Dashboard"
-          : STUDENT_LABEL_OVERRIDES[keyLower] || permission.permissionName,
-        href: route,
-        permissionKey: permission.permissionKey,
-        isActive: getIsActive(route),
-        count, progress,
-        color: permission.color || "orange"
-      }
-    })
+    const items = sorted
+      // Grades is not a student page: /lms/pages/grade(s) is the trainer's
+      // client → service → course grading picker, so a seeded `grades` grant
+      // put a row in the learner's rail that only ever led somewhere they
+      // can't use. Dropped here as well as from the defaults below, so the
+      // rail stays free of it no matter how the user doc is seeded.
+      .filter(p => !['grade', 'grades'].includes(routeKeyOf(permissionKeyToRoute(p.permissionKey))))
+      .map(permission => {
+        const route = permissionKeyToRoute(permission.permissionKey)
+        const { count, progress } = getDynamicDataForPermission(permission.permissionKey, userAnalytics)
+        // The dashboard permission should always read "Dashboard" and link to the
+        // real student dashboard page, regardless of how it's named/keyed in admin data.
+        const isDashboard = routeKeyOf(route) === 'dashboard'
+        const keyLower = permission.permissionKey?.toLowerCase() || ''
+        return {
+          icon: getIconByName(permission.icon || "ShieldCheck"),
+          label: isDashboard
+            ? "Dashboard"
+            : STUDENT_LABEL_OVERRIDES[keyLower] || permission.permissionName,
+          href: route,
+          permissionKey: permission.permissionKey,
+          isActive: getIsActive(route),
+          count, progress,
+          color: permission.color || "orange"
+        }
+      })
     // Coding Analytics is now a permission-backed tree page
     // (`student-codinganalytics`), so it appears only when granted — the old
     // always-inject shim is gone. If a `codinganalytics` permission is
@@ -509,7 +515,6 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     { icon: BookOpen, label: "My Courses", href: `${BASE_PATH}courses`, progress: analytics.overallProgress },
     { icon: Code2, label: "Coding Analytics", href: `${BASE_PATH}codinganalytics`, count: 0, progress: 0 },
     { icon: ClipboardCheck, label: "Assignments", href: `${BASE_PATH}assignments`, count: analytics.attemptedExercises, progress: 0 },
-    { icon: Trophy, label: "Grades", href: `${BASE_PATH}grades`, count: analytics.completedCourses, progress: analytics.overallProgress },
     // Student feedback list — every open feedback form on the student's
     // courses, with Give feedback / Done actions. Route: /lms/pages/feedback.
     { icon: MessageCircle, label: "Feedback", href: `${BASE_PATH}feedback`, count: 0, progress: 0 },

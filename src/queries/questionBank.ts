@@ -93,28 +93,62 @@ const EMPTY_FACETS: QuestionBankFacets = {
  * unpaginated `list()` above) precisely because the filtering is server-side.
  * `keepPreviousData` stops the table blanking while the next page loads.
  */
+export const fetchQuestionBankPage = async (
+  params: QuestionBankPageParams,
+): Promise<QuestionBankPage> => {
+  const response: any = await questionBankService.getAllQuestions(params);
+  return {
+    questions: response.questions || [],
+    total: response.total ?? 0,
+    bankTotal: response.bankTotal ?? 0,
+    page: response.page ?? 1,
+    totalPages: response.totalPages ?? 1,
+    facets: response.facets ?? EMPTY_FACETS,
+  };
+};
+
 export const useQuestionBankPageQuery = (
   params: QuestionBankPageParams,
   enabled: boolean = true,
 ) =>
   useQuery<QuestionBankPage>({
     queryKey: queryKeys.questionBank.pagedList(params),
-    queryFn: async () => {
-      const response: any = await questionBankService.getAllQuestions(params);
-      return {
-        questions: response.questions || [],
-        total: response.total ?? 0,
-        bankTotal: response.bankTotal ?? 0,
-        page: response.page ?? 1,
-        totalPages: response.totalPages ?? 1,
-        facets: response.facets ?? EMPTY_FACETS,
-      };
-    },
+    queryFn: () => fetchQuestionBankPage(params),
     enabled,
     placeholderData: keepPreviousData,
+    // Shorter than the External bank's 15 min on purpose: this is the
+    // institution's OWN bank, edited by several admins through this same page,
+    // so a page is worth re-reading sooner. Pages you have already visited
+    // still come back from cache instantly within the window.
     staleTime: TWO_MIN,
     gcTime: TEN_MIN,
+    // Overrides the client-wide `refetchOnMount: false`. Not "always refetch":
+    // React Query only refetches on mount when the entry is STALE. A fresh hit
+    // — including one restored from localStorage after a hard reload — paints
+    // with no request; an aged one paints from cache and revalidates behind it,
+    // so the grid never shows a spinner for data it already has.
+    refetchOnMount: true,
   });
+
+/**
+ * Warm the NEXT page of the institution bank while page N is on screen, under
+ * the identical key the query itself would use, so "Next" resolves from cache.
+ * Paging BACK needs nothing extra — those entries are already cached for
+ * gcTime. No-op once the key is cached and fresh; never shows a loading state.
+ */
+export const usePrefetchQuestionBankPage = () => {
+  const qc = useQueryClient();
+  return useCallback(
+    (params: QuestionBankPageParams) =>
+      qc.prefetchQuery({
+        queryKey: queryKeys.questionBank.pagedList(params),
+        queryFn: () => fetchQuestionBankPage(params),
+        staleTime: TWO_MIN,
+        gcTime: TEN_MIN,
+      }),
+    [qc],
+  );
+};
 
 const FIFTEEN_MIN = 15 * 60 * 1000;
 const THIRTY_MIN = 30 * 60 * 1000;
@@ -265,30 +299,80 @@ const EMPTY_ADMIN_FACETS: OtherPlatformAdminFacets = {
  * picker, but reads the additional admin-side facets (stats, categories,
  * createdBy) the endpoint returns alongside its picker-side facets.
  */
+export const fetchOtherPlatformBankPage = async (
+  params: OtherPlatformPageParams,
+): Promise<OtherPlatformAdminPage> => {
+  // `facets: 'admin'` is a property of the CALLER, not of the query — this page
+  // reads only stats/categories/createdBy out of `facets` and never the
+  // picker's problemTypeCounts / difficultyCounts / topics / tags. Declaring it
+  // lets the endpoint skip the whole-collection read those would require. It
+  // stays out of the query key for the same reason: it doesn't vary, and every
+  // entry under this factory is an admin-listing entry.
+  const response: any = await questionBankService.getAllOtherPlatformQuestions({
+    ...params,
+    facets: 'admin',
+  });
+  const total = response.total ?? 0;
+  const limit = response.limit ?? params.limit;
+  return {
+    questions: response.questions || [],
+    total,
+    scopeTotal: response.scopeTotal ?? total,
+    page: response.page ?? 1,
+    totalPages: Math.max(1, Math.ceil(total / Math.max(1, limit))),
+    facets: response.facets ?? EMPTY_ADMIN_FACETS,
+  };
+};
+
 export const useOtherPlatformBankPageQuery = (
   params: OtherPlatformPageParams,
   enabled: boolean = true,
 ) =>
   useQuery<OtherPlatformAdminPage>({
     queryKey: queryKeys.questionBank.otherPlatformPagedList(params),
-    queryFn: async () => {
-      const response: any = await questionBankService.getAllOtherPlatformQuestions(params);
-      const total = response.total ?? 0;
-      const limit = response.limit ?? params.limit;
-      return {
-        questions: response.questions || [],
-        total,
-        scopeTotal: response.scopeTotal ?? total,
-        page: response.page ?? 1,
-        totalPages: Math.max(1, Math.ceil(total / Math.max(1, limit))),
-        facets: response.facets ?? EMPTY_ADMIN_FACETS,
-      };
-    },
+    queryFn: () => fetchOtherPlatformBankPage(params),
     enabled,
     placeholderData: keepPreviousData,
-    staleTime: TWO_MIN,
-    gcTime: TEN_MIN,
+    // This collection is an imported dump — it changes only when an admin
+    // writes through THIS page, and every one of those writes invalidates the
+    // root explicitly. So a page can be trusted far longer than the 2 min a
+    // live institution-scoped list gets: 15 min stale / 30 min gc means paging
+    // back to a page you have already seen re-renders from cache with no
+    // request at all, matching the picker's hook over the same collection.
+    staleTime: FIFTEEN_MIN,
+    gcTime: THIRTY_MIN,
+    // Overrides the client-wide `refetchOnMount: false`. It does NOT mean
+    // "always refetch" — React Query only refetches on mount when the entry is
+    // already STALE, so a fresh cache hit still paints with no request. What it
+    // buys is the reload case: the cache restored from localStorage renders
+    // immediately, and if it has aged past staleTime a background revalidation
+    // replaces it without ever showing a spinner.
+    refetchOnMount: true,
   });
+
+/**
+ * Warm the NEXT page while the current one is on screen. Paging forward is the
+ * one navigation whose target is knowable in advance, so the click can resolve
+ * out of the cache instead of waiting on a round-trip.
+ *
+ * `prefetchQuery` is a no-op when the key is already cached and fresh, so
+ * calling this on every render of the current page costs nothing after the
+ * first — and it never triggers a loading state, since it writes to the cache
+ * rather than to any mounted observer.
+ */
+export const usePrefetchOtherPlatformBankPage = () => {
+  const qc = useQueryClient();
+  return useCallback(
+    (params: OtherPlatformPageParams) =>
+      qc.prefetchQuery({
+        queryKey: queryKeys.questionBank.otherPlatformPagedList(params),
+        queryFn: () => fetchOtherPlatformBankPage(params),
+        staleTime: FIFTEEN_MIN,
+        gcTime: THIRTY_MIN,
+      }),
+    [qc],
+  );
+};
 
 /**
  * Refresh every External bank cache entry after a write. Same pattern as
