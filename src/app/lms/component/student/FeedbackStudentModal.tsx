@@ -102,7 +102,7 @@ const RatingInput: React.FC<RatingInputProps> = ({ question, selectedAnswer, onA
             );
           })}
           {typeof selectedAnswer === 'number' && (
-            <span className="ml-2 text-[11px] text-gray-500">
+            <span className="ml-2 text-2xs text-gray-500">
               {selectedAnswer} / {max}
               {selectedLabel && (
                 <span className="ml-1.5 font-semibold text-amber-600">{selectedLabel}</span>
@@ -147,7 +147,7 @@ const RatingInput: React.FC<RatingInputProps> = ({ question, selectedAnswer, onA
           })}
         </div>
         {selectedLabel && (
-          <p className="text-[11px] font-semibold text-indigo-600 mt-1.5">{selectedLabel}</p>
+          <p className="text-2xs font-semibold text-indigo-600 mt-1.5">{selectedLabel}</p>
         )}
       </div>
     );
@@ -163,7 +163,7 @@ const RatingInput: React.FC<RatingInputProps> = ({ question, selectedAnswer, onA
             <button
               key={val}
               onClick={() => onAnswer(question.questionText, val)}
-              className={`w-9 h-9 rounded-md text-[13px] font-medium border transition-colors
+              className={`w-9 h-9 rounded-md text-sm font-medium border transition-colors
                 ${
                   active
                     ? 'bg-indigo-600 text-white border-indigo-600'
@@ -177,7 +177,7 @@ const RatingInput: React.FC<RatingInputProps> = ({ question, selectedAnswer, onA
       </div>
 
       {selectedLabel && (
-        <p className="text-[11px] font-semibold text-indigo-600 mt-1.5">{selectedLabel}</p>
+        <p className="text-2xs font-semibold text-indigo-600 mt-1.5">{selectedLabel}</p>
       )}
     </div>
   );
@@ -209,7 +209,7 @@ const TextInput: React.FC<TextInputProps> = ({ question, value, onAnswer }) => {
         editable={true}
       />
       <p
-        className={`text-[10px] text-right mt-1 ${
+        className={`text-2xs text-right mt-1 ${
           textLen > max * 0.9 ? 'text-amber-600' : 'text-gray-400'
         }`}
       >
@@ -243,7 +243,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         {/* Number badge — stays a number after answering; only the color
             flips to show it's done. */}
         <div
-          className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold transition-colors
+          className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-2xs font-semibold transition-colors
             ${isDone ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500'}`}
         >
           {index + 1}
@@ -252,12 +252,12 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
         <div className="flex-1 min-w-0">
           {/* Question header */}
           <div className="flex items-start justify-between gap-3">
-            <p className="text-[13px] font-medium text-gray-900 leading-snug">
+            <p className="text-sm font-medium text-gray-900 leading-snug">
               {question.questionText}
               {question.isRequired && <span className="text-red-500 ml-0.5">*</span>}
             </p>
             {!isRating && (
-              <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wide bg-sky-50 text-sky-700">
+              <span className="flex-shrink-0 inline-flex items-center gap-1 text-2xs font-medium px-1.5 py-0.5 rounded uppercase tracking-wide bg-sky-50 text-sky-700">
                 <Pencil className="w-3 h-3" />
                 Text
               </span>
@@ -286,12 +286,12 @@ const OverallSection: React.FC<OverallSectionProps> = ({ feedback, value, onChan
   <div className="py-4">
     <div className="flex items-center gap-2 mb-1">
       <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
-      <p className="text-[13px] font-medium text-gray-900">
+      <p className="text-sm font-medium text-gray-900">
         {(feedback as any).overallReasonLabel || 'Additional comments'}
-        <span className="text-[11px] font-normal text-gray-400 ml-1.5">(optional)</span>
+        <span className="text-2xs font-normal text-gray-400 ml-1.5">(optional)</span>
       </p>
     </div>
-    <p className="text-[11px] text-gray-500 mb-2 ml-5">
+    <p className="text-2xs text-gray-500 mb-2 ml-5">
       Share any extra thoughts, suggestions, or feedback about this course.
     </p>
     <div className="feedback-tiptap">
@@ -308,7 +308,7 @@ const OverallSection: React.FC<OverallSectionProps> = ({ feedback, value, onChan
         editable={true}
       />
     </div>
-    <p className="text-[10px] text-gray-400 text-right mt-1">
+    <p className="text-2xs text-gray-400 text-right mt-1">
       {htmlTextLength(value)} characters
     </p>
   </div>
@@ -448,14 +448,14 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
           <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-6 h-6 text-emerald-600" />
           </div>
-          <h3 className="text-[15px] font-semibold text-gray-900 mb-1.5">Feedback submitted</h3>
-          <p className="text-[12px] text-gray-500">
+          <h3 className="text-md font-semibold text-gray-900 mb-1.5">Feedback submitted</h3>
+          <p className="text-xs text-gray-500">
             Your responses have been recorded. Thank you for your feedback.
           </p>
           <div className="mt-5 h-1 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-emerald-500 rounded-full w-full animate-pulse" />
           </div>
-          <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-wide">
+          <p className="text-2xs text-gray-400 mt-2 uppercase tracking-wide">
             Closing automatically…
           </p>
         </div>
@@ -494,19 +494,19 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <span className="inline-flex items-center text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded uppercase tracking-wide">
+                <span className="inline-flex items-center text-2xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded uppercase tracking-wide">
                   Feedback
                 </span>
-                <span className="text-[11px] text-gray-400">
+                <span className="text-2xs text-gray-400">
                   {questions.length} question{questions.length !== 1 ? 's' : ''}
                 </span>
               </div>
-              <h2 className="text-[15px] font-semibold text-gray-900 leading-tight tracking-tight truncate">
+              <h2 className="text-md font-semibold text-gray-900 leading-tight tracking-tight truncate">
                 {(feedback as any).feedbackTitle}
               </h2>
               {(feedback as any).feedbackDescription && (
                 <div
-                  className="text-[11px] text-gray-500 mt-0.5 line-clamp-1 [&_p]:inline"
+                  className="text-2xs text-gray-500 mt-0.5 line-clamp-1 [&_p]:inline"
                   // Description is rich text (TipTap HTML)
                   dangerouslySetInnerHTML={{ __html: (feedback as any).feedbackDescription }}
                 />
@@ -525,7 +525,7 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
 
           {/* Progress */}
           <div className="mt-3">
-            <div className="flex items-center justify-between text-[10px] mb-1">
+            <div className="flex items-center justify-between text-2xs mb-1">
               <span className="text-gray-500 uppercase tracking-wide">
                 {answeredReq}/{totalRequired} required
               </span>
@@ -570,11 +570,11 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
             >
               {group.category && (
                 <div className="flex items-center gap-2 px-1 pt-2 pb-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-700">
+                  <span className="text-2xs font-semibold uppercase tracking-[0.12em] text-indigo-700">
                     {group.category}
                   </span>
                   <span className="h-px flex-1 bg-gradient-to-r from-indigo-200 to-transparent" />
-                  <span className="text-[10px] text-gray-400">
+                  <span className="text-2xs text-gray-400">
                     {group.items.length} question{group.items.length !== 1 ? 's' : ''}
                   </span>
                 </div>
@@ -609,7 +609,7 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
                 allDone ? 'bg-emerald-500' : 'bg-gray-300'
               }`}
             />
-            <span className="text-[11px] text-gray-600 truncate">
+            <span className="text-2xs text-gray-600 truncate">
               {allDone
                 ? 'Ready to submit'
                 : `${totalRequired - answeredReq} required remaining`}
@@ -623,7 +623,7 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
                 setMode(mode === 'overview' ? 'step' : 'overview');
                 setStep(0);
               }}
-              className="text-[11px] font-medium text-gray-600 hover:text-indigo-600 transition-colors h-7 px-2.5 rounded-md hover:bg-white border border-transparent hover:border-gray-200"
+              className="text-2xs font-medium text-gray-600 hover:text-indigo-600 transition-colors h-7 px-2.5 rounded-md hover:bg-white border border-transparent hover:border-gray-200"
             >
               {mode === 'overview' ? 'Step-by-step' : 'Overview'}
             </button>
@@ -633,14 +633,14 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
                 <button
                   onClick={() => setStep((s) => Math.max(0, s - 1))}
                   disabled={step === 0}
-                  className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium rounded-md border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="inline-flex items-center gap-1 h-7 px-2.5 text-2xs font-medium rounded-md border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronLeft className="w-3 h-3" /> Back
                 </button>
                 {!isLastStep && (
                   <button
                     onClick={() => setStep((s) => Math.min(questions.length - 1, s + 1))}
-                    className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium rounded-md border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                    className="inline-flex items-center gap-1 h-7 px-2.5 text-2xs font-medium rounded-md border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors"
                   >
                     Next <ChevronRight className="w-3 h-3" />
                   </button>
@@ -651,7 +651,7 @@ export const FeedbackStudentModal: React.FC<FeedbackStudentModalProps> = ({
             <button
               onClick={handleSubmit}
               disabled={isSubmitting || !allDone}
-              className={`inline-flex items-center gap-1.5 h-7 px-3.5 rounded-md text-[11px] font-semibold transition-colors
+              className={`inline-flex items-center gap-1.5 h-7 px-3.5 rounded-md text-2xs font-semibold transition-colors
                 ${allDone
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'

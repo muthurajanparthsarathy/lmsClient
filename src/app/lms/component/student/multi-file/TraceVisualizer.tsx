@@ -207,9 +207,9 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
     <div className="flex flex-col h-full min-h-0" style={{ fontFamily: "'Poppins', sans-serif", background: "#fff" }}>
       {/* Slim top bar with close */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b flex-shrink-0" style={{ borderColor: "#e5e7eb" }}>
-        <span className="text-[12px] font-bold text-gray-700">Python Execution Visualizer</span>
+        <span className="text-xs font-bold text-gray-700">Python Execution Visualizer</span>
         <div className="flex items-center gap-2">
-          {building && !complete && <span className="flex items-center gap-1 text-[11px] text-indigo-500"><Loader2 size={12} className="animate-spin" /> running…</span>}
+          {building && !complete && <span className="flex items-center gap-1 text-2xs text-indigo-500"><Loader2 size={12} className="animate-spin" /> running…</span>}
           {onClose && <button onClick={onClose} className="p-1 rounded hover:bg-gray-100"><X size={15} className="text-gray-500" /></button>}
         </div>
       </div>
@@ -219,7 +219,7 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
         {/* ── LEFT COLUMN ── */}
         <div className="flex flex-col min-h-0 border-r" style={{ width: "52%", borderColor: "#e5e7eb" }}>
           <div className="text-center py-1.5 flex-shrink-0">
-            <div className="text-[13px] text-gray-700">Python 3.11</div>
+            <div className="text-sm text-gray-700">Python 3.11</div>
           </div>
 
           {/* Code with arrows */}
@@ -245,7 +245,7 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
           </div>
 
           {/* Legend */}
-          <div className="flex flex-col gap-0.5 px-3 py-1.5 flex-shrink-0 text-[11px]" style={{ color: "#6b7280" }}>
+          <div className="flex flex-col gap-0.5 px-3 py-1.5 flex-shrink-0 text-2xs" style={{ color: "#6b7280" }}>
             <span className="flex items-center gap-1.5"><span style={{ color: "#22c55e", fontWeight: 900 }}>➡</span> line that just executed</span>
             <span className="flex items-center gap-1.5"><span style={{ color: "#e11d48", fontWeight: 900 }}>➡</span> next line to execute</span>
           </div>
@@ -271,34 +271,34 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
 
           {/* Why Next is disabled, when we're paused on input() */}
           {awaitingInput && atFrontier && (
-            <div className="text-center text-[11px] flex-shrink-0 pb-1" style={{ color: "#be185d" }}>
+            <div className="text-center text-2xs flex-shrink-0 pb-1" style={{ color: "#be185d" }}>
               ⤓ waiting for input — enter a value below to continue
             </div>
           )}
 
           {/* Step counter */}
-          <div className="text-center text-[11px] text-gray-500 pb-1 flex-shrink-0">
+          <div className="text-center text-2xs text-gray-500 pb-1 flex-shrink-0">
             Step {steps.length ? clampedIdx + 1 : 0} of {steps.length}{!complete && " …"}
-            {step && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "#eef2ff", color: "#4338ca" }}>{step.event}</span>}
+            {step && <span className="ml-2 px-1.5 py-0.5 rounded text-2xs font-semibold" style={{ background: "#eef2ff", color: "#4338ca" }}>{step.event}</span>}
             {truncated && <span className="ml-2 text-amber-600">truncated</span>}
           </div>
 
           {/* Enter user input — shown only when stepped onto the input line */}
           {awaitingInput && atFrontier && (
             <div className="flex-shrink-0 mx-3 mb-3 rounded" style={{ border: "2px solid #f472b6", padding: "10px 12px" }}>
-              <div className="text-center text-[13px] font-bold mb-2" style={{ color: "#be185d" }}>Enter user input:</div>
+              <div className="text-center text-sm font-bold mb-2" style={{ color: "#be185d" }}>Enter user input:</div>
               <div className="flex items-center justify-center gap-2">
-                <span className="text-[12.5px]" style={{ fontFamily: "ui-monospace, monospace", color: "#0f172a" }}>{inputPrompt?.trim() ? inputPrompt : "input:"}</span>
+                <span className="text-sm" style={{ fontFamily: "ui-monospace, monospace", color: "#0f172a" }}>{inputPrompt?.trim() ? inputPrompt : "input:"}</span>
                 <input
                   ref={inputRef}
                   value={liveValue}
                   onChange={(e) => setLiveValue(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitInput() } }}
-                  className="rounded px-2 py-1 text-[12.5px] outline-none"
+                  className="rounded px-2 py-1 text-sm outline-none"
                   style={{ border: "1px solid #9ca3af", fontFamily: "ui-monospace, monospace", width: 180 }}
                   autoFocus
                 />
-                <button onClick={submitInput} className="px-3 py-1 rounded text-[12.5px] font-semibold" style={{ background: "#e5e7eb", border: "1px solid #c7c7c7", color: "#374151" }}>Submit</button>
+                <button onClick={submitInput} className="px-3 py-1 rounded text-sm font-semibold" style={{ background: "#e5e7eb", border: "1px solid #c7c7c7", color: "#374151" }}>Submit</button>
               </div>
             </div>
           )}
@@ -306,8 +306,8 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
           {/* Collected inputs */}
           {inputs.length > 0 && (
             <div className="flex-shrink-0 px-3 pb-2 text-center">
-              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "#be185d" }}>User inputs: </span>
-              <span className="text-[11px] text-gray-600" style={{ fontFamily: "ui-monospace, monospace" }}>{inputs.map((v, i) => `${i + 1}. ${v}`).join("   ")}</span>
+              <span className="text-2xs font-bold uppercase tracking-wide" style={{ color: "#be185d" }}>User inputs: </span>
+              <span className="text-2xs text-gray-600" style={{ fontFamily: "ui-monospace, monospace" }}>{inputs.map((v, i) => `${i + 1}. ${v}`).join("   ")}</span>
             </div>
           )}
         </div>
@@ -316,17 +316,17 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
         <div className="flex flex-col min-h-0 flex-1">
           {/* Print output (resizable) */}
           <div className="flex-shrink-0 px-3 pt-2">
-            <div className="text-[11px] text-gray-500 mb-1">Print output <span className="text-gray-400">(drag lower right corner to resize)</span></div>
+            <div className="text-2xs text-gray-500 mb-1">Print output <span className="text-gray-400">(drag lower right corner to resize)</span></div>
             <textarea
               readOnly
               value={step?.stdout || ""}
-              className="w-full text-[12.5px] rounded px-2 py-1.5"
+              className="w-full text-sm rounded px-2 py-1.5"
               style={{ border: "1px solid #d1d5db", background: "#fff", color: "#0f172a", fontFamily: "ui-monospace, monospace", resize: "vertical", minHeight: 70, height: 90 }}
             />
           </div>
 
           {step?.exception && (
-            <div className="flex items-center gap-2 mx-3 mt-2 px-2 py-1.5 text-[11px] flex-shrink-0 rounded" style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}>
+            <div className="flex items-center gap-2 mx-3 mt-2 px-2 py-1.5 text-2xs flex-shrink-0 rounded" style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}>
               <AlertTriangle size={13} /> {step.exception.type}: {step.exception.message}
             </div>
           )}
@@ -351,17 +351,17 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
               })}
             </svg>
             <div className="overflow-auto px-3">
-              <div className="text-center text-[13px] text-gray-600 mb-2">Frames</div>
+              <div className="text-center text-sm text-gray-600 mb-2">Frames</div>
               {step?.stack.map((frame, i) => {
                 const isTop = i === step.stack.length - 1
                 return (
                   <div key={i} className="mb-2 border" style={{ borderColor: isTop ? "#a5a5e0" : "#e5e7eb", background: isTop ? "#eef0fb" : "#fafafa" }}>
-                    <div className="px-2 py-1 text-[11.5px] font-semibold" style={{ color: "#374151" }}>
+                    <div className="px-2 py-1 text-xs font-semibold" style={{ color: "#374151" }}>
                       {frame.isGlobal ? "Global frame" : `${frame.name}`}
                     </div>
                     <div className="p-1.5">
                       {Object.keys(frame.locals).length === 0 ? (
-                        <div className="text-[10px] text-gray-400 px-1">—</div>
+                        <div className="text-2xs text-gray-400 px-1">—</div>
                       ) : (
                         <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
                           {Object.entries(frame.locals).map(([name, val]) => (
@@ -378,9 +378,9 @@ export default function TraceVisualizer(props: TraceVisualizerProps) {
               })}
             </div>
             <div className="overflow-auto px-3">
-              <div className="text-center text-[13px] text-gray-600 mb-2">Objects</div>
+              <div className="text-center text-sm text-gray-600 mb-2">Objects</div>
               {visibleHeap.length === 0 ? (
-                <div className="text-[11px] text-gray-400 text-center">—</div>
+                <div className="text-2xs text-gray-400 text-center">—</div>
               ) : (
                 <div className="flex flex-col gap-2 items-start">{visibleHeap.map(({ id, obj }) => <HeapBox key={id} id={id} obj={obj} />)}</div>
               )}

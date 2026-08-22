@@ -332,15 +332,15 @@ const QuestionFormBreadcrumb: React.FC<{
     <nav className="flex items-center" style={{ fontFamily: 'var(--lms-font)' }}>
       <ol className="flex items-center flex-wrap gap-y-0.5">
         {courseName && (
-          <><li><span className="text-[12.5px] font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{courseName}</span></li>
+          <><li><span className="text-sm font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{courseName}</span></li>
             <li><span className="lms-breadcrumb-sep">»</span></li></>
         )}
         {exerciseName && (
-          <><li><span className="text-[12.5px] font-semibold truncate max-w-[120px]" style={{ color: 'var(--lms-text-main)' }}>{exerciseName}</span></li>
+          <><li><span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: 'var(--lms-text-main)' }}>{exerciseName}</span></li>
             <li><span className="lms-breadcrumb-sep">»</span></li></>
         )}
         <li>
-          <span className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)' }}>
+          <span className="text-sm font-bold" style={{ color: 'var(--lms-text-main)' }}>
             {actionLabel}
           </span>
         </li>
@@ -356,7 +356,7 @@ const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
       <span className="lms-toggle-slider" />
     </label>
-    {label && <span className="text-[12px] font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{label}</span>}
+    {label && <span className="text-xs font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{label}</span>}
   </label>
 );
 
@@ -746,23 +746,23 @@ const NotionSettingsPanel: React.FC<{
             <Type className="h-3.5 w-3.5" />
           </div>
           <div>
-            <p className="text-[13px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Notion Editor Provisions</p>
-            <p className="text-[11px]" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Toggle what students can use in their response</p>
+            <p className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Notion Editor Provisions</p>
+            <p className="text-2xs" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Toggle what students can use in their response</p>
           </div>
         </div>
-        <span className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ background: 'var(--lms-violet)', color: '#fff', fontFamily: 'var(--lms-font)' }}>
+        <span className="text-2xs font-bold px-2 py-1 rounded-full" style={{ background: 'var(--lms-violet)', color: '#fff', fontFamily: 'var(--lms-font)' }}>
           {enabledCount} / {NOTION_FEATURES.length}
         </span>
       </div>
 
       <div className="px-4 py-2.5 flex items-center gap-3" style={{ borderBottom: '1px solid var(--lms-border)', background: 'var(--lms-bg-surface)' }}>
         <button type="button" onClick={() => onChange(Object.fromEntries(NOTION_FEATURES.map(f => [f.key, true])) as NotionSettings)}
-          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all"
+          className="text-2xs font-semibold px-2.5 py-1 rounded-lg transition-all"
           style={{ background: 'var(--lms-violet-bg)', color: 'var(--lms-violet)', border: '1px solid var(--lms-violet-bdr)', fontFamily: 'var(--lms-font)', cursor: 'pointer' }}>
           Enable All
         </button>
         <button type="button" onClick={() => onChange(Object.fromEntries(NOTION_FEATURES.map(f => [f.key, false])) as NotionSettings)}
-          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all"
+          className="text-2xs font-semibold px-2.5 py-1 rounded-lg transition-all"
           style={{ background: 'var(--lms-danger-bg)', color: 'var(--lms-danger)', border: '1px solid var(--lms-danger-bdr)', fontFamily: 'var(--lms-font)', cursor: 'pointer' }}>
           Disable All
         </button>
@@ -784,8 +784,8 @@ const NotionSettingsPanel: React.FC<{
                 {f.icon}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[11.5px] font-bold truncate" style={{ color: active ? 'var(--lms-violet)' : 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>{f.label}</p>
-                <p className="text-[10px] truncate" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>{f.desc}</p>
+                <p className="text-xs font-bold truncate" style={{ color: active ? 'var(--lms-violet)' : 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>{f.label}</p>
+                <p className="text-2xs truncate" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>{f.desc}</p>
               </div>
               <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all"
                 style={{ borderColor: active ? 'var(--lms-violet)' : 'var(--lms-border)', background: active ? 'var(--lms-violet)' : 'transparent' }}>
@@ -799,7 +799,7 @@ const NotionSettingsPanel: React.FC<{
       <div className="px-4 pb-4">
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg" style={{ background: 'var(--lms-info-bg)', border: '1px solid var(--lms-info-bdr)' }}>
           <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: 'var(--lms-info)' }} />
-          <p className="text-[11px] leading-relaxed" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>
+          <p className="text-2xs leading-relaxed" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>
             These provisions control what formatting tools are available to students when writing their answer in the Notion-style editor.
           </p>
         </div>
@@ -827,16 +827,16 @@ const FileUploadSettingsPanel: React.FC<{
           <Upload className="h-3.5 w-3.5" />
         </div>
         <div>
-          <p className="text-[13px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>File Upload Settings</p>
-          <p className="text-[11px]" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Configure what students can upload</p>
+          <p className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>File Upload Settings</p>
+          <p className="text-2xs" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Configure what students can upload</p>
         </div>
       </div>
 
       <div className="p-4 space-y-4">
         <div className="flex items-center justify-between py-2.5 px-3 rounded-xl" style={{ background: 'var(--lms-bg-surface)', border: '1.5px solid var(--lms-border)' }}>
           <div>
-            <p className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Allow Multiple Files</p>
-            <p className="text-[11px]" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Students can upload more than one file</p>
+            <p className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Allow Multiple Files</p>
+            <p className="text-2xs" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Students can upload more than one file</p>
           </div>
           <Toggle checked={settings.allowMultiple} onChange={v => onChange({ ...settings, allowMultiple: v, maxFiles: v ? settings.maxFiles || 5 : 1 })} />
         </div>
@@ -844,8 +844,8 @@ const FileUploadSettingsPanel: React.FC<{
         {settings.allowMultiple && (
           <div className="flex items-center justify-between py-2.5 px-3 rounded-xl" style={{ background: 'var(--lms-bg-surface)', border: '1.5px solid var(--lms-border)' }}>
             <div>
-              <p className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Max File Count</p>
-              <p className="text-[11px]" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Maximum number of files allowed</p>
+              <p className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Max File Count</p>
+              <p className="text-2xs" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Maximum number of files allowed</p>
             </div>
             <div className="flex items-center gap-1.5">
               <button type="button" onClick={() => onChange({ ...settings, maxFiles: Math.max(1, settings.maxFiles - 1) })}
@@ -853,7 +853,7 @@ const FileUploadSettingsPanel: React.FC<{
                 style={{ background: 'var(--lms-bg-surface2)', border: '1.5px solid var(--lms-border)', color: 'var(--lms-text-sec)', cursor: 'pointer' }}>−</button>
               <input type="number" min={1} max={20} value={settings.maxFiles}
                 onChange={e => onChange({ ...settings, maxFiles: Math.max(1, Math.min(20, parseInt(e.target.value) || 1)) })}
-                className="w-12 text-center text-[13px] font-bold rounded-lg py-1"
+                className="w-12 text-center text-sm font-bold rounded-lg py-1"
                 style={{ border: '1.5px solid var(--lms-border)', background: '#fff', color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)', outline: 'none' }} />
               <button type="button" onClick={() => onChange({ ...settings, maxFiles: Math.min(20, settings.maxFiles + 1) })}
                 className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-base transition-all"
@@ -864,8 +864,8 @@ const FileUploadSettingsPanel: React.FC<{
 
         <div className="flex items-center justify-between py-2.5 px-3 rounded-xl" style={{ background: 'var(--lms-bg-surface)', border: '1.5px solid var(--lms-border)' }}>
           <div>
-            <p className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Max File Size</p>
-            <p className="text-[11px]" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Maximum size per file</p>
+            <p className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Max File Size</p>
+            <p className="text-2xs" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Maximum size per file</p>
           </div>
           <div className="flex items-center gap-1.5">
             <button type="button" onClick={() => onChange({ ...settings, maxFileSizeMB: Math.max(1, settings.maxFileSizeMB - 1) })}
@@ -873,9 +873,9 @@ const FileUploadSettingsPanel: React.FC<{
               style={{ background: 'var(--lms-bg-surface2)', border: '1.5px solid var(--lms-border)', color: 'var(--lms-text-sec)', cursor: 'pointer' }}>−</button>
             <input type="number" min={1} max={500} value={settings.maxFileSizeMB}
               onChange={e => onChange({ ...settings, maxFileSizeMB: Math.max(1, Math.min(500, parseInt(e.target.value) || 1)) })}
-              className="w-14 text-center text-[13px] font-bold rounded-lg py-1"
+              className="w-14 text-center text-sm font-bold rounded-lg py-1"
               style={{ border: '1.5px solid var(--lms-border)', background: '#fff', color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)', outline: 'none' }} />
-            <span className="text-[12px] font-semibold" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>MB</span>
+            <span className="text-xs font-semibold" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>MB</span>
             <button type="button" onClick={() => onChange({ ...settings, maxFileSizeMB: Math.min(500, settings.maxFileSizeMB + 1) })}
               className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-base transition-all"
               style={{ background: 'var(--lms-orange)', border: '1.5px solid transparent', color: '#fff', cursor: 'pointer' }}>+</button>
@@ -884,13 +884,13 @@ const FileUploadSettingsPanel: React.FC<{
 
         <div>
           <div className="flex items-center justify-between mb-2.5">
-            <p className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Supported File Types</p>
+            <p className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Supported File Types</p>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => onChange({ ...settings, allowedTypes: SUPPORTED_FILE_TYPES.map(f => f.key) })}
-                className="text-[10.5px] font-semibold px-2 py-0.5 rounded-lg"
+                className="text-2xs font-semibold px-2 py-0.5 rounded-lg"
                 style={{ background: 'var(--lms-success-bg)', color: 'var(--lms-success)', border: '1px solid var(--lms-success-bdr)', fontFamily: 'var(--lms-font)', cursor: 'pointer' }}>All</button>
               <button type="button" onClick={() => onChange({ ...settings, allowedTypes: [] })}
-                className="text-[10.5px] font-semibold px-2 py-0.5 rounded-lg"
+                className="text-2xs font-semibold px-2 py-0.5 rounded-lg"
                 style={{ background: 'var(--lms-danger-bg)', color: 'var(--lms-danger)', border: '1px solid var(--lms-danger-bdr)', fontFamily: 'var(--lms-font)', cursor: 'pointer' }}>None</button>
             </div>
           </div>
@@ -907,8 +907,8 @@ const FileUploadSettingsPanel: React.FC<{
                   }}>
                   <span className="text-base flex-shrink-0">{ft.icon}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11.5px] font-bold truncate" style={{ color: active ? '#15803d' : 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>{ft.label}</p>
-                    <p className="text-[10px] truncate" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>{ft.ext}</p>
+                    <p className="text-xs font-bold truncate" style={{ color: active ? '#15803d' : 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>{ft.label}</p>
+                    <p className="text-2xs truncate" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>{ft.ext}</p>
                   </div>
                   <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all"
                     style={{ borderColor: active ? '#16a34a' : 'var(--lms-border)', background: active ? '#16a34a' : 'transparent' }}>
@@ -927,7 +927,7 @@ const FileUploadSettingsPanel: React.FC<{
 
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg" style={{ background: 'var(--lms-info-bg)', border: '1px solid var(--lms-info-bdr)' }}>
           <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: 'var(--lms-info)' }} />
-          <p className="text-[11px] leading-relaxed" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>
+          <p className="text-2xs leading-relaxed" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>
             Students will see a file upload area restricted to these settings. Selected types determine which files are accepted.
           </p>
         </div>
@@ -979,7 +979,7 @@ const CloseDialog: React.FC<{ isOpen: boolean; unsavedCount: number; onConfirm: 
           </div>
           <div>
             <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-main)' }}>Unsaved Questions</h3>
-            <p className="text-[11px] mt-0.5" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-muted)' }}>
+            <p className="text-2xs mt-0.5" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-muted)' }}>
               {unsavedCount} question{unsavedCount !== 1 ? 's' : ''} will be lost if you close now.
             </p>
           </div>
@@ -2170,7 +2170,7 @@ const OthersPreviewModal: React.FC<{
                               {block.title || 'Untitled Question'}
                             </h4>
                             <span
-                              className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                              className="text-2xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
                               style={{
                                 background: block.questionType === 'notion' ? 'var(--lms-violet-bg)' : '#eff9f4',
                                 color: block.questionType === 'notion' ? 'var(--lms-violet)' : '#16a34a',
@@ -2181,7 +2181,7 @@ const OthersPreviewModal: React.FC<{
                             </span>
                             {block.difficulty && (
                               <span
-                                className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize flex-shrink-0"
+                                className="text-2xs font-bold px-2 py-0.5 rounded-full capitalize flex-shrink-0"
                                 style={{
                                   background: block.difficulty === 'easy' ? '#f0fdf4' :
                                     block.difficulty === 'medium' ? '#fffbeb' : '#fff5f5',
@@ -2194,7 +2194,7 @@ const OthersPreviewModal: React.FC<{
                               </span>
                             )}
                             <span
-                              className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                              className="text-2xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
                               style={{
                                 background: 'var(--lms-orange-50)',
                                 color: 'var(--lms-orange)',
@@ -2225,7 +2225,7 @@ const OthersPreviewModal: React.FC<{
                             );
                           })()}
 
-                          <div className="flex items-center gap-3 text-[10px]">
+                          <div className="flex items-center gap-3 text-2xs">
                             <span style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>
                               Required: <strong>{block.isRequired ? 'Yes' : 'No'}</strong>
                             </span>
@@ -2456,7 +2456,7 @@ const OthersPreviewModal: React.FC<{
                 <p className="text-xs font-medium mb-2" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
                   "{deleteConfirm.block.title || 'Untitled question'}"
                 </p>
-                <p className="text-[11px] font-medium"
+                <p className="text-2xs font-medium"
                   style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
                   This action cannot be undone.
                 </p>
@@ -3440,7 +3440,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
           {loadingExercise && (
-            <span className="flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-lg mr-2"
+            <span className="flex items-center gap-1.5 text-2xs font-semibold px-2 py-1 rounded-lg mr-2"
               style={{ color: 'var(--lms-orange)', background: 'var(--lms-orange-50)', border: '1.5px solid var(--lms-orange-100)', fontFamily: 'var(--lms-font)' }}>
               <Loader className="h-3 w-3 animate-spin" />Loading…
             </span>
@@ -3488,7 +3488,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                       {currentIndex + 1}
                     </div>
                     {currentBlock.origin === 'db' && (
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${currentBlock.isDirty ? 'lms-badge-amber' : 'lms-badge-green'}`}
+                      <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${currentBlock.isDirty ? 'lms-badge-amber' : 'lms-badge-green'}`}
                         style={{ border: '1px solid' }}>
                         {currentBlock.isDirty ? 'edited' : 'saved'}
                       </span>
@@ -3497,7 +3497,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                     <div className="flex-1" />
                     {/* 
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-[10.5px] font-bold uppercase tracking-wider flex-shrink-0" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>Type</span>
+                      <span className="text-2xs font-bold uppercase tracking-wider flex-shrink-0" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>Type</span>
                       {(() => {
                         const isActive = currentBlock.questionType === 'file-upload';
                         return (
@@ -3658,8 +3658,8 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                     {scoringType === 'equalDistribution' && marksPerQuestion > 0 && (
                       <div className="flex items-baseline gap-1 flex-shrink-0"
                         style={{ borderBottom: '1.5px solid var(--lms-border)', padding: '4px 0' }}>
-                        <span className="text-[13px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>{marksPerQuestion}</span>
-                        <span className="text-[13px]" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>marks</span>
+                        <span className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>{marksPerQuestion}</span>
+                        <span className="text-sm" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>marks</span>
                       </div>
                     )}
 
@@ -3671,8 +3671,8 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                         return m > 0 ? (
                           <div className="flex items-baseline gap-1 flex-shrink-0"
                             style={{ borderBottom: `1.5px solid ${diffConfig[diff]?.border || 'var(--lms-border)'}`, padding: '4px 0' }}>
-                            <span className="text-[13px] font-bold" style={{ color: diffCol, fontFamily: 'var(--lms-font)' }}>{m}</span>
-                            <span className="text-[13px]" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>marks</span>
+                            <span className="text-sm font-bold" style={{ color: diffCol, fontFamily: 'var(--lms-font)' }}>{m}</span>
+                            <span className="text-sm" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>marks</span>
                           </div>
                         ) : null;
                       })()
@@ -3684,7 +3684,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                 <div className="px-5 pt-4 pb-6 flex flex-col gap-5">
 
                   <div>
-                    <label className="text-[10.5px] font-bold uppercase tracking-wider mb-2 block"
+                    <label className="text-2xs font-bold uppercase tracking-wider mb-2 block"
                       style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>
                       Question Title <span style={{ color: 'var(--lms-danger)' }}>*</span>
                     </label>
@@ -3696,7 +3696,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                         if (e.target.value.trim()) setErrors(prev => { const n = { ...prev }; if (n[currentBlock.id]) delete n[currentBlock.id].title; return n; });
                       }}
                       placeholder="Enter the question or task title…"
-                      className="w-full text-[15px] font-medium"
+                      className="w-full text-md font-medium"
                       style={{
                         background: 'transparent', border: 'none',
                         borderBottom: `1.5px solid ${blockErr.title && isValidationAttempted ? 'var(--lms-danger)' : 'var(--lms-border)'}`,
@@ -3712,7 +3712,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-[10.5px] font-bold uppercase tracking-wider mb-2 block"
+                    <label className="text-2xs font-bold uppercase tracking-wider mb-2 block"
                       style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>
                       Description / Instructions
                     </label>
@@ -3727,7 +3727,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
 
                   {/* ── Question Type Select ── */}
                   <div>
-                    <label className="text-[10.5px] font-bold uppercase tracking-wider mb-2 block"
+                    <label className="text-2xs font-bold uppercase tracking-wider mb-2 block"
                       style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>
                       Question Type <span style={{ color: 'var(--lms-danger)' }}>*</span>
                     </label>
@@ -3992,8 +3992,8 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                   <div className="flex items-center justify-between px-4 py-3 rounded-xl"
                     style={{ background: 'var(--lms-bg-surface)', border: '1.5px solid var(--lms-border)' }}>
                     <div>
-                      <p className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Required Question</p>
-                      <p className="text-[11px]" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Students must answer this before submission</p>
+                      <p className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Required Question</p>
+                      <p className="text-2xs" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>Students must answer this before submission</p>
                     </div>
                     <Toggle checked={currentBlock.isRequired} onChange={v => updateBlock(currentBlock.id, { isRequired: v })} />
                   </div>
@@ -4002,7 +4002,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                     <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
                       style={{ background: 'var(--lms-danger-bg)', border: '1.5px solid var(--lms-danger-bdr)' }}>
                       <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--lms-danger)' }} />
-                      <p className="text-[12px] font-semibold" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>{blockErr.api}</p>
+                      <p className="text-xs font-semibold" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>{blockErr.api}</p>
                     </div>
                   )}
 
@@ -4027,7 +4027,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                 <button onClick={handlePrev} disabled={currentIndex === 0} className="lms-nav-btn flex-shrink-0">
                   <ChevronLeft className="h-3.5 w-3.5" />Prev
                 </button>
-                <span className="text-[12px] font-medium flex-shrink-0"
+                <span className="text-xs font-medium flex-shrink-0"
                   style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)', whiteSpace: 'nowrap' }}>
                   <span style={{ color: 'var(--lms-orange)', fontWeight: 700 }}>{currentIndex + 1}</span>
                   <span style={{ color: 'var(--lms-text-hint)' }}> / </span>
@@ -4091,12 +4091,12 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
                   const isSaved = savedQuestionIds.has(currentBlock.id) && !currentBlock.isDirty;
                   const isDbClean = currentBlock.origin === 'db' && !currentBlock.isDirty;
                   return (isSaved || isDbClean) ? (
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold flex-shrink-0"
+                    <span className="flex items-center gap-1.5 text-2xs font-semibold flex-shrink-0"
                       style={{ color: 'var(--lms-success)', fontFamily: 'var(--lms-font)' }}>
                       <CheckCircle2 className="h-3.5 w-3.5" />Saved
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold flex-shrink-0"
+                    <span className="flex items-center gap-1.5 text-2xs font-semibold flex-shrink-0"
                       style={{ color: 'var(--lms-warning)', fontFamily: 'var(--lms-font)' }}>
                       <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--lms-warning)', flexShrink: 0 }} />
                       Unsaved
@@ -4108,7 +4108,7 @@ const OthersAddQuestionForm: React.FC<OthersAddQuestionFormProps> = ({
 
                 {currentBlock && (
                   <label className="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0">
-                    <span className="text-[11px] font-medium" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>Required</span>
+                    <span className="text-2xs font-medium" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>Required</span>
                     <button type="button" onClick={() => updateBlock(currentBlock.id, { isRequired: !currentBlock.isRequired })}
                       className="relative rounded-full transition-colors flex-shrink-0"
                       style={{ width: 28, height: 16, background: currentBlock.isRequired ? 'var(--lms-orange)' : 'var(--lms-border-hover)' }}>

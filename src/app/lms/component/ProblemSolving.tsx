@@ -39,6 +39,8 @@ import { exerciseApi, EntityType } from '@/apiServices/exercise';
 import { resubmitExerciseForApproval } from '@/apiServices/userService';
 import QuestionBankSelector from './questionforms/mcq/QuestionBankSelector';
 import { Play } from 'next/font/google';
+import { useQueryClient } from '@tanstack/react-query';
+import TableFooter from '@/app/lms/shared/listing/TableFooter';
 
 // ─── Design tokens (parity with QuestionsView) ────────────────────────────────
 const JKT: React.CSSProperties = {
@@ -48,6 +50,19 @@ const JKT: React.CSSProperties = {
 
 const isProgrammingType = (q: Question) =>
   q.questionType === 'programming' || q.questionType === 'database' || q.questionType === 'others';
+
+// Pure `nodeType` → `EntityType` map. Lives at module scope so the render
+// path can call it before its old in-component declaration would have
+// initialised (the exercises cache key needs it during the first render).
+const getEntityType = (nt: string): EntityType => {
+  const map: Record<string, EntityType> = {
+    module: 'modules', modules: 'modules',
+    submodule: 'submodules', submodules: 'submodules',
+    topic: 'topics', topics: 'topics',
+    subtopic: 'subtopics', subtopics: 'subtopics',
+  };
+  return map[(nt || '').toLowerCase().trim()] || 'topics';
+};
 // ─────────────────────────────────────────────────────────────────────────────
 // Interfaces
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2891,6 +2906,19 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
   const sectionHref = useSectionHref();
   const { nodeId, nodeName, subcategory, subcategoryLabel, hierarchyData, activeTab, nodeType, courseId, configuredLanguages, isHeaderHidden = false, onShowHeader } = props;
 
+  // React Query cache — used ONLY to survive an unmount/remount cycle. The
+  // list itself still lives in local `exercises` state so the surrounding
+  // optimistic-update code (delete, edit, add) doesn't have to change. On
+  // remount we seed the state from cache instantly (no loader) and refresh
+  // in the background; the cache is refreshed after every successful fetch.
+  //
+  // Fixes the "listing assignment and assessment again and again loading"
+  // bug: switching We_Do → You_Do → We_Do used to unmount this component
+  // and lose the local state, so remount fell back to the empty initial
+  // state and fired a fresh network call. With the cache, the second
+  // We_Do visit paints from memory.
+  const queryClient = useQueryClient();
+
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAddQuestionModal, setShowAddQuestionModal] = useState(false);
@@ -2925,6 +2953,15 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10,
   });
 
+  // Auto-fit page size — measure the tbody scroll region and pick the
+  // largest itemsPerPage that fits without overflow, so the "9 assignments
+  // but only 8 shown because the last one hides behind the pagination bar"
+  // bug becomes impossible: overflowing rows land on the next page instead
+  // of being clipped by the pager. Turns off the moment the user picks a
+  // page size manually — their choice sticks after that.
+  const tableBodyRef = useRef<HTMLDivElement | null>(null);
+  const [autoFitPageSize, setAutoFitPageSize] = useState(true);
+
   // Derive readable subcategory labels for search placeholder + "New" button.
   // Plural form is used in "Search …" / column headers; singular for "+ New …".
   // Falls back to a basic trailing-s strip when subcategoryLabel is set
@@ -2957,8 +2994,37 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     setSubmissionStatusMap({});
   }, [nodeId, subcategory, activeTab]);
 
+  // Cache key: any two calls with the same (entityType, entityId, tab,
+  // subcategory) share a cached list. `courseId` is part of the key so a
+  // different course's cache can never leak in (nodeId collisions are
+  // theoretically possible across courses).
+  const exercisesCacheKey = React.useMemo(
+    () => [
+      'problemSolvingExercises',
+      getEntityType(nodeType),
+      nodeId,
+      activeTab,
+      subcategory,
+      courseId || '',
+    ] as const,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nodeType, nodeId, activeTab, subcategory, courseId],
+  );
+
   useEffect(() => {
-    if (!showQuestions && subcategory?.trim()) fetchExercises();
+    if (!showQuestions && subcategory?.trim()) {
+      // Cache hit → paint immediately, then refresh silently in the
+      // background so the user never sees a loader on a revisit. Cache
+      // miss → fall through to the loud fetch (spinner + first paint).
+      const cached = queryClient.getQueryData<Exercise[]>(exercisesCacheKey);
+      if (cached && cached.length > 0) {
+        setExercises(cached);
+        setLoadingExercises(false);
+        fetchExercises({ silent: true });
+      } else {
+        fetchExercises();
+      }
+    }
     else { setExercises([]); setLoadingExercises(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeId, subcategory, nodeType, activeTab, showQuestions]);
@@ -2985,6 +3051,27 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     }));
   }, [searchQuery, exerciseTypeFilter, exercises]);
 
+  // ResizeObserver on the tbody scroll region — recomputes the fitting
+  // page size whenever the workspace resizes. ROW_H matches the h-11 body
+  // row; SAFETY drops half a row so the last visible row can never land
+  // right at the pager's border and clip.
+  useEffect(() => {
+    if (!autoFitPageSize) return;
+    const el = tableBodyRef.current;
+    if (!el) return;
+    const ROW_H = 44;
+    const SAFETY = Math.round(ROW_H / 2);
+    const compute = () => {
+      const budget = Math.max(0, el.clientHeight - SAFETY);
+      const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)));
+      setPagination(prev => (prev.itemsPerPage === fits ? prev : { ...prev, itemsPerPage: fits, currentPage: 1 }));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [autoFitPageSize, loadingExercises]);
+
   // In ProblemSolving component (add near the top of the component)
   useEffect(() => {
     if (configuredLanguages) {
@@ -3010,15 +3097,10 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
   }, [configuredLanguages]);
 
   // ── Utilities ──────────────────────────────────────────────────────────────
-  const getEntityType = (nt: string): EntityType => {
-    const map: Record<string, EntityType> = {
-      module: 'modules', modules: 'modules',
-      submodule: 'submodules', submodules: 'submodules',
-      topic: 'topics', topics: 'topics',
-      subtopic: 'subtopics', subtopics: 'subtopics',
-    };
-    return map[nt.toLowerCase().trim()] || 'topics';
-  };
+  // `getEntityType` was moved to module scope (see near the top of the file)
+  // so `exercisesCacheKey` (a useMemo declared earlier in the render) can
+  // call it without hitting the TDZ. Existing call sites read the module
+  // export unchanged — no rename needed.
 
   const getBreadcrumbs = () => {
     const crumbs: { name: string; type: string }[] = [];
@@ -3065,13 +3147,15 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     }
   };
 
-  const fetchExercises = async (): Promise<Exercise[]> => {
+  const fetchExercises = async (opts: { silent?: boolean } = {}): Promise<Exercise[]> => {
     if (!subcategory?.trim()) {
       setExercises([]);
       setLoadingExercises(false);
       return [];
     }
-    setLoadingExercises(true);
+    // Silent = fired from the cache-hit path — the previous rows are
+    // already on screen, so a loader would just flicker.
+    if (!opts.silent) setLoadingExercises(true);
     try {
       const resp = await exerciseApi.getExercises(getEntityType(nodeType), nodeId, activeTab, subcategory);
       const list: Exercise[] = (resp.data?.exercises ?? []).map((ex: Exercise) => ({
@@ -3087,6 +3171,9 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setExercises(sorted);
+      // Persist into the React Query cache so a later remount at the same
+      // (node, tab, subcategory) reads instantly without a loader.
+      queryClient.setQueryData<Exercise[]>(exercisesCacheKey, sorted);
 
       // Compute pagination AFTER applying current filters (match getFilteredExercises logic)
       const q = searchQuery.toLowerCase();
@@ -3116,7 +3203,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
       setExercises([]);
       return [];
     } finally {
-      setLoadingExercises(false);
+      if (!opts.silent) setLoadingExercises(false);
     }
   };
 
@@ -4081,193 +4168,176 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
       style={{ ...JKT, background: '#ffffff', color: '#1a1a2e', height: '100%', minHeight: 0 }}>
       <ScrollbarStyles />
 
-      {/* ══ Header ════════════════════════════════════════════════════════ */}
-      {/* ══ Header ════════════════════════════════════════════════════════ */}
-   <div className="bg-white" style={{ borderBottom: '1px solid #e4e4ed' }}>
-  {/* Single Row: search + type filter + status filter + refresh + new assignment */}
-  <div className="px-4 py-2 flex items-center gap-2 mt-1">
-    {/* Search */}
-    <div className="relative flex-1 min-w-0">
-      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#bcbccc' }} />
-      <input
-        placeholder={`Search ${subLabelPlural}`}
-        value={searchQuery}
-        onChange={e => { setSearchQuery(e.target.value); setPagination(p => ({ ...p, currentPage: 1 })); }}
-        className="pl-7 pr-7 h-7 w-full text-[12px] rounded-lg outline-none transition-all"
-        style={{ ...JKT, background: '#fafafa', border: '1.5px solid #e4e4ed', color: '#1a1a2e' }}
-        onFocus={e => { e.currentTarget.style.borderColor = '#F27757'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(242,119,87,0.1)'; e.currentTarget.style.background = '#fff'; }}
-        onBlur={e => { e.currentTarget.style.borderColor = '#e4e4ed'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#fafafa'; }}
-      />
-      {searchQuery && (
-        <button onClick={() => setSearchQuery('')}
-          style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', color: '#bcbccc', cursor: 'pointer', lineHeight: 0, border: 'none', background: 'none', padding: 0 }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#F27757')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#bcbccc')}>
-          <X size={11} />
+      {/* ══ Toolbar ══════════════════════════════════════════════════════
+          Repainted onto the Client Management pattern: no wrapping card /
+          border-bottom (that produced the stray horizontal line above the
+          list), h-8 pill controls on the design system tokens (`h-8
+          rounded-control border-hairline-strong bg-surface text-xs`), and
+          the primary action is separated from the secondary tools by a
+          slim vertical divider — same rhythm CM, UM and Service Mapping
+          share. Padding matches the table area below so nothing steps out
+          of the workspace gutter. */}
+      <div className="px-3 sm:px-4 md:px-6 pt-3 pb-2 flex items-center gap-2 flex-wrap min-w-0 flex-shrink-0">
+        {/* Search */}
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
+          <input
+            placeholder={`Search ${subLabelPlural}`}
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setPagination(p => ({ ...p, currentPage: 1 })); }}
+            className="h-8 w-full pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+
+        {/* Type filter select — CM's secondary control shape */}
+        <select
+          value={exerciseTypeFilter ?? ''}
+          onChange={e => setExerciseTypeFilter(e.target.value || null)}
+          className={`h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${exerciseTypeFilter ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
+          style={{ minWidth: 120 }}
+        >
+          <option value="">All Types</option>
+          <option value="MCQ">MCQ</option>
+          <option value="Programming">Programming</option>
+          <option value="Combined">Combined</option>
+        </select>
+
+        {/* Status filter select */}
+        <select
+          value={statusFilter ?? ''}
+          onChange={e => setStatusFilter(e.target.value || null)}
+          className={`h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${statusFilter ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
+          style={{ minWidth: 110 }}
+        >
+          <option value="">All Status</option>
+          <option value="Completed">Completed</option>
+          <option value="Incomplete">Incomplete</option>
+        </select>
+
+        {/* Secondary-action cluster pushed right — icon-and-label pills on
+            the same h-8 shape as the toolbar controls. */}
+        <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+          {isHeaderHidden && onShowHeader && (
+            <button
+              type="button"
+              onClick={onShowHeader}
+              title="Show header"
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Show header</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => fetchExercises()}
+            disabled={loadingExercises || !subcategory}
+            title="Refresh"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingExercises ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
+
+        {/* Divider before the primary action — matches the Add-button
+            treatment on the other admin lists. */}
+        <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
+
+        {/* New {Subcategory} — primary action */}
+        <button
+          type="button"
+          onClick={handleNewExercise}
+          disabled={isLoading || !subcategory}
+          title={`Create new ${subLabelSingular.toLowerCase()}`}
+          className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} strokeWidth={2.4} />}
+          <span className="text-xs font-semibold hidden sm:inline">New {subLabelSingular}</span>
         </button>
+      </div>
+
+      {/* Active search filter chip — sits BELOW the toolbar, in the same
+          horizontal gutter, so it doesn't crowd the search box row. */}
+      {searchQuery && (
+        <div className="flex-none flex items-center gap-2 px-3 sm:px-4 md:px-6 pb-2 flex-wrap min-w-0">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-strong">Filtering:</span>
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-full border border-brand-500/30 bg-brand-wash text-2xs font-medium text-brand-strong hover:bg-brand-100 transition-colors duration-150"
+          >
+            "{searchQuery}" <X size={11} />
+          </button>
+          <span className="text-2xs ml-auto text-subtle tabular-nums">
+            {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+          </span>
+        </div>
       )}
-    </div>
 
-    {/* Type filter select */}
-    <select
-      value={exerciseTypeFilter ?? ''}
-      onChange={e => setExerciseTypeFilter(e.target.value || null)}
-      className="h-7 text-[11px] rounded-lg outline-none transition-all flex-shrink-0"
-      style={{ ...JKT, background: '#fafafa', border: '1.5px solid #e4e4ed', color: '#6b6b7e', padding: '0 8px', cursor: 'pointer', minWidth: '120px' }}
-      onFocus={e => { e.currentTarget.style.borderColor = '#F27757'; }}
-      onBlur={e => { e.currentTarget.style.borderColor = '#e4e4ed'; }}>
-      <option value="">All Types</option>
-      <option value="MCQ">MCQ</option>
-      <option value="Programming">Programming</option>
-      <option value="Combined">Combined</option>
-    </select>
-
-    {/* Status filter select */}
-    <select
-      value={statusFilter ?? ''}
-      onChange={e => setStatusFilter(e.target.value || null)}
-      className="h-7 text-[11px] rounded-lg outline-none transition-all flex-shrink-0"
-      style={{ ...JKT, background: '#fafafa', border: '1.5px solid #e4e4ed', color: '#6b6b7e', padding: '0 8px', cursor: 'pointer', minWidth: '110px' }}
-      onFocus={e => { e.currentTarget.style.borderColor = '#F27757'; }}
-      onBlur={e => { e.currentTarget.style.borderColor = '#e4e4ed'; }}>
-      <option value="">All Status</option>
-      <option value="Completed">Completed</option>
-      <option value="Incomplete">Incomplete</option>
-    </select>
-
-    {/* Show Header — appears next to filters when TopBar is hidden */}
-    {isHeaderHidden && onShowHeader && (
-      <button
-        onClick={onShowHeader}
-        title="Show header"
-        style={{
-          width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: '1px solid #bbf7d0', background: '#f0fdf4',
-          color: '#16a34a', cursor: 'pointer', transition: 'all .15s',
-        }}
-        onMouseEnter={e => {
-          const el = e.currentTarget as HTMLElement;
-          el.style.background = '#dcfce7'; el.style.borderColor = '#86efac';
-        }}
-        onMouseLeave={e => {
-          const el = e.currentTarget as HTMLElement;
-          el.style.background = '#f0fdf4'; el.style.borderColor = '#bbf7d0';
-        }}
-      >
-        <Eye size={13} />
-      </button>
-    )}
-
-    {/* Divider */}
-    <div className="h-5 w-px flex-shrink-0" style={{ background: '#e4e4ed' }} />
-
-    {/* Refresh button */}
-    <button onClick={fetchExercises} disabled={loadingExercises || !subcategory}
-      title="Refresh exercises"
-      className="h-7 w-7 rounded-lg flex items-center justify-center transition-all disabled:opacity-40 flex-shrink-0"
-      style={{ color: '#8b8b9e', cursor: 'pointer', border: 'none', background: 'transparent' }}
-      onMouseEnter={e => { if (!loadingExercises) { e.currentTarget.style.color = '#F27757'; e.currentTarget.style.background = 'rgba(242,119,87,0.08)'; } }}
-      onMouseLeave={e => { e.currentTarget.style.color = '#8b8b9e'; e.currentTarget.style.background = 'transparent'; }}>
-      <RefreshCw size={14} className={loadingExercises ? 'animate-spin' : ''} style={{ color: loadingExercises ? '#F27757' : undefined }} />
-    </button>
-
-    {/* New {Subcategory} button — label matches the active subcategory */}
-    <button onClick={handleNewExercise} disabled={isLoading || !subcategory}
-      title={`Create new ${subLabelSingular.toLowerCase()}`}
-      className="h-7 px-3 text-[12px] font-semibold rounded-lg flex items-center gap-1 transition-all select-none disabled:opacity-50 flex-shrink-0"
-      style={{ ...JKT, background: '#F27757', color: '#fff', boxShadow: '0 2px 8px rgba(242,119,87,0.3)', cursor: 'pointer', border: 'none' }}
-      onMouseEnter={e => { if (!isLoading && subcategory) { e.currentTarget.style.background = '#e0623f'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(242,119,87,0.4)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
-      onMouseLeave={e => { e.currentTarget.style.background = '#F27757'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(242,119,87,0.3)'; e.currentTarget.style.transform = 'none'; }}>
-      {isLoading ? <Loader2 size={12} className="animate-spin" /> : <Plus size={13} strokeWidth={2.5} />}
-      <span className="hidden sm:inline">New {subLabelSingular}</span>
-    </button>
-  </div>
-
-  {/* Active search filter bar */}
-  {searchQuery && (
-    <div className="flex-none flex items-center gap-2 px-4 py-1.5"
-      style={{ background: 'rgba(242,119,87,0.05)', borderBottom: '1px solid rgba(242,119,87,0.15)' }}>
-      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#F27757' }}>Filtering:</span>
-      <button onClick={() => setSearchQuery('')}
-        className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full transition-all"
-        style={{ background: 'rgba(242,119,87,0.1)', color: '#F27757', border: '1px solid rgba(242,119,87,0.2)', cursor: 'pointer' }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(242,119,87,0.18)')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(242,119,87,0.1)')}>
-        "{searchQuery}" <X size={9} />
-      </button>
-      <span className="text-[10px] ml-auto" style={{ color: '#F27757' }}>
-        {filtered.length} result{filtered.length !== 1 ? 's' : ''}
-      </span>
-    </div>
-  )}
-</div>
-
-      {/* ══ Table area ════════════════════════════════════════════════════ */}
-      {/* ══ Table area with fixed height and scroll ═════════════════════ */}
-      {/* ══ Table area ════════════════════════════════════════════════════ */}
-      <div style={{ position: 'relative', flex: '1 1 0', minHeight: '200px', display: 'flex', flexDirection: 'column' }}>
+      {/* ══ Table area ════════════════════════════════════════════════════
+          Wrapped with a horizontal gutter (`px-3 sm:px-4 md:px-6`) so the
+          list has small left/right breathing space instead of running edge
+          to edge, and `overflow-x-hidden` guards against any accidental
+          horizontal scroll on narrow viewports. Header and body live in
+          separate scroll contexts so the header stays pinned. */}
+      <div style={{ position: 'relative', flex: '1 1 0', minHeight: '200px', display: 'flex', flexDirection: 'column' }}
+           className="px-3 sm:px-4 md:px-6 overflow-x-hidden">
         {loadingExercises ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16">
             <div className="relative">
               <div className="w-10 h-10 border-4 rounded-full" style={{ borderColor: '#f5f5f8' }} />
               <div className="absolute inset-0 border-4 rounded-full animate-spin" style={{ borderColor: '#F27757', borderTopColor: 'transparent' }} />
             </div>
-            <p className="text-[12px] font-medium" style={{ color: '#8b8b9e', ...JKT }}>Loading exercises…</p>
+            <p className="text-[12px] font-medium" style={{ color: '#8b8b9e', ...JKT }}>
+              {activeTab === 'We_Do' ? 'Loading Assignment…'
+                : activeTab === 'You_Do' ? 'Loading Assessment…'
+                : `Loading ${subLabelSingular}…`}
+            </p>
           </div>
         ) : paginated.length > 0 ? (
           <>
-            {/* ── Fixed header ── */}
-            <div style={{ flexShrink: 0, borderBottom: '1px solid #eef0f4', background: '#fafbfc' }}>
+            {/* ── Header row — DataTable metrics: h-8, text-[10px] uppercase
+                tracking-wider, subtle text, bg-canvas, hairline bottom
+                border. Kept in a separate <table> so `sticky top: 0` on the
+                body's own thead isn't needed — the body scrolls inside its
+                own div and the header stays pinned above it. */}
+            <div className="flex-shrink-0 bg-canvas border-b border-hairline">
               <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '30%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '21%' }} />
+                  <col style={{ width: '8%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     {[
-                      { label: '#', style: { width: '4%', paddingLeft: 16, paddingRight: 8 } },
-                      {
-                        label: 'Assignment ID', style: {
-                          width: '13%', paddingLeft: 20, paddingRight: 20
-                        }
-                      },
-                      {
-                        label: 'Assignment Name', style: {
-                          width: '30%', paddingLeft: 20, paddingRight: 20
-                        }
-                      },
-                      {
-                        label: 'Type', style: {
-                          width: '10%', paddingLeft: 20, paddingRight: 20
-                        }
-                      },
-                      {
-                        label: 'Created', style: {
-                          width: '14%', paddingLeft: 20, paddingRight: 20
-                        }
-                      },
-                      {
-                        label: 'Status', style: {
-                          width: '18%', paddingLeft: 20, paddingRight: 20
-                        }
-                      },
-                      {
-                        label: 'Actions', style: {
-                          width: '8%', paddingLeft: 20, paddingRight: 20
-                          , textAlign: 'center' as const
-                        }
-                      },
+                      { label: '#', align: 'left' as const, className: 'pl-4 pr-2' },
+                      { label: 'Assignment ID', align: 'left' as const, className: 'px-3' },
+                      { label: 'Assignment Name', align: 'left' as const, className: 'px-3' },
+                      { label: 'Type', align: 'left' as const, className: 'px-3' },
+                      { label: 'Created', align: 'left' as const, className: 'px-3' },
+                      { label: 'Status', align: 'left' as const, className: 'px-3' },
+                      { label: 'Actions', align: 'right' as const, className: 'pl-2 pr-4' },
                     ].map(h => (
                       <th key={h.label}
-                        style={{
-                          ...h.style,
-                          paddingTop: 12,
-                          paddingBottom: 12,
-                          textAlign: 'left' as const,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          letterSpacing: '0.04em',
-                          color: '#64748b',
-                          fontFamily: "'Poppins', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                        }}>
+                        className={`${h.className} h-8 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle whitespace-nowrap`}
+                        style={{ textAlign: h.align }}>
                         {h.label}
                       </th>
                     ))}
@@ -4276,8 +4346,9 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
               </table>
             </div>
 
-            {/* ── Scrollable tbody ── */}
-            <div className="ps-table-scroll" style={{ flex: '1 1 0', overflowY: 'auto', overflowX: 'hidden' }}>
+            {/* ── Scrollable tbody — DataTable metrics: h-11, text-[12px],
+                text-body, hairline dividers, hover:bg-row-hover. */}
+            <div ref={tableBodyRef} className="ps-table-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
               <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
                   <col style={{ width: '4%' }} />
@@ -4285,7 +4356,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                   <col style={{ width: '30%' }} />
                   <col style={{ width: '10%' }} />
                   <col style={{ width: '14%' }} />
-                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '21%' }} />
                   <col style={{ width: '8%' }} />
                 </colgroup>
                 <tbody>
@@ -4293,31 +4364,24 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                     const rowNum = (pagination.currentPage - 1) * pagination.itemsPerPage + idx + 1;
                     return (
                       <tr key={ex._id}
-                        style={{ borderBottom: '1px solid #eef0f4', background: '#ffffff', height: 40 }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f8fafc'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#ffffff'; }}>
+                          className="border-b border-hairline bg-surface hover:bg-row-hover transition-colors duration-150">
 
                         {/* # */}
-                        <td style={{ paddingTop: 0, paddingBottom: 0, paddingLeft: 20, paddingRight: 20, verticalAlign: 'middle' }}>
-                          <span className="text-[11px] font-mono" style={{ color: '#bcbccc' }}>
-                            {rowNum}
-                          </span>
+                        <td className="h-11 pl-4 pr-2 align-middle text-[12px] text-faint tabular-nums">
+                          {rowNum}
                         </td>
 
-                        {/* Exercise ID */}
-                        <td style={{ paddingTop: 0, paddingBottom: 0, paddingLeft: 20, paddingRight: 20, verticalAlign: 'middle' }}>
-                          <span style={{ fontSize: 11, fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: '#64748b' }}>
+                        {/* Assignment ID */}
+                        <td className="h-11 px-3 align-middle text-[12px] text-subtle">
+                          <span style={{ fontFamily: 'ui-monospace, monospace' }} className="truncate block" title={ex.exerciseInformation.exerciseId}>
                             {ex.exerciseInformation.exerciseId}
                           </span>
                         </td>
 
-                        {/* Exercise Name */}
-                        <td style={{
-                          paddingTop: 0, paddingBottom: 0, paddingLeft: 20, paddingRight: 20
-                          , verticalAlign: 'middle', minWidth: 0
-                        }}>
+                        {/* Assignment Name */}
+                        <td className="h-11 px-3 align-middle text-[12px] text-body">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="truncate" style={{ fontSize: 12.5, fontWeight: 400, color: '#0F172A', letterSpacing: '-0.005em', lineHeight: 1.3, fontFamily: JKT.fontFamily, display: 'block' }}>
+                            <span className="truncate" title={ex.exerciseInformation.exerciseName}>
                               {ex.exerciseInformation.exerciseName}
                             </span>
                             {(() => {
@@ -4357,37 +4421,25 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                         </td>
 
                         {/* Type */}
-                        <td style={{
-                          paddingTop: 0, paddingBottom: 0, paddingLeft: 20, paddingRight: 20
-                          , verticalAlign: 'middle'
-                        }}>
+                        <td className="h-11 px-3 align-middle text-[12px] text-body">
                           <ExerciseTypeBadge type={ex.exerciseType} />
                         </td>
 
                         {/* Created */}
-                        <td style={{
-                          paddingTop: 0, paddingBottom: 0, paddingLeft: 20, paddingRight: 20
-                          , verticalAlign: 'middle'
-                        }}>
-                          <div className="flex items-center gap-1.5" style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', fontFamily: JKT.fontFamily }}>
-                            <Calendar size={11} style={{ color: '#bcbccc', flexShrink: 0 }} />
+                        <td className="h-11 px-3 align-middle text-[12px] text-body">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar size={11} className="text-faint flex-shrink-0" />
                             <span>{new Date(ex.createdAt).toLocaleDateString('en-GB')}</span>
                           </div>
                         </td>
 
                         {/* Status */}
-                        <td style={{
-                          paddingTop: 0, paddingBottom: 0, paddingLeft: 20, paddingRight: 20
-                          , verticalAlign: 'middle'
-                        }}>
+                        <td className="h-11 px-3 align-middle text-[12px] text-body">
                           <ScoreProgress exercise={ex} />
                         </td>
 
                         {/* Actions */}
-                        <td style={{
-                          paddingTop: 0, paddingBottom: 0, paddingLeft: 20, paddingRight: 20
-                          , verticalAlign: 'middle', textAlign: 'center'
-                        }}>
+                        <td className="h-11 pl-2 pr-4 align-middle text-right">
                           <ActionMenu exercise={ex} />
                         </td>
                       </tr>
@@ -4424,59 +4476,28 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
           </div>
         )}
       </div>
-      {/* ══ Pagination ════════════════════════════════════════════════════ */}
+      {/* ══ Pagination ════════════════════════════════════════════════════
+          Swapped from the bespoke chevron / page-button strip to the shared
+          TableFooter — same one Client Management, User Management and
+          Service Mapping use — so all four admin lists read as one system.
+          `flex-shrink-0` keeps it pinned at the workspace's bottom edge. */}
       {filtered.length > 0 && (
-        <div className="flex-none bg-white px-4 py-2 flex items-center justify-between"
-          style={{ borderTop: '1px solid #e4e4ed', flexShrink: 0 }}>
-          <div className="text-[11px]" style={{ color: '#8b8b9e', ...JKT }}>
-            Showing{' '}
-            <span className="font-semibold" style={{ color: '#1a1a2e' }}>
-              {(pagination.currentPage - 1) * pagination.itemsPerPage + 1}
-            </span>{' '}–{' '}
-            <span className="font-semibold" style={{ color: '#1a1a2e' }}>
-              {Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)}
-            </span>{' '}of{' '}
-            <span className="font-semibold" style={{ color: '#1a1a2e' }}>{pagination.totalItems}</span>
-            {exercises.length !== filtered.length && <span style={{ color: '#bcbccc' }}> (filtered from {exercises.length})</span>}
-          </div>
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPagination(p => ({ ...p, currentPage: Math.max(1, p.currentPage - 1) }))}
-                disabled={pagination.currentPage === 1}
-                title="Previous page"
-                className="h-6 w-6 rounded-md flex items-center justify-center transition-all disabled:opacity-30"
-                style={{ color: '#8b8b9e', cursor: pagination.currentPage === 1 ? 'not-allowed' : 'pointer', border: 'none', background: 'transparent' }}
-                onMouseEnter={e => { if (pagination.currentPage !== 1) { e.currentTarget.style.color = '#F27757'; e.currentTarget.style.background = 'rgba(242,119,87,0.08)'; } }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#8b8b9e'; e.currentTarget.style.background = 'transparent'; }}>
-                <ChevronLeft size={13} />
-              </button>
-              <div className="flex gap-0.5">
-                {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setPagination(prev => ({ ...prev, currentPage: p }))}
-                    title={`Page ${p}`}
-                    className="h-6 w-6 rounded-md text-[11px] font-semibold transition-all"
-                    style={pagination.currentPage === p
-                      ? { ...JKT, background: '#F27757', color: '#fff', boxShadow: '0 2px 6px rgba(242,119,87,0.35)', cursor: 'default', border: 'none' }
-                      : { ...JKT, color: '#6b6b7e', cursor: 'pointer', border: 'none', background: 'transparent' }}
-                    onMouseEnter={e => { if (pagination.currentPage !== p) { e.currentTarget.style.background = 'rgba(242,119,87,0.08)'; e.currentTarget.style.color = '#F27757'; } }}
-                    onMouseLeave={e => { if (pagination.currentPage !== p) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b6b7e'; } }}>
-                    {p}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setPagination(p => ({ ...p, currentPage: Math.min(p.totalPages, p.currentPage + 1) }))}
-                disabled={pagination.currentPage >= pagination.totalPages}
-                title="Next page"
-                className="h-6 w-6 rounded-md flex items-center justify-center transition-all disabled:opacity-30"
-                style={{ color: '#8b8b9e', cursor: pagination.currentPage >= pagination.totalPages ? 'not-allowed' : 'pointer', border: 'none', background: 'transparent' }}
-                onMouseEnter={e => { if (pagination.currentPage < pagination.totalPages) { e.currentTarget.style.color = '#F27757'; e.currentTarget.style.background = 'rgba(242,119,87,0.08)'; } }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#8b8b9e'; e.currentTarget.style.background = 'transparent'; }}>
-                <ChevronRight size={13} />
-              </button>
-            </div>
-          )}
+        <div className="flex-shrink-0 border-t border-hairline bg-surface px-3 sm:px-4 md:px-6">
+          <TableFooter
+            from={pagination.totalItems === 0 ? 0 : (pagination.currentPage - 1) * pagination.itemsPerPage + 1}
+            to={Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)}
+            total={pagination.totalItems}
+            pageSize={pagination.itemsPerPage}
+            onPageSize={(n) => {
+              // Manual pick pins the size and stops the auto-fit observer
+              // from overriding on the next resize — respect the choice.
+              setAutoFitPageSize(false);
+              setPagination(prev => ({ ...prev, itemsPerPage: n, currentPage: 1 }));
+            }}
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            onPage={(p) => setPagination(prev => ({ ...prev, currentPage: Math.min(Math.max(1, p), prev.totalPages) }))}
+          />
         </div>
       )}
 

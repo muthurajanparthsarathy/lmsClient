@@ -105,7 +105,7 @@ export default function TestMessageBell({
       >
         <Bell size={18} className={toast ? "animate-bounce" : ""} />
         {unread > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center border border-white">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-2xs font-bold flex items-center justify-center border border-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
@@ -119,13 +119,13 @@ export default function TestMessageBell({
         >
           <div className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white">
             {toast.scope === "broadcast" ? <Megaphone size={13} /> : <Bell size={13} />}
-            <span className="text-[12px] font-semibold flex-1 truncate">{toast.senderName || "Proctor"}</span>
+            <span className="text-xs font-semibold flex-1 truncate">{toast.senderName || "Proctor"}</span>
             <button onClick={() => setToast(null)} className="p-0.5 rounded hover:bg-white/15" aria-label="Dismiss">
               <X size={13} />
             </button>
           </div>
           <div className="px-3 py-2.5">
-            <p className="text-[13px] text-gray-800 whitespace-pre-wrap break-words">{toast.message}</p>
+            <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{toast.message}</p>
           </div>
         </div>
       )}
@@ -134,7 +134,7 @@ export default function TestMessageBell({
       {open && (
         <div className="absolute right-0 mt-2 w-80 max-w-[85vw] rounded-xl bg-white shadow-2xl border border-gray-200 z-[2147483000] overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 bg-indigo-600 text-white">
-            <span className="text-[13px] font-semibold flex items-center gap-2">
+            <span className="text-sm font-semibold flex items-center gap-2">
               <Bell size={14} /> Test Notification
             </span>
             <button onClick={() => setOpen(false)} className="p-1 rounded hover:bg-white/15" aria-label="Close">
@@ -143,16 +143,16 @@ export default function TestMessageBell({
           </div>
           <div className="max-h-[300px] overflow-y-auto px-3 py-3 space-y-2 bg-gray-50">
             {messages.length === 0 ? (
-              <div className="text-center text-gray-400 text-[12.5px] py-6">No messages yet.</div>
+              <div className="text-center text-gray-400 text-sm py-6">No messages yet.</div>
             ) : (
               messages.map((m) => (
                 <div key={m._id} className="rounded-xl bg-white border border-gray-200 shadow-sm px-3 py-2">
                   <div className="flex items-center gap-1.5 mb-0.5">
                     {m.scope === "broadcast" && <Megaphone size={12} className="text-indigo-500" />}
-                    <span className="text-[11px] font-semibold text-indigo-600">{m.senderName || "Proctor"}</span>
-                    <span className="text-[10px] text-gray-400 ml-auto">{fmtTime(m.createdAt)}</span>
+                    <span className="text-2xs font-semibold text-indigo-600">{m.senderName || "Proctor"}</span>
+                    <span className="text-2xs text-gray-400 ml-auto">{fmtTime(m.createdAt)}</span>
                   </div>
-                  <p className="text-[13px] text-gray-800 whitespace-pre-wrap break-words">{m.message}</p>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{m.message}</p>
                 </div>
               ))
             )}

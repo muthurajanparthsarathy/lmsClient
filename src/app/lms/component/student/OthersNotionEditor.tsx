@@ -297,7 +297,7 @@ const BlockPickerMenu: React.FC<{
       <div className="overflow-y-auto flex-1 p-2">
         {Object.entries(grouped).map(([group, items]) => (
           <div key={group}>
-            <div className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 mt-1 ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{group}</div>
+            <div className={`text-2xs font-bold uppercase tracking-widest px-2 py-1 mt-1 ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{group}</div>
             {items.map(b => (
               <button
                 key={b.type}
@@ -309,7 +309,7 @@ const BlockPickerMenu: React.FC<{
                 </div>
                 <div>
                   <div className="text-xs font-semibold">{b.label}</div>
-                  <div className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{b.desc}</div>
+                  <div className={`text-2xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{b.desc}</div>
                 </div>
               </button>
             ))}
@@ -410,8 +410,8 @@ const SnippetBlock: React.FC<{
         />
       </div>
       <div className="flex items-center justify-between px-4 py-1.5" style={{ background: isDark ? '#0f172a' : '#f8fafc', borderTop: '1px solid #333' }}>
-        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#888' }}>{language}</span>
-        <span className="text-[10px]" style={{ color: '#555' }}>{code.split('\n').length} lines</span>
+        <span className="text-2xs font-bold uppercase tracking-widest" style={{ color: '#888' }}>{language}</span>
+        <span className="text-2xs" style={{ color: '#555' }}>{code.split('\n').length} lines</span>
       </div>
     </div>
   );
@@ -607,7 +607,7 @@ const PagesSidebar: React.FC<{
       <div className={`flex items-center justify-between px-3 py-2.5 border-b ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
         <div className="flex items-center gap-2">
           <Layers size={12} className={isDark ? 'text-indigo-400' : 'text-indigo-500'} />
-          <span className={`text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Pages</span>
+          <span className={`text-2xs font-bold uppercase tracking-widest ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Pages</span>
         </div>
         <button onClick={onCreatePage} className={`p-1 rounded-md ${isDark ? 'hover:bg-indigo-900/40 text-indigo-400' : 'hover:bg-indigo-100 text-indigo-500'}`} title="New page"><Plus size={13} /></button>
       </div>
@@ -640,7 +640,7 @@ const PagesSidebar: React.FC<{
             ) : (
               <span className="flex-1 text-xs font-medium truncate">{page.title || 'Untitled'}</span>
             )}
-            <span className={`flex-shrink-0 text-[9px] px-1 py-0.5 rounded-full font-mono ${isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'}`}>{idx + 1}</span>
+            <span className={`flex-shrink-0 text-2xs px-1 py-0.5 rounded-full font-mono ${isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400'}`}>{idx + 1}</span>
             <div className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/page:opacity-100 transition-opacity ${isDark ? 'bg-gray-900' : 'bg-white'} rounded-md shadow-sm`}>
               <button onClick={e => { e.stopPropagation(); startRename(page); }} className={`p-0.5 rounded ${isDark ? 'hover:bg-gray-700 text-gray-500' : 'hover:bg-gray-100 text-gray-400'}`}><PenLine size={9} /></button>
               {pages.length > 1 && <button onClick={e => { e.stopPropagation(); onDeletePage(page.id); }} className="p-0.5 rounded text-red-400 hover:bg-red-50"><Trash2 size={9} /></button>}
@@ -743,7 +743,7 @@ export const NotionPagesViewer: React.FC<{
         {pageIdx > 0 && (
           <div className="relative flex items-center my-8">
             <div className="flex-1 border-t-2 border-dashed" style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }} />
-            <div className={`mx-4 flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-semibold ${isDark ? 'bg-gray-800 border border-gray-700 text-gray-500' : 'bg-gray-50 border border-gray-200 text-gray-400'}`}>
+            <div className={`mx-4 flex items-center gap-2 px-3 py-1 rounded-full text-2xs font-semibold ${isDark ? 'bg-gray-800 border border-gray-700 text-gray-500' : 'bg-gray-50 border border-gray-200 text-gray-400'}`}>
               <FileText size={10} />
               Page {pageIdx + 1}
             </div>
@@ -762,9 +762,9 @@ export const NotionPagesViewer: React.FC<{
         >
           {/* Page header strip */}
           <div className={`px-6 py-3 border-b flex items-center gap-3 ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-100'}`}>
-            <div className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-black ${isDark ? 'bg-indigo-900 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>{pageIdx + 1}</div>
+            <div className={`w-6 h-6 rounded-md flex items-center justify-center text-2xs font-black ${isDark ? 'bg-indigo-900 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>{pageIdx + 1}</div>
             <span className={`text-sm font-semibold ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{page.title || `Page ${pageIdx + 1}`}</span>
-            <span className={`ml-auto text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{page.blocks.filter(b => b.content.trim()).length} blocks</span>
+            <span className={`ml-auto text-2xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{page.blocks.filter(b => b.content.trim()).length} blocks</span>
           </div>
 
           {/* Page content */}
@@ -915,7 +915,7 @@ const OthersNotionEditor: React.FC<OthersNotionEditorProps> = ({
           <button onClick={redoPages} disabled={!canRedo || disabled} title="Redo (Ctrl+Y)" className={`p-1.5 rounded-lg transition-colors disabled:opacity-25 ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}><Redo2 size={14} /></button>
           <div className={`w-px h-4 mx-1 ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`} />
           {pages.length > 1 && (
-            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold ${isDark ? 'bg-indigo-900/40 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>
+            <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-semibold ${isDark ? 'bg-indigo-900/40 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>
               <Layers size={10} />{pages.length} pages
             </div>
           )}
@@ -1003,7 +1003,7 @@ const OthersNotionEditor: React.FC<OthersNotionEditorProps> = ({
       </div>
 
       {/* ── Status Bar ────────────────────────────────────────────────────────── */}
-      <div className={`flex-shrink-0 flex items-center justify-between px-4 py-1 border-t text-[10px] ${isDark ? 'border-gray-800 bg-gray-900/60 text-gray-600' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
+      <div className={`flex-shrink-0 flex items-center justify-between px-4 py-1 border-t text-2xs ${isDark ? 'border-gray-800 bg-gray-900/60 text-gray-600' : 'border-gray-100 bg-gray-50 text-gray-400'}`}>
         <div className="flex items-center gap-3">
           <span>{blocks.length} block{blocks.length !== 1 ? 's' : ''}</span>
           <span className="flex items-center gap-1"><Layers size={9} />Page {pages.findIndex(p => p.id === activePageId) + 1} / {pages.length}</span>

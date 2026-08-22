@@ -13,10 +13,15 @@ export function StatusChip({ tone, label, icon }: { tone: "success" | "danger" |
 }
 
 export function StudentStatusChip({ status }: { status: string }) {
-  const map: Record<string, { tone: "success" | "warn" | "info" | "neutral"; label: string }> = {
+  // "Evaluated" used to map to `info` (blue). Blue chips on every graded
+  // row were the biggest single source of the "light blue theme" the
+  // Grades page read as. Evaluated is a *done and reviewed* state, so it
+  // shares the green success tone with Completed — the label already tells
+  // them apart, so no information is lost by unifying the colour.
+  const map: Record<string, { tone: "success" | "warn" | "neutral"; label: string }> = {
     completed: { tone: "success", label: "Completed" },
     in_progress: { tone: "warn", label: "In Progress" },
-    evaluated: { tone: "info", label: "Evaluated" },
+    evaluated: { tone: "success", label: "Evaluated" },
     not_started: { tone: "neutral", label: "Not Started" },
   };
   const m = map[status] || { tone: "neutral" as const, label: status };

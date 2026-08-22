@@ -79,12 +79,12 @@ const Header =({ m, onGrades, onCalendar, showGrades }: { m: DashboardModel; onG
                 {(m.student.degree || meta.length > 0) && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                         {m.student.degree && (
-                            <span className="text-[12.5px] font-medium text-slate-600 dark:text-slate-300">
+                            <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
                                 {m.student.degree}
                             </span>
                         )}
                         {meta.map((x, i) => (
-                            <span key={x} className="flex items-center gap-3 text-[12.5px] text-slate-500 dark:text-slate-400">
+                            <span key={x} className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                                 {(i > 0 || m.student.degree) && <span className="h-1 w-1 rounded-full bg-slate-300" />}
                                 {x}
                             </span>
@@ -98,7 +98,7 @@ const Header =({ m, onGrades, onCalendar, showGrades }: { m: DashboardModel; onG
             <div className="flex shrink-0 items-center gap-2.5 mr-12">
                 <button
                     onClick={onCalendar}
-                    className="flex h-10 items-center gap-2 rounded-[14px] border border-[#E5E7EB] bg-white px-3.5 text-[12.5px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
+                    className="flex h-10 items-center gap-2 rounded-[14px] border border-[#E5E7EB] bg-white px-3.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:text-slate-300 dark:hover:bg-gray-800"
                 >
                     <CalendarDays size={15} strokeWidth={2.2} />
                     Calendar
@@ -106,7 +106,7 @@ const Header =({ m, onGrades, onCalendar, showGrades }: { m: DashboardModel; onG
                 {showGrades && (
                     <button
                         onClick={onGrades}
-                        className="flex h-10 items-center gap-2 rounded-[14px] px-3.5 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
+                        className="flex h-10 items-center gap-2 rounded-[14px] px-3.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
                         style={{ backgroundColor: C.primary }}
                     >
                         <Trophy size={15} strokeWidth={2.2} />
@@ -166,7 +166,10 @@ export default function StudentDashboardPage() {
 
     const goCourse = useCallback((id: string) => router.push(`/lms/pages/courses/coursesdetailedview/${id}`), [router]);
     const goCourses = useCallback(() => router.push('/lms/pages/courses'), [router]);
-    const goCalendar = useCallback(() => router.push('/lms/pages/calendar'), [router]);
+    // The learner's OWN calendar, not the admin holiday editor at
+    // /lms/pages/calendar — that one needs the `calendar` module and answered
+    // every student with Access Restricted.
+    const goCalendar = useCallback(() => router.push('/lms/pages/studentcalendar'), [router]);
     const goGrades = useCallback(() => router.push('/lms/pages/grades'), [router]);
     const goNotifications = useCallback(() => router.push('/lms/pages/notifications'), [router]);
 
@@ -181,11 +184,11 @@ export default function StudentDashboardPage() {
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
                         <GraduationCap size={22} strokeWidth={2.2} />
                     </div>
-                    <h2 className="text-[16px] font-semibold text-slate-900 dark:text-white">We couldn&apos;t load your dashboard</h2>
-                    <p className="text-[13px] text-slate-500">{error || 'Please try again in a moment.'}</p>
+                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">We couldn&apos;t load your dashboard</h2>
+                    <p className="text-sm text-slate-500">{error || 'Please try again in a moment.'}</p>
                     <button
                         onClick={() => window.location.reload()}
-                        className="mt-1 h-10 rounded-[14px] px-4 text-[12.5px] font-semibold text-white"
+                        className="mt-1 h-10 rounded-[14px] px-4 text-sm font-semibold text-white"
                         style={{ backgroundColor: C.primary }}
                     >
                         Retry

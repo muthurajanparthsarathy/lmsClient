@@ -683,7 +683,7 @@ const InteractiveTerminal = ({
                     <Terminal className={`w-4 h-4 ${theme === 'dark' ? 'text-emerald-500' : 'text-green-600'}`} />
                     <div>
                         <span className={`text-xs font-bold ${theme === 'dark' ? 'text-slate-200' : 'text-gray-800'}`}>Console Output</span>
-                        <span className={`text-[10px] ${theme === 'dark' ? 'text-slate-500' : 'text-gray-600'} font-mono uppercase`}>
+                        <span className={`text-2xs ${theme === 'dark' ? 'text-slate-500' : 'text-gray-600'} font-mono uppercase`}>
                             {language || 'unknown'} • {isRunning ? 'Running...' : 'Idle'}
                         </span>
                     </div>
@@ -1164,7 +1164,7 @@ export default function CodeEditor({
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                             <button
                                 onClick={() => window.open(image.url, '_blank')}
-                                className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}
+                                className={`h-6 px-2 text-2xs rounded flex items-center gap-1 transition-colors ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}
                             >
                                 <Maximize2 className="w-3 h-3" />
                                 Full
@@ -4229,7 +4229,7 @@ function solve() {
                             </div>
 
                             {/* Sort Indicator */}
-                            <div className={`mt-2 text-[10px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'} flex items-center justify-between`}>
+                            <div className={`mt-2 text-2xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'} flex items-center justify-between`}>
                                 <span>
                                     {filterDifficulty !== 'all' && `Filtered: ${filterDifficulty}`}
                                     {filterDifficulty === 'all' && 'Showing all difficulties'}
@@ -4271,7 +4271,7 @@ function solve() {
                                                 {/* Right: badges */}
                                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                                     {/* Difficulty */}
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.difficulty === 'Easy' ? (theme === 'dark' ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800') : p.difficulty === 'Medium' ? (theme === 'dark' ? 'bg-yellow-900/30 text-yellow-300' : 'bg-yellow-100 text-yellow-800') : (theme === 'dark' ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-800')}`}>
+                                                    <span className={`text-2xs px-1.5 py-0.5 rounded ${p.difficulty === 'Easy' ? (theme === 'dark' ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800') : p.difficulty === 'Medium' ? (theme === 'dark' ? 'bg-yellow-900/30 text-yellow-300' : 'bg-yellow-100 text-yellow-800') : (theme === 'dark' ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-800')}`}>
                                                         {p.difficulty}
                                                     </span>
                                                     {/* Marks badge — hidden for non-graded */}
@@ -4292,7 +4292,7 @@ function solve() {
                                                     )}
                                                     {/* Skipped badge */}
                                                     {skippedQuestions.has(originalIndex) && (
-                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600'}`}>
+                                                        <span className={`text-2xs px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600'}`}>
                                                             Skipped
                                                         </span>
                                                     )}
@@ -4327,13 +4327,13 @@ function solve() {
                                 }}>
                                     Q {currentProblemIndex + 1} / {problems.length}
                                 </span>
-                                <span className={`text-[12.5px] font-semibold truncate ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`} style={{ fontFamily: FONT }} title={linkUrl}>
+                                <span className={`text-sm font-semibold truncate ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`} style={{ fontFamily: FONT }} title={linkUrl}>
                                     {liveQ.title && liveQ.title !== linkUrl ? liveQ.title : 'Linked question'}
                                 </span>
                                 <div className="flex-1" />
                                 <button
                                     onClick={() => window.open(linkUrl, '_blank', 'noopener,noreferrer')}
-                                    className={`flex items-center gap-1.5 px-3 h-[30px] rounded-md text-[12px] font-semibold border transition-colors ${theme === 'dark' ? 'border-gray-600 text-gray-200 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}
+                                    className={`flex items-center gap-1.5 px-3 h-[30px] rounded-md text-xs font-semibold border transition-colors ${theme === 'dark' ? 'border-gray-600 text-gray-200 hover:bg-gray-800' : 'border-gray-300 text-gray-700 hover:bg-gray-100'}`}
                                     style={{ fontFamily: FONT }}
                                     title="Open the problem site in a new browser tab"
                                 >
@@ -4376,10 +4376,10 @@ function solve() {
                                 external site (most judges refuse embedding
                                 anyway); the card is the whole workspace. */}
                             <div className={`flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center ${theme === 'dark' ? 'bg-gray-950' : 'bg-gray-50'}`}>
-                                <div className={`text-[15px] font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`} style={{ fontFamily: FONT }}>
+                                <div className={`text-md font-bold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`} style={{ fontFamily: FONT }}>
                                     This question opens on {hostOf(linkUrl)}
                                 </div>
-                                <p className={`text-[12px] max-w-md ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} style={{ fontFamily: FONT }}>
+                                <p className={`text-xs max-w-md ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} style={{ fontFamily: FONT }}>
                                     Open the problem in a new tab, solve it there, then come back and press
                                     <b> Submit Question</b>.
                                 </p>
@@ -4393,7 +4393,7 @@ function solve() {
                                 >
                                     Open the problem ↗
                                 </button>
-                                <span className={`text-[11px] break-all max-w-md ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} style={{ fontFamily: FONT }}>{linkUrl}</span>
+                                <span className={`text-2xs break-all max-w-md ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} style={{ fontFamily: FONT }}>{linkUrl}</span>
                             </div>
                         </div>
                     );
@@ -4681,7 +4681,7 @@ function solve() {
                                 {/* Clear button */}
                                 <button
                                     onClick={clearTerminal}
-                                    className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors ${theme === 'dark' ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-700' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200'}`}
+                                    className={`flex items-center gap-1 px-2 py-1 text-2xs rounded transition-colors ${theme === 'dark' ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-700' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200'}`}
                                     title="Clear console"
                                 >
                                     <Trash2 className="w-3 h-3" /> Clear

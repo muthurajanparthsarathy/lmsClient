@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useQuery } from "@tanstack/react-query";
+import TableFooter from "@/app/lms/shared/listing/TableFooter";
 import { getCurrentUser } from "@/apiServices/tokenVerify";
 import type { YouDoProps } from "./TestYourSkills";
 import CreateAssessmentModal from "./CreateAssessmentModal";
@@ -25,12 +26,19 @@ import AddQuestionForm from "@/app/lms/component/student/YouDo/assessment/questi
 import QuestionsTest from "./QuestionsTest";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
+// Brand palette. Keys are named `blue*` for historical reasons — this file
+// carries ~60 references and renaming every one is churn without benefit —
+// but the values are the app's brand orange (see globals.css: brand-500
+// through brand-wash), so the whole assessment surface (Create button,
+// active-search chip, hover fills, filter panel, focus ring, empty-state
+// tile, pagination active pill) reads as one orange theme instead of the
+// out-of-palette indigo it used to be.
 const T = {
-  blue: "#6366f1",
-  blueDark: "#4f46e5",
-  blueLight: "rgba(99,102,241,0.08)",
-  blueMid: "rgba(99,102,241,0.15)",
-  blueGlow: "rgba(99,102,241,0.22)",
+  blue: "#f97316",          // brand-500 — the primary action tone
+  blueDark: "#c2540f",      // brand-700 — hover / pressed
+  blueLight: "rgba(249,115,22,0.08)",  // wash background
+  blueMid: "rgba(249,115,22,0.15)",    // chip background
+  blueGlow: "rgba(249,115,22,0.22)",   // soft glow for CTA shadow
   textMain: "#1a1a2e",
   textSub: "#6b6b7e",
   textMuted: "#8b8b9e",
@@ -38,7 +46,7 @@ const T = {
   border: "#ece9f1",
   bg: "#ffffff",
   pageBg: "#ffffff",
-  warm: "#f5f3ff",
+  warm: "#fff7f1",          // brand-wash equivalent (was the old indigo hue)
   red: "#ef4444",
   redLight: "rgba(239,68,68,0.1)",
   emerald: "#10b981",
@@ -77,6 +85,18 @@ interface AssessmentRecord {
   // > 0 while in_progress means the current run is a re-request after a
   // reject — the pill reads "Re-requested" instead of "Waiting".
   resubmissionCount: number;
+  /**
+   * True once at least one student has ever started this assessment (an
+   * ExamSession row exists). Stamped by the server on the list endpoint.
+   * The row is never deleted, so this stays `true` for the rest of the
+   * assessment's life — even after the schedule ends — which matches the
+   * product rule: hide the Live Dashboard menu entry until someone joins,
+   * then keep it visible permanently.
+   *
+   * Undefined on legacy responses that predate the field: treat as `false`
+   * (dashboard hidden), the safer default.
+   */
+  hasParticipants?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -197,6 +217,10 @@ const transformExerciseToAssessment = (ex: any): AssessmentRecord => {
     hasRejectedQuestions: Array.isArray(src.questions) &&
       src.questions.some((q: any) => q?.approval?.status === "rejected"),
     resubmissionCount: wf?.resubmissionCount || 0,
+    // Passed straight through from the You_Do list endpoint. See the
+    // AssessmentRecord interface note above for why this stays permanently
+    // true once flipped.
+    hasParticipants: !!src.hasParticipants,
   };
 };
 
@@ -765,6 +789,10 @@ export default function Assessment({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showQuestionsTest, setShowQuestionsTest] = useState(false);
   const [selectedAssessmentForTest, setSelectedAssessmentForTest] = useState<any>(null);
+  // The FULL exercise doc that pairs with the slim `selectedAssessmentForTest`
+  // record — carries sectionConfigs / questionSource / customSources that the
+  // slim view record drops. Handed to QuestionsTest as `preloadedExercise`.
+  const [selectedFullExercise, setSelectedFullExercise] = useState<any>(null);
   const [addQ, setAddQ] = useState<{
     step: 'section' | 'type' | 'form' | null;
     exercise?: any;
@@ -972,10 +1000,19 @@ export default function Assessment({
     // (see QuestionsTest.tsx line 475), so the pre-fetch we used to do here
     // was duplicate work — it succeeded silently on the happy path and only
     // ever surfaced as "Failed to load assessment details" on the sad path.
-    // Handing over the row record lets QuestionsTest mount instantly and
-    // manage its own loading state.
+    // Handing over the row record AND the raw full exercise (already in
+    // memory from useYouDoExercises) lets QuestionsTest mount with real
+    // `sectionConfigs` on frame one instead of waiting for its own fetch —
+    // and if that fetch comes back without sectionConfigs (some code paths
+    // strip Map fields), the preloaded copy still keeps the Section Picker
+    // populated so section-based assessments don't fall to "No sections
+    // found".
     setOpenDrop(null);
     setSelectedAssessmentForTest(asm);
+    const rawEx = rawExercises.find(
+      (e: any) => (e._id || e.id) === (asm._id || asm.id),
+    );
+    setSelectedFullExercise(rawEx || null);
     setShowQuestionsTest(true);
   };
 
@@ -1095,31 +1132,42 @@ export default function Assessment({
     { icon: <BarChart2 size={14} />, label: "Ended", value: assessments.filter(a => a.status === "ended").length, color: "#8b5cf6" },
   ];
 
+  // Grid row layout — tokenised heights (h-8 header, h-11 body) so the
+  // list reads as one system with Client Management / User Management /
+  // Service Mapping. Padding-based row heights were replaced by fixed
+  // heights so the DataTable rhythm is exact.
   const rowBase: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr) 80px 110px 90px 80px 60px",
-    gap: 8, alignItems: "center", padding: "11px 16px",
-    borderBottom: `1px solid ${T.border}`, transition: "all 0.14s",
-    borderLeft: "2.5px solid transparent",
+    gap: 8, alignItems: "center", padding: "0 12px",
+    transition: "background-color 0.15s",
   };
+
+  // Manage Questions has priority over the assessment-list loader. Without
+  // this order swap, when the user finishes Save & Finish on the create
+  // wizard and immediately clicks Manage Questions, a background refetch
+  // (fired from the modal's onClose) could flip `isLoading` true and the
+  // Assessment loader would blank out the questions view — the user
+  // reported it as "click Manage Questions, Loading Assessment shown
+  // instead of loading questions". QuestionsTest owns its own loader.
+  if (showQuestionsTest && selectedAssessmentForTest) {
+    return (
+      <QuestionsTest
+        assessment={selectedAssessmentForTest}
+        preloadedExercise={selectedFullExercise}
+        onBack={() => { setShowQuestionsTest(false); setSelectedAssessmentForTest(null); setSelectedFullExercise(null); refetchExercises(); }}
+        nodeId={nodeId} nodeName={nodeName} subcategory={subcategory}
+        nodeType={nodeType} tabType="You_Do" hierarchyData={hierarchyData}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-16" style={{ background: T.bg }}>
         <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: T.blue, borderTopColor: 'transparent' }} />
-        <p className="text-xs mt-3" style={{ color: T.textMuted }}>Loading assessments...</p>
+        <p className="text-xs mt-3" style={{ color: T.textMuted }}>Loading Assessment…</p>
       </div>
-    );
-  }
-
-  if (showQuestionsTest && selectedAssessmentForTest) {
-    return (
-      <QuestionsTest
-        assessment={selectedAssessmentForTest}
-        onBack={() => { setShowQuestionsTest(false); setSelectedAssessmentForTest(null); refetchExercises(); }}
-        nodeId={nodeId} nodeName={nodeName} subcategory={subcategory}
-        nodeType={nodeType} tabType="You_Do" hierarchyData={hierarchyData}
-      />
     );
   }
 
@@ -1164,97 +1212,106 @@ export default function Assessment({
         </div>
         )}
 
-        <div className="px-4 py-2 flex items-center gap-2">
-
+        {/* ── Toolbar — Client Management pattern: h-8 tokened controls,
+            search on the left, secondary tools on the right pushed via
+            ml-auto, primary action separated by a slim vertical divider.
+            Same shape We_Do assignments and every other admin list use. */}
+        <div className="px-3 sm:px-4 md:px-6 pt-3 pb-2 flex items-center gap-2 flex-wrap min-w-0">
           {/* Search */}
-          <div className="relative flex-1 min-w-0">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: T.textHint }} />
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
             <input
               placeholder="Search assessments…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-7 pr-7 h-7 w-full text-[12px] rounded-lg outline-none transition-all"
-              style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textMain }}
-              onFocus={e => { e.currentTarget.style.borderColor = T.blue; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.blueLight}`; e.currentTarget.style.background = '#fff'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = T.pageBg; }}
+              className="h-8 w-full pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')}
-                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: T.textHint, background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 0 }}
-                onMouseEnter={e => (e.currentTarget.style.color = T.blue)}
-                onMouseLeave={e => (e.currentTarget.style.color = T.textHint)}>
-                <X size={11} />
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+              >
+                <X size={12} />
               </button>
             )}
           </div>
 
-          {/* Status filter */}
+          {/* Status filter — brand-wash active state matches CM */}
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
-            className="h-7 text-[11px] rounded-lg outline-none transition-all flex-shrink-0"
-            style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textSub, padding: '0 8px', cursor: 'pointer', minWidth: 120 }}
-            onFocus={e => { e.currentTarget.style.borderColor = T.blue; }}
-            onBlur={e => { e.currentTarget.style.borderColor = T.border; }}>
+            className={`h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${filterStatus ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
+            style={{ minWidth: 120 }}
+          >
             <option value="">All Status</option>
             <option value="complete">Complete</option>
             <option value="incomplete">Incomplete</option>
           </select>
 
-          {/* Divider */}
-          <div className="h-5 w-px flex-shrink-0" style={{ background: T.border }} />
+          {/* Secondary cluster — pushed right */}
+          <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => refetchExercises()}
+              title="Refresh"
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isExercisesFetching ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
 
-          {/* Refresh */}
-          <button onClick={() => refetchExercises()} title="Refresh"
-            className="h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all"
-            style={{ color: T.textMuted, background: 'transparent', border: 'none', cursor: 'pointer' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = T.blue; (e.currentTarget as HTMLElement).style.background = T.blueLight; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = T.textMuted; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-            {/* `isFetching` covers both first-load AND background refetch — gives users
-                a refresh affordance even when stale data is on screen. */}
-            <RefreshCw size={14} className={isExercisesFetching ? 'animate-spin' : ''} />
-          </button>
+          {/* Divider before primary — matches CM/We_Do */}
+          <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
 
-          {/* Create Assessment */}
+          {/* Create Assessment — primary */}
           <button
+            type="button"
             onClick={() => { setEditingAsm(null); setShowModal(true); }}
-            className="h-7 px-3 text-[12px] font-semibold rounded-lg flex items-center gap-1 flex-shrink-0 text-white transition-all"
-            style={{ background: T.blue, boxShadow: `0 2px 8px ${T.blueGlow}`, border: 'none', cursor: 'pointer' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = T.blueDark; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = T.blue; (e.currentTarget as HTMLElement).style.transform = 'none'; }}>
-            <Plus size={13} strokeWidth={2.5} />
-            <span>Create Assessment</span>
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+          >
+            <Plus size={14} strokeWidth={2.4} />
+            <span className="text-xs font-semibold">Create Assessment</span>
           </button>
         </div>
 
-        {/* Active search chip */}
+        {/* Active search chip — same design as We_Do assignments so both
+            listings read as one system. */}
         {searchQuery && (
-          <div className="flex items-center gap-2 px-4 py-1.5"
-            style={{ background: T.blueLight, borderTop: `1px solid ${T.blueMid}` }}>
-            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: T.blue }}>Filtering:</span>
-            <button onClick={() => setSearchQuery('')}
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full transition-all"
-              style={{ background: T.blueMid, color: T.blue, border: `1px solid ${T.blue}30`, cursor: 'pointer' }}
-              onMouseEnter={e => (e.currentTarget.style.background = T.blueGlow)}
-              onMouseLeave={e => (e.currentTarget.style.background = T.blueMid)}>
-              "{searchQuery}" <X size={9} />
+          <div className="flex items-center gap-2 px-3 sm:px-4 md:px-6 pb-2 flex-wrap min-w-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-strong">Filtering:</span>
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-full border border-brand-500/30 bg-brand-wash text-2xs font-medium text-brand-strong hover:bg-brand-100 transition-colors duration-150"
+            >
+              "{searchQuery}" <X size={11} />
             </button>
-            <span className="text-[10px] ml-auto" style={{ color: T.blue }}>
+            <span className="text-2xs ml-auto text-subtle tabular-nums">
               {filtered.length} result{filtered.length !== 1 ? 's' : ''}
             </span>
           </div>
         )}
       </div>
 
-      {/* ── Body ── */}
-      <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: `${T.border} transparent` }}>
+      {/* ── Body ── flex column so the row region can flex-1 while the
+          pagination footer keeps its natural height pinned at the bottom.
+          Previously the whole body was `overflow-y-auto` with the footer
+          inline, so with few rows the pager rode up under the last row
+          instead of sitting at the workspace edge. */}
+      <div className="flex-1 min-h-0 flex flex-col">
 
         {error && (
-          <div className="mx-4 mt-4 p-3 rounded-lg text-center" style={{ background: '#fee2e2', color: '#dc2626' }}>
+          <div className="mx-4 mt-4 p-3 rounded-lg text-center flex-shrink-0" style={{ background: '#fee2e2', color: '#dc2626' }}>
             <p className="text-sm font-medium">{error}</p>
             <button onClick={() => refetchExercises()} className="mt-2 text-xs font-semibold underline">Try Again</button>
           </div>
         )}
+
+        {/* Scroll region — takes all remaining space; only the rows scroll. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "thin", scrollbarColor: `${T.border} transparent` }}>
 
         {/* {assessments.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 pb-0">
@@ -1271,13 +1328,15 @@ export default function Assessment({
           </div>
         )} */}
 
-        {/* ── Table ── */}
-        <div className=" overflow-hidden " style={{ border: `1px solid ${T.border}`, background: T.bg }}>
+        {/* ── Table — DataTable rhythm on tokens (h-8 canvas header +
+            hairline dividers). Card chrome dropped to match CM's flat
+            panel; horizontal gutter comes from the surrounding wrapper. */}
+        <div className="px-3 sm:px-4 md:px-6">
 
-          {/* Header row */}
-          <div style={{ ...rowBase, background: '#fafbfc', borderBottom: '1px solid #eef0f4', borderLeft: "2.5px solid transparent", padding: "10px 16px" }}>
+          {/* Header row — h-8 bg-canvas, uppercase text-subtle labels */}
+          <div style={rowBase} className="h-8 border-b border-hairline bg-canvas">
             {["Assessment ID", "Assessment Name", "Test Type", "Created", "Level", "Status", "Actions"].map(h => (
-              <div key={h} style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: '#64748b' }}>{h}</div>
+              <div key={h} className="text-[10px] font-semibold uppercase tracking-wider text-subtle">{h}</div>
             ))}
           </div>
 
@@ -1315,15 +1374,11 @@ export default function Assessment({
                 return (
                   <div
                     key={asm._id || asm.id || `row-${idx}`}
-                    style={{
-                      ...rowBase,
-                      borderBottom: isLast ? "none" : `1px solid ${T.border}`,
-                      background: isHighlighted ? "rgba(99,102,241,0.06)" : T.bg,
-                      borderLeftColor: isHighlighted ? T.blue : "transparent",
-                      animation: isHighlighted ? "asmRowFlash 2.2s ease-out 1" : undefined,
-                    }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = T.warm; (e.currentTarget as HTMLElement).style.borderLeftColor = T.blue; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isHighlighted ? "rgba(99,102,241,0.06)" : T.bg; (e.currentTarget as HTMLElement).style.borderLeftColor = isHighlighted ? T.blue : "transparent"; }}
+                    // h-11 hairline-bounded row on tokens — same rhythm as
+                    // Client Management. Highlight state still uses the
+                    // brand-wash tint the search-jump animation expects.
+                    className={`${isLast ? '' : 'border-b border-hairline'} ${isHighlighted ? 'bg-brand-wash' : 'bg-surface hover:bg-row-hover'} transition-colors duration-150`}
+                    style={{ ...rowBase, height: 44, animation: isHighlighted ? 'asmRowFlash 2.2s ease-out 1' : undefined }}
                   >
                     {/* Assessment ID */}
                     <div className="min-w-0">
@@ -1425,9 +1480,22 @@ export default function Assessment({
                               directly from the row. Deep-links with the same
                               context payload the other row actions use so the
                               Live Dashboard page can scope itself correctly. */}
+                          {/* Every ordinary menu row now inherits the default
+                              neutral text tone (T.textSub) so Dashboard, Manage
+                              Questions, Manage Users, Edit and Request Approval
+                              all read as one consistent menu. Only Delete keeps
+                              a semantic red — destructive action stays visually
+                              distinct. */}
+                          {/* Dashboard is gated on `hasParticipants` — the
+                              server flips this true the moment ANY student
+                              joins the test (an ExamSession row exists), and
+                              never unsets it, so the entry appears exactly
+                              when it becomes useful and stays visible for the
+                              rest of the assessment's life. Nothing to
+                              dashboard when no student has ever started. */}
+                          {asm.hasParticipants && (
                           <DropItem
                             icon={<LayoutDashboard size={11} />} label="Dashboard"
-                            color="#4f46e5"
                             onClick={() => {
                               setOpenDrop(null);
                               const q = new URLSearchParams({
@@ -1447,20 +1515,29 @@ export default function Assessment({
                               router.push(`${sectionHref("liveDashboard")}?${q}`);
                             }}
                           />
+                          )}
                           {/* "Review Submission" entry removed: the review-submission
                               page is being repurposed for per-student grading
                               triggered from the Live Dashboard's StudentRow
                               "Check Answers" menu item, so the courses-page
                               dropdown shouldn't lead to the (now bypassed)
                               participants-list view. */}
-                          <DropItem
-                            icon={<Settings size={11} />} label="Manage Questions"
-                            color="#8b5cf6"
-                            onClick={() => handleManageQuestion(asm)}
-                          />
+                          {/* Manage Questions only appears once every step
+                              of the create wizard has been saved — an
+                              assessment with missing config can't hold a
+                              coherent question set, and the old always-on
+                              menu item let users drop into a questions view
+                              for a half-configured record. `complete` is
+                              derived from isAssessmentComplete(rawEx) at
+                              the top of the row map. */}
+                          {complete && (
+                            <DropItem
+                              icon={<Settings size={11} />} label="Manage Questions"
+                              onClick={() => handleManageQuestion(asm)}
+                            />
+                          )}
                           <DropItem
                             icon={<Users size={11} />} label="Manage Users"
-                            color="#0891b2"
                             onClick={() => {
                               setOpenDrop(null);
                               // Manage Users now houses the live-dashboard controls
@@ -1502,7 +1579,6 @@ export default function Assessment({
                             <DropItem
                               icon={<RefreshCw size={11} className={resubmittingId === (asm._id || asm.id) ? "animate-spin" : ""} />}
                               label={resubmittingId === (asm._id || asm.id) ? "Requesting…" : "Request Approval"}
-                              color="#4f46e5"
                               onClick={() => { if (!resubmittingId) handleResubmit(asm); }}
                             />
                           )}
@@ -1518,14 +1594,28 @@ export default function Assessment({
                 );
               })}
 
-              <Pagination
-                currentPage={currentPage} totalPages={totalPages}
-                onPageChange={setCurrentPage} totalItems={filtered.length}
-                itemsPerPage={ITEMS_PER_PAGE}
-              />
             </>
           )}
         </div>
+        </div>{/* /scroll region */}
+
+        {/* Pagination — pinned OUTSIDE the scroll region so it always sits
+            at the workspace's bottom edge, regardless of how many rows are
+            loaded. `flex-shrink-0` keeps it out of the flex-1 space above. */}
+        {filtered.length > 0 && (
+          <div className="flex-shrink-0 border-t border-hairline bg-surface px-3 sm:px-4 md:px-6">
+            <TableFooter
+              from={filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1}
+              to={Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}
+              total={filtered.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageSize={() => { /* ITEMS_PER_PAGE is a constant here — page size is fixed for now. */ }}
+              currentPage={currentPage}
+              totalPages={totalPages || 1}
+              onPage={(p) => setCurrentPage(Math.min(Math.max(1, p), totalPages || 1))}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Modals ── */}

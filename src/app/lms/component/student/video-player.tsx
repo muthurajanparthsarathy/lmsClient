@@ -740,7 +740,7 @@ export default function VideoPlayer({
               >
                 <Sparkles className="w-4 h-4" />
                 <span className="text-sm font-medium">AI</span>
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full flex items-center justify-center text-[9px] font-bold bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-sm border-2 border-white">
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full flex items-center justify-center text-2xs font-bold bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-sm border-2 border-white">
                   New
                 </span>
               </button>

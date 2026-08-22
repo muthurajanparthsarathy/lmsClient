@@ -138,12 +138,20 @@ function CalendarStage({
 }) {
     const queryClient = useQueryClient()
 
-    // Per-functionality permission checks — mirrors PermissionModal's `calendar`
-    // entry (Add / Edit / Delete) so writes appear only when granted.
+    // Calendar CRUD is gated by the single "Manage Holidays" functionality
+    // that lives on `admin-calendar` in the permission tree — the old
+    // Add / Edit / Delete triad was removed when the tree was consolidated
+    // (permissions.tree.ts: `admin-calendar` now carries only "My Calendar"
+    // and "Manage Holidays"). Leaving the three separate `can(..., 'Add')`
+    // etc. checks in place meant `canAdd`, `canEdit` and `canDelete` all
+    // resolved to false, so clicking a calendar cell was silently a no-op
+    // (the "Add Holiday" popup stopped opening). One grant now covers the
+    // whole write surface — Manage Holidays already implies add/edit/delete.
     const { can } = usePermissions()
-    const canAdd = can(PERMISSION_IDS.ADMIN_CALENDAR, 'Add')
-    const canEdit = can(PERMISSION_IDS.ADMIN_CALENDAR, 'Edit')
-    const canDelete = can(PERMISSION_IDS.ADMIN_CALENDAR, 'Delete')
+    const canManageHolidays = can(PERMISSION_IDS.ADMIN_CALENDAR, 'Manage Holidays')
+    const canAdd = canManageHolidays
+    const canEdit = canManageHolidays
+    const canDelete = canManageHolidays
     const noop = () => {}
 
     // Every read and write goes through this key, never the bare institute id.

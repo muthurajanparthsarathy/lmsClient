@@ -54,6 +54,10 @@ import {
   normalizeEvaluationMethod,
   type EvaluationMethodSetting,
 } from './evaluation/EvaluationMethodConfig';
+// Shared Question Source picker — replaces the dropdown+conditional-checkbox
+// pattern with a single always-visible checkbox row, storage contract
+// unchanged. Same component the youdo Create Assessment modal uses.
+import { QuestionSourcePicker } from './questionsource/QuestionSourcePicker';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 export interface ExercisePayload {
@@ -4527,105 +4531,56 @@ const renderNotifications = useCallback(() => (
           else toast('Question authoring will open in the parent screen.', { position: 'top-right', duration: 2800, icon: 'ℹ️', id: 'no-authoring-handler' });
         };
 
-        // Source picker options + Custom sub-source pills. Internal ids
-        // (scratch / ai / thirdParty / custom) are preserved for storage
-        // and back-compat; display labels use the new naming.
-        // Pure-MCQ exercises hide Other Platform — the MCQ question form has
-        // no thirdParty import path, so offering it would dead-end.
+        // Pure-MCQ exercises hide Other Platform — the MCQ question form has no
+        // thirdParty import path, so offering it would dead-end at Add Question.
         const noThirdParty = formData.exerciseType === 'MCQ';
-        const sourceOptions = [
-          { value: 'scratch', label: 'Manual' },
-          { value: 'ai', label: 'AI Automation' },
-          ...(noThirdParty ? [] : [{ value: 'thirdParty', label: 'Other Platform' }]),
-          { value: 'custom', label: 'Custom — combine two or more sources' },
-        ];
-        const customSubOptions: Array<{ id: CustomSubSource; label: string }> = [
-          { id: 'scratch', label: 'Manual' },
-          { id: 'ai', label: 'AI Automation' },
-          ...(noThirdParty ? [] : [{ id: 'thirdParty' as CustomSubSource, label: 'Other Platform' }]),
-        ];
-        // Custom requires a MIN of 2 sub-sources (validated in handleNext).
-        // No upper cap — teacher may pick 2 or all 3.
-        const toggleCustomSource = (id: CustomSubSource) => {
-          setCustomSources(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-        };
 
         return (
           <div className="px-10 pt-4 pb-6 space-y-4">
-            {/* Question Source picker — always at top of Add Questions */}
+            {/* Question Source picker — one always-visible checkbox row,
+                shared with the You_Do assessment modal. Ticking one source
+                = single-source exercise; ticking two or three = Custom
+                combine. The picker derives the (questionSource, customSources)
+                storage from the checkbox set, so downstream (Add Question
+                quota gating, buildFullPayload, Custom distribution matrix
+                below) reads exactly what it always did. */}
             <div className="px-3 py-2.5 rounded-md" style={{ background: '#FAFAF7', border: `1px solid ${D.border}` }}>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <FolderOpen size={12} style={{ color: D.textMuted }} />
-                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>
-                    {formData.exerciseType === 'Combined' ? 'Programming Source' : 'Question Source'} <span style={{ color: D.orange }}>*</span>
-                  </span>
-                </div>
-                <div style={{ minWidth: 260, flex: '0 0 280px' }}>
-                  <ODropdown
-                    value={questionSource || ''}
-                    options={sourceOptions}
-                    onChange={v => {
-                      setQuestionSource(v as QuestionSource);
-                      if (v !== 'custom') setCustomSources([]);
-                    }}
-                  />
-                </div>
-                {questionSource === 'custom' && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-semibold" style={{ color: D.textMuted }}>Combine (pick 2 or more):</span>
-                    {customSubOptions.map(opt => {
-                      const checked = customSources.includes(opt.id);
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          aria-pressed={checked}
-                          onClick={() => toggleCustomSource(opt.id)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold"
-                          style={{
-                            background: checked ? D.orange + '15' : '#fff',
-                            color: checked ? D.orange : D.textMain,
-                            border: `1px solid ${checked ? D.orange : D.border}`,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="inline-flex items-center justify-center w-3.5 h-3.5 rounded pointer-events-none"
-                            style={{
-                              border: `1.5px solid ${checked ? D.orange : D.textMuted}`,
-                              background: checked ? D.orange : '#fff',
-                            }}
-                          >
-                            {checked && <Check size={9} strokeWidth={3} style={{ color: '#fff' }} />}
-                          </span>
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              {questionSource === 'custom' && customSources.length > 0 && customSources.length < 2 && (
-                <p className="mt-2 text-[11px]" style={{ color: D.red }}>Pick at least two sources for Custom mode.</p>
-              )}
-              {!questionSource && (
-                <p className="mt-2 text-[11px]" style={{ color: D.textMuted }}>Pick a source to see how to add questions.</p>
-              )}
+              <QuestionSourcePicker
+                value={{ primary: questionSource, sub: customSources }}
+                onChange={next => {
+                  setQuestionSource(next.primary);
+                  setCustomSources(next.sub);
+                  // Zero the column of any un-ticked source so stale counts
+                  // from a prior Custom split don't linger invisibly in
+                  // `customDistribution` and turn the grand total red.
+                  const prev = new Set<CustomSubSource>(customSources);
+                  const cur = new Set<CustomSubSource>(next.sub);
+                  (['scratch', 'ai', 'thirdParty'] as const).forEach(src => {
+                    if (prev.has(src) && !cur.has(src)) {
+                      setCustomDistribution(d => ({
+                        easy:   { ...d.easy,   [src]: 0 },
+                        medium: { ...d.medium, [src]: 0 },
+                        hard:   { ...d.hard,   [src]: 0 },
+                      }));
+                    }
+                  });
+                }}
+                D={D}
+                hideThirdParty={noThirdParty}
+                label={formData.exerciseType === 'Combined' ? 'Programming Source' : 'Question Source'}
+                required
+                emptyHint="Pick a source to see how to add questions."
+                font={FONT}
+              />
             </div>
 
-            {/* Combined: the MCQ part's own source — defaults to inheriting
-                the programming source above; separate it only when required.
-                With Custom, the split is a single row (MCQ has no levels)
-                that must sum to the MCQ question count. */}
+            {/* Combined: the MCQ part's own source. Empty state (nothing
+                ticked, primary === '') means "inherit the Programming
+                source" — exposed as the "Same as Programming" chip. Ticking
+                Manual and/or AI overrides that. When both are on, the
+                single-row splitter below sums to the MCQ question count
+                (MCQ has no difficulty levels). */}
             {formData.exerciseType === 'Combined' && (() => {
-              const mcqSrcOptions = [
-                { value: '', label: 'Same as Programming' },
-                { value: 'scratch', label: 'Manual' },
-                { value: 'ai', label: 'AI Automation' },
-                { value: 'custom', label: 'Custom — combine Manual + AI' },
-              ];
               const mcqSubOptions: Array<{ id: CustomSubSource; label: string }> = [
                 { id: 'scratch', label: 'Manual' },
                 { id: 'ai', label: 'AI Automation' },
@@ -4637,44 +4592,28 @@ const renderNotifications = useCallback(() => (
                 setCustomDistributionMcq(prev => ({ ...prev, [c]: Math.max(0, (prev as any)[c] + delta) }));
               return (
                 <div className="px-3 py-2.5 rounded-md" style={{ background: '#FAFAF7', border: `1px solid ${D.border}` }}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <FolderOpen size={12} style={{ color: D.textMuted }} />
-                      <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>
-                        MCQ Source
-                      </span>
-                    </div>
-                    <div style={{ minWidth: 260, flex: '0 0 280px' }}>
-                      <ODropdown
-                        value={questionSourceMcq || ''}
-                        options={mcqSrcOptions}
-                        onChange={(v: string) => {
-                          setQuestionSourceMcq(v as QuestionSource);
-                          if (v !== 'custom') setCustomSourcesMcq([]);
-                        }}
-                      />
-                    </div>
-                    {questionSourceMcq === 'custom' && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] font-semibold" style={{ color: D.textMuted }}>Combine (pick 2):</span>
-                        {mcqSubOptions.map(opt => { const checked = customSourcesMcq.includes(opt.id); return (
-                          <button key={opt.id} type="button" aria-pressed={checked}
-                            onClick={() => setCustomSourcesMcq(prev => prev.includes(opt.id) ? prev.filter(x => x !== opt.id) : [...prev, opt.id])}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold"
-                            style={{ background: checked ? D.orange + '15' : '#fff', color: checked ? D.orange : D.textMain, border: `1px solid ${checked ? D.orange : D.border}`, cursor: 'pointer' }}>
-                            <span aria-hidden="true" className="inline-flex items-center justify-center w-3.5 h-3.5 rounded pointer-events-none"
-                              style={{ border: `1.5px solid ${checked ? D.orange : D.textMuted}`, background: checked ? D.orange : '#fff' }}>
-                              {checked && <Check size={9} strokeWidth={3} style={{ color: '#fff' }} />}
-                            </span>
-                            {opt.label}
-                          </button>
-                        ); })}
-                      </div>
-                    )}
-                  </div>
-                  {questionSourceMcq === 'custom' && customSourcesMcq.length > 0 && customSourcesMcq.length < 2 && (
-                    <p className="mt-2 text-[11px]" style={{ color: D.red }}>Pick both sources for Custom mode.</p>
-                  )}
+                  <QuestionSourcePicker
+                    value={{ primary: questionSourceMcq, sub: customSourcesMcq }}
+                    onChange={next => {
+                      setQuestionSourceMcq(next.primary);
+                      setCustomSourcesMcq(next.sub);
+                      const prev = new Set<CustomSubSource>(customSourcesMcq);
+                      const cur = new Set<CustomSubSource>(next.sub);
+                      (['scratch', 'ai', 'thirdParty'] as const).forEach(src => {
+                        if (prev.has(src) && !cur.has(src)) {
+                          setCustomDistributionMcq(d => ({ ...d, [src]: 0 }));
+                        }
+                      });
+                    }}
+                    D={D}
+                    // MCQ mirror never offers Other Platform (MCQ form has no
+                    // thirdParty import path). "Same as Programming" appears
+                    // as the leftmost chip and represents the inherit state.
+                    hideThirdParty
+                    allowInherit
+                    label="MCQ Source"
+                    font={FONT}
+                  />
                   {showMcqSplit && (
                     <div className="mt-2 flex flex-wrap items-center gap-3">
                       <span className="text-[11px] font-bold" style={{ color: D.textMain, fontFamily: FONT }}>MCQ Questions:</span>

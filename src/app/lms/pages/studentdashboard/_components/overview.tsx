@@ -39,16 +39,16 @@ const Kpi = ({
     <Card className="flex flex-col p-5 transition-[transform,box-shadow] duration-300 hover:-translate-y-[2px]">
         <IconBox tint={tint} size={36}>{icon}</IconBox>
 
-        <p className="mt-3.5 truncate text-[12.5px] font-medium text-slate-500 dark:text-slate-400" title={title}>
+        <p className="mt-3.5 truncate text-sm font-medium text-slate-500 dark:text-slate-400" title={title}>
             {title}
         </p>
 
         <p className="mt-1.5 flex items-baseline gap-1 text-[30px] font-bold leading-none tracking-[-0.035em] text-slate-900 dark:text-white">
             {value}
-            {unit && <span className="text-[13px] font-semibold text-slate-400">{unit}</span>}
+            {unit && <span className="text-sm font-semibold text-slate-400">{unit}</span>}
         </p>
 
-        <p className="mt-1.5 truncate text-[11.5px] font-medium" style={{ color: captionColor || '#94A3B8' }} title={caption}>
+        <p className="mt-1.5 truncate text-xs font-medium" style={{ color: captionColor || '#94A3B8' }} title={caption}>
             {caption}
         </p>
 
@@ -161,14 +161,14 @@ const StageRow = ({
                 {icon}
             </div>
             <div className="min-w-0">
-                <p className="text-[13px] font-bold tracking-[-0.01em] text-slate-900">{title}</p>
-                <p className="truncate text-[11px] text-slate-500">{caption}</p>
+                <p className="text-sm font-bold tracking-[-0.01em] text-slate-900">{title}</p>
+                <p className="truncate text-2xs text-slate-500">{caption}</p>
             </div>
         </div>
 
         <div className="min-w-0 flex-1">
             {empty ? (
-                <p className="py-2 text-[12px] text-slate-400">No content configured for this stage yet.</p>
+                <p className="py-2 text-xs text-slate-400">No content configured for this stage yet.</p>
             ) : (
                 <>
                     <div className="flex items-center gap-3">
@@ -180,8 +180,8 @@ const StageRow = ({
                     <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-5">
                         {stats.map((s) => (
                             <div key={s.label} className="min-w-0">
-                                <p className="truncate text-[13px] font-bold text-slate-800 dark:text-slate-100">{s.value}</p>
-                                <p className="truncate text-[10.5px] text-slate-400">{s.label}</p>
+                                <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{s.value}</p>
+                                <p className="truncate text-2xs text-slate-400">{s.label}</p>
                             </div>
                         ))}
                     </div>
@@ -249,7 +249,7 @@ export const LearningJourney = ({ m, onDetails }: { m: DashboardModel; onDetails
 
             <div className="mt-4 flex items-center gap-3 rounded-[14px] border border-indigo-100 bg-indigo-50/60 px-3.5 py-3 dark:border-indigo-500/20 dark:bg-indigo-500/10">
                 <IconBox tint={C.primary} size={32}><Sparkles size={16} strokeWidth={2.2} /></IconBox>
-                <p className="text-[12.5px] font-medium leading-snug text-slate-700 dark:text-slate-200">
+                <p className="text-sm font-medium leading-snug text-slate-700 dark:text-slate-200">
                     {m.insights[0]?.text || 'Open a lesson to start your learning cycle.'}
                 </p>
             </div>
@@ -269,7 +269,7 @@ export const TodayFocus = ({
                 title="Today's Focus"
                 icon={<IconBox tint={C.success} size={34}><Target size={17} strokeWidth={2.2} /></IconBox>}
                 action={
-                    <span className="shrink-0 pt-1 text-[12px] font-semibold text-slate-400">
+                    <span className="shrink-0 pt-1 text-xs font-semibold text-slate-400">
                         {done} of {items.length} done
                     </span>
                 }
@@ -291,11 +291,11 @@ export const TodayFocus = ({
                                 {i.done && <Check size={11} strokeWidth={3.4} color="#fff" />}
                             </span>
                             <div className="min-w-0 flex-1">
-                                <p className={`truncate text-[12.5px] font-medium ${i.done ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>
+                                <p className={`truncate text-sm font-medium ${i.done ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>
                                     {i.label}
                                 </p>
                             </div>
-                            <span className="shrink-0 text-[11px] text-slate-400">{i.meta}</span>
+                            <span className="shrink-0 text-2xs text-slate-400">{i.meta}</span>
                         </div>
                     ))}
                 </div>
@@ -306,7 +306,7 @@ export const TodayFocus = ({
             </div>
             <button
                 onClick={onViewPlan}
-                className="mt-3.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[#E5E7EB] text-[12.5px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
+                className="mt-3.5 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[#E5E7EB] text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:text-slate-300 dark:hover:bg-gray-800"
             >
                 View full plan
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -324,16 +324,16 @@ export const StreakCard = ({ m }: { m: DashboardModel }) => (
         <div className="flex items-start justify-between">
             <div className="flex items-center gap-2.5">
                 <IconBox tint={C.warning} size={34}><Flame size={17} strokeWidth={2.2} /></IconBox>
-                <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-white">Streak</h3>
+                <h3 className="text-md font-semibold tracking-[-0.01em] text-slate-900 dark:text-white">Streak</h3>
             </div>
             <Tag label={`${m.momentum.activeDays30} active days / 30`} color={C.warning} soft={C.warningSoft} />
         </div>
 
         <div className="mt-3 text-center">
             <p className="text-[30px] font-bold leading-none tracking-[-0.03em] text-slate-900 dark:text-white">
-                {m.momentum.streak} <span className="text-[15px] font-semibold text-slate-400">day{m.momentum.streak === 1 ? '' : 's'}</span>
+                {m.momentum.streak} <span className="text-md font-semibold text-slate-400">day{m.momentum.streak === 1 ? '' : 's'}</span>
             </p>
-            <p className="mt-1.5 text-[11.5px] text-slate-400">
+            <p className="mt-1.5 text-xs text-slate-400">
                 {m.momentum.hasAny
                     ? `${m.momentum.weekTotal} submission${m.momentum.weekTotal === 1 ? '' : 's'} this week`
                     : 'Submit an answer to start your streak'}
@@ -345,9 +345,9 @@ export const StreakCard = ({ m }: { m: DashboardModel }) => (
                 const active = d.count > 0;
                 return (
                     <div key={d.key} className="flex flex-col items-center gap-1.5">
-                        <span className="text-[10px] font-semibold text-slate-400">{d.dow}</span>
+                        <span className="text-2xs font-semibold text-slate-400">{d.dow}</span>
                         <span
-                            className="flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-bold"
+                            className="flex h-7 w-7 items-center justify-center rounded-full border text-2xs font-bold"
                             style={{
                                 backgroundColor: active ? C.success : 'transparent',
                                 borderColor: d.isToday ? C.warning : active ? C.success : '#E5E7EB',
@@ -370,10 +370,10 @@ export const StreakCard = ({ m }: { m: DashboardModel }) => (
 export const MotivationCard = ({ name }: { name: string }) => (
     <Card className="relative overflow-hidden border-transparent bg-gradient-to-br from-indigo-50 via-white to-violet-50 dark:from-indigo-500/10 dark:via-gray-900 dark:to-violet-500/10">
         <div className="relative z-10 max-w-[76%]">
-            <p className="text-[13.5px] font-semibold leading-snug tracking-[-0.01em] text-slate-800 dark:text-slate-100">
+            <p className="text-base font-semibold leading-snug tracking-[-0.01em] text-slate-800 dark:text-slate-100">
                 “The best investment you can make is in yourself.”
             </p>
-            <p className="mt-2 text-[11.5px] text-slate-500 dark:text-slate-400">
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                 Keep going, {name} — small daily progress compounds.
             </p>
         </div>

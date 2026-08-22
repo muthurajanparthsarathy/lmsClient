@@ -781,7 +781,7 @@ const FrontendCompiler: React.FC<FrontendCompilerProps> = ({
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <button
                   onClick={() => window.open(image.url, '_blank')}
-                  className="h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors"
+                  className="h-6 px-2 text-2xs rounded flex items-center gap-1 transition-colors"
                   style={{ backgroundColor: colors.hoverBg, color: colors.text }}
                 >
                   <Maximize2 size={10} />

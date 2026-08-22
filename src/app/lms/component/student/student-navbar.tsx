@@ -366,7 +366,7 @@ const handleLogout = async () => {
             >
               <Menu className="w-[18px] h-[18px]" strokeWidth={2.2} />
             </button>
-            {/* <h1 className="text-[16px] font-bold text-gray-900 dark:text-white hidden sm:block">
+            {/* <h1 className="text-lg font-bold text-gray-900 dark:text-white hidden sm:block">
               {pageTitle}
             </h1> */}
           </div>
@@ -378,9 +378,9 @@ const handleLogout = async () => {
               <input
                 type="text"
                 placeholder="Search anything..."
-                className="w-full h-9 pl-9 pr-9 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-[13px] text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:bg-white dark:focus:bg-gray-800 focus:border-orange-300 dark:focus:border-orange-600 focus:ring-2 focus:ring-orange-500/10 transition-all outline-none"
+                className="w-full h-9 pl-9 pr-9 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300 placeholder-gray-400 focus:bg-white dark:focus:bg-gray-800 focus:border-orange-300 dark:focus:border-orange-600 focus:ring-2 focus:ring-orange-500/10 transition-all outline-none"
               />
-              <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 hidden lg:inline-flex items-center text-[11px] text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 font-mono">
+              <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 hidden lg:inline-flex items-center text-2xs text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 font-mono">
                 /
               </kbd>
             </div>
@@ -399,7 +399,7 @@ const handleLogout = async () => {
               <button
                 onClick={() => setShowAISubmenu(!showAISubmenu)}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-semibold transition-all border",
+                  "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all border",
                   showAISubmenu
                     ? "text-white border-transparent"
                     : "bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-orange-300 hover:text-orange-600 dark:hover:border-orange-600 dark:hover:text-orange-400"
@@ -418,8 +418,8 @@ const handleLogout = async () => {
                       <MessageSquare className="w-3.5 h-3.5" />
                     </div>
                     <div>
-                      <p className="text-[12px] font-semibold text-gray-800 dark:text-white">Chat Assistant</p>
-                      <p className="text-[10px] text-gray-400">Ask anything instantly</p>
+                      <p className="text-xs font-semibold text-gray-800 dark:text-white">Chat Assistant</p>
+                      <p className="text-2xs text-gray-400">Ask anything instantly</p>
                     </div>
                   </button>
                   <button onClick={onSummaryClick} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 text-left group transition-colors">
@@ -427,8 +427,8 @@ const handleLogout = async () => {
                       <Zap className="w-3.5 h-3.5" />
                     </div>
                     <div>
-                      <p className="text-[12px] font-semibold text-gray-800 dark:text-white">Summarize</p>
-                      <p className="text-[10px] text-gray-400">Condense current content</p>
+                      <p className="text-xs font-semibold text-gray-800 dark:text-white">Summarize</p>
+                      <p className="text-2xs text-gray-400">Condense current content</p>
                     </div>
                   </button>
                 </div>
@@ -457,7 +457,7 @@ const handleLogout = async () => {
                 <Bell className="w-[18px] h-[18px]" />
                 {unreadCount > 0 && (
                   <span
-                    className="absolute top-0 right-0 min-w-[15px] h-[15px] px-0.5 flex items-center justify-center rounded-full text-white text-[9px] font-bold"
+                    className="absolute top-0 right-0 min-w-[15px] h-[15px] px-0.5 flex items-center justify-center rounded-full text-white text-2xs font-bold"
                     style={{ backgroundColor: ACCENT }}
                   >
                     {unreadCount > 9 ? '9+' : unreadCount}
@@ -469,11 +469,11 @@ const handleLogout = async () => {
                 <div className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-gray-900 rounded-xl shadow-lg shadow-gray-100 dark:shadow-gray-950 ring-1 ring-gray-100 dark:ring-gray-800 z-50 overflow-hidden animate-in fade-in zoom-in-95 origin-top-right">
                   <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
                     <div>
-                      <h3 className="text-[13px] font-bold text-gray-900 dark:text-white">Notifications</h3>
-                      {unreadCount > 0 && <p className="text-[10px] text-gray-400 mt-0.5">{unreadCount} unread</p>}
+                      <h3 className="text-sm font-bold text-gray-900 dark:text-white">Notifications</h3>
+                      {unreadCount > 0 && <p className="text-2xs text-gray-400 mt-0.5">{unreadCount} unread</p>}
                     </div>
                     {unreadCount > 0 && (
-                      <button onClick={() => markAllAsReadMutation.mutate()} className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 hover:underline">
+                      <button onClick={() => markAllAsReadMutation.mutate()} className="text-2xs font-semibold text-orange-600 dark:text-orange-400 hover:underline">
                         Mark all read
                       </button>
                     )}
@@ -482,7 +482,7 @@ const handleLogout = async () => {
                     {notifications.length === 0 ? (
                       <div className="py-8 text-center">
                         <Bell className="w-6 h-6 text-gray-200 dark:text-gray-700 mx-auto mb-2" />
-                        <p className="text-[12px] text-gray-400">No notifications</p>
+                        <p className="text-xs text-gray-400">No notifications</p>
                       </div>
                     ) : notifications.map((n) => (
                       <div
@@ -495,10 +495,10 @@ const handleLogout = async () => {
                       >
                         <div className={cn("mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0", !n.isRead ? "bg-orange-500" : "bg-gray-200 dark:bg-gray-600")} />
                         <div className="min-w-0">
-                          <p className={cn("text-[12px] leading-tight", !n.isRead ? "font-semibold text-gray-900 dark:text-white" : "font-medium text-gray-500 dark:text-gray-400")}>
+                          <p className={cn("text-xs leading-tight", !n.isRead ? "font-semibold text-gray-900 dark:text-white" : "font-medium text-gray-500 dark:text-gray-400")}>
                             {n.title}
                           </p>
-                          <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{n.message}</p>
+                          <p className="text-2xs text-gray-400 mt-0.5 line-clamp-2">{n.message}</p>
                         </div>
                       </div>
                     ))}
@@ -522,13 +522,13 @@ const handleLogout = async () => {
                   <div className="h-7 w-7 rounded-full bg-gray-100 dark:bg-gray-700 animate-pulse" />
                 ) : (
                   <div
-                    className="h-7 w-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shadow-sm"
+                    className="h-7 w-7 rounded-full flex items-center justify-center text-white text-2xs font-bold shadow-sm"
                     style={{ background: `linear-gradient(135deg, ${ACCENT}, #FB923C)` }}
                   >
                     {getUserInitials()}
                   </div>
                 )}
-                <span className="text-[13px] font-semibold text-gray-800 dark:text-white hidden lg:block">
+                <span className="text-sm font-semibold text-gray-800 dark:text-white hidden lg:block">
                   {user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Student'}
                 </span>
                 <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 hidden lg:block transition-transform", showUserMenu ? "rotate-180" : "")} />
@@ -546,11 +546,11 @@ const handleLogout = async () => {
                         {getUserInitials()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[13px] font-bold text-gray-900 dark:text-white truncate">{user?.firstName} {user?.lastName}</p>
-                        <p className="text-[11px] text-gray-400 truncate">{user?.email}</p>
+                        <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{user?.firstName} {user?.lastName}</p>
+                        <p className="text-2xs text-gray-400 truncate">{user?.email}</p>
                         <div className="flex items-center gap-1 mt-0.5">
                           <span className={cn(
-                            "inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-md",
+                            "inline-flex items-center text-2xs font-semibold px-1.5 py-0.5 rounded-md",
                             isDummyStudent ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400" : "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
                           )}>
                             {isDummyStudent ? '⚡ Student View' : user?.role?.renameRole || 'Account'}
@@ -571,8 +571,8 @@ const handleLogout = async () => {
                           <UserCheck2 className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <p className="text-[12px] font-semibold text-orange-600 dark:text-orange-400">Switch to Student</p>
-                          <p className="text-[10px] text-gray-400">Preview student experience</p>
+                          <p className="text-xs font-semibold text-orange-600 dark:text-orange-400">Switch to Student</p>
+                          <p className="text-2xs text-gray-400">Preview student experience</p>
                         </div>
                       </button>
                     )}
@@ -587,8 +587,8 @@ const handleLogout = async () => {
                           <Zap className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <p className="text-[12px] font-semibold text-amber-600 dark:text-amber-400">Back to {originalRoleInfo.renameRole}</p>
-                          <p className="text-[10px] text-gray-400">Return to original role</p>
+                          <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Back to {originalRoleInfo.renameRole}</p>
+                          <p className="text-2xs text-gray-400">Return to original role</p>
                         </div>
                       </button>
                     )}
@@ -597,15 +597,15 @@ const handleLogout = async () => {
 
                     <button onClick={handleProfileClick} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-left transition-colors">
                       <User className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="text-[12px] font-medium text-gray-700 dark:text-gray-300">My Profile</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">My Profile</span>
                     </button>
                     <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-left transition-colors">
                       <Settings className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="text-[12px] font-medium text-gray-700 dark:text-gray-300">Settings</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Settings</span>
                     </button>
                     <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-left transition-colors">
                       <HelpCircle className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="text-[12px] font-medium text-gray-700 dark:text-gray-300">Help & Support</span>
+                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Help & Support</span>
                     </button>
                   </div>
 
@@ -616,7 +616,7 @@ const handleLogout = async () => {
                       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-left transition-colors group"
                     >
                       <LogOut className="w-3.5 h-3.5 text-red-400 group-hover:text-red-500" />
-                      <span className="text-[12px] font-semibold text-red-500 dark:text-red-400">
+                      <span className="text-xs font-semibold text-red-500 dark:text-red-400">
                         {isLoggingOut ? 'Signing out...' : 'Sign Out'}
                       </span>
                     </button>

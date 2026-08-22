@@ -135,7 +135,7 @@ export default function FileTree(props: FileTreeProps) {
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit() } else if (e.key === "Escape") { e.preventDefault(); cancelEdit() } }}
         onBlur={commit}
         placeholder={kind === "file" ? "filename.py" : "folder name"}
-        className="flex-1 text-[12.5px] outline-none rounded px-1"
+        className="flex-1 text-sm outline-none rounded px-1"
         style={{ border: "1px solid #6366f1", fontFamily: "inherit", minWidth: 0 }}
       />
     </div>
@@ -207,7 +207,7 @@ export default function FileTree(props: FileTreeProps) {
       >
         <FileIcon size={13} style={{ color: fileColor(file.language), flexShrink: 0 }} />
         <span className={`flex-1 truncate ${active ? "text-indigo-900 font-semibold" : "text-gray-700"}`}>{file.filename}</span>
-        {file.isEntryPoint && <span className="text-[9px] px-1 rounded bg-emerald-100 text-emerald-700 font-bold flex-shrink-0">RUN</span>}
+        {file.isEntryPoint && <span className="text-2xs px-1 rounded bg-emerald-100 text-emerald-700 font-bold flex-shrink-0">RUN</span>}
         <span className="hidden group-hover:flex items-center gap-1 flex-shrink-0">
           <button title="Rename" onClick={(e) => { e.stopPropagation(); startRename(file.id, "file", file.filename) }}><Pencil size={11} className="text-gray-500 hover:text-blue-600" /></button>
           <button title="Delete" onClick={(e) => { e.stopPropagation(); onDeleteFile(file) }}><Trash2 size={11} className="text-gray-500 hover:text-red-600" /></button>
@@ -226,7 +226,7 @@ export default function FileTree(props: FileTreeProps) {
     <div className="flex flex-col h-full" style={{ fontFamily: "'Poppins', sans-serif" }}>
       <div className="flex items-center justify-between px-2 py-1.5 border-b" style={{ borderColor: "#e5e7eb" }}>
         <span
-          className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 truncate"
+          className="text-2xs font-semibold uppercase tracking-wide text-gray-500 truncate"
           title={`New items will be created in: ${selectedFolderPath}`}
         >
           Explorer<span className="text-indigo-500 normal-case font-mono">{targetLabel}</span>
@@ -258,7 +258,7 @@ export default function FileTree(props: FileTreeProps) {
       >
         {creating?.parent === "/" && editRow(0, creating.kind, commitCreate)}
         {root.folders.length === 0 && root.files.length === 0 && !creating ? (
-          <div className="px-3 py-6 text-center text-[11px] text-gray-400">No files yet. Use the + buttons above.</div>
+          <div className="px-3 py-6 text-center text-2xs text-gray-400">No files yet. Use the + buttons above.</div>
         ) : (
           <>
             {root.folders.map((f) => renderFolder(f, 0))}

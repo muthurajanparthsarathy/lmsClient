@@ -61,8 +61,8 @@ export const CardHead = ({
         <div className="flex min-w-0 items-center gap-2.5">
             {icon}
             <div className="min-w-0">
-                <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-white">{title}</h3>
-                {subtitle && <p className="mt-0.5 truncate text-[12px] text-slate-400">{subtitle}</p>}
+                <h3 className="truncate text-md font-semibold tracking-[-0.01em] text-slate-900 dark:text-white">{title}</h3>
+                {subtitle && <p className="mt-0.5 truncate text-xs text-slate-400">{subtitle}</p>}
             </div>
         </div>
         {action}
@@ -72,7 +72,7 @@ export const CardHead = ({
 export const HeadLink = ({ label, onClick }: { label: string; onClick?: () => void }) => (
     <button
         onClick={onClick}
-        className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+        className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
     >
         {label}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -162,7 +162,7 @@ export const Tag = ({
     label, color, soft,
 }: { label: string; color: string; soft?: string }) => (
     <span
-        className="inline-flex shrink-0 items-center rounded-full px-2 py-[3px] text-[10.5px] font-semibold leading-none"
+        className="inline-flex shrink-0 items-center rounded-full px-2 py-[3px] text-2xs font-semibold leading-none"
         style={{ backgroundColor: soft || `${color}14`, color }}
     >
         {label}
@@ -176,8 +176,8 @@ export const Dot = ({ color }: { color: string }) => (
 export const Empty = ({ icon, title, hint }: { icon: React.ReactNode; title: string; hint?: string }) => (
     <div className="flex flex-col items-center justify-center py-10 text-center">
         <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-300 dark:bg-gray-800">{icon}</div>
-        <p className="text-[13px] font-medium text-slate-500 dark:text-slate-400">{title}</p>
-        {hint && <p className="mt-1 max-w-[240px] text-[11.5px] text-slate-400">{hint}</p>}
+        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
+        {hint && <p className="mt-1 max-w-[240px] text-xs text-slate-400">{hint}</p>}
     </div>
 );
 

@@ -18,9 +18,9 @@ const TrendTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     return (
         <div className="rounded-xl border border-[#E5E7EB] bg-white px-3 py-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-            <p className="mb-1 text-[11.5px] font-semibold text-slate-800 dark:text-slate-100">Week ending {label}</p>
+            <p className="mb-1 text-xs font-semibold text-slate-800 dark:text-slate-100">Week ending {label}</p>
             {payload.map((p: any) => (
-                <p key={p.dataKey} className="flex items-center gap-1.5 text-[11.5px] text-slate-500">
+                <p key={p.dataKey} className="flex items-center gap-1.5 text-xs text-slate-500">
                     <Dot color={p.color || p.stroke || p.fill} />
                     {p.name}:
                     <span className="font-semibold text-slate-700 dark:text-slate-200">
@@ -47,9 +47,9 @@ export const PerformanceTrend = ({ trend }: { trend: TrendPoint[] }) => {
                 icon={<IconBox tint={C.primary} size={34}><TrendingUp size={17} strokeWidth={2.2} /></IconBox>}
                 action={
                     <div className="flex shrink-0 items-center gap-3 pt-1">
-                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500"><Dot color={C.primary} /> Score</span>
-                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500"><Dot color={C.success} /> Attendance</span>
-                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500"><Dot color={`${C.info}66`} /> Submissions</span>
+                        <span className="flex items-center gap-1.5 text-2xs font-medium text-slate-500"><Dot color={C.primary} /> Score</span>
+                        <span className="flex items-center gap-1.5 text-2xs font-medium text-slate-500"><Dot color={C.success} /> Attendance</span>
+                        <span className="flex items-center gap-1.5 text-2xs font-medium text-slate-500"><Dot color={`${C.info}66`} /> Submissions</span>
                     </div>
                 }
             />
@@ -99,12 +99,12 @@ const MonthHeatmap = ({ byDay }: { byDay: Record<string, 'P' | 'A' | 'H'> }) => 
     return (
         <div>
             <div className="mb-2 flex items-center justify-between">
-                <p className="text-[11.5px] font-semibold text-slate-500 dark:text-slate-400">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                     {first.toLocaleString('en', { month: 'long', year: 'numeric' })}
                 </p>
                 <div className="flex items-center gap-2.5">
                     {[['Present', C.success], ['Half', C.warning], ['Absent', C.danger]].map(([l, c]) => (
-                        <span key={l as string} className="flex items-center gap-1 text-[10px] text-slate-400">
+                        <span key={l as string} className="flex items-center gap-1 text-2xs text-slate-400">
                             <Dot color={c as string} />{l}
                         </span>
                     ))}
@@ -112,7 +112,7 @@ const MonthHeatmap = ({ byDay }: { byDay: Record<string, 'P' | 'A' | 'H'> }) => 
             </div>
             <div className="grid grid-cols-7 gap-1">
                 {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-                    <span key={i} className="pb-0.5 text-center text-[9.5px] font-semibold text-slate-300">{d}</span>
+                    <span key={i} className="pb-0.5 text-center text-2xs font-semibold text-slate-300">{d}</span>
                 ))}
                 {Array.from({ length: lead }).map((_, i) => <span key={`pad-${i}`} />)}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -124,7 +124,7 @@ const MonthHeatmap = ({ byDay }: { byDay: Record<string, 'P' | 'A' | 'H'> }) => 
                         <span
                             key={i}
                             title={`${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} — ${status === 'P' ? 'Present' : status === 'H' ? 'Half day' : status === 'A' ? 'Absent' : 'Not marked'}`}
-                            className="flex aspect-square items-center justify-center rounded-[7px] text-[9.5px] font-semibold"
+                            className="flex aspect-square items-center justify-center rounded-[7px] text-2xs font-semibold"
                             style={{
                                 backgroundColor: marked ? tint(status) : '#F6F8FB',
                                 color: marked ? '#fff' : '#CBD5E1',
@@ -172,7 +172,7 @@ export const AttendanceAnalytics = ({ a }: { a: AttendanceModel }) => {
                             center={
                                 <>
                                     <span className="text-[24px] font-bold leading-none tracking-[-0.03em] text-slate-900 dark:text-white">{a.pct}%</span>
-                                    <span className="mt-1 text-[10px] font-medium text-slate-400">Attendance</span>
+                                    <span className="mt-1 text-2xs font-medium text-slate-400">Attendance</span>
                                 </>
                             }
                         />
@@ -180,9 +180,9 @@ export const AttendanceAnalytics = ({ a }: { a: AttendanceModel }) => {
                             {slices.map((s) => (
                                 <div key={s.label} className="flex items-center gap-2">
                                     <Dot color={s.color} />
-                                    <span className="flex-1 text-[12px] text-slate-600 dark:text-slate-300">{s.label}</span>
-                                    <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">{s.value}</span>
-                                    <span className="w-[42px] text-right text-[11px] text-slate-400">
+                                    <span className="flex-1 text-xs text-slate-600 dark:text-slate-300">{s.label}</span>
+                                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">{s.value}</span>
+                                    <span className="w-[42px] text-right text-2xs text-slate-400">
                                         {a.totalDays ? `${Math.round((s.value / a.totalDays) * 100)}%` : '0%'}
                                     </span>
                                 </div>
@@ -190,7 +190,7 @@ export const AttendanceAnalytics = ({ a }: { a: AttendanceModel }) => {
                             {a.consecutiveAbsent >= 2 && (
                                 <div className="mt-2 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50/70 px-2.5 py-2 dark:border-red-500/20 dark:bg-red-500/10">
                                     <Info size={13} strokeWidth={2.3} color={C.danger} className="mt-0.5 shrink-0" />
-                                    <p className="text-[11px] font-medium text-red-600">
+                                    <p className="text-2xs font-medium text-red-600">
                                         {a.consecutiveAbsent} consecutive absent days recorded
                                     </p>
                                 </div>
@@ -204,9 +204,9 @@ export const AttendanceAnalytics = ({ a }: { a: AttendanceModel }) => {
 
                     {a.recentAbsences.length > 0 && (
                         <div className="mt-4 space-y-1.5">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-slate-400">Recent absences</p>
+                            <p className="text-2xs font-semibold uppercase tracking-[0.05em] text-slate-400">Recent absences</p>
                             {a.recentAbsences.map((r, i) => (
-                                <div key={i} className="flex items-center gap-2 text-[11.5px]">
+                                <div key={i} className="flex items-center gap-2 text-xs">
                                     <span className="font-semibold text-slate-600 dark:text-slate-300">
                                         {r.date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                                     </span>

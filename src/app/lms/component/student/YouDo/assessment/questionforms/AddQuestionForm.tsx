@@ -730,18 +730,18 @@ const DiffPopup = () => {
                   <div className={`w-3 h-3 rounded-full ${!canAdd ? 'bg-gray-300' : s.dot}`} />
                   <div className="text-left">
                     <div className={`text-sm font-bold capitalize ${!canAdd ? 'text-gray-400' : s.text}`}>{level}</div>
-                    <div className="text-[10px] text-gray-500 mt-0.5">
+                    <div className="text-2xs text-gray-500 mt-0.5">
                       {!canAdd ? '✓ All slots filled' : `${remaining} of ${total} questions remaining`}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {!canAdd
-                    ? <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-400 rounded-full flex items-center gap-1"><Check size={8} /> Done</span>
+                    ? <span className="text-2xs px-2 py-0.5 bg-gray-100 text-gray-400 rounded-full flex items-center gap-1"><Check size={8} /> Done</span>
                     : <>
-                        <span className={`text-[10px] px-2.5 py-1 rounded-full font-semibold ${s.badge}`}>{remaining} left</span>
+                        <span className={`text-2xs px-2.5 py-1 rounded-full font-semibold ${s.badge}`}>{remaining} left</span>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                          <span className="text-[10px] font-medium text-gray-500">Select</span>
+                          <span className="text-2xs font-medium text-gray-500">Select</span>
                           <ChevronRight size={13} className={s.text} />
                         </div>
                       </>
@@ -753,7 +753,7 @@ const DiffPopup = () => {
         </div>
 
         <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
-          <div className="flex items-center gap-2 text-[11px] text-gray-500">
+          <div className="flex items-center gap-2 text-2xs text-gray-500">
             <Info size={11} className="text-gray-400 shrink-0" />
             <span>Mode: {cfgType === 'levelBased' ? 'Level Based' : 'Selection Level'} — each difficulty has its own quota.</span>
           </div>
@@ -847,7 +847,7 @@ const DiffPopup = () => {
                     </span>
                     <div className="flex items-center gap-1.5">
                       {isGeneral && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600">General</span>
+                        <span className="text-2xs px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600">General</span>
                       )}
                       <span className={`text-xs px-2 py-0.5 rounded-full ${!progOk ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
                         {!progOk ? 'Full' : 'Available'}

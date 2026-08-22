@@ -1,47 +1,46 @@
 "use client"
 
+/**
+ * Student rail — the SAME sidebar design as the admin/L&D rail
+ * (`src/app/lms/component/sidebar.tsx`). Only the menu CONTENT differs: the
+ * items here are permission-driven student routes (plus the always-injected
+ * Feedback entry) instead of the admin nav tree.
+ *
+ * Every visual decision below is copied from the admin rail on purpose —
+ * geometry (268 / 64 rail, 36px rows, 12px gutters), the semantic design
+ * tokens (`bg-surface`, `border-hairline`, `text-heading` …), the 18px Lucide
+ * icons at their default stroke, the raised-white active pill, the collapsed
+ * tooltips and the identity footer. The old student-only look (Phosphor
+ * duotone icons, hardcoded #F97316 label colour, per-shell gray hexes,
+ * uppercase section headings) is gone: there is one sidebar design system now,
+ * and this file is a second instance of it, not a variant.
+ */
+
 import type React from "react"
 import { useState, useEffect, useMemo } from "react"
 import { cn } from "@/lib/utils"
 import { useRouter, usePathname } from "next/navigation"
 import { notificationsService, notificationKeys } from "@/apiServices/notifications"
 import { useQuery } from "@tanstack/react-query"
+import { motion } from "framer-motion"
+import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 import * as LucideIcons from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 import {
   ShieldCheck, Home, User, Bell, BookOpen, FileText, Trophy,
   GraduationCap, Calendar, MessageSquare, MessageCircle, BarChart3, Settings2,
   Clock, Users, Bookmark, Target, Zap, Layers, Award,
   LayoutDashboard, FolderOpen, ClipboardCheck, Video,
-  Activity, TrendingUp, Brain, Sparkles, Flame, X, ChevronDown, ChevronUp,
-  Crown, Search, LogOut, Sun, Moon, Code2
+  Activity, TrendingUp, Brain, Sparkles, Flame, X, ChevronDown,
+  Search, LogOut, Code2,
 } from "lucide-react"
-import { useTheme } from "next-themes"
-
-import {
-  SquaresFour, Books, ClipboardText, Trophy as TrophyDuo, Bell as BellDuo,
-  ChatCircleText, FolderOpen as FolderOpenDuo, CalendarBlank, UserCircle,
-  ChartBar, House, Code as CodeDuo,
-} from "@phosphor-icons/react"
-
-// Colorful duotone icons for known nav routes — falls back to the plain
-// (possibly admin-configured) Lucide icon for anything not in this map.
-const DUOTONE_ICON_MAP: Record<string, any> = {
-  dashboard: SquaresFour,
-  courses: Books,
-  codinganalytics: CodeDuo,
-  assignments: ClipboardText,
-  grades: TrophyDuo,
-  notifications: BellDuo,
-  messages: ChatCircleText,
-  resources: FolderOpenDuo,
-  schedule: CalendarBlank,
-  profile: UserCircle,
-  progress: ChartBar,
-  // Student feedback list at /lms/pages/feedback — reuses the same chat
-  // bubble the messages entry uses so the tone matches the rest of the row.
-  feedback: ChatCircleText,
-}
 
 interface SidebarItem {
   icon: React.ElementType
@@ -61,7 +60,7 @@ interface StudentSidebarProps {
   activeRoute?: string
   /** Renders inside a parent-controlled container (no fixed positioning, no logo duplication issues). */
   embedded?: boolean
-  /** When provided, a Logout row is rendered at the very bottom. */
+  /** When provided, a Sign Out entry is added to the identity menu. */
   onLogout?: () => void
   /** Course syllabus tree, nested under the "Courses" nav item (embedded course-detail view). */
   courseTree?: React.ReactNode
@@ -96,10 +95,12 @@ interface UserData {
 }
 
 const USER_DATA_KEY = "smartcliff_userData"
-const THEME_KEY = "theme"
 
-// Brand accent (matches reference dashboard design)
-const ACCENT = "#F97316"
+// Rail geometry + the one spring every width/pill move shares. Identical to
+// the admin rail (see the note there on why 268 and not 244).
+const EXPANDED_W = 268
+const COLLAPSED_W = 64
+const sidebarSpring = { type: "spring" as const, stiffness: 400, damping: 34 }
 
 const getCurrentUserLocal = (): { valid: boolean; user: UserData | null } => {
   try {
@@ -110,13 +111,6 @@ const getCurrentUserLocal = (): { valid: boolean; user: UserData | null } => {
   } catch {
     return { valid: false, user: null }
   }
-}
-
-const getStoredTheme = (): 'light' | 'dark' => {
-  if (typeof window === 'undefined') return 'light'
-  const storedTheme = localStorage.getItem(THEME_KEY) as 'light' | 'dark'
-  if (storedTheme) return storedTheme
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
 const getIconByName = (iconName: string): any => {
@@ -147,46 +141,28 @@ const routeKeyOf = (href: string) => {
   return route.includes('dashboard') ? 'dashboard' : route
 }
 
-// Section grouping config — first group renders without a heading (like the reference design)
+// Section grouping config. Like the admin rail, the group HEADINGS are never
+// rendered — grouping only fixes the order of a flat list.
 const SECTION_GROUPS: Record<string, string[]> = {
   "": ["dashboard"],
   "Learning": ["courses", "codinganalytics", "assignments", "grades", "resources", "feedback"],
-  "Connect": ["messages", "notifications", "schedule"],
+  "Connect": ["messages", "notifications", "studentcalendar"],
   "Account": ["profile", "settings", "help", "progress"],
 }
 
-/* Light/dark control — lived in the removed StudentNavbar. next-themes is
-   mounted in app/layout.tsx, so this stays in sync with the other shells. */
-function ThemeRow() {
-  const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  const isDark = mounted && resolvedTheme === "dark"
-  const btn = (on: boolean) => cn(
-    "inline-flex h-6 w-7 items-center justify-center rounded-full transition-colors",
-    on ? "bg-white dark:bg-[#17181C] text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-  )
-  return (
-    <div className="flex items-center justify-between px-4 pt-2">
-      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">Theme</span>
-      <div className="inline-flex gap-0.5 rounded-full bg-[#E7E9EE] p-0.5 dark:bg-gray-800" role="group" aria-label="Colour theme">
-        <button type="button" aria-pressed={mounted ? !isDark : undefined} onClick={() => setTheme("light")} className={btn(mounted && !isDark)}>
-          <Sun className="h-3.5 w-3.5" strokeWidth={2} />
-          <span className="sr-only">Light</span>
-        </button>
-        <button type="button" aria-pressed={mounted ? isDark : undefined} onClick={() => setTheme("dark")} className={btn(isDark)}>
-          <Moon className="h-3.5 w-3.5" strokeWidth={2} />
-          <span className="sr-only">Dark</span>
-        </button>
-      </div>
-    </div>
-  )
-}
+// Theme toggle removed — the admin rail carries no theme control at all, so
+// keeping one here was the last visible asymmetry between the two shells. Dark
+// mode still switches via next-themes if any other UI turns it on; this rail
+// simply no longer offers the switch. The Sun/Moon lucide icons and the
+// next-themes hook stopped being used in this file with the row's removal.
 
 // Hoisted to module scope so it keeps a stable identity across renders — otherwise
 // the nested course tree (passed as children) would remount on every selection.
-const SidebarNavItem = ({ item, onNavigate, expandable, expanded, onToggle, children }: {
+// The markup below is the admin rail's nav row, verbatim, plus the student's
+// unread-count badge.
+const SidebarNavItem = ({ item, collapsed, onNavigate, expandable, expanded, onToggle, children }: {
   item: SidebarItem
+  collapsed: boolean
   onNavigate: (href: string) => void
   expandable?: boolean
   expanded?: boolean
@@ -194,58 +170,116 @@ const SidebarNavItem = ({ item, onNavigate, expandable, expanded, onToggle, chil
   children?: React.ReactNode
 }) => {
   const Icon = item.icon
-  const DuoIcon = DUOTONE_ICON_MAP[routeKeyOf(item.href)]
-  const badgeCount = item.badge || 0
-  return (
-    <li>
-      <button
-        onClick={() => (expandable ? onToggle?.() : onNavigate(item.href))}
-        className={cn(
-          "group w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] border transition-all duration-150 text-left",
-          item.isActive
-            // White raised pill on the gray rail (floating-workspace language)
-            ? "bg-white dark:bg-[#17181C] border-[#E4E7EC] dark:border-[#2A2D34] shadow-[0_1px_2px_rgba(16,24,40,.06)]"
-            : "border-transparent text-gray-600 dark:text-gray-300 hover:bg-[#E9EBF0] dark:hover:bg-[#1C1E23] hover:text-gray-900 dark:hover:text-gray-100"
-        )}
-      >
-        {DuoIcon ? (
-          <DuoIcon
-            size={19}
-            weight="duotone"
-            className="flex-shrink-0 transition-colors"
-            color={item.isActive ? "#F97316" : "#9CA3AF"}
-          />
-        ) : (
-          <Icon
-            className={cn(
-              "flex-shrink-0 w-[17px] h-[17px] transition-colors",
-              item.isActive ? "text-[#F97316] dark:text-orange-400" : "text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300"
-            )}
-            strokeWidth={item.isActive ? 2.2 : 2}
-          />
-        )}
+  const badgeCount = Number(item.badge || 0)
+  const isActive = !!item.isActive
+  // The collapsed rail has no room for a submenu, so there the parent stays a
+  // plain link and the tree is reached through it instead — same rule as admin.
+  const isParentToggle = !!expandable && !collapsed
 
-        <span className={cn(
-          "flex-1 text-sm transition-colors truncate",
-          item.isActive ? "font-semibold text-[#F97316] dark:text-orange-300" : "font-medium"
-        )}>
-          {item.label}
-        </span>
-
-        {Number(badgeCount) > 0 && (
-          <span className="flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full px-1.5 text-[10px] font-bold bg-[#F97316] text-white shadow-sm">
-            {Number(badgeCount) > 99 ? '99+' : badgeCount}
+  const row = (
+    <div
+      onClick={() => (isParentToggle ? onToggle?.() : onNavigate(item.href))}
+      role="button"
+      tabIndex={0}
+      aria-label={item.label}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          isParentToggle ? onToggle?.() : onNavigate(item.href)
+        }
+      }}
+      className={cn(
+        "relative flex items-center rounded-[10px] cursor-pointer group transition-colors duration-150 border",
+        collapsed
+          ? "justify-center w-9 h-9 mx-auto"
+          : "justify-between gap-3 pl-3 pr-2 h-9",
+        // White raised pill on the gray rail; hover one step darker than the
+        // canvas so it stays visible there.
+        isActive
+          ? "bg-surface border-hairline shadow-xs"
+          : "border-transparent hover:bg-line"
+      )}
+    >
+      <div className={cn("flex items-center", collapsed ? "" : "gap-3 min-w-0")}>
+        <Icon className={cn(
+          "w-[18px] h-[18px] flex-shrink-0",
+          isActive ? "text-heading" : "text-subtle group-hover:text-body"
+        )} />
+        {!collapsed && (
+          <span className={cn(
+            "text-sm truncate whitespace-nowrap flex items-center gap-1",
+            // Both states read in normal weight — the raised white pill +
+            // shadow already carries "selected".
+            isActive ? "text-heading font-medium" : "text-body font-normal"
+          )}>
+            {item.label}
           </span>
         )}
+      </div>
 
-        {expandable && (
-          expanded
-            ? <ChevronUp className="w-3.5 h-3.5 flex-shrink-0 text-[#F97316]" strokeWidth={2.4} />
-            : <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" strokeWidth={2.4} />
-        )}
-      </button>
+      {!collapsed && (badgeCount > 0 || isParentToggle) && (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {badgeCount > 0 && (
+            <span className="min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full px-1.5 text-2xs font-semibold leading-none bg-brand-600 text-white">
+              {badgeCount > 99 ? '99+' : badgeCount}
+            </span>
+          )}
+          {isParentToggle && (
+            <button
+              type="button"
+              aria-label={expanded ? `Collapse ${item.label}` : `Expand ${item.label}`}
+              aria-expanded={!!expanded}
+              onClick={(e) => {
+                // Without this the parent row's own click handler fires twice.
+                e.stopPropagation()
+                onToggle?.()
+              }}
+              className="p-0.5 rounded hover:bg-black/5 flex-shrink-0"
+            >
+              <ChevronDown className={cn(
+                "w-3.5 h-3.5 transition-transform duration-150",
+                expanded && "rotate-180",
+                isActive ? "text-heading" : "text-faint"
+              )} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
 
-      {expandable && (
+  // <div>, not <li> — the admin rail (component/sidebar.tsx) uses <div>s here
+  // too, and mixing <ul>/<li> in was the last remaining structural asymmetry
+  // between the two rails after the class strings were matched. Even with
+  // Tailwind preflight, list markup can add a subpixel bit of vertical
+  // rhythm from user-agent defaults and inherits `list-style` from any
+  // container that redeclares it — enough to make labels read slightly
+  // heavier in some browsers, which is exactly what the parity screenshots
+  // showed.
+  return (
+    <div>
+      {collapsed ? (
+        <TooltipPrimitive.Root>
+          <TooltipPrimitive.Trigger asChild>
+            {row}
+          </TooltipPrimitive.Trigger>
+          <TooltipPrimitive.Portal>
+            <TooltipPrimitive.Content
+              side="right"
+              sideOffset={12}
+              className="z-popover rounded-chip bg-ink-800 px-3 py-1.5 text-xs font-medium text-white shadow-md whitespace-nowrap select-none"
+            >
+              {item.label}
+            </TooltipPrimitive.Content>
+          </TooltipPrimitive.Portal>
+        </TooltipPrimitive.Root>
+      ) : (
+        row
+      )}
+
+      {/* Submenu geometry copied from the admin rail: the rule down the left
+          ties the tree to its parent so a long list still reads as one group. */}
+      {isParentToggle && (
         <div
           style={{
             display: "grid",
@@ -254,11 +288,13 @@ const SidebarNavItem = ({ item, onNavigate, expandable, expanded, onToggle, chil
           }}
         >
           <div style={{ overflow: "hidden", minHeight: 0 }}>
-            <div className="mt-1">{children}</div>
+            <div className="mt-0.5 mb-1 ml-[27px] pl-2.5 border-l border-hairline space-y-0.5">
+              {children}
+            </div>
           </div>
         </div>
       )}
-    </li>
+    </div>
   )
 }
 
@@ -269,7 +305,9 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
   const [loading, setLoading] = useState(true)
   const [menuSearch, setMenuSearch] = useState("")
   const [coursesExpanded, setCoursesExpanded] = useState(true)
-  // Desktop rail collapse — same interaction as the L&D shell's brand-card
+  const [isMobile, setIsMobile] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  // Desktop rail collapse — same interaction as the admin shell's brand-card
   // chevron. Mobile keeps the drawer behaviour (X button), untouched.
   const [railCollapsed, setRailCollapsed] = useState(false)
   const [studentInfo, setStudentInfo] = useState({
@@ -280,6 +318,17 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     streak: 0,
     enrolledCourses: 0,
   })
+
+  // Collapse only ever applies to the desktop rail; the mobile drawer is
+  // always full width (matches the admin rail's isMobile handling).
+  const collapsed = !embedded && !isMobile && railCollapsed
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     const fetchData = () => {
@@ -362,6 +411,12 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     codinganalytics: "Coding Analytics",
     grade: "Grade",
     feedback: "Feedback",
+    // Every spelling an admin might have seeded for the same module — they
+    // all route to the student calendar below, so they must all read the
+    // same way in the rail.
+    calendar: "Calendar",
+    schedule: "Calendar",
+    studentcalendar: "Calendar",
   }
 
   const buildSidebarItems = (user: UserData, userAnalytics: any): SidebarItem[] => {
@@ -412,6 +467,28 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
         color: "orange",
       })
     }
+
+    // Calendar is injected on the same terms as Feedback: the route gate
+    // grants /lms/pages/studentcalendar on the student ROLE (providers.tsx)
+    // because knowing when there is no class is reference data, not a
+    // privilege — and most learner user docs seed only `studentdashboard`,
+    // so a permission-gated entry would be missing for everyone already in
+    // the system. If a `calendar` / `schedule` / `studentcalendar` grant IS
+    // present it flows through the map above to the SAME route, and the
+    // dedup below keeps the rail from showing it twice.
+    const calendarRoute = `${BASE_PATH}studentcalendar`
+    if (!items.some((it) => it.href === calendarRoute)) {
+      items.push({
+        icon: Calendar,
+        label: STUDENT_LABEL_OVERRIDES.studentcalendar,
+        href: calendarRoute,
+        permissionKey: "studentcalendar",
+        isActive: getIsActive(calendarRoute),
+        count: 0,
+        progress: 0,
+        color: "orange",
+      })
+    }
     return items
   }
 
@@ -439,7 +516,10 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     { icon: Bell, label: "Notifications", href: `${BASE_PATH}notifications`, count: 0, progress: 0 },
     { icon: MessageSquare, label: "Messages", href: `${BASE_PATH}messages`, count: 0, progress: 0 },
     { icon: FolderOpen, label: "Resources", href: `${BASE_PATH}resources`, count: analytics.totalModules + analytics.totalTopics, progress: 0 },
-    { icon: Calendar, label: "Schedule", href: `${BASE_PATH}schedule`, count: 2, progress: 0 },
+    // Calendar, not "Schedule": /lms/pages/schedule has never existed, so the
+    // old entry was a dead link. This is the read-only institute + enrolled
+    // client holiday calendar.
+    { icon: Calendar, label: "Calendar", href: `${BASE_PATH}studentcalendar`, count: 0, progress: 0 },
     { icon: User, label: "Profile", href: `${BASE_PATH}profile`, count: 0, progress: 0 },
   ]
 
@@ -455,7 +535,11 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
       'performance-analytics': 'progress', 'analytics': 'progress', 'progress': 'progress',
       'grades': 'grades', 'messages': 'messages', 'message-center': 'messages',
       'resource-library': 'resources', 'resources': 'resources',
-      'study-schedule': 'schedule', 'schedule': 'schedule', 'calendar': 'schedule',
+      // Calendar/schedule grants all land on the student calendar. They used
+      // to route to /lms/pages/schedule, a page that does not exist.
+      'study-schedule': 'studentcalendar', 'schedule': 'studentcalendar',
+      'calendar': 'studentcalendar', 'student-calendar': 'studentcalendar',
+      'studentcalendar': 'studentcalendar',
       'user-profile': 'profile', 'profile': 'profile',
       'notifications': 'notifications', 'alerts': 'notifications',
       // Student feedback list (Give feedback / Done actions per course).
@@ -502,7 +586,8 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     if (typeof window !== 'undefined' && window.innerWidth < 768 && onClose) onClose()
   }
 
-  // Group existing (permission-driven) items into titled sections like the reference design.
+  // Group existing (permission-driven) items into sections so the order is
+  // stable; the headings themselves are never rendered.
   const groupedSections = useMemo(() => {
     const q = menuSearch.trim().toLowerCase()
     const pool = q ? sidebarItems.filter(i => i.label.toLowerCase().includes(q)) : sidebarItems
@@ -522,53 +607,19 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
     return sections
   }, [sidebarItems, menuSearch])
 
-  // Thin scrollbar shared by both shells
-  const ScrollStyle = (
-    <style dangerouslySetInnerHTML={{ __html: `
-      .sc-sb-scroll::-webkit-scrollbar{width:5px}
-      .sc-sb-scroll::-webkit-scrollbar-track{background:transparent}
-      .sc-sb-scroll::-webkit-scrollbar-thumb{background:#e2e5ea;border-radius:8px}
-      .sc-sb-scroll::-webkit-scrollbar-thumb:hover{background:#cbd0d8}
-    `}} />
-  )
-
-  if (loading) {
-    const skeleton = (
-      <>
-        <div className="flex h-[60px] items-center flex-shrink-0 px-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl shadow-sm" style={{ background: `linear-gradient(135deg, ${ACCENT}, #FB923C)` }} />
-            <div className="h-4 w-24 rounded bg-gray-100 dark:bg-gray-800" />
-          </div>
-        </div>
-        <div className="flex-1 p-4 space-y-2">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-9 bg-gray-100 dark:bg-gray-800 rounded-[10px] animate-pulse" style={{ animationDelay: `${i * 80}ms` }} />
-          ))}
-        </div>
-      </>
-    )
-    if (embedded) return <div className="h-full w-full flex flex-col bg-white dark:bg-gray-950 overflow-hidden">{skeleton}</div>
-    return (
-      <aside className="fixed left-0 top-0 z-50 flex h-screen w-[268px] flex-col border-r border-gray-100 bg-white md:static md:z-auto md:shrink-0 md:border-r-0 md:bg-transparent dark:border-gray-800 dark:bg-gray-950 md:dark:bg-transparent">
-        {skeleton}
-      </aside>
-    )
-  }
-
-
   const renderSections = () => (
     groupedSections.map((section, si) => (
-      // Group HEADINGS are not rendered (matches the L&D rail) — the grouping
-      // only orders the items; a flat list keeps the rail clean and short.
-      <div key={section.title || si} className={cn(si > 0 && "mt-1")}>
-        <ul className="space-y-0.5">
+      <div key={section.title || si}>
+        {/* <div>, not <ul> — matches the admin rail's grouping wrapper so no
+            list-style resets need to leak past the sidebar's own scope. */}
+        <div className="space-y-0.5">
           {section.items.map(item => {
             const isCoursesTree = embedded && !!courseTree && !menuSearch && routeKeyOf(item.href) === 'courses'
             return (
               <SidebarNavItem
                 key={item.permissionKey || item.href}
                 item={item}
+                collapsed={collapsed}
                 onNavigate={handleNavigation}
                 expandable={isCoursesTree}
                 expanded={isCoursesTree ? coursesExpanded : undefined}
@@ -578,231 +629,208 @@ export function StudentSidebar({ isOpen = true, onClose, activeRoute, embedded =
               </SidebarNavItem>
             )
           })}
-        </ul>
+        </div>
       </div>
     ))
   )
 
-  // (The "Start your streak" promo card was removed from the rail — the space
-  // goes to navigation; streak data still powers the dashboard stats.)
-
-  const userCard = (
-    <div className="px-4 pt-2">
-      <button
-        onClick={() => handleNavigation('/lms/pages/studentdashboard/student/profile')}
-        // Flat identity row (no card box) pinned at the rail's bottom-left,
-        // matching the reference's avatar + name + chevron footer.
-        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl hover:bg-[#E9EBF0] dark:hover:bg-[#1C1E23] transition-colors"
-      >
-        <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0 shadow-sm"
-          style={{ background: `linear-gradient(135deg, ${ACCENT}, #FB923C)` }}
-        >
-          {studentInfo.avatarLetter}
-        </div>
-        <div className="flex-1 min-w-0 text-left">
-          <p className="text-[13px] font-bold text-gray-900 dark:text-white truncate leading-tight">{studentInfo.name}</p>
-          <p className="text-[11px] text-gray-400 truncate mt-0.5">{studentInfo.role}</p>
-        </div>
-        <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
-      </button>
-    </div>
-  )
-
-  const logoutRow = onLogout ? (
-    <div className="px-4 pt-1.5 pb-3">
-      <button
-        onClick={onLogout}
-        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-[10px] text-gray-500 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-      >
-        <LogOut className="w-[17px] h-[17px] flex-shrink-0" strokeWidth={2} />
-        <span className="text-sm font-medium">Logout</span>
-      </button>
-    </div>
-  ) : (
-    <div className="h-4" />
-  )
-
-  // Brand card — a raised white block on the gray rail, like the reference.
-  // `withToggle` adds the collapse chevron (standalone shell only; the
-  // embedded course rail has its own geometry) — same 24px ghost button and
-  // 14px chevron as the L&D shell's brand card.
-  const logoRow = (withToggle = false) => (
-    <div className="flex-shrink-0 px-3 pt-3 pb-1">
+  // ── Brand card ────────────────────────────────────────────────────────────
+  // A raised white block on the gray rail. It also hosts the collapse toggle,
+  // exactly as the admin rail does.
+  const brandCard = (withToggle: boolean) => (
+    <div className={cn("flex-shrink-0 overflow-hidden", collapsed ? "px-2 pt-3 pb-1" : "px-3 pt-3 pb-1")}>
       <div className={cn(
-        "flex items-center gap-2.5 rounded-[14px] border border-[#E4E7EC] bg-white px-3 py-2 shadow-[0_1px_2px_rgba(16,24,40,.04)] dark:border-[#2A2D34] dark:bg-[#17181C]",
-        withToggle && railCollapsed && "md:flex-col md:gap-1.5 md:px-1.5 md:py-2"
+        "flex items-center rounded-[14px] border border-hairline bg-surface shadow-xs",
+        collapsed ? "flex-col gap-1.5 px-1 py-2" : "gap-2.5 px-3 py-2"
       )}>
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
-          style={{ background: `linear-gradient(135deg, ${ACCENT}, #FB923C)` }}
-        >
-          <BookOpen className="w-[18px] h-[18px] text-white" />
+        <div className="w-8 h-8 bg-gradient-to-b from-brand-400 to-brand-600 rounded-tile flex items-center justify-center flex-shrink-0 shadow-sm">
+          <BookOpen className="w-[17px] h-[17px] text-white" />
         </div>
-        {!(withToggle && railCollapsed) && (
-          <div className="min-w-0">
-            <span className="block text-[15px] font-extrabold tracking-tight leading-tight text-gray-900 dark:text-white">
+        {!collapsed && (
+          <div className="min-w-0 flex-1 whitespace-nowrap">
+            <p className="text-md font-bold tracking-[-0.01em] text-heading leading-tight">
               SmartCliff
-            </span>
-            <span className="block text-[10.5px] leading-tight text-gray-400 dark:text-gray-500">
-              Student
-            </span>
+            </p>
+            <p className="text-2xs text-subtle truncate leading-tight">
+              {studentInfo.role}
+            </p>
           </div>
         )}
         {withToggle && (
           <button
             type="button"
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-expanded={!collapsed}
             onClick={() => setRailCollapsed(v => !v)}
-            aria-label={railCollapsed ? "Expand navigation" : "Collapse navigation"}
-            aria-expanded={!railCollapsed}
-            className={cn(
-              "hidden md:inline-grid place-items-center w-6 h-6 rounded-[7px] flex-shrink-0 text-gray-400 hover:bg-[#E9EBF0] hover:text-gray-600 dark:hover:bg-[#1C1E23] dark:hover:text-gray-300 transition-colors",
-              !railCollapsed && "ml-auto"
-            )}
+            className="flex-shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-control text-faint hover:bg-row-hover hover:text-body transition-colors"
           >
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              {railCollapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
-            </svg>
+            <ChevronDown className={cn(
+              "w-4 h-4 transition-transform duration-150",
+              collapsed ? "-rotate-90" : "rotate-90"
+            )} />
           </button>
         )}
       </div>
     </div>
   )
 
-  // Collapsed rail — icon-only items, tooltip = label, same active pill.
-  const renderCollapsedRail = () => (
-    <ul className="space-y-1">
-      {groupedSections.flatMap(s => s.items).map(item => {
-        const Icon = item.icon
-        return (
-          <li key={item.permissionKey || item.href}>
-            <button
-              onClick={() => handleNavigation(item.href)}
-              title={item.label}
-              aria-label={item.label}
-              className={cn(
-                "w-full flex items-center justify-center py-2.5 rounded-[10px] border transition-all duration-150",
-                item.isActive
-                  ? "bg-white dark:bg-[#17181C] border-[#E4E7EC] dark:border-[#2A2D34] shadow-[0_1px_2px_rgba(16,24,40,.06)]"
-                  : "border-transparent hover:bg-[#E9EBF0] dark:hover:bg-[#1C1E23]"
-              )}
-            >
-              <Icon
-                className={cn("w-[17px] h-[17px]", item.isActive ? "text-[#F97316] dark:text-orange-400" : "text-gray-400 dark:text-gray-500")}
-                strokeWidth={item.isActive ? 2.2 : 2}
-              />
-            </button>
-          </li>
-        )
-      })}
-    </ul>
-  )
-
-  // ── Embedded shell (course-detail view): logo + menu search + nested course tree + logout ──
-  if (embedded) {
-    return (
-      <div className="h-full w-full flex flex-col bg-white dark:bg-gray-950 overflow-hidden">
-        {ScrollStyle}
-        {logoRow()}
-
-        {/* Menu search */}
-        <div className="px-4 pb-1 pt-0.5 flex-shrink-0">
-          <div className="flex items-center gap-2 h-9 px-3 rounded-[10px] bg-[#f5f6f8] dark:bg-gray-900 border border-[#eef0f3] dark:border-gray-800 focus-within:border-orange-300 dark:focus-within:border-orange-700 transition-colors">
-            <Search className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" strokeWidth={2} />
-            <input
-              value={menuSearch}
-              onChange={e => setMenuSearch(e.target.value)}
-              placeholder="Search menu..."
-              className="flex-1 min-w-0 bg-transparent text-[12.5px] text-gray-700 dark:text-gray-200 placeholder:text-gray-400 outline-none"
-            />
-            <kbd className="flex-shrink-0 text-[10px] font-semibold text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 leading-none">⌘K</kbd>
+  // ── Nav body ──────────────────────────────────────────────────────────────
+  const navBody = (
+    <div className="flex-1 overflow-y-auto overflow-x-hidden pt-3 pb-3 [scrollbar-width:thin]">
+      {loading ? (
+        <div className="px-4 py-2">
+          <div className="animate-pulse space-y-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-ink-100 rounded-lg flex-shrink-0" />
+                {!collapsed && <div className="h-3.5 bg-ink-100 rounded w-28" />}
+              </div>
+            ))}
           </div>
         </div>
-
-        <div className="flex-1 overflow-y-auto px-4 pt-1 pb-2 sc-sb-scroll">
+      ) : (
+        <nav className="px-3 space-y-0.5">
           {renderSections()}
-        </div>
+        </nav>
+      )}
+    </div>
+  )
 
-        <div className="flex-shrink-0 border-t border-gray-100 dark:border-gray-800 pt-0.5">
+  // ── Identity footer ───────────────────────────────────────────────────────
+  const userCard = (
+    <div className={cn("flex-shrink-0 border-t border-hairline", collapsed ? "p-2" : "p-3")}>
+      <DropdownMenu open={showUserMenu} onOpenChange={setShowUserMenu}>
+        <DropdownMenuTrigger asChild>
+          <button
+            // Flat identity row (no card box), same as the admin rail.
+            className={cn(
+              "w-full flex items-center rounded-tile transition-colors duration-150",
+              collapsed
+                ? "justify-center p-1.5 hover:bg-line"
+                : "gap-2.5 p-2 hover:bg-line"
+            )}
+          >
+            <div className="w-8 h-8 rounded-full bg-ink-900 flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-semibold">{studentInfo.avatarLetter}</span>
+            </div>
+            {!collapsed && (
+              <>
+                <div className="flex-1 min-w-0 text-left whitespace-nowrap">
+                  <p className="text-sm font-semibold text-heading truncate leading-tight">
+                    {studentInfo.name}
+                  </p>
+                  <p className="text-2xs text-subtle truncate leading-tight mt-0.5">
+                    {studentInfo.role}
+                  </p>
+                </div>
+                <ChevronDown className={cn(
+                  "w-4 h-4 text-faint flex-shrink-0 transition-transform duration-150",
+                  showUserMenu && "rotate-180"
+                )} />
+              </>
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="top"
+          align="start"
+          sideOffset={8}
+          className="w-52 bg-surface border border-hairline-strong rounded-tile shadow-lg p-1.5 z-popover"
+        >
+          <DropdownMenuItem
+            onClick={() => { setShowUserMenu(false); handleNavigation('/lms/pages/studentdashboard/student/profile') }}
+            className="flex items-center gap-2.5 px-2.5 py-2 text-sm font-medium text-body rounded-chip hover:bg-row-hover transition-colors cursor-pointer"
+          >
+            <User className="w-4 h-4 text-subtle" />
+            Profile
+          </DropdownMenuItem>
+          {onLogout && (
+            <>
+              <DropdownMenuSeparator className="my-1 bg-hairline" />
+              <DropdownMenuItem
+                onClick={() => { setShowUserMenu(false); onLogout() }}
+                className="flex items-center gap-2.5 px-2.5 py-2 text-sm font-medium text-danger-700 rounded-chip hover:bg-danger-50 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 text-danger-700" />
+                Sign Out
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+
+  // ── Embedded shell (course-detail view) ───────────────────────────────────
+  if (embedded) {
+    return (
+      <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={100}>
+        <div className="h-full w-full flex flex-col bg-surface overflow-hidden">
+          {brandCard(false)}
+
+          {/* Menu search */}
+          <div className="flex-shrink-0 px-3 pb-1 pt-1">
+            <div className="flex items-center gap-2 h-9 px-3 rounded-tile bg-surface-sunken border border-hairline focus-within:border-hairline-strong transition-colors">
+              <Search className="w-3.5 h-3.5 text-faint flex-shrink-0" />
+              <input
+                value={menuSearch}
+                onChange={e => setMenuSearch(e.target.value)}
+                placeholder="Search menu..."
+                className="flex-1 min-w-0 bg-transparent text-sm text-body placeholder:text-faint outline-none"
+              />
+              <kbd className="flex-shrink-0 text-2xs font-semibold text-faint bg-surface border border-hairline rounded-chip px-1.5 py-0.5 leading-none">⌘K</kbd>
+            </div>
+          </div>
+
+          {navBody}
           {userCard}
-          {logoutRow}
         </div>
-      </div>
+      </TooltipPrimitive.Provider>
     )
   }
 
-  // ── Standalone shell (dashboard / courses list / etc.) ──
+  // ── Standalone shell (dashboard / courses list / etc.) ────────────────────
   return (
-    <>
-      {ScrollStyle}
+    <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={100}>
       {/* Mobile backdrop */}
-      {isOpen && (
-        <div className="fixed inset-0 bg-gray-900/30 z-40 md:hidden backdrop-blur-sm" onClick={onClose} />
+      {isMobile && isOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={onClose} />
       )}
 
-      <aside className={cn(
-        // Mobile: overlay drawer with a solid surface. Desktop (md+): static
-        // and FLAT on the gray canvas — no card, no border — so the gray
-        // flows uninterrupted from the rail around the white workspace panel.
-        // Widths bumped to match the admin sidebar (EXPANDED_W = 268,
-        // COLLAPSED_W = 64) so the two shells feel the same.
-        "fixed left-0 top-0 z-50 h-screen w-[268px]",
-        railCollapsed && "md:w-[64px]",
-        "flex flex-col transform transition-all duration-300 ease-out",
-        "bg-white dark:bg-gray-950 border-r border-gray-100 dark:border-gray-800",
-        "md:static md:z-auto md:shrink-0 md:transform-none md:border-r-0 md:bg-transparent md:dark:bg-transparent",
-        isOpen ? "translate-x-0" : "max-md:-translate-x-full"
-      )}>
-
-        {/* Logo header (desktop) — carries the collapse chevron */}
-        <div className="hidden md:block">{logoRow(true)}</div>
-
-        {/* Mobile header */}
-        <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <div className="flex items-center gap-2">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${ACCENT}, #FB923C)` }}
-            >
-              <BookOpen className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-[15px] font-bold text-gray-900 dark:text-white">SmartCliff</span>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Navigation (permission-driven items; flat, no group headings) */}
-        <div className={cn("flex-1 overflow-y-auto py-2 sc-sb-scroll", railCollapsed ? "px-4 md:px-2.5" : "px-4")}>
-          <div className={railCollapsed ? "max-md:block md:hidden" : undefined}>{renderSections()}</div>
-          {railCollapsed && <div className="hidden md:block">{renderCollapsedRail()}</div>}
-        </div>
-
-        {railCollapsed ? (
-          <>
-            {/* Collapsed footer: avatar only (mobile drawer keeps the full footer) */}
-            <div className="md:hidden"><ThemeRow />{userCard}</div>
-            <div className="hidden md:flex justify-center pb-3 pt-2">
-              <button
-                onClick={() => handleNavigation('/lms/pages/studentdashboard/student/profile')}
-                title={studentInfo.name}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[13px] font-bold shadow-sm"
-                style={{ background: `linear-gradient(135deg, ${ACCENT}, #FB923C)` }}
-              >
-                {studentInfo.avatarLetter}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <ThemeRow />
-            {userCard}
-          </>
+      <motion.aside
+        initial={false}
+        animate={{ width: collapsed ? COLLAPSED_W : EXPANDED_W }}
+        transition={sidebarSpring}
+        className={cn(
+          // Flat on the gray canvas (floating-workspace shell): no surface, no
+          // right border. The mobile drawer keeps a solid surface so content
+          // can't bleed through it.
+          "relative z-40 h-screen flex flex-col overflow-hidden",
+          "md:static md:z-auto md:shrink-0 md:bg-transparent",
+          isMobile
+            ? cn(
+                "fixed top-0 left-0 z-50 shadow-xl bg-surface transition-transform duration-300 ease-out",
+                isOpen ? "translate-x-0" : "-translate-x-full"
+              )
+            : "bg-transparent"
         )}
-        <div className="h-4" />
-      </aside>
-    </>
+      >
+        {brandCard(!isMobile)}
+        {navBody}
+        {userCard}
+      </motion.aside>
+
+      {isMobile && isOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={onClose}
+          className="fixed top-4 right-4 w-10 h-10 inline-flex items-center justify-center rounded-full bg-surface shadow-lg hover:bg-row-hover z-overlay border border-hairline-strong md:hidden"
+        >
+          <X className="h-5 w-5 text-body" />
+        </button>
+      )}
+    </TooltipPrimitive.Provider>
   )
 }
 

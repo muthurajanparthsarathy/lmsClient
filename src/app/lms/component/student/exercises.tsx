@@ -1218,7 +1218,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       className: 'w-[8%] px-3 text-left align-middle',
       skeletonWidth: '40px',
       render: (ex) => (
-        <span className="text-[11px] font-mono text-subtle truncate block" title={ex.exerciseInformation.exerciseId}>
+        <span className="text-2xs font-mono text-subtle truncate block" title={ex.exerciseInformation.exerciseId}>
           {ex.exerciseInformation.exerciseId}
         </span>
       ),
@@ -1237,7 +1237,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
         return (
           <div className="flex flex-col justify-center min-w-0">
             <span className="block truncate font-medium text-heading" title={name}>{name}</span>
-            {desc && <span className="block truncate mt-0.5 text-[10.5px] text-faint">{desc}</span>}
+            {desc && <span className="block truncate mt-0.5 text-2xs text-faint">{desc}</span>}
           </div>
         )
       },
@@ -1249,7 +1249,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       className: 'w-[14%] px-3 text-left align-middle',
       skeletonWidth: '75%',
       render: (ex) => (
-        <span className="text-[11.5px] text-body flex items-center gap-1 whitespace-nowrap"
+        <span className="text-xs text-body flex items-center gap-1 whitespace-nowrap"
           title={ex.availabilityPeriod?.startDate ? formatDateTime(ex.availabilityPeriod.startDate) : ''}>
           <Calendar size={11} className="text-faint flex-shrink-0" />
           {ex.availabilityPeriod?.startDate
@@ -1265,7 +1265,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       className: 'w-[14%] px-3 text-left align-middle',
       skeletonWidth: '75%',
       render: (ex) => (
-        <span className="text-[11.5px] text-body flex items-center gap-1 whitespace-nowrap"
+        <span className="text-xs text-body flex items-center gap-1 whitespace-nowrap"
           title={ex.availabilityPeriod?.endDate ? formatDateTime(ex.availabilityPeriod.endDate) : ''}>
           <Clock size={11} className="text-faint flex-shrink-0" />
           {ex.availabilityPeriod?.endDate
@@ -1282,7 +1282,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       render: (ex) => {
         const d = getDifficultyStyle(ex.exerciseInformation.exerciseLevel)
         return (
-          <span className="inline-flex items-center text-[10px] font-semibold tracking-wide px-2 py-0.5 rounded-full border"
+          <span className="inline-flex items-center text-2xs font-semibold tracking-wide px-2 py-0.5 rounded-full border"
             style={{ background: d.bg, color: d.color, borderColor: d.border }}>
             {d.label}
           </span>
@@ -1297,7 +1297,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       render: (ex) => {
         const canStart = getExerciseAvailability(ex).canStart
         return (
-          <span className="inline-flex items-center gap-1.5 text-[10.5px] font-medium px-2.5 py-1 rounded-full"
+          <span className="inline-flex items-center gap-1.5 text-2xs font-medium px-2.5 py-1 rounded-full"
             style={canStart
               ? { background: '#ecfdf3', color: '#15803d' }
               : { background: '#f1f5f9', color: '#64748b' }}>
@@ -1323,27 +1323,27 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
           <div className="flex items-center justify-center gap-1">
             <div className="flex flex-col items-center gap-0.5">
               {!availability.canStart ? (
-                <span className="text-[10px] font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
+                <span className="text-2xs font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
                   {isCompleted ? 'Submitted' : 'Not Submitted'}
                 </span>
               ) : limitReached ? (
-                <span className="text-[10px] font-semibold" style={{ color: '#15803d' }}>Submitted</span>
+                <span className="text-2xs font-semibold" style={{ color: '#15803d' }}>Submitted</span>
               ) : canRetake ? (
                 <>
                   <button
                     onClick={e => handleStartClick(ex, e)}
-                    className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
+                    className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
                     style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }}
                     onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
                     onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
                     Re Submit
                   </button>
-                  <span className="text-[9px] font-medium" style={{ color: '#15803d' }}>Submitted</span>
+                  <span className="text-2xs font-medium" style={{ color: '#15803d' }}>Submitted</span>
                 </>
               ) : (
                 <button
                   onClick={e => handleStartClick(ex, e)}
-                  className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
+                  className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
                   style={isGraded
                     ? { background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', cursor: 'pointer' }
                     : { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', cursor: 'pointer' }}
@@ -1446,7 +1446,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             </span>
             <h2 className="text-sm font-semibold text-heading tracking-[-0.01em] whitespace-nowrap m-0">
               Assignments
-              <span className="ml-2 inline-flex items-center h-5 min-w-5 px-1.5 rounded-full bg-brand-wash text-brand-strong text-[10.5px] font-semibold tabular-nums">
+              <span className="ml-2 inline-flex items-center h-5 min-w-5 px-1.5 rounded-full bg-brand-wash text-brand-strong text-2xs font-semibold tabular-nums">
                 {filteredExercises.length}
               </span>
             </h2>
@@ -1489,7 +1489,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>Filter</span>
               {activeFilterCount > 0 && (
-                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-[10px] font-bold text-white tabular-nums">
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
                   {activeFilterCount}
                 </span>
               )}
@@ -1499,14 +1499,14 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             {showFilterDropdown && (
               <div className="absolute top-full right-0 mt-1.5 w-64 rounded-xl bg-surface z-40 p-3 space-y-3 border border-hairline-strong shadow-lg">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-subtle">Level</p>
+                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2 text-subtle">Level</p>
                   <div className="flex flex-wrap gap-1.5">
                     {['all', 'beginner', 'intermediate', 'advanced', 'hard', 'medium'].map((level) => (
                       <button
                         key={level}
                         type="button"
                         onClick={() => setFilterLevel(level)}
-                        className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors duration-150 ${
+                        className={`px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors duration-150 ${
                           filterLevel === level
                             ? 'bg-brand-strong text-white border-brand-strong'
                             : 'bg-surface text-body border-hairline-strong hover:border-line-hover hover:text-heading'
@@ -1518,7 +1518,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-subtle">Status</p>
+                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2 text-subtle">Status</p>
                   <div className="flex flex-wrap gap-1.5">
                     {[
                       { val: 'active', label: 'Active' },
@@ -1534,7 +1534,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
                           onClick={() =>
                             setFilterStatus((prev) => (selected ? prev.filter((s) => s !== val) : [...prev, val]))
                           }
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors duration-150 ${
+                          className={`px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors duration-150 ${
                             selected
                               ? 'bg-brand-strong text-white border-brand-strong'
                               : 'bg-surface text-body border-hairline-strong hover:border-line-hover hover:text-heading'
@@ -1553,7 +1553,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
                       setFilterLevel('all')
                       setFilterStatus([])
                     }}
-                    className="w-full py-1.5 rounded-control text-[11px] font-medium border border-hairline-strong text-subtle bg-canvas hover:text-heading transition-colors duration-150"
+                    className="w-full py-1.5 rounded-control text-2xs font-medium border border-hairline-strong text-subtle bg-canvas hover:text-heading transition-colors duration-150"
                   >
                     Clear Filters
                   </button>

@@ -1,99 +1,205 @@
-import { AlertCircle, CheckCircle2, ChevronRight, Dumbbell, Eye, HelpCircle, XCircle } from "lucide-react";
-import { avatarTone, bandOf, initials, sectionLabel } from "./gradeHelpers";
-import { DifficultyChip, QuestionStatusChip, StatusChip, StudentStatusChip } from "./GradeBadges";
+import { CheckCircle2, Eye, XCircle } from "lucide-react";
+import { bandOf } from "./gradeHelpers";
+import { DifficultyChip, StatusChip } from "./GradeBadges";
 
 // Rich table cells per tab (exercises / students / questions). Each renders the
 // <td> set for one row; the parent <tr> owns the key, click + selection.
 
+// Exercise row cells. Five columns, restyled to match Course Setup's
+// MappingTable body cells (`h-11 text-[12px] text-body`, no `font-medium`)
+// so the two admin lists share one row rhythm:
+//   1. `#N`             — right-aligned tabular-nums serial number
+//   2. Activity name    — Assignment / Assessment / Exercise per the filter
+//   3. Questions count
+//   4. Marks (renamed from Total Marks — see header spec)
+//   5. Actions          — View Details button (drills into Students; the
+//                          whole row is still clickable, but this makes the
+//                          affordance discoverable without hovering)
+const BODY = "h-11 px-3 align-middle text-[12px] text-body";
 export function ExerciseCells({ item, index }: { item: any; index: number }) {
   return (
     <>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-2xs tabular-nums text-faint w-5 text-right shrink-0">{index + 1}</span>
-          <span className="flex h-8 w-8 items-center justify-center rounded-tile bg-brand-wash text-brand-strong shrink-0"><Dumbbell className="h-4 w-4" /></span>
-          <span className="font-medium text-heading truncate">{item.exerciseName}</span>
-        </div>
+      {/* `#` — its own narrow, right-aligned cell so long exercise names in
+          the next column can truncate without eating the number. */}
+      <td className={`${BODY} text-right tabular-nums text-faint w-10`}>{index + 1}</td>
+      <td className={BODY}>
+        <span className="truncate block">{item.exerciseName}</span>
       </td>
-      <td className="px-3 py-3"><span className="inline-flex items-center rounded-chip bg-ink-100 px-2 py-0.5 text-2xs font-medium text-ink-700 capitalize">{sectionLabel(item.section)}</span></td>
-      <td className="px-3 py-3 font-medium text-body tabular-nums">{item.totalQuestions || 0}</td>
-      <td className="px-3 py-3 font-medium text-body tabular-nums">{item.totalPoints || 0}</td>
-      <td className="px-3 py-3"><StatusChip tone={(item.status || "active") === "active" ? "success" : "neutral"} label={(item.status || "active") === "active" ? "Active" : "Inactive"} /></td>
-      <td className="px-3 py-3 text-right"><ChevronRight className="inline h-4 w-4 text-faint group-hover:text-brand-strong group-hover:translate-x-0.5 transition-all" /></td>
+      {/* Right-aligned to match the "Total Questions" / "Total Marks"
+          headers above them — number columns read as one visual block
+          against the right edge of the cell. */}
+      <td className={`${BODY} text-right tabular-nums`}>{item.totalQuestions || 0}</td>
+      <td className={`${BODY} text-right tabular-nums`}>{item.totalPoints || 0}</td>
+      <td className={`${BODY} pl-2 pr-4 sm:pr-5 text-right`}>
+        {/* View — info-tone pill. "View" is a read-only action, so blue
+            (the design system's info palette) reads more appropriately
+            than the brand orange, which the app reserves for primary /
+            write actions (Save, Publish, Add). Row is still clickable;
+            this button forwards the click to the parent <tr>. */}
+        <button
+          type="button"
+          onClick={(e) => e.currentTarget.closest<HTMLElement>('tr')?.click()}
+          className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-info-500/25 bg-info-50 text-info-700 text-2xs font-semibold hover:bg-info-50/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info-500/30"
+        >
+          <Eye className="h-3 w-3" />
+          View
+        </button>
+      </td>
     </>
   );
 }
 
+// Student row cells. Recomposed to nine columns the trainer actually needs
+// (per feedback on the Students tab):
+//   1. `#`               — serial
+//   2. Student Name       — plain text, no avatar (icon removed)
+//   3. Email              — own column, truncated with a hover tooltip
+//   4. Total Questions    — the exercise's question count
+//   5. Attended           — how many the student has actually attempted
+//   6. Mark Scored        — X/Y
+//   7. Grade              — Poor / Average / Good / Excellent (from bandOf)
+//   8. Status             — Completed / In Progress / Not Started, DERIVED
+//                            from attempted vs total so a stuck server
+//                            status ("in_progress" after the student is done)
+//                            flips to Completed
+//   9. Actions            — View Details
 export function StudentCells({ item, index, selectedExercise, onDetails }: { item: any; index: number; selectedExercise: any; onDetails: () => void }) {
   const p = item.exerciseProgress || {};
   const total = p.overallScore || 0;
   const max = p.totalMaxScore || selectedExercise?.totalPoints || 0;
-  const pct = p.completionPercentage || 0;
   const scorePct = max > 0 ? (total / max) * 100 : 0;
   const band = bandOf(scorePct);
-  const isPassing = p.isPassing || false;
-  const passMark = p.passingMarksRequired || selectedExercise?.passingMarksRequired || (max ? Math.ceil(max * 0.5) : 0);
   const noAttempt = max === 0 || total === 0;
+
+  // Total / attended question counts. The server exposes them under several
+  // legacy field names, so we probe a few — first hit wins — and fall back
+  // to the exercise's total when nothing per-student is available.
+  const totalQuestions =
+    Number(p.totalQuestions ?? selectedExercise?.totalQuestions ?? selectedExercise?.questions?.length ?? 0) || 0;
+  const attendedQuestions =
+    Number(
+      p.attemptedQuestions
+      ?? p.attendedQuestions
+      ?? p.completedCount
+      ?? p.completedQuestions
+      ?? p.answeredQuestions
+      ?? (typeof p.completionPercentage === "number" && totalQuestions > 0
+            ? Math.round((p.completionPercentage / 100) * totalQuestions)
+            : 0),
+    ) || 0;
+
+  // Grade — map bandOf's four labels to the shorter set the trainer asked
+  // for (Excellent / Good / Average / Poor), and paint via the band's own
+  // chip tokens so the visual meaning stays consistent with the score bar.
+  const gradeLabel: "Excellent" | "Good" | "Average" | "Poor" =
+    band.label === "Needs work" ? "Poor"
+      : band.label === "Excellent" ? "Excellent"
+        : band.label === "Good" ? "Good"
+          : "Average";
+
+  // Status — two states only. "In Progress" is gone: the trainer's view
+  // never needs to distinguish "currently taking the test" from "already
+  // submitted", and rows showing "In Progress" after the student had
+  // clearly finished (marks + grade visible) read as broken. Now: any
+  // sign of an attempt → Completed. No sign → Not Started.
+  //   • Completed   — server flagged the attempt as
+  //                   completed/evaluated/submitted, OR the student
+  //                   scored any marks, OR they attempted any question.
+  //   • Not Started — no server flag, no marks, no attempt on record.
+  const submittedByServer = (() => {
+    const s = String(p.status || "").toLowerCase();
+    return s === "completed" || s === "evaluated" || s === "submitted"
+      || s === "in_progress" /* server-side "in progress" still counts as done for the trainer's read */;
+  })();
+  const derivedStatus: "completed" | "not_started" =
+    submittedByServer
+      || total > 0
+      || attendedQuestions > 0
+      ? "completed"
+      : "not_started";
+
   return (
     <>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-2xs tabular-nums text-faint w-5 text-right shrink-0">{index + 1}</span>
-          <span className={`flex h-8 w-8 items-center justify-center rounded-full text-2xs font-bold shrink-0 ${avatarTone(item.name || "")}`}>{initials(item.name || "")}</span>
-          <div className="min-w-0">
-            <p className="font-medium text-heading truncate">{item.name || "—"}</p>
-            <p className="text-2xs text-subtle truncate">{item.email || "—"}</p>
-          </div>
-        </div>
+      <td className={`${BODY} text-right tabular-nums text-faint w-10`}>{index + 1}</td>
+      {/* Student Name — plain text (avatar removed per the design ask), one
+          line, truncated with the full name in the tooltip. */}
+      <td className={BODY}>
+        <span className="truncate block text-heading" title={item.name || undefined}>{item.name || "—"}</span>
       </td>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-2 min-w-[110px]">
-          <div className="flex-1 h-1.5 rounded-full bg-ink-100 overflow-hidden"><div className={`h-full rounded-full ${band.bar}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>
-          <span className="text-2xs font-semibold text-body tabular-nums w-9 text-right">{pct}%</span>
-        </div>
+      {/* Email — own column, truncated with the full address in the
+          tooltip so the trainer can hover to read a long one. */}
+      <td className={BODY}>
+        <span className="truncate block text-subtle" title={item.email || undefined}>{item.email || "—"}</span>
       </td>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-heading tabular-nums">{total}<span className="text-faint font-normal">/{max}</span></span>
-          {!noAttempt && <span className={`inline-flex h-5 items-center rounded-full px-2 text-2xs font-semibold ring-1 ring-inset ${band.chip}`}>{band.label}</span>}
-        </div>
-      </td>
-      <td className="px-3 py-3">
+      <td className={`${BODY} text-right tabular-nums`}>{totalQuestions}</td>
+      <td className={`${BODY} text-right tabular-nums`}>{attendedQuestions}</td>
+      <td className={`${BODY} text-right tabular-nums`}>
         {noAttempt
-          ? <StatusChip tone="neutral" icon={<AlertCircle className="h-3 w-3" />} label="No attempt" />
-          : isPassing
-            ? <StatusChip tone="success" icon={<CheckCircle2 className="h-3 w-3" />} label={`Pass (${total}/${passMark})`} />
-            : <StatusChip tone="danger" icon={<XCircle className="h-3 w-3" />} label={`Fail (${total}/${passMark})`} />}
+          ? "—"
+          : <>{total}<span className="text-faint">/{max}</span></>}
       </td>
-      <td className="px-3 py-3 text-2xs text-subtle whitespace-nowrap">{p.lastActivity ? new Date(p.lastActivity).toLocaleDateString() : "Never"}</td>
-      <td className="px-3 py-3"><StudentStatusChip status={p.status || "not_started"} /></td>
-      <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-        <button type="button" onClick={onDetails} title="View details" className="inline-flex size-7 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors"><Eye className="h-4 w-4" /></button>
+      <td className={BODY}>
+        {noAttempt
+          ? <span className="text-faint">—</span>
+          : <span className={`inline-flex h-5 items-center rounded-full px-2 text-2xs font-semibold ring-1 ring-inset ${band.chip}`}>{gradeLabel}</span>}
+      </td>
+      <td className={BODY}>
+        {derivedStatus === "completed"
+          ? <StatusChip tone="success" icon={<CheckCircle2 className="h-3 w-3" />} label="Completed" />
+          : <StatusChip tone="neutral" icon={<XCircle className="h-3 w-3" />} label="Not Started" />}
+      </td>
+      <td className={`${BODY} pl-2 pr-4 sm:pr-5 text-right`}>
+        {/* View — drills DIRECTLY into that student's Questions tab. Was
+            wired to `onDetails` (the right-side StudentDetailsDrawer),
+            but the trainer wants the full question view, not the
+            drawer. Forwards the click to the parent <tr>, which the
+            page's onClick handler catches and calls
+            handleSelectStudent(item) → activeTab = "questions". Same
+            pattern the exercises action uses. */}
+        <button
+          type="button"
+          onClick={(e) => e.currentTarget.closest<HTMLElement>('tr')?.click()}
+          title="View questions"
+          className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-info-500/25 bg-info-50 text-info-700 text-2xs font-semibold hover:bg-info-50/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info-500/30"
+        >
+          <Eye className="h-3 w-3" />
+          View
+        </button>
       </td>
     </>
   );
 }
 
+// Question row cells. Six columns, styled with the same BODY constant as
+// exercise/student rows so the whole drill reads as one table:
+//   1. `#`             — right-aligned tabular-nums serial number
+//   2. Question title  — plain text; no icon tile (removed for consistency
+//                        with the other tabs)
+//   3. Difficulty      — DifficultyChip (easy/medium/hard)
+//   4. Mark Scored     — X/Y right-aligned (renamed from "Score")
+//   5. Attempts        — right-aligned count
+//   6. Status          — Submitted (attempted) / Not attempted. Replaces the
+//                        earlier duplicate pair "Answer" + "Status" that
+//                        conveyed the same signal twice.
 export function QuestionCells({ item, index }: { item: any; index: number }) {
   const attempted = !!item.studentAttempt;
   return (
     <>
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-2xs tabular-nums text-faint w-5 text-right shrink-0">{index + 1}</span>
-          <span className="flex h-8 w-8 items-center justify-center rounded-tile bg-info-50 text-info-700 shrink-0"><HelpCircle className="h-4 w-4" /></span>
-          <span className="font-medium text-heading truncate">{item.title}</span>
-        </div>
+      <td className={`${BODY} text-right tabular-nums text-faint w-10`}>{index + 1}</td>
+      <td className={BODY}>
+        <span className="truncate block text-heading" title={item.title || undefined}>{item.title}</span>
       </td>
-      <td className="px-3 py-3"><DifficultyChip difficulty={item.difficulty || "medium"} /></td>
-      <td className="px-3 py-3">
+      <td className={BODY}><DifficultyChip difficulty={item.difficulty || "medium"} /></td>
+      <td className={`${BODY} text-right tabular-nums`}>
+        <span className="font-semibold text-heading">{item.studentAttempt?.score || 0}</span>
+        <span className="text-faint">/{item.score || 0}</span>
+      </td>
+      <td className={`${BODY} text-right tabular-nums`}>{item.studentAttempt?.attempts || 0}</td>
+      <td className={BODY}>
         {attempted
-          ? <span className="inline-flex items-center gap-1 text-2xs font-medium text-success-700"><CheckCircle2 className="h-3.5 w-3.5" /> Submitted</span>
-          : <span className="inline-flex items-center gap-1 text-2xs font-medium text-faint"><XCircle className="h-3.5 w-3.5" /> Not attempted</span>}
+          ? <span className="inline-flex items-center gap-1 h-6 rounded-full px-2 text-2xs font-semibold ring-1 ring-inset bg-success-50 text-success-700 ring-success-500/20"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
+          : <span className="inline-flex items-center gap-1 h-6 rounded-full px-2 text-2xs font-semibold ring-1 ring-inset bg-ink-100 text-ink-600 ring-ink-500/15"><XCircle className="h-3 w-3" /> Not attempted</span>}
       </td>
-      <td className="px-3 py-3 font-semibold text-heading tabular-nums">{item.studentAttempt?.score || 0}<span className="text-faint font-normal">/{item.score || 0}</span></td>
-      <td className="px-3 py-3 text-body tabular-nums">{item.studentAttempt?.attempts || 0}</td>
-      <td className="px-3 py-3"><QuestionStatusChip status={item.studentAttempt?.status || "not_attempted"} /></td>
     </>
   );
 }

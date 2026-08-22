@@ -67,7 +67,7 @@ export default function MonacoTabs(props: MonacoTabsProps) {
       {/* Tab bar */}
       <div className="flex items-stretch overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: "#e5e7eb", background: "#f9fafb" }}>
         {openFiles.length === 0 && (
-          <div className="px-3 py-2 text-[11px] text-gray-400">Open a file from the Explorer</div>
+          <div className="px-3 py-2 text-2xs text-gray-400">Open a file from the Explorer</div>
         )}
         {openFiles.map((f) => {
           const isActive = f.id === activeFileId
@@ -85,7 +85,7 @@ export default function MonacoTabs(props: MonacoTabsProps) {
               title={f.path}
             >
               <Circle size={8} style={{ color: color || "#9ca3af", fill: color || "#9ca3af" }} />
-              <span className={`text-[12px] ${isActive ? "text-gray-900 font-semibold" : "text-gray-500"}`}>{f.filename}</span>
+              <span className={`text-xs ${isActive ? "text-gray-900 font-semibold" : "text-gray-500"}`}>{f.filename}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); onCloseTab(f.id) }}
                 className="opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded"

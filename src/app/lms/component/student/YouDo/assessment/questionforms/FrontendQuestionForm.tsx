@@ -2789,8 +2789,8 @@ const PreviewModal: React.FC<{
                                     <span className="lms-marks-value" style={{ color: dDS.text, fontSize: 12 }}>
                                       {dFixedScore}
                                       {isScoreEditable(d)
-                                        ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
-                                        : <span className="lms-badge" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
+                                        ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
+                                        : <span className="lms-badge" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
                                     </span>
                                   </div>
                                   <div className="lms-marks-row">
@@ -4187,8 +4187,8 @@ const FrontendQuestionForm: React.FC<FrontendQuestionFormProps> = ({
                         <Database size={14} style={{ color: '#a855f7' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
-                        <div className="text-[10px]" style={{ color: '#8b8b9e' }}>Import from bank</div>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
+                        <div className="text-2xs" style={{ color: '#8b8b9e' }}>Import from bank</div>
                       </div>
                     </button>
                     )}
@@ -4210,8 +4210,8 @@ const FrontendQuestionForm: React.FC<FrontendQuestionFormProps> = ({
                         <Sparkles size={14} style={{ color: '#F27757' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
-                        <div className="text-[10px]" style={{ color: '#8b8b9e' }}>Auto-generate</div>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
+                        <div className="text-2xs" style={{ color: '#8b8b9e' }}>Auto-generate</div>
                       </div>
                     </button>
                     )}
@@ -4233,8 +4233,8 @@ const FrontendQuestionForm: React.FC<FrontendQuestionFormProps> = ({
                         <CloudUpload size={14} style={{ color: '#0891b2' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
-                        <div className="text-[10px]" style={{ color: '#8b8b9e' }}>Import from .txt file</div>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
+                        <div className="text-2xs" style={{ color: '#8b8b9e' }}>Import from .txt file</div>
                       </div>
                     </button>
                     )}
@@ -4753,8 +4753,8 @@ const FrontendQuestionForm: React.FC<FrontendQuestionFormProps> = ({
                               <span className="lms-marks-value" style={{ color: dDS.text, fontSize: 12 }}>
                                 {dFixedScore}
                                 {isScoreEditable(d)
-                                  ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
-                                  : <span className="lms-badge" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
+                                  ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
+                                  : <span className="lms-badge" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
                               </span>
                             </div>
                             <div className="lms-marks-row">

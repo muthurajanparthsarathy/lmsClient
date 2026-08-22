@@ -397,30 +397,33 @@ const CourseCard = React.memo(function CourseCard({
           </div>
         )}
 
-        {/* CTA Buttons */}
-        <div className="flex gap-2 mt-3.5">
-          {!isStudent ? (
-            <>
-              {canStaffViewSchedule && (
-                <OutlineBtn className="flex-1 py-2" onClick={handleViewUsers} onHover={handlePrefetch}><Users className="w-3.5 h-3.5" /> Analytics</OutlineBtn>
-              )}
-              {canStaffAccessMaterials && (
-                <FilledBtn className="flex-1 py-2" onClick={e => { e.stopPropagation(); handleStart(); }} onHover={handlePrefetch}>Manage<ArrowRight className="w-3.5 h-3.5" /></FilledBtn>
-              )}
-            </>
-          ) : (
-            <>
-              {showFeedbackButton ? (
-                <OutlineBtn className="flex-1 py-2" onClick={handleFeedback}><MessageSquare className="w-3.5 h-3.5" /> Feedback</OutlineBtn>
-              ) : (
-                <OutlineBtn className="flex-1 py-2" onClick={e => { e.stopPropagation(); handleStart(); }} onHover={handlePrefetch}>View Details</OutlineBtn>
-              )}
-              <FilledBtn className="flex-1 py-2" onClick={e => { e.stopPropagation(); handleStart(); }} onHover={handlePrefetch}>
-                {started ? 'Continue' : 'Start'}<ArrowRight className="w-3.5 h-3.5" />
-              </FilledBtn>
-            </>
-          )}
-        </div>
+<div className="flex gap-2 mt-3.5">
+  {!isStudent ? (
+    <>
+      {canStaffViewSchedule && (
+        <OutlineBtn className="flex-1 py-2" onClick={handleViewUsers} onHover={handlePrefetch}><Users className="w-3.5 h-3.5" /> Analytics</OutlineBtn>
+      )}
+      {canStaffAccessMaterials && (
+        <FilledBtn className="flex-1 py-2" onClick={e => { e.stopPropagation(); handleStart(); }} onHover={handlePrefetch}>Manage<ArrowRight className="w-3.5 h-3.5" /></FilledBtn>
+      )}
+    </>
+  ) : (
+    <>
+      {showFeedbackButton ? (
+        <>
+          <OutlineBtn className="flex-1 py-2" onClick={handleFeedback}><MessageSquare className="w-3.5 h-3.5" /> Feedback</OutlineBtn>
+          <FilledBtn className="flex-1 py-2" onClick={e => { e.stopPropagation(); handleStart(); }} onHover={handlePrefetch}>
+            {started ? 'Continue' : 'Start'}<ArrowRight className="w-3.5 h-3.5" />
+          </FilledBtn>
+        </>
+      ) : (
+        <FilledBtn className="flex-1 py-2" onClick={e => { e.stopPropagation(); handleStart(); }} onHover={handlePrefetch}>
+          {started ? 'Continue' : 'Start'}<ArrowRight className="w-3.5 h-3.5" />
+        </FilledBtn>
+      )}
+    </>
+  )}
+</div>
 
         {/* Footer line */}
         {isStudent && started && lastAccessed && (
@@ -801,15 +804,15 @@ export default function CoursesPage() {
           <h1 className="text-[22px] font-bold tracking-tight" style={{ color: isDark ? T.dark.textMain : T.textMain, letterSpacing: '-0.02em' }}>
             Courses
           </h1>
-          {!loading && (
+          {/* {!loading && (
             <span className="inline-flex items-center text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: T.orangeLight, color: T.orange }}>
               {sorted.length}
             </span>
-          )}
+          )} */}
         </div>
-        <p className="text-[12.5px] mt-0.5" style={{ color: isDark ? T.dark.textMuted : T.textMuted }}>
+        {/* <p className="text-[12.5px] mt-0.5" style={{ color: isDark ? T.dark.textMuted : T.textMuted }}>
           Discover and continue your learning journey
-        </p>
+        </p> */}
       </div>
 
       {/* ── Toolbar ── */}
@@ -974,7 +977,7 @@ export default function CoursesPage() {
       )}
 
       {/* ── Feature strip ── */}
-      {!loading && sorted.length > 0 && <FeatureStrip isDark={isDark} />}
+      {/* {!loading && sorted.length > 0 && <FeatureStrip isDark={isDark} />} */}
     </div>
   );
 

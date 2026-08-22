@@ -41,11 +41,11 @@ export const RecentActivity = ({
                             </span>
                             <div className="min-w-0 flex-1 pt-0.5">
                                 <div className="flex items-start justify-between gap-2">
-                                    <p className="truncate text-[12.5px] font-semibold text-slate-800 dark:text-slate-100">{e.title}</p>
-                                    <span className="shrink-0 text-[11px] text-slate-400">{timeAgo(e.at)}</span>
+                                    <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{e.title}</p>
+                                    <span className="shrink-0 text-2xs text-slate-400">{timeAgo(e.at)}</span>
                                 </div>
                                 <div className="mt-0.5 flex items-center gap-2">
-                                    <p className="min-w-0 flex-1 truncate text-[11.5px] text-slate-400">{e.detail}</p>
+                                    <p className="min-w-0 flex-1 truncate text-xs text-slate-400">{e.detail}</p>
                                     {isSub && e.scorePct != null && (
                                         <Tag
                                             label={`${e.scorePct}%`}
@@ -97,7 +97,7 @@ export const LearningInsights = ({
                                 <span className="mt-[3px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: s.color }}>
                                     <TrendingUp size={10} strokeWidth={3} color="#fff" />
                                 </span>
-                                <p className="text-[12px] font-medium leading-snug text-slate-700 dark:text-slate-200">{ins.text}</p>
+                                <p className="text-xs font-medium leading-snug text-slate-700 dark:text-slate-200">{ins.text}</p>
                             </div>
                         );
                     })}
@@ -106,8 +106,8 @@ export const LearningInsights = ({
 
             <div className="mt-4 flex items-center justify-between rounded-[16px] border border-[#EEF0F4] bg-[#F8FAFC] px-4 py-3 dark:border-gray-800 dark:bg-gray-800/60">
                 <div>
-                    <p className="text-[11px] font-medium text-slate-400">Tracking towards</p>
-                    <p className="text-[12.5px] font-semibold text-slate-700 dark:text-slate-200">
+                    <p className="text-2xs font-medium text-slate-400">Tracking towards</p>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                         {scorePct == null ? 'No graded work yet' : `${scorePct}% on graded work`}
                     </p>
                 </div>
@@ -155,13 +155,13 @@ export const SubjectMastery = ({ courses }: { courses: CourseModel[] }) => {
                         return (
                             <div key={r.name}>
                                 <div className="mb-1.5 flex items-center justify-between gap-2">
-                                    <p className="truncate text-[12.5px] font-medium text-slate-700 dark:text-slate-200">{r.name}</p>
-                                    <span className="shrink-0 text-[12px] font-bold" style={{ color: tint }}>
+                                    <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{r.name}</p>
+                                    <span className="shrink-0 text-xs font-bold" style={{ color: tint }}>
                                         {r.score == null ? 'Not graded' : `${r.score}%`}
                                     </span>
                                 </div>
                                 <Bar value={value} color={tint} height={7} />
-                                <p className="mt-1 text-[10.5px] text-slate-400">
+                                <p className="mt-1 text-2xs text-slate-400">
                                     {r.attempted > 0
                                         ? `${r.solved} of ${r.attempted} questions solved · ${r.progress}% course progress`
                                         : `${r.progress}% course progress · no questions attempted`}
@@ -173,7 +173,7 @@ export const SubjectMastery = ({ courses }: { courses: CourseModel[] }) => {
             )}
 
             {graded.length > 0 && (
-                <p className="mt-4 border-t border-[#F1F4F8] pt-3 text-[11px] text-slate-400 dark:border-gray-800">
+                <p className="mt-4 border-t border-[#F1F4F8] pt-3 text-2xs text-slate-400 dark:border-gray-800">
                     Strongest: <span className="font-semibold text-slate-600 dark:text-slate-300">{graded[0].name}</span>
                     {graded.length > 1 && (
                         <> · Needs work: <span className="font-semibold text-slate-600 dark:text-slate-300">{graded[graded.length - 1].name}</span></>
@@ -228,10 +228,10 @@ export const Achievements = ({
                             {a.unlocked ? BADGE_ICON[a.icon] : <Lock size={15} strokeWidth={2.3} />}
                         </span>
                         <div>
-                            <p className={`text-[11px] font-semibold leading-tight ${a.unlocked ? 'text-slate-800 dark:text-slate-100' : 'text-slate-400'}`}>
+                            <p className={`text-2xs font-semibold leading-tight ${a.unlocked ? 'text-slate-800 dark:text-slate-100' : 'text-slate-400'}`}>
                                 {a.label}
                             </p>
-                            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400">{a.detail}</p>
+                            <p className="mt-0.5 text-2xs leading-tight text-slate-400">{a.detail}</p>
                         </div>
                     </div>
                 ))}
@@ -240,8 +240,8 @@ export const Achievements = ({
             <div className="mt-4 flex items-start gap-2.5 rounded-[14px] border border-[#EEF0F4] bg-[#F8FAFC] px-3.5 py-3 dark:border-gray-800 dark:bg-gray-800/60">
                 <IconBox tint={C.info} size={32}><ShieldCheck size={16} strokeWidth={2.2} /></IconBox>
                 <div className="min-w-0">
-                    <p className="text-[12px] font-semibold text-slate-700 dark:text-slate-200">Certificates</p>
-                    <p className="mt-0.5 text-[11px] leading-snug text-slate-400">
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Certificates</p>
+                    <p className="mt-0.5 text-2xs leading-snug text-slate-400">
                         {completedCourses > 0
                             ? `${completedCourses} course(s) finished. Certificates appear here once your institution issues them.`
                             : 'Complete a full course to become eligible for a certificate.'}

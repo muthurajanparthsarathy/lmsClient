@@ -1195,16 +1195,16 @@ export default function MultiFileCodeEditor({
   // ─── Reusable question UI ───────────────────────────────────────────────────
   const questionNav = questions.length > 1 ? (
     <div className="flex items-center gap-1 flex-shrink-0">
-      <button onClick={goPrev} disabled={currentQuestionIndex === 0} className="px-2 h-6 flex items-center justify-center gap-0.5 border rounded text-[11px] font-medium border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 disabled:opacity-50">
+      <button onClick={goPrev} disabled={currentQuestionIndex === 0} className="px-2 h-6 flex items-center justify-center gap-0.5 border rounded text-2xs font-medium border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 disabled:opacity-50">
         <ChevronLeft className="w-3 h-3" /> Prev
       </button>
-      <span className="text-[11px] font-semibold min-w-[34px] text-center text-emerald-600">{currentQuestionIndex + 1}/{questions.length}</span>
-      <button onClick={goNext} disabled={currentQuestionIndex === questions.length - 1} className="px-2 h-6 flex items-center justify-center gap-0.5 border rounded text-[11px] font-medium border-orange-300 bg-orange-50 hover:bg-orange-100 text-orange-700 disabled:opacity-50">
+      <span className="text-2xs font-semibold min-w-[34px] text-center text-emerald-600">{currentQuestionIndex + 1}/{questions.length}</span>
+      <button onClick={goNext} disabled={currentQuestionIndex === questions.length - 1} className="px-2 h-6 flex items-center justify-center gap-0.5 border rounded text-2xs font-medium border-orange-300 bg-orange-50 hover:bg-orange-100 text-orange-700 disabled:opacity-50">
         Next <ChevronRight className="w-3 h-3" />
       </button>
     </div>
   ) : (
-    <span className="text-[10px] text-gray-500 font-mono flex-shrink-0">Q {currentQuestionIndex + 1}/{questions.length || 1}</span>
+    <span className="text-2xs text-gray-500 font-mono flex-shrink-0">Q {currentQuestionIndex + 1}/{questions.length || 1}</span>
   )
 
   // Build examples list — fallback to handle any question shape:
@@ -1238,7 +1238,7 @@ export default function MultiFileCodeEditor({
         {(currentQuestion?.difficulty || (exData?.isGraded !== false && (currentQuestion?.score ?? currentQuestion?.points) != null)) && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             {currentQuestion?.difficulty && (
-              <span className={`inline-block text-[10px] px-2 py-0.5 rounded font-semibold ${currentQuestion.difficulty === "easy" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : currentQuestion.difficulty === "medium" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+              <span className={`inline-block text-2xs px-2 py-0.5 rounded font-semibold ${currentQuestion.difficulty === "easy" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : currentQuestion.difficulty === "medium" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
                 {currentQuestion.difficulty.toUpperCase()}
               </span>
             )}
@@ -1255,7 +1255,7 @@ export default function MultiFileCodeEditor({
       <div>
         <div className="flex items-center gap-1.5 mb-2">
           <FileText className="w-3.5 h-3.5 text-orange-500" />
-          <h3 className="text-[12px] font-semibold text-gray-900">Description</h3>
+          <h3 className="text-xs font-semibold text-gray-900">Description</h3>
         </div>
         <div className="prose prose-sm max-w-none text-gray-800" dangerouslySetInnerHTML={{ __html: getQuestionHtml(currentQuestion) || exercise?.exerciseInformation?.description || "<p>Solve the problem using the editor on the right.</p>" }} />
       </div>
@@ -1265,22 +1265,22 @@ export default function MultiFileCodeEditor({
         <div>
           <div className="flex items-center gap-1.5 mb-2">
             <TerminalIcon className="w-3.5 h-3.5 text-green-500" />
-            <h3 className="text-[12px] font-semibold text-gray-900">Sample Input &amp; Output</h3>
+            <h3 className="text-xs font-semibold text-gray-900">Sample Input &amp; Output</h3>
           </div>
           <div className="flex flex-col gap-3">
             {examples.map((ex, ei) => (
               <div key={ei}>
-                <strong className="text-[11px] text-gray-600">Example {ei + 1}</strong>
+                <strong className="text-2xs text-gray-600">Example {ei + 1}</strong>
                 {ex.input && (
                   <div className="mt-1">
-                    <div className="text-[10px] font-medium text-gray-700 mb-0.5">Input:</div>
-                    <pre className="bg-gray-50 border border-gray-200 p-2 rounded text-[11px] overflow-x-auto whitespace-pre-wrap">{ex.input}</pre>
+                    <div className="text-2xs font-medium text-gray-700 mb-0.5">Input:</div>
+                    <pre className="bg-gray-50 border border-gray-200 p-2 rounded text-2xs overflow-x-auto whitespace-pre-wrap">{ex.input}</pre>
                   </div>
                 )}
                 {ex.output && (
                   <div className="mt-1.5">
-                    <div className="text-[10px] font-medium text-gray-700 mb-0.5">Output:</div>
-                    <pre className="bg-gray-50 border border-gray-200 p-2 rounded text-[11px] overflow-x-auto whitespace-pre-wrap">{ex.output}</pre>
+                    <div className="text-2xs font-medium text-gray-700 mb-0.5">Output:</div>
+                    <pre className="bg-gray-50 border border-gray-200 p-2 rounded text-2xs overflow-x-auto whitespace-pre-wrap">{ex.output}</pre>
                   </div>
                 )}
               </div>
@@ -1294,9 +1294,9 @@ export default function MultiFileCodeEditor({
         <div>
           <div className="flex items-center gap-1.5 mb-2">
             <AlertCircle className="w-3.5 h-3.5 text-yellow-500" />
-            <h3 className="text-[12px] font-semibold text-gray-900">Constraints</h3>
+            <h3 className="text-xs font-semibold text-gray-900">Constraints</h3>
           </div>
-          <ul className="list-disc pl-4 text-[11px] text-gray-700 leading-relaxed">
+          <ul className="list-disc pl-4 text-2xs text-gray-700 leading-relaxed">
             {currentQuestion.constraints.map((c: string, i: number) => <li key={i}>{c}</li>)}
           </ul>
         </div>
@@ -1307,10 +1307,10 @@ export default function MultiFileCodeEditor({
         <div>
           <div className="flex items-center gap-1.5 mb-2">
             <AlertCircle className="w-3.5 h-3.5 text-orange-500" />
-            <h3 className="text-[12px] font-semibold text-gray-900">Hints</h3>
+            <h3 className="text-xs font-semibold text-gray-900">Hints</h3>
           </div>
           {hintsList.map((h, hi) => (
-            <div key={hi} className="text-[11px] px-2.5 py-1.5 rounded mb-1 bg-orange-50 text-orange-800 border border-orange-100">
+            <div key={hi} className="text-2xs px-2.5 py-1.5 rounded mb-1 bg-orange-50 text-orange-800 border border-orange-100">
               💡 {h}
             </div>
           ))}
@@ -1425,7 +1425,7 @@ export default function MultiFileCodeEditor({
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-medium truncate flex-1 text-gray-900">{originalIndex + 1}. {q.title || `Question ${originalIndex + 1}`}</div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {diff && <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${diff === "easy" ? "bg-green-100 text-green-800" : diff === "medium" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}>{diff.charAt(0).toUpperCase() + diff.slice(1)}</span>}
+                        {diff && <span className={`text-2xs px-1.5 py-0.5 rounded font-semibold ${diff === "easy" ? "bg-green-100 text-green-800" : diff === "medium" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}>{diff.charAt(0).toUpperCase() + diff.slice(1)}</span>}
                         {solvedQuestions.has(originalIndex) && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 99, background: "#dcfce7", color: "#166534", fontWeight: 600, border: "1px solid #86efac" }}>Submitted</span>}
                       </div>
                     </div>
@@ -1444,14 +1444,14 @@ export default function MultiFileCodeEditor({
           const linkUrl: string = _lq.questionLink
           return (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center" style={{ background: "#f9fafb" }}>
-              <div className="text-[15px] font-bold text-gray-800">This question opens on {hostOf(linkUrl)}</div>
-              <p className="text-[12px] text-gray-500 max-w-md">
+              <div className="text-md font-bold text-gray-800">This question opens on {hostOf(linkUrl)}</div>
+              <p className="text-xs text-gray-500 max-w-md">
                 Open the problem in a new tab, solve it there, then come back and press <b>Submit Question</b>.
               </p>
               <div className="flex items-center gap-2 flex-wrap justify-center">
                 <button
                   onClick={() => window.open(linkUrl, "_blank", "noopener,noreferrer")}
-                  className="flex items-center gap-1.5 h-9 px-5 rounded-lg text-[13px] font-bold text-white"
+                  className="flex items-center gap-1.5 h-9 px-5 rounded-lg text-sm font-bold text-white"
                   style={{ background: "#FB923C", border: "none", cursor: "pointer" }}
                 >
                   Open the problem ↗
@@ -1460,7 +1460,7 @@ export default function MultiFileCodeEditor({
                   <button
                     onClick={submitQuestion}
                     disabled={isSubmittingQuestion || isSubmitting}
-                    className="flex items-center gap-1.5 h-9 px-5 rounded-lg text-[13px] font-bold text-white"
+                    className="flex items-center gap-1.5 h-9 px-5 rounded-lg text-sm font-bold text-white"
                     style={{ background: (isSubmittingQuestion || isSubmitting) ? "#9ca3af" : "#22c55e", border: "none", cursor: "pointer" }}
                   >
                     {isSubmittingQuestion ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
@@ -1468,7 +1468,7 @@ export default function MultiFileCodeEditor({
                   </button>
                 )}
               </div>
-              <span className="text-[11px] text-gray-400 break-all max-w-md">{linkUrl}</span>
+              <span className="text-2xs text-gray-400 break-all max-w-md">{linkUrl}</span>
             </div>
           )
         })()}
@@ -1496,18 +1496,18 @@ export default function MultiFileCodeEditor({
           <div className="flex items-center justify-between flex-shrink-0 px-3" style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", minHeight: 40 }}>
             <div className="flex items-center gap-2">
               {isFull && (
-                <button onClick={() => setShowQDrawer((v) => !v)} className="flex items-center gap-1 h-7 px-2 rounded text-[11px] font-semibold" style={{ background: showQDrawer ? "#f97316" : "#f3f4f6", color: showQDrawer ? "#fff" : "#374151", border: showQDrawer ? "none" : "1px solid #e5e7eb" }}><FileText size={13} /> Question</button>
+                <button onClick={() => setShowQDrawer((v) => !v)} className="flex items-center gap-1 h-7 px-2 rounded text-2xs font-semibold" style={{ background: showQDrawer ? "#f97316" : "#f3f4f6", color: showQDrawer ? "#fff" : "#374151", border: showQDrawer ? "none" : "1px solid #e5e7eb" }}><FileText size={13} /> Question</button>
               )}
-              <span className="text-[11px] text-gray-600">Language</span>
+              <span className="text-2xs text-gray-600">Language</span>
               <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value as SupportedLanguage)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: `1px solid ${LANGUAGE_CONFIG[selectedLanguage]?.color || "#d1d5db"}`, background: "#fff", color: "#111827", fontSize: 12, fontWeight: 600, fontFamily: "ui-monospace, monospace", cursor: "pointer" }}>
                 {availableLanguages.map((lang) => <option key={lang} value={lang}>{LANGUAGE_CONFIG[lang].label}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2 pr-1 flex-shrink-0">
               {running ? (
-                <button onClick={stopRun} className="flex items-center gap-1.5 h-7 px-3 rounded text-[12px] font-semibold" style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}><Square size={12} /> Stop</button>
+                <button onClick={stopRun} className="flex items-center gap-1.5 h-7 px-3 rounded text-xs font-semibold" style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}><Square size={12} /> Stop</button>
               ) : interactiveActive ? (
-                <button onClick={stopInteractive} className="flex items-center gap-1.5 h-7 px-3 rounded text-[12px] font-semibold" style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}><Square size={12} /> Stop</button>
+                <button onClick={stopInteractive} className="flex items-center gap-1.5 h-7 px-3 rounded text-xs font-semibold" style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}><Square size={12} /> Stop</button>
               ) : (
                 // Single Run button: Python runs interactively (live input);
                 // other languages run on Piston (batch + stdin box).
@@ -1515,14 +1515,14 @@ export default function MultiFileCodeEditor({
                   onClick={() => { selectedLanguage === "python" ? runInteractive() : runCode() }}
                   disabled={!ready || vizRunning}
                   title={selectedLanguage === "python" ? "Run with live, interactive input()" : "Run your program"}
-                  className="flex items-center gap-1.5 h-7 px-3 rounded text-[12px] font-semibold"
+                  className="flex items-center gap-1.5 h-7 px-3 rounded text-xs font-semibold"
                   style={{ background: "#22c55e", color: "#fff", border: "none", opacity: (ready && !vizRunning) ? 1 : 0.5 }}
                 ><Play size={12} /> Run</button>
               )}
-              <button onClick={visualize} disabled={vizLoading || !ready} title="Step through your Python code (stack + heap)" className="flex items-center gap-1.5 h-7 px-3 rounded text-[11px] font-semibold" style={{ border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4338ca", cursor: vizLoading ? "wait" : "pointer", opacity: ready ? 1 : 0.5 }}>{vizLoading ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />} Visualize</button>
-              <button onClick={() => setShowTerminal((v) => !v)} className="flex items-center gap-1 h-7 px-2 rounded text-[11px] text-gray-600 hover:bg-gray-100" title="Toggle terminal">Terminal</button>
+              <button onClick={visualize} disabled={vizLoading || !ready} title="Step through your Python code (stack + heap)" className="flex items-center gap-1.5 h-7 px-3 rounded text-2xs font-semibold" style={{ border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4338ca", cursor: vizLoading ? "wait" : "pointer", opacity: ready ? 1 : 0.5 }}>{vizLoading ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />} Visualize</button>
+              <button onClick={() => setShowTerminal((v) => !v)} className="flex items-center gap-1 h-7 px-2 rounded text-2xs text-gray-600 hover:bg-gray-100" title="Toggle terminal">Terminal</button>
               {exercise && (
-                <button onClick={submitQuestion} disabled={isSubmittingQuestion || isSubmitting} className="flex items-center gap-1.5 h-7 px-3 rounded text-[11px] font-semibold" style={{ border: "none", background: (isSubmittingQuestion || isSubmitting) ? "#9ca3af" : "#f97316", color: "#fff", cursor: "pointer" }}>{isSubmittingQuestion ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />} Submit Question</button>
+                <button onClick={submitQuestion} disabled={isSubmittingQuestion || isSubmitting} className="flex items-center gap-1.5 h-7 px-3 rounded text-2xs font-semibold" style={{ border: "none", background: (isSubmittingQuestion || isSubmitting) ? "#9ca3af" : "#f97316", color: "#fff", cursor: "pointer" }}>{isSubmittingQuestion ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />} Submit Question</button>
               )}
               <button onClick={() => { setShowQDrawer(false); setIsFull((v) => !v) }} className="flex items-center justify-center w-7 h-7 rounded text-gray-600 hover:bg-gray-100" title={isFull ? "Exit full screen" : "Full screen"}>{isFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
             </div>
@@ -1690,7 +1690,7 @@ export default function MultiFileCodeEditor({
               <div className="flex flex-col items-center justify-center h-full gap-3">
                 <Loader2 className="w-7 h-7 animate-spin" style={{ color: "#4338ca" }} />
                 <div className="text-sm text-gray-600">Starting Python… (first run downloads Pyodide)</div>
-                <button onClick={closeVisualizer} className="text-[12px] text-gray-400 hover:text-gray-600 underline">Cancel</button>
+                <button onClick={closeVisualizer} className="text-xs text-gray-400 hover:text-gray-600 underline">Cancel</button>
               </div>
             ) : (
               <TraceVisualizer

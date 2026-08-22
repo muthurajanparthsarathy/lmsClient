@@ -129,7 +129,7 @@ export default function StudentMessageChat({ assessmentId }: { assessmentId?: st
           <div className="flex items-center justify-between px-4 py-3 bg-indigo-600 text-white">
             <div className="flex items-center gap-2">
               <MessageCircle size={17} />
-              <span className="text-[14px] font-semibold">Messages</span>
+              <span className="text-base font-semibold">Messages</span>
             </div>
             <button
               type="button"
@@ -146,7 +146,7 @@ export default function StudentMessageChat({ assessmentId }: { assessmentId?: st
             {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 px-6">
                 <MessageCircle size={28} className="mb-2 opacity-40" />
-                <p className="text-[12.5px]">No messages yet. Messages from your proctor will appear here.</p>
+                <p className="text-sm">No messages yet. Messages from your proctor will appear here.</p>
               </div>
             ) : (
               messages.map((m) => (
@@ -154,18 +154,18 @@ export default function StudentMessageChat({ assessmentId }: { assessmentId?: st
                   <div className="max-w-[88%] rounded-2xl rounded-tl-md bg-white border border-gray-200 shadow-sm px-3 py-2">
                     <div className="flex items-center gap-1.5 mb-0.5">
                       {m.scope === "broadcast" && <Megaphone size={12} className="text-indigo-500" />}
-                      <span className="text-[11px] font-semibold text-indigo-600">
+                      <span className="text-2xs font-semibold text-indigo-600">
                         {m.senderName || "Proctor"}
                       </span>
                       {m.scope === "broadcast" && (
-                        <span className="text-[9px] font-semibold uppercase tracking-wide text-indigo-400 bg-indigo-50 rounded px-1 py-0.5">
+                        <span className="text-2xs font-semibold uppercase tracking-wide text-indigo-400 bg-indigo-50 rounded px-1 py-0.5">
                           All
                         </span>
                       )}
                     </div>
-                    <p className="text-[13px] text-gray-800 whitespace-pre-wrap break-words">{m.message}</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{m.message}</p>
                   </div>
-                  <span className="text-[10px] text-gray-400 mt-0.5 ml-1">{fmtTime(m.createdAt)}</span>
+                  <span className="text-2xs text-gray-400 mt-0.5 ml-1">{fmtTime(m.createdAt)}</span>
                 </div>
               ))
             )}
@@ -182,7 +182,7 @@ export default function StudentMessageChat({ assessmentId }: { assessmentId?: st
       >
         {open ? <X size={22} /> : <MessageCircle size={24} />}
         {!open && unread > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center border-2 border-white">
+          <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-2xs font-bold flex items-center justify-center border-2 border-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}

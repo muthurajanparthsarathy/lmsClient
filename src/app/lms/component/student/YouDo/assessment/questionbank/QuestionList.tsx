@@ -291,7 +291,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
               )}
               <div className="flex items-center gap-1.5 p-2">
                 <span
-                  className={`w-4 h-4 flex items-center justify-center text-[9px] rounded-full shrink-0 ${
+                  className={`w-4 h-4 flex items-center justify-center text-2xs rounded-full shrink-0 ${
                     isCorrect
                       ? 'bg-emerald-500 text-white dark:bg-emerald-600'
                       : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
@@ -299,7 +299,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
                 >
                   {String.fromCharCode(65 + optIdx)}
                 </span>
-                <span className="text-[10px] flex-1 break-words text-gray-900 dark:text-gray-100">
+                <span className="text-2xs flex-1 break-words text-gray-900 dark:text-gray-100">
                   {opt.text}
                 </span>
                 {isCorrect && <Check size={10} className="text-emerald-600 dark:text-emerald-400 shrink-0" />}
@@ -348,8 +348,8 @@ const QuestionList: React.FC<QuestionListProps> = ({
     return (
       <div className="space-y-1.5">
         {pairs.map((pair, idx) => (
-          <div key={pair.id || pair._id || idx} className="flex items-center gap-2 text-[10px]">
-            <span className="w-5 h-5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-[9px] font-bold shrink-0">
+          <div key={pair.id || pair._id || idx} className="flex items-center gap-2 text-2xs">
+            <span className="w-5 h-5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-2xs font-bold shrink-0">
               {idx + 1}
             </span>
             <div className="flex-1 bg-white dark:bg-gray-900 p-1.5 rounded border border-gray-200 dark:border-gray-700">
@@ -371,8 +371,8 @@ const QuestionList: React.FC<QuestionListProps> = ({
     return (
       <div className="space-y-1.5">
         {sortedItems.map((item, idx) => (
-          <div key={item.id || item._id || idx} className="flex items-center gap-2 text-[10px]">
-            <span className="w-5 h-5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 flex items-center justify-center text-[9px] font-bold shrink-0">
+          <div key={item.id || item._id || idx} className="flex items-center gap-2 text-2xs">
+            <span className="w-5 h-5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 flex items-center justify-center text-2xs font-bold shrink-0">
               {idx + 1}
             </span>
             <div className="flex-1 bg-white dark:bg-gray-900 p-1.5 rounded border border-gray-200 dark:border-gray-700">
@@ -403,7 +403,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
             <div className="bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
               <span className="text-xs font-mono text-amber-600 dark:text-amber-400">{tolerance}</span>
             </div>
-            <div className="text-[9px] text-gray-500">
+            <div className="text-2xs text-gray-500">
               Range: {(answer - tolerance).toFixed(2)} to {(answer + tolerance).toFixed(2)}
             </div>
           </>
@@ -416,7 +416,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
   const renderShortAnswer = (shortAnswer: string | undefined) => {
     return (
       <div className="bg-white dark:bg-gray-900 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
-        <span className="text-[10px] text-gray-500 block mb-0.5">Expected Answer:</span>
+        <span className="text-2xs text-gray-500 block mb-0.5">Expected Answer:</span>
         <span className="text-xs text-gray-900 dark:text-gray-100">
           {shortAnswer || 'No expected answer provided'}
         </span>
@@ -498,7 +498,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
               <div className="p-2.5">
                 <div className="flex items-start gap-2">
                   {/* Index */}
-                  <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded shrink-0 text-gray-600 dark:text-gray-400">
+                  <span className="text-2xs font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded shrink-0 text-gray-600 dark:text-gray-400">
                     #{idx + 1}
                   </span>
 
@@ -506,44 +506,44 @@ const QuestionList: React.FC<QuestionListProps> = ({
                   <div className="flex-1 min-w-0">
                     {/* Badges Row */}
                     <div className="flex items-center gap-1 mb-1 flex-wrap">
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${typeInfo.color}`}>
+                      <span className={`text-2xs px-1.5 py-0.5 rounded flex items-center gap-0.5 ${typeInfo.color}`}>
                         {typeInfo.icon}
                         {typeInfo.label}
                       </span>
 
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded ${getDifficultyBadge(difficulty)}`}>
+                      <span className={`text-2xs px-1.5 py-0.5 rounded ${getDifficultyBadge(difficulty)}`}>
                         {typeof difficulty === 'string'
                           ? difficulty.charAt(0).toUpperCase() + difficulty.slice(1).toLowerCase()
                           : 'Medium'}
                       </span>
 
-                      <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded flex items-center gap-0.5 text-gray-700 dark:text-gray-300">
+                      <span className="text-2xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded flex items-center gap-0.5 text-gray-700 dark:text-gray-300">
                         <Tag size={8} />
                         {category}
                       </span>
 
                       {isMCQ && (
                         <>
-                          <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 rounded flex items-center gap-0.5">
+                          <span className="text-2xs px-1.5 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 rounded flex items-center gap-0.5">
                             <Zap size={8} />
                             {score} pts
                           </span>
 
                           {isRequired && (
-                            <span className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 rounded">
+                            <span className="text-2xs px-1.5 py-0.5 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 rounded">
                               Required
                             </span>
                           )}
 
                           {optionsWithImages > 0 && (
-                            <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 rounded flex items-center gap-0.5">
+                            <span className="text-2xs px-1.5 py-0.5 bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 rounded flex items-center gap-0.5">
                               <ImageIcon size={8} />
                               {optionsWithImages} img
                             </span>
                           )}
 
                           {questionImageUrl && (
-                            <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 rounded flex items-center gap-0.5">
+                            <span className="text-2xs px-1.5 py-0.5 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 rounded flex items-center gap-0.5">
                               <ImageIcon size={8} />
                               Question img
                             </span>
@@ -552,7 +552,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
                       )}
 
                       {!isMCQ && score > 0 && (
-                        <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 rounded flex items-center gap-0.5">
+                        <span className="text-2xs px-1.5 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 rounded flex items-center gap-0.5">
                           <Zap size={8} />
                           {score} pts
                         </span>
@@ -587,7 +587,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
                     )}
 
                     {/* Meta Row */}
-                    <div className="flex items-center gap-2 text-[9px] text-gray-500 dark:text-gray-400 flex-wrap">
+                    <div className="flex items-center gap-2 text-2xs text-gray-500 dark:text-gray-400 flex-wrap">
                       <span className="flex items-center gap-0.5">
                         <span className={`w-1.5 h-1.5 rounded-full ${q.isActive ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
                         {q.isActive ? 'Active' : 'Inactive'}
@@ -695,7 +695,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
 
                 {/* Preview Description */}
                 {expandedId !== q._id && description && compact && (
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-1 pl-1 border-l-2 border-gray-200 dark:border-gray-700">
+                  <p className="text-2xs text-gray-500 dark:text-gray-400 mt-1.5 line-clamp-1 pl-1 border-l-2 border-gray-200 dark:border-gray-700">
                     {stripHtml(description).substring(0, 100)}
                     {stripHtml(description).length > 100 ? '...' : ''}
                   </p>
@@ -716,11 +716,11 @@ const QuestionList: React.FC<QuestionListProps> = ({
                         {/* Full Question HTML */}
                         {htmlTitle && (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
                               Question:
                             </p>
                             <div
-                              className="text-[10px] text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 prose prose-sm max-w-none dark:prose-invert"
+                              className="text-2xs text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 prose prose-sm max-w-none dark:prose-invert"
                               dangerouslySetInnerHTML={{ __html: htmlTitle }}
                             />
                           </div>
@@ -729,7 +729,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
                         {/* Question Image */}
                         {questionImageUrl && (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
                               Question Image:
                             </p>
                             <div 
@@ -756,11 +756,11 @@ const QuestionList: React.FC<QuestionListProps> = ({
                           <>
                             <div>
                               <div className="flex items-center justify-between mb-1">
-                                <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400">
+                                <p className="text-2xs font-medium text-gray-600 dark:text-gray-400">
                                   Options ({options.length}) - {optionsPerRow} per row
                                 </p>
                                 {optionsWithImages > 0 && (
-                                  <span className="text-[9px] text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full">
+                                  <span className="text-2xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full">
                                     {optionsWithImages} option(s) with images
                                   </span>
                                 )}
@@ -768,7 +768,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
                               {renderMCQOptions(options, correctAnswers, optionsPerRow || 1)}
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 text-[9px]">
+                            <div className="flex flex-wrap items-center gap-2 text-2xs">
                               <span className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
                                 <Check size={10} />
                                 Correct: {correctAnswers.join(', ')}
@@ -777,41 +777,41 @@ const QuestionList: React.FC<QuestionListProps> = ({
                           </>
                         ) : mcqType === 'true_false' ? (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                               Correct Answer:
                             </p>
                             {renderTrueFalse(trueFalseAnswer)}
                           </div>
                         ) : mcqType === 'short_answer' ? (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                               Answer Key:
                             </p>
                             {renderShortAnswer(shortAnswer)}
                           </div>
                         ) : mcqType === 'essay' ? (
                           <div className="bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg border border-amber-200 dark:border-amber-800">
-                            <p className="text-[10px] text-amber-700 dark:text-amber-300">
+                            <p className="text-2xs text-amber-700 dark:text-amber-300">
                               Essay questions are graded manually. No automatic answer key.
                             </p>
                           </div>
                         ) : mcqType === 'matching' ? (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                               Matching Pairs ({matchingPairs?.length || 0}):
                             </p>
                             {renderMatchingPairs(matchingPairs)}
                           </div>
                         ) : mcqType === 'ordering' ? (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                               Correct Order ({orderingItems?.length || 0} items):
                             </p>
                             {renderOrderingItems(orderingItems)}
                           </div>
                         ) : mcqType === 'numeric' ? (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                               Numeric Answer:
                             </p>
                             {renderNumericAnswer(numericAnswer, numericTolerance)}
@@ -821,11 +821,11 @@ const QuestionList: React.FC<QuestionListProps> = ({
                         {/* Explanation */}
                         {explanation && (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
                               Explanation:
                             </p>
                             <div
-                              className="text-[10px] text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 prose prose-sm max-w-none dark:prose-invert"
+                              className="text-2xs text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700 prose prose-sm max-w-none dark:prose-invert"
                               dangerouslySetInnerHTML={{ __html: explanation }}
                             />
                           </div>
@@ -834,17 +834,17 @@ const QuestionList: React.FC<QuestionListProps> = ({
                         {/* Additional metadata */}
                         <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-200 dark:border-gray-700">
                           {timeLimit > 0 && (
-                            <span className="text-[9px] bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
+                            <span className="text-2xs bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
                               ⏱ Time Limit: {timeLimit}ms
                             </span>
                           )}
                           {isRequired && (
-                            <span className="text-[9px] bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-red-600 dark:text-red-400">
+                            <span className="text-2xs bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-red-600 dark:text-red-400">
                               Required Question
                             </span>
                           )}
                           {q.mcqQuestionDifficulty && (
-                            <span className="text-[9px] bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">
+                            <span className="text-2xs bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">
                               Difficulty: {q.mcqQuestionDifficulty}
                             </span>
                           )}
@@ -855,10 +855,10 @@ const QuestionList: React.FC<QuestionListProps> = ({
                       <div className="space-y-2">
                         {q.description && (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
                               Description
                             </p>
-                            <p className="text-[10px] text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700">
+                            <p className="text-2xs text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 p-2 rounded border border-gray-200 dark:border-gray-700">
                               {q.description}
                             </p>
                           </div>
@@ -868,20 +868,20 @@ const QuestionList: React.FC<QuestionListProps> = ({
                           <div className="grid grid-cols-2 gap-2">
                             {q.sampleInput && (
                               <div className="bg-gray-900 dark:bg-gray-950 p-1.5 rounded">
-                                <p className="text-[8px] text-gray-400 mb-0.5 flex items-center gap-1">
+                                <p className="text-2xs text-gray-400 mb-0.5 flex items-center gap-1">
                                   <Terminal size={8} /> Sample Input
                                 </p>
-                                <pre className="text-[9px] text-gray-100 dark:text-gray-300 font-mono whitespace-pre-wrap">
+                                <pre className="text-2xs text-gray-100 dark:text-gray-300 font-mono whitespace-pre-wrap">
                                   {q.sampleInput}
                                 </pre>
                               </div>
                             )}
                             {q.sampleOutput && (
                               <div className="bg-gray-900 dark:bg-gray-950 p-1.5 rounded">
-                                <p className="text-[8px] text-gray-400 mb-0.5 flex items-center gap-1">
+                                <p className="text-2xs text-gray-400 mb-0.5 flex items-center gap-1">
                                   <Terminal size={8} /> Sample Output
                                 </p>
-                                <pre className="text-[9px] text-gray-100 dark:text-gray-300 font-mono whitespace-pre-wrap">
+                                <pre className="text-2xs text-gray-100 dark:text-gray-300 font-mono whitespace-pre-wrap">
                                   {q.sampleOutput}
                                 </pre>
                               </div>
@@ -891,21 +891,21 @@ const QuestionList: React.FC<QuestionListProps> = ({
 
                         {q.testCases && q.testCases.length > 0 && (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                               Test Cases ({q.testCases.length})
                             </p>
                             <div className="space-y-1">
                               {q.testCases.slice(0, 3).map((tc, tcIdx) => (
                                 <div
                                   key={tcIdx}
-                                  className="bg-white dark:bg-gray-900 p-1.5 rounded border border-gray-200 dark:border-gray-700 text-[9px]"
+                                  className="bg-white dark:bg-gray-900 p-1.5 rounded border border-gray-200 dark:border-gray-700 text-2xs"
                                 >
                                   <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-mono text-gray-600 dark:text-gray-400">
                                       #{tcIdx + 1}
                                     </span>
                                     <span
-                                      className={`px-1 rounded text-[8px] ${
+                                      className={`px-1 rounded text-2xs ${
                                         tc.isHidden
                                           ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                                           : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300'
@@ -925,14 +925,14 @@ const QuestionList: React.FC<QuestionListProps> = ({
                                     </div>
                                   </div>
                                   {tc.points > 0 && (
-                                    <div className="text-[8px] text-amber-600 dark:text-amber-400 mt-0.5">
+                                    <div className="text-2xs text-amber-600 dark:text-amber-400 mt-0.5">
                                       Points: {tc.points}
                                     </div>
                                   )}
                                 </div>
                               ))}
                               {q.testCases.length > 3 && (
-                                <p className="text-[8px] text-gray-500 dark:text-gray-400 text-center">
+                                <p className="text-2xs text-gray-500 dark:text-gray-400 text-center">
                                   +{q.testCases.length - 3} more test cases
                                 </p>
                               )}
@@ -942,10 +942,10 @@ const QuestionList: React.FC<QuestionListProps> = ({
 
                         {q.constraints && q.constraints.length > 0 && (
                           <div>
-                            <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+                            <p className="text-2xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
                               Constraints
                             </p>
-                            <ul className="list-disc list-inside text-[9px] text-gray-700 dark:text-gray-300 space-y-0.5">
+                            <ul className="list-disc list-inside text-2xs text-gray-700 dark:text-gray-300 space-y-0.5">
                               {q.constraints.slice(0, 3).map((constraint, cIdx) => (
                                 <li key={cIdx}>{constraint}</li>
                               ))}
@@ -957,7 +957,7 @@ const QuestionList: React.FC<QuestionListProps> = ({
                         )}
 
                         {(q.timeLimit || q.memoryLimit) && (
-                          <div className="flex gap-2 text-[9px] pt-1 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex gap-2 text-2xs pt-1 border-t border-gray-200 dark:border-gray-700">
                             {q.timeLimit && (
                               <span className="bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400">
                                 ⏱ Time: {q.timeLimit}ms

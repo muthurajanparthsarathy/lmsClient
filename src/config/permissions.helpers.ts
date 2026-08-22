@@ -210,12 +210,21 @@ export function classifyRole(roleName: string | undefined): RoleClassification {
 //   - trainer                     → Staff Dashboard + Courses + Profile
 //                                   (Log Activity is opt-in — admin must
 //                                   grant it explicitly)
-//   - student                     → Student Dashboard + Courses + Profile
+//   - student                     → Student Dashboard + Courses + Profile +
+//                                   Calendar. The calendar is baseline, not
+//                                   opt-in: it is the read-only institute /
+//                                   enrolled-client holiday calendar, so a
+//                                   learner needs it to know when there is no
+//                                   class. (Learners created BEFORE this still
+//                                   reach the page — providers.tsx grants
+//                                   /lms/pages/studentcalendar on the student
+//                                   role — but seeding it here keeps the rail
+//                                   entry permission-backed for new accounts.)
 const ROLE_DEFAULT_PAGE_IDS: Record<RoleClassification, string[]> = {
   admin: ["admin-dashboard", "admin-profile"],
   poc: ["admin-poc-dashboard", "admin-profile"],
   trainer: ["staff-dashboard", "staff-courses", "staff-profile"],
-  student: ["student-dashboard", "student-courses", "student-profile"],
+  student: ["student-dashboard", "student-courses", "student-profile", "student-calendar"],
 };
 
 export function defaultSelectionForRole(

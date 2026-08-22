@@ -12,6 +12,17 @@ export type Holiday = {
 
 export type { HolidayType, HolidayDuration }
 
+// The one place the composite scope key is defined. The server keeps a single
+// calendar document per string key, so per-client calendars piggyback on the
+// same collection by suffixing the client id — and the plain institution id
+// stays the key of the legacy institute-wide record, untouched.
+//
+// It lives in this leaf module (not ClientList, which owns the admin table and
+// pulls in DataTable + the client service) so the read-only student calendar
+// can key its fetches off the SAME function the admin editor writes through.
+export const scopeIdFor = (instituteId: string, clientId: string | null): string =>
+    clientId ? `${instituteId}__client__${clientId}` : instituteId
+
 // ── Holiday-type display metadata (colour + label) ──
 // `cell` is the soft wash a chip/day gets when the date carries that type and
 // `bar` is the 3px left accent on event chips, so the grid, legend and chips

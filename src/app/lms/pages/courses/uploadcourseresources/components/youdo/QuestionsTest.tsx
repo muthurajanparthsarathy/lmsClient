@@ -19,14 +19,21 @@ import GenerateMCQAIQuestion from '@/app/lms/component/student/YouDo/assessment/
 import AddQuestionViaDocument from '@/app/lms/component/AddQuestionViaDocument';
 import { exerciseApi } from '@/apiServices/exercise';
 import { questionApi } from '@/apiServices/question';
+// Shared app-wide loader (orange Swirling ring). Replaces two hand-rolled
+// blue rings that used to sit inside this file for the "Loading assessment…"
+// and "Loading questions…" states — those read off-theme and off-brand.
+import { Loading } from '@/components/loading-ui/loading';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
+// See Assessment.tsx for the same rationale — keys stay `blue*`, values
+// carry brand orange so the whole Manage Questions surface matches the
+// app theme rather than the pre-existing indigo.
 const T = {
-  blue: "#6366f1",
-  blueDark: "#4f46e5",
-  blueLight: "rgba(99,102,241,0.08)",
-  blueMid: "rgba(99,102,241,0.15)",
-  blueGlow: "rgba(99,102,241,0.22)",
+  blue: "#f97316",          // brand-500
+  blueDark: "#c2540f",      // brand-700
+  blueLight: "rgba(249,115,22,0.08)",
+  blueMid: "rgba(249,115,22,0.15)",
+  blueGlow: "rgba(249,115,22,0.22)",
   textMain: "#1a1a2e",
   textSub: "#6b6b7e",
   textMuted: "#8b8b9e",
@@ -34,7 +41,7 @@ const T = {
   border: "#ece9f1",
   bg: "#ffffff",
   pageBg: "#faf9fc",
-  warm: "#f5f3ff",
+  warm: "#fff7f1",
   red: "#ef4444",
   redLight: "rgba(239,68,68,0.1)",
   emerald: "#10b981",
@@ -61,6 +68,16 @@ interface Question {
 
 interface QuestionsTestProps {
   assessment: any;
+  // Optional full exercise doc from the parent's already-loaded list
+  // (`rawExercises` in Assessment.tsx). Carries `sectionConfigs` /
+  // `questionSource` / `customSources` that the slim `assessment` view
+  // record drops. When present we seed `fullExercise` from it INSTANTLY
+  // — no wait for our own getExerciseById round trip — and, if that
+  // round trip comes back missing `sectionConfigs` (some code paths
+  // strip Map fields), we keep the preloaded values so the Section
+  // Picker doesn't fall to "No sections found" for section-based
+  // assessments that clearly have sections.
+  preloadedExercise?: any;
   onBack: () => void;
   nodeId: string;
   nodeName: string;
@@ -519,6 +536,7 @@ const PortalDropMenu: React.FC<{
 // ─── Main Component ───────────────────────────────────────────────────────────
 const QuestionsTest: React.FC<QuestionsTestProps> = ({
   assessment,
+  preloadedExercise,
   onBack,
   nodeId,
   nodeName,
@@ -692,8 +710,13 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
   // on mount (and on every refetch); every code path that reads exercise shape
   // must prefer this over `assessment`. State (not ref) so section tab / config
   // derivations below the state declarations re-render when it lands.
-  const [fullExercise, setFullExercise] = useState<any>(null);
-  const fullExerciseRef = useRef<any>(null);
+  // Seed from the parent's already-loaded exercise so section-based
+  // assessments have real `sectionConfigs` on frame one — otherwise the
+  // Section Picker opens showing "No sections found" the moment the user
+  // hits Add Question before our own fetch lands (or if the fetch response
+  // comes back without sectionConfigs).
+  const [fullExercise, setFullExercise] = useState<any>(preloadedExercise ?? null);
+  const fullExerciseRef = useRef<any>(preloadedExercise ?? null);
 
   // Get section configs from the full exercise doc (the slim `assessment` prop
   // does NOT carry sectionConfigs). Fallback to the prop only until the fetch
@@ -737,10 +760,29 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
       // back to the raw response as a last resort. Without the `|| response`
       // fallback, endpoints that return the exercise directly left fullExercise
       // undefined → Add Question stayed perpetually disabled.
-      const fullExercise = response?.data?.exercise
+      const fetched = response?.data?.exercise
         || response?.exercise
         || (response?.data && !Array.isArray(response.data) ? response.data : null)
         || response;
+      // If the fresh fetch strips `sectionConfigs` (some code paths that
+      // touch Mongoose Maps drop them) but the preloaded copy from the
+      // parent had them, merge the fetched fields on top of the preloaded
+      // ones — that way we never REGRESS the section picker from a
+      // populated state to an empty one. Same rescue for `isSectionBased`.
+      const fullExercise = (() => {
+        const base = preloadedExercise || fullExerciseRef.current || null;
+        if (!fetched) return base;
+        const merged: any = { ...(base || {}), ...fetched };
+        const preSecs = base?.sectionConfigs;
+        const fetSecs = fetched?.sectionConfigs;
+        if ((!fetSecs || Object.keys(fetSecs).length === 0) && preSecs && Object.keys(preSecs).length > 0) {
+          merged.sectionConfigs = preSecs;
+        }
+        if (fetched.isSectionBased === undefined && base?.isSectionBased !== undefined) {
+          merged.isSectionBased = base.isSectionBased;
+        }
+        return merged;
+      })();
       if (fullExercise && (fullExercise._id || fullExercise.exerciseInformation || fullExercise.questions)) {
         // Cache the full exercise so handleOpenAddQuestion / handleEdit /
         // buildAddQExerciseData all read a doc that has the real exerciseType,
@@ -754,20 +796,23 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
           setQuestions([]);
         }
       } else {
-        // The API returned something we couldn't parse — fall back to the slim
-        // assessment prop so the trainer isn't stranded with a permanently
-        // disabled Add Question button. Slim data is enough to open the form
-        // in Manual mode; source-chooser logic degrades to allow-all.
-        fullExerciseRef.current = assessment;
-        setFullExercise(assessment);
+        // The API returned something we couldn't parse — fall back to the
+        // preloaded full exercise if the parent sent one (has real
+        // sectionConfigs / questionSource), otherwise the slim assessment
+        // prop as a last resort. Slim data is enough to open the form in
+        // Manual mode; source-chooser logic degrades to allow-all.
+        const fb = preloadedExercise || assessment;
+        fullExerciseRef.current = fb;
+        setFullExercise(fb);
         setQuestions([]);
       }
     } catch (err) {
       console.error('Failed to fetch questions:', err);
       toast.error('Failed to load questions');
       // Same fallback on error — never leave the button perpetually disabled.
-      fullExerciseRef.current = assessment;
-      setFullExercise(assessment);
+      const fb = preloadedExercise || assessment;
+      fullExerciseRef.current = fb;
+      setFullExercise(fb);
       setQuestions([]);
     } finally {
       setLoading(false);
@@ -1402,19 +1447,14 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
   // moment. Only shown for the very first fetch (before `fullExercise` lands);
   // subsequent refetches (e.g. after adding a question) don't blank the page.
   if (loading && fullExercise === null) {
+    // Whole-panel first-load state — uses the app-wide <Loading /> (Swirling
+    // brand ring) so the moment reads as the same loading UX every other
+    // route uses, not a bespoke blue ring specific to Manage Questions. The
+    // header row inside the page is suppressed while this shows, so no
+    // controls are actionable during first fetch.
     return (
       <div className="flex flex-col h-full items-center justify-center" style={{ background: T.bg, fontFamily: "'Poppins', sans-serif" }}>
-        <div className="flex items-center gap-3 px-4 py-2 mb-6 rounded-full" style={{ background: T.blueLight, border: `1px solid ${T.blue}30` }}>
-          <div className="w-3 h-3 rounded-full animate-pulse" style={{ background: T.blue }} />
-          <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: T.blue, letterSpacing: '0.08em' }}>
-            Manage Questions
-          </span>
-        </div>
-        <div className="relative">
-          <div className="w-16 h-16 border-[3px] rounded-full" style={{ borderColor: T.blueLight }} />
-          <div className="absolute inset-0 w-16 h-16 border-[3px] rounded-full animate-spin" style={{ borderColor: T.blue, borderTopColor: 'transparent' }} />
-        </div>
-        <p className="text-[14px] font-bold mt-5" style={{ color: T.textMain }}>Loading assessment…</p>
+        <Loading label="Loading assessment…" size="size-14" />
         <p className="text-[12px] mt-1.5 max-w-xs text-center" style={{ color: T.textMuted }}>
           Fetching the exercise configuration and its saved questions.
         </p>
@@ -1612,16 +1652,13 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
           down to reach it. */}
       <div className="flex-1 overflow-auto">
         {loading ? (
-          // Full-panel loading state — takes the whole content area so it reads
-          // as a page-level "waiting for data" moment instead of a tiny spinner
-          // lost in the middle of an empty region. Add Question is separately
-          // gated on `loading` at the header, so nothing is actionable here.
+          // Full-panel loading state — same shared <Loading /> the first-load
+          // block above uses. Takes the whole content area so it reads as a
+          // page-level "waiting for data" moment instead of a tiny custom
+          // spinner. Add Question is separately gated on `loading` at the
+          // header, so nothing is actionable here.
           <div className="flex flex-col items-center justify-center h-full min-h-[360px]" style={{ background: T.bg }}>
-            <div className="relative">
-              <div className="w-14 h-14 border-[3px] rounded-full" style={{ borderColor: T.blueLight }} />
-              <div className="absolute inset-0 w-14 h-14 border-[3px] rounded-full animate-spin" style={{ borderColor: T.blue, borderTopColor: 'transparent' }} />
-            </div>
-            <p className="text-[13.5px] font-bold mt-4" style={{ color: T.textMain }}>Loading questions…</p>
+            <Loading label="Loading questions…" size="size-12" />
             <p className="text-[11px] mt-1" style={{ color: T.textMuted }}>Fetching the exercise and its saved questions.</p>
           </div>
         ) : sortedQuestions.length === 0 ? (

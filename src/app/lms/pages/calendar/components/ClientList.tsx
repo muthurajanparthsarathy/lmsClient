@@ -6,18 +6,16 @@ import { Building2, CalendarDays, Search, X } from 'lucide-react'
 import { useClients, type Client, type ContactPerson } from '@/apiServices/clientManagementService'
 import { instituteHolidayCalendarApi } from '@/apiServices/instituteHolidayCalendarApi'
 import { motion } from 'framer-motion'
-import { HeaderStats, type HeaderStatItem } from '@/app/lms/shared/ui/HeaderStats'
 import DataTable, { type Column } from '@/app/lms/shared/listing/DataTable'
 import TableFooter from '@/app/lms/shared/listing/TableFooter'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PERMISSION_IDS } from '@/components/permissions'
+import { scopeIdFor } from './types'
 
-// The one place the composite scope key is defined. The server keeps a single
-// calendar document per string key, so per-client calendars piggyback on the
-// same collection by suffixing the client id — and the plain institution id
-// stays the key of the legacy institute-wide record, untouched.
-export const scopeIdFor = (instituteId: string, clientId: string | null): string =>
-    clientId ? `${instituteId}__client__${clientId}` : instituteId
+// Re-exported from ./types, where the definition now lives so the read-only
+// student calendar can share it without importing this table. Existing
+// callers (page.tsx) keep importing it from here unchanged.
+export { scopeIdFor }
 
 // What "Manage holidays" hands back to the page: `clientId: null` means the
 // pinned institute-wide row, whose calendar lives under the bare institute id.
@@ -160,26 +158,6 @@ export default function ClientList({
         setCurrentPage(1)
     }
 
-    // ── Compact stat chips (Client Management style): only this institute's
-    // scopes count, so another institute's records can't inflate the numbers.
-    // Swapped from the four full-width cards to the shared HeaderStats chip
-    // strip — same numbers, a fraction of the vertical real estate, so the
-    // clients table now fits the viewport without a page-level scrollbar.
-    const stats = useMemo<HeaderStatItem[]>(() => {
-        const mine = calendarRecords.filter(
-            (r) => r.instituteId === instituteId || r.instituteId.startsWith(`${instituteId}__client__`)
-        )
-        const withHolidays = mine.filter((r) => (r.holidayCount ?? 0) > 0).length
-        const totalHolidays = mine.reduce((sum, r) => sum + (r.holidayCount ?? 0), 0)
-        const active = clientList.filter((c) => c.status === 'active').length
-        return [
-            { label: 'Total', value: clientList.length },
-            { label: 'Active', value: active },
-            { label: 'Calendars', value: withHolidays },
-            { label: 'Holidays', value: totalHolidays },
-        ]
-    }, [clientList, calendarRecords, instituteId])
-
     // Percentage column widths sum to 100% so `fixedLayout` (below) can decide
     // the layout on its own — no horizontal scrollbar, cells clip long values
     // via `truncate` + `title` tooltips instead. Same pattern as the User
@@ -275,11 +253,12 @@ export default function ClientList({
         },
         {
             key: 'action',
-            label: '',
+            label: 'Actions',
             // Widened from 8% → 20% so the "Manage holidays" button (icon +
             // ~120px label) fits fully in the fixed-layout cell without being
-            // clipped on narrow screens. The other columns lost a couple of
-            // percentage points to make room.
+            // clipped on narrow screens. Column header now reads "Actions" —
+            // the blank header made the button feel disconnected from the
+            // row above and away from the pattern the other admin lists use.
             className: 'w-[20%] px-3 pr-4 text-right',
             skeletonWidth: '140px',
             render: (row) =>
@@ -296,60 +275,52 @@ export default function ClientList({
     ]
 
     return (
-        // Full-height flex column: the header row, filter bar keep their
-        // natural height; the table card claims the rest via `flex-1 min-h-0`
-        // and its DataTable's `fillHeight` opts in. The parent motion.div in
-        // page.tsx is `overflow-hidden` so nothing scrolls at the page level —
-        // only the table body does.
-        <div className="h-full min-h-0 flex flex-col gap-4 px-6 py-5 md:px-8 md:py-6">
-            {/* Two-column header, matching the Client Management pattern:
-                title on the left, HeaderStats chips top-right (near the
-                notification bell), and the "Institute-wide calendar" button
-                stacked underneath them so it doesn't crowd the chip strip.
-                PageHeader was replaced because its single-row layout forced
-                the button next to the chips. */}
-            <div className="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
-                <div className="min-w-0 flex-1">
-                    <h1 className="text-2xl font-semibold text-heading tracking-[-0.01em]">
-                        Holiday Calendar
-                    </h1>
-                </div>
-                <HeaderStats items={stats} loading={isLoading} skeletonCount={4} />
+        // Repainted onto the Client Management / Course Structure layout:
+        // slim title row (no HeaderStats chip strip), h-8 toolbar rhythm,
+        // and a flat list panel — no rounded-xl border card around the
+        // table. Padding matches CM (`px-4 sm:px-6 md:px-8 pt-3 pb-3`).
+        // The parent motion.div in page.tsx is `overflow-hidden` so
+        // nothing scrolls at the page level — only the table body does.
+        <div className="h-full min-h-0 flex flex-col px-4 sm:px-6 md:px-8 pt-3 pb-3">
+            {/* Slim heading — the Total / Active / Calendars / Holidays
+                HeaderStats strip was removed at the user's request; those
+                numbers duplicate what the table + pagination footer already
+                show, and the extra chip row crowded the workspace. */}
+            <div className="flex items-center justify-between gap-4">
+                <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">Holiday Calendar</h1>
             </div>
 
-            {/* Inline toolbar (no card wrapper): search + status filter on the
-                left, "Institute-wide calendar" button on the right. Matches
-                the User Management / Client Management toolbar style — a
-                boxed FilterBar around a single-line control set reads as an
-                extra rectangle on the page for no real gain. */}
-            <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative flex-1 min-w-[220px]">
+            {/* Toolbar — h-8 pills, same rhythm as Client Management.
+                Search + status filter on the left, Institute-wide calendar
+                as the primary right-aligned action. */}
+            <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0">
+                <div className="relative flex-1 min-w-[220px] max-w-md">
                     <Search
-                        size={15}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-faint pointer-events-none"
+                        size={14}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none"
                     />
                     <input
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }}
                         placeholder="Search by client, contact name or email…"
-                        className="h-10 w-full rounded-control border border-hairline-strong bg-surface pl-3.5 pr-9 text-sm text-body placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+                        className="h-8 w-full rounded-control border border-hairline-strong bg-surface pl-8 pr-8 text-xs text-body placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
                     />
                     {search && (
                         <button
                             type="button"
                             aria-label="Clear search"
                             onClick={() => { setSearch(''); setCurrentPage(1) }}
-                            className="absolute right-8 top-1/2 -translate-y-1/2 inline-flex size-6 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
                         >
-                            <X size={14} />
+                            <X size={12} />
                         </button>
                     )}
                 </div>
                 <select
                     value={statusFilter}
                     onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1) }}
-                    className={`h-10 rounded-control border border-hairline-strong bg-surface px-3 text-sm text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${statusFilter ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
-                    style={{ minWidth: 140 }}
+                    className={`h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-body focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 transition-colors duration-150 ${statusFilter ? 'border-brand bg-brand-wash text-brand-strong' : ''}`}
+                    style={{ minWidth: 130 }}
                 >
                     <option value="">All statuses</option>
                     <option value="active">Active</option>
@@ -359,25 +330,31 @@ export default function ClientList({
                     <button
                         type="button"
                         onClick={clearFilters}
-                        className="h-10 rounded-control border border-hairline-strong bg-surface px-3 text-xs font-medium text-subtle hover:text-heading transition-colors duration-150"
+                        className="h-8 rounded-control border border-hairline-strong bg-surface px-2.5 text-xs font-medium text-subtle hover:bg-row-hover hover:text-heading transition-colors duration-150"
                     >
                         Clear
                     </button>
                 )}
                 {canManageHolidays && (
-                    <motion.button
-                        type="button"
-                        onClick={() => onManage({ clientId: null, clientName: 'Institute-wide' })}
-                        whileTap={{ scale: 0.98 }}
-                        className="ml-auto flex items-center gap-2 h-10 pl-3.5 pr-3.5 rounded-control bg-brand-strong text-white shadow-xs hover:bg-brand-800 transition-colors duration-150 ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 focus-visible:ring-offset-2 flex-shrink-0"
-                    >
-                        <CalendarDays size={16} strokeWidth={2.2} />
-                        <span className="text-sm font-semibold hidden sm:inline">Institute-wide calendar</span>
-                    </motion.button>
+                    <>
+                        <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5 ml-auto" aria-hidden />
+                        <motion.button
+                            type="button"
+                            onClick={() => onManage({ clientId: null, clientName: 'Institute-wide' })}
+                            whileTap={{ scale: 0.98 }}
+                            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+                        >
+                            <CalendarDays size={14} strokeWidth={2.4} />
+                            <span className="text-xs font-semibold hidden sm:inline">Institute-wide calendar</span>
+                        </motion.button>
+                    </>
                 )}
             </div>
 
-            <div className="flex-1 min-h-0 flex flex-col bg-surface rounded-xl border border-hairline shadow-xs overflow-hidden">
+            {/* Flat list panel — no rounded-xl card chrome, matching CM
+                / User Management. The DataTable's own hairline rows carry
+                the visual separation. */}
+            <div className="mt-2 flex flex-1 min-h-0 flex-col overflow-hidden">
                 <DataTable<Row>
                     rows={pageRows}
                     columns={columns}

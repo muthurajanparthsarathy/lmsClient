@@ -644,7 +644,7 @@ export default function GradePage() {
                                                         
                                                         {/* Badge for course level */}
                                                         <div className="absolute -top-1 -right-1">
-                                                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${course.courseLevel === 'Beginner' ? 'bg-green-500 text-white' :
+                                                            <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-full ${course.courseLevel === 'Beginner' ? 'bg-green-500 text-white' :
                                                                     course.courseLevel === 'Intermediate' ? 'bg-yellow-500 text-white' :
                                                                     'bg-red-500 text-white'
                                                                 }`}>
@@ -667,7 +667,7 @@ export default function GradePage() {
                                                         <h3 className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2 leading-tight mb-0.5 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors duration-200">
                                                             {course.courseName}
                                                         </h3>
-                                                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                                                        <span className="text-2xs text-gray-500 dark:text-gray-400">
                                                             {course.serviceType}
                                                         </span>
                                                     </div>

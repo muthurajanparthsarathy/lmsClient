@@ -2751,7 +2751,7 @@ Format with clear headings, bullet points, and proper spacing for easy reading.`
                                         </div>
                                     ) : selectedCount > 0 ? (
                                         <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded-sm flex items-center justify-center">
-                                            <span className="text-[9px] font-bold text-blue-600">{selectedCount}</span>
+                                            <span className="text-2xs font-bold text-blue-600">{selectedCount}</span>
                                         </div>
                                     ) : (
                                         <div className="w-4 h-4 border border-gray-400 rounded-sm"></div>
@@ -2759,10 +2759,10 @@ Format with clear headings, bullet points, and proper spacing for easy reading.`
                                 </div>
                                 <div className="flex-1 min-w-0 overflow-hidden">
                                     <div className="flex flex-col justify-center h-full">
-                                        <span className="font-medium text-gray-700 truncate block text-[11px] leading-tight">
+                                        <span className="font-medium text-gray-700 truncate block text-2xs leading-tight">
                                             {getLevelLabel()}
                                         </span>
-                                        <span className="text-[9px] truncate block leading-tight">
+                                        <span className="text-2xs truncate block leading-tight">
                                             {selectedCount === 0 ?
                                                 <span className="text-gray-400">No items selected</span> :
                                                 <span className="text-gray-500">{selectedCount} selected</span>
@@ -2780,7 +2780,7 @@ Format with clear headings, bullet points, and proper spacing for easy reading.`
                                     <div className="flex items-center justify-between">
                                         <div className="flex-1 min-w-0">
                                             <span className="text-xs font-semibold text-gray-800">{getLevelLabel()}</span>
-                                            <span className="text-[10px] text-gray-500 ml-1">({items.length})</span>
+                                            <span className="text-2xs text-gray-500 ml-1">({items.length})</span>
                                         </div>
                                         <button
                                             onClick={(e) => {
@@ -2903,7 +2903,7 @@ Format with clear headings, bullet points, and proper spacing for easy reading.`
                                                     <div className="flex-1 min-w-0">
                                                         <span className="text-xs text-gray-800 truncate block">{item.title}</span>
                                                         {parentInfo && (
-                                                            <span className="text-[10px] text-gray-500 truncate block mt-0.5">
+                                                            <span className="text-2xs text-gray-500 truncate block mt-0.5">
                                                                 {parentInfo}
                                                             </span>
                                                         )}
@@ -3204,7 +3204,7 @@ Format with clear headings, bullet points, and proper spacing for easy reading.`
                                                                                             {moduleNode.item.title}
                                                                                         </span>
                                                                                         <div className="flex items-center gap-1 mt-0.5">
-                                                                                            <span className="text-[10px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
+                                                                                            <span className="text-2xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
                                                                                                 Module
                                                                                             </span>
                                                                                         </div>
@@ -3247,7 +3247,7 @@ Format with clear headings, bullet points, and proper spacing for easy reading.`
                                                                                                         {childNode.item.title}
                                                                                                     </span>
                                                                                                     <div className="flex items-center gap-1 mt-0.5">
-                                                                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${childNode.type === 'submodule' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>
+                                                                                                        <span className={`text-2xs px-1.5 py-0.5 rounded ${childNode.type === 'submodule' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>
                                                                                                             {childNode.type === 'submodule' ? 'Sub-module' : 'Topic'}
                                                                                                         </span>
                                                                                                     </div>

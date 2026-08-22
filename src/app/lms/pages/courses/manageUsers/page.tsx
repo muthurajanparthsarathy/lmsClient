@@ -1,60 +1,45 @@
 "use client";
 
+// Manage Users — proctor view for a single You_Do assessment.
+//
+// The LOOK is a mirror of User Management (/lms/pages/usermanagement): same
+// slim heading, same compact `h-9` search + Filter toolbar, same inline
+// expanding filter panel + removable chip strip, same table metrics
+// (h-9 header on bg-canvas / h-12 body rows, sticky header, hover fill), same
+// StatusPill for status, same `bg-brand-strong text-white` primary button and
+// `border-hairline-strong bg-surface` secondary buttons, same shared
+// TableFooter for pagination. Nothing about the underlying flow changed —
+// this remains the retest / live-controls surface it was: Reports, Message
+// All, Live Screens, per-row Check Answer / Send Message / Unlock, and a
+// second "Request List" tab for retest requests.
+//
+// The bespoke look this file used to carry (its own `T` token table with
+// indigo `#6366f1` renamed as "blue", per-row hex badges, custom spinner
+// rings, per-row custom button pills, no pagination) is gone. Ordinary hover
+// buttons no longer carry a colour prop; only genuinely-semantic entries
+// (Unlock = destructive-adjacent = danger red) keep one.
+
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSectionHref } from "@/lib/sectionRoute";
 import ReactDOM from "react-dom";
 import { toast } from "react-hot-toast";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft, Users, ClipboardList, MoreVertical, Lock, X, AlertTriangle,
-  Search, RefreshCw, CheckCircle,
-  Send, MonitorPlay, ClipboardCheck, MessageSquare, Filter,
-  Info, Loader2, FileText,
+  Search, RefreshCw, CheckCircle, Send, MonitorPlay, ClipboardCheck,
+  MessageSquare, Filter, Info, Loader2, FileText, RotateCcw, SearchX,
 } from "lucide-react";
 import { retestApi, type RetestRequestRecord, type EnrolledStudent } from "@/apiServices/retest";
 import { exerciseApi } from "@/apiServices/exercise";
 import { getSocket } from "@/apiServices/socketClient";
-
-// ─── Design tokens ──────────────────────────────────────────────────────────
-const T = {
-  blue: "#F97316",
-  cyan: "#0891b2",
-  textMain: "#1a1a2e",
-  textSub: "#475569",
-  textMuted: "#64748b",
-  textHint: "#94a3b8",
-  border: "#e9eaf0",
-  bg: "#ffffff",
-  pageBg: "#f7f8fb",
-  red: "#ef4444",
-  amber: "#f59e0b",
-  green: "#16a34a",
-};
-
-const AVATAR_COLORS = [
-  { bg: "#fee2e2", fg: "#dc2626" },
-  { bg: "#dbeafe", fg: "#2563eb" },
-  { bg: "#dcfce7", fg: "#16a34a" },
-  { bg: "#fef3c7", fg: "#d97706" },
-  { bg: "#ede9fe", fg: "#7c3aed" },
-  { bg: "#cffafe", fg: "#0891b2" },
-  { bg: "#fce7f3", fg: "#db2777" },
-];
+import { EmptyState, StatusPill, pageEnter } from "@/app/lms/shared/ui";
+import type { StatusPillTone } from "@/app/lms/shared/ui/StatusPill";
+import TableFooter from "@/app/lms/shared/listing/TableFooter";
+import { UserAvatar } from "@/app/lms/pages/usermanagement/components/UserAvatar";
+import { Loading } from "@/components/loading-ui/loading";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const getInitials = (name: string): string => {
-  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-};
-
-const colorForName = (name: string) => {
-  let h = 0;
-  for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-};
-
 const formatDateTime = (d?: string | null): string => {
   if (!d) return "—";
   try {
@@ -70,50 +55,32 @@ const toLocalInput = (d: Date): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-// Map enrolled-student exerciseProgress.status → a friendly submission badge
-const STUDENT_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  not_started: { label: "Not Submitted", color: "#64748b", bg: "rgba(100,116,139,0.10)" },
-  in_progress: { label: "In Progress", color: "#F97316", bg: "rgba(249,115,22,0.10)" },
-  evaluated: { label: "Submitted", color: "#16a34a", bg: "rgba(22,163,74,0.10)" },
-  completed: { label: "Submitted", color: "#16a34a", bg: "rgba(22,163,74,0.10)" },
-  submitted: { label: "Submitted", color: "#16a34a", bg: "rgba(22,163,74,0.10)" },
+// Enrolled-student exerciseProgress.status → StatusPill tone + label. Same
+// three-way UX as the Dashboard: Not Submitted / In Progress / Submitted.
+// `evaluated` / `completed` / `submitted` all collapse to a single green
+// "Submitted" so trainers don't have to distinguish trivially-different
+// server states in the table.
+const studentStatusPill = (raw?: string | null): { tone: StatusPillTone; label: string } => {
+  const s = (raw || "").toLowerCase();
+  if (s === "evaluated" || s === "completed" || s === "submitted")
+    return { tone: "success", label: "Submitted" };
+  if (s === "in_progress")
+    return { tone: "brand", label: "In Progress" };
+  return { tone: "neutral", label: "Not Submitted" };
 };
 
-const REQUEST_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  Pending: { label: "Pending", color: "#b45309", bg: "rgba(245,158,11,0.12)" },
-  Approved: { label: "Approved", color: "#15803d", bg: "rgba(22,163,74,0.12)" },
-  Rejected: { label: "Rejected", color: "#b91c1c", bg: "rgba(239,68,68,0.12)" },
+const requestStatusPill = (raw?: string | null): { tone: StatusPillTone; label: string } => {
+  const s = String(raw || "").toLowerCase();
+  if (s === "approved") return { tone: "success", label: "Approved" };
+  if (s === "rejected") return { tone: "danger", label: "Rejected" };
+  return { tone: "warn", label: "Pending" };
 };
 
-// ─── Avatar ─────────────────────────────────────────────────────────────────
-const Avatar: React.FC<{ name: string }> = ({ name }) => {
-  const c = colorForName(name);
-  return (
-    <div
-      className="flex items-center justify-center rounded-full flex-shrink-0"
-      style={{ width: 34, height: 34, background: c.bg, color: c.fg, fontSize: 12, fontWeight: 700 }}
-    >
-      {getInitials(name)}
-    </div>
-  );
-};
-
-// ─── Status badge ───────────────────────────────────────────────────────────
-const Badge: React.FC<{ label: string; color: string; bg: string }> = ({ label, color, bg }) => (
-  <span
-    className="inline-flex items-center px-2.5 py-1 rounded-full"
-    style={{ fontSize: 11, fontWeight: 600, color, background: bg }}
-  >
-    {label}
-  </span>
-);
-
-// ─── Users List row 3-dot menu — all per-student actions live here now.
-// The three items are, in order:
-//   1. Check Answer   — only when the student has any DB answer (gated by `canCheck`)
-//   2. Send Message   — always available
-//   3. Unlock Assessment — always available
-// Items 1 & 2 replaced the inline pills that briefly lived in the row itself.
+// ─── Row actions menu ─────────────────────────────────────────────────────────
+// Kebab menu opened from a row. Portal so it isn't clipped by the table's
+// overflow container. Reads as a plain neutral menu — every item inherits
+// text-body / text-heading on hover; only Unlock keeps a red tint because
+// it clears the student's saved answers.
 interface UsersRowMenuProps {
   canCheck: boolean;
   onCheckAnswer: () => void;
@@ -148,62 +115,35 @@ const UsersRowMenu: React.FC<UsersRowMenuProps> = ({ canCheck, onCheckAnswer, on
     };
   }, [open]);
 
-  // Shared style for a menu row so we don't repeat 5 lines of inline style
-  // three times. `color` picks the icon+text tint; hover just tints the row bg.
-  const itemStyle = (color: string): React.CSSProperties => ({
-    fontSize: 12.5, fontWeight: 600, color,
-    background: "transparent", border: "none", cursor: "pointer", textAlign: "left",
-  });
-  const hoverBg = (color: string) => `${color}14`; // ~8% opacity
+  const itemCls = "flex items-center gap-2 w-full px-2.5 py-2 text-sm font-medium rounded-chip transition-colors duration-150 text-body hover:bg-row-hover hover:text-heading";
+  const dangerCls = "flex items-center gap-2 w-full px-2.5 py-2 text-sm font-medium rounded-chip transition-colors duration-150 text-danger-700 hover:bg-danger-50";
 
   return (
     <>
       <button
         ref={btnRef}
         onClick={() => setOpen(o => !o)}
-        title="Actions"
-        className="p-1.5 rounded-lg"
-        style={{ color: T.textHint, background: open ? "#f1f5f9" : "transparent", border: "none", cursor: "pointer", lineHeight: 0 }}
+        aria-label="Row actions"
+        className={`inline-flex items-center justify-center size-7 rounded-control text-subtle hover:bg-row-hover hover:text-heading transition-colors duration-150 ${open ? "bg-row-hover text-heading" : ""}`}
       >
-        <MoreVertical size={16} />
+        <MoreVertical size={15} />
       </button>
       {open && pos && typeof document !== "undefined" && ReactDOM.createPortal(
         <div
-          className="users-row-menu"
-          style={{
-            position: "fixed", top: pos.top, right: pos.right, zIndex: 100000,
-            background: "#fff", border: `1px solid ${T.border}`, borderRadius: 10,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.12)", padding: 4, minWidth: 200,
-          }}
+          className="users-row-menu bg-surface border border-hairline-strong rounded-tile shadow-lg p-1.5"
+          style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 100000, minWidth: 200 }}
         >
           {canCheck && (
-            <button
-              onClick={() => { setOpen(false); onCheckAnswer(); }}
-              className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg"
-              style={itemStyle(T.green)}
-              onMouseEnter={e => (e.currentTarget.style.background = hoverBg(T.green))}
-              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-            >
-              <ClipboardCheck size={13} /> Check Answer
+            <button onClick={() => { setOpen(false); onCheckAnswer(); }} className={itemCls}>
+              <ClipboardCheck size={14} className="text-subtle" /> Check Answer
             </button>
           )}
-          <button
-            onClick={() => { setOpen(false); onSendMessage(); }}
-            className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg"
-            style={itemStyle("#4f46e5")}
-            onMouseEnter={e => (e.currentTarget.style.background = hoverBg("#4f46e5"))}
-            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-          >
-            <MessageSquare size={13} /> Send Message
+          <button onClick={() => { setOpen(false); onSendMessage(); }} className={itemCls}>
+            <MessageSquare size={14} className="text-subtle" /> Send Message
           </button>
-          <button
-            onClick={() => { setOpen(false); onUnlock(); }}
-            className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg"
-            style={itemStyle(T.cyan)}
-            onMouseEnter={e => (e.currentTarget.style.background = hoverBg(T.cyan))}
-            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-          >
-            <Lock size={13} /> Unlock Assessment
+          {canCheck && <div className="my-1 h-px bg-hairline" />}
+          <button onClick={() => { setOpen(false); onUnlock(); }} className={dangerCls}>
+            <Lock size={14} /> Unlock Assessment
           </button>
         </div>,
         document.body
@@ -212,7 +152,12 @@ const UsersRowMenu: React.FC<UsersRowMenuProps> = ({ canCheck, onCheckAnswer, on
   );
 };
 
-// ─── Unlock confirmation modal (warning + per-student window) ─────────────────
+// ─── Unlock confirmation modal ────────────────────────────────────────────────
+// The retune here is minimal — same layout, same wording, same behaviour;
+// tokens swapped to the shared palette (bg-surface / text-heading / border-
+// hairline / danger-700) so the modal reads like the app's other confirm
+// dialogs instead of a bespoke amber card. The per-student retest window
+// controls stay identical.
 interface UnlockModalProps {
   name: string;
   requireSchedule: boolean;
@@ -239,108 +184,94 @@ const UnlockModal: React.FC<UnlockModalProps> = ({ name, requireSchedule, onClos
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center p-4"
-      style={{ background: "rgba(15,15,30,0.5)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50"
       onClick={onClose}
     >
       <div
-        className="relative w-full rounded-2xl overflow-hidden"
-        style={{ maxWidth: 440, background: "#fffdf7", boxShadow: "0 24px 60px rgba(0,0,0,0.25)" }}
+        className="relative w-full max-w-md rounded-2xl overflow-hidden bg-surface shadow-xl border border-hairline"
         onClick={e => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 p-1 rounded-full"
-          style={{ color: T.textMuted, background: "transparent", border: "none", cursor: "pointer" }}
+          aria-label="Close"
+          className="absolute top-3 right-3 inline-flex size-8 items-center justify-center rounded-control text-faint hover:bg-row-hover hover:text-heading transition-colors duration-150"
         >
-          <X size={18} />
+          <X size={16} />
         </button>
 
         <div className="flex flex-col items-center text-center px-7 pt-7 pb-3">
-          <div
-            className="flex items-center justify-center rounded-full mb-3"
-            style={{ width: 56, height: 56, background: "rgba(245,158,11,0.15)", color: T.amber }}
-          >
+          <div className="flex items-center justify-center rounded-full mb-3 bg-warn-50 text-warn-700" style={{ width: 56, height: 56 }}>
             <AlertTriangle size={28} />
           </div>
-          <h3 className="text-[18px] font-bold" style={{ color: T.textMain }}>Unlock Assessment?</h3>
-          <p className="text-[13px] mt-1.5" style={{ color: T.textSub }}>
+          <h3 className="text-md font-bold text-heading">Unlock Assessment?</h3>
+          <p className="text-sm text-subtle mt-1.5">
             Are you sure you want to unlock the assessment for{" "}
-            <span className="font-semibold" style={{ color: T.textMain }}>{name}</span>?
+            <span className="font-semibold text-heading">{name}</span>?
           </p>
         </div>
 
         {requireSchedule ? (
-        /* Assessment window has ended — give this student their own retest window */
-        <div className="px-7 pb-2">
-          <div
-            className="rounded-xl p-3.5"
-            style={{ background: "#fff", border: `1px solid ${T.border}` }}
-          >
-            <p className="text-[11px] font-semibold mb-2.5" style={{ color: T.textMuted }}>
-              The assessment window has ended — set a retest window for this student only
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold mb-1" style={{ color: T.textSub }}>Start</label>
-                <input
-                  type="datetime-local"
-                  value={start}
-                  onChange={e => setStart(e.target.value)}
-                  className="w-full text-[12px] rounded-lg px-2.5 py-2 outline-none"
-                  style={{ border: `1.5px solid ${T.border}`, color: T.textMain }}
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold mb-1" style={{ color: T.textSub }}>End</label>
-                <input
-                  type="datetime-local"
-                  value={end}
-                  onChange={e => setEnd(e.target.value)}
-                  className="w-full text-[12px] rounded-lg px-2.5 py-2 outline-none"
-                  style={{ border: `1.5px solid ${touched && invalid ? "#fca5a5" : T.border}`, color: T.textMain }}
-                />
-              </div>
-            </div>
-            {touched && invalid && (
-              <p className="text-[11px] mt-2 flex items-center gap-1" style={{ color: T.red }}>
-                <AlertTriangle size={11} /> End time must be after the start time.
+          <div className="px-7 pb-2">
+            <div className="rounded-tile p-3.5 bg-canvas border border-hairline">
+              <p className="text-xs font-semibold mb-2.5 text-subtle">
+                The assessment window has ended — set a retest window for this student only
               </p>
-            )}
-            <p className="text-[10.5px] mt-2.5 leading-relaxed" style={{ color: T.textHint }}>
-              The student's previous answers are cleared and the Start button reappears for them only during this window.
-            </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-2xs font-semibold uppercase tracking-wider mb-1 text-subtle">Start</label>
+                  <input
+                    type="datetime-local"
+                    value={start}
+                    onChange={e => setStart(e.target.value)}
+                    className="w-full h-9 rounded-control border border-hairline-strong bg-surface text-sm text-body px-2.5 outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+                  />
+                </div>
+                <div>
+                  <label className="block text-2xs font-semibold uppercase tracking-wider mb-1 text-subtle">End</label>
+                  <input
+                    type="datetime-local"
+                    value={end}
+                    onChange={e => setEnd(e.target.value)}
+                    className={`w-full h-9 rounded-control border bg-surface text-sm text-body px-2.5 outline-none transition-colors duration-150 ${touched && invalid ? "border-danger-700/60 focus:border-danger-700 focus:ring-2 focus:ring-danger-700/15" : "border-hairline-strong focus:border-brand focus:ring-2 focus:ring-brand/15"}`}
+                  />
+                </div>
+              </div>
+              {touched && invalid && (
+                <p className="text-xs mt-2 flex items-center gap-1 text-danger-700">
+                  <AlertTriangle size={11} /> End time must be after the start time.
+                </p>
+              )}
+              <p className="text-2xs mt-2.5 leading-relaxed text-faint">
+                The student's previous answers are cleared and the Start button reappears for them only during this window.
+              </p>
+            </div>
           </div>
-        </div>
         ) : (
-        /* Assessment still open — a plain reset is enough, no schedule needed */
-        <div className="px-7 pb-2">
-          <div className="rounded-xl p-3.5" style={{ background: "#fff", border: `1px solid ${T.border}` }}>
-            <p className="text-[12px] leading-relaxed" style={{ color: T.textSub }}>
-              This assessment is still open, so no schedule is needed. Unlocking clears{" "}
-              <span className="font-semibold" style={{ color: T.textMain }}>{name}</span>'s previous answers so they can retake it within the assessment's current window.
-            </p>
+          <div className="px-7 pb-2">
+            <div className="rounded-tile p-3.5 bg-canvas border border-hairline">
+              <p className="text-sm leading-relaxed text-subtle">
+                This assessment is still open, so no schedule is needed. Unlocking clears{" "}
+                <span className="font-semibold text-heading">{name}</span>'s previous answers so they can retake it within the assessment's current window.
+              </p>
+            </div>
           </div>
-        </div>
         )}
 
         <div className="flex items-center gap-3 px-7 py-5">
           <button
             onClick={onClose}
             disabled={loading}
-            className="flex-1 py-2.5 rounded-xl text-[13px] font-bold"
-            style={{ background: "#fff", color: T.textSub, border: `1.5px solid ${T.border}`, cursor: loading ? "not-allowed" : "pointer" }}
+            className="flex-1 h-10 rounded-control text-sm font-semibold border border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading disabled:opacity-50 transition-colors duration-150"
           >
             No, Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={loading || invalid}
-            className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white flex items-center justify-center gap-2"
-            style={{ background: loading || invalid ? "#fca5a5" : T.red, border: "none", cursor: loading || invalid ? "not-allowed" : "pointer" }}
+            className="flex-1 h-10 rounded-control text-sm font-semibold text-white bg-danger-700 hover:bg-danger-700/90 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors duration-150"
           >
             {loading ? (
-              <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Unlocking…</>
+              <><Loader2 size={14} className="animate-spin" /> Unlocking…</>
             ) : (
               <><Lock size={14} /> Yes, Unlock</>
             )}
@@ -351,8 +282,7 @@ const UnlockModal: React.FC<UnlockModalProps> = ({ name, requireSchedule, onClos
   );
 };
 
-// ─── Socket helper — mirrors liveDashboard's emitWithAck exactly, so the
-//    proctor's message/broadcast handlers behave identically here. ────────────
+// ─── Socket helper — mirrors liveDashboard's emitWithAck exactly ──────────────
 function emitWithAck(event: string, payload: Record<string, any>) {
   return new Promise<{ ok: boolean; error?: string }>((resolve) => {
     let settled = false;
@@ -370,23 +300,53 @@ function emitWithAck(event: string, payload: Record<string, any>) {
   });
 }
 
-// ─── Status filter options (mirrors the Dashboard's dropdown values, but
-//    keyed to the retest API's raw `exerciseProgress.status` vocabulary). ─────
+// ─── Status filter options ────────────────────────────────────────────────────
+// Same three-way UX as the Dashboard, keyed to the retest API's raw
+// `exerciseProgress.status` vocabulary via `bucketStatus`.
 type StatusFilterValue = "all" | "not_started" | "in_progress" | "submitted";
 const STATUS_FILTER_OPTIONS: { value: StatusFilterValue; label: string }[] = [
-  { value: "all",          label: "All Statuses" },
+  { value: "all",          label: "All statuses" },
   { value: "not_started",  label: "Not Submitted" },
   { value: "in_progress",  label: "In Progress"   },
   { value: "submitted",    label: "Submitted"     },
 ];
 
-// Group the raw status into the three bins the filter uses.
 const bucketStatus = (raw?: string | null): Exclude<StatusFilterValue, "all"> => {
   const s = (raw || "").toLowerCase();
   if (s === "evaluated" || s === "completed" || s === "submitted") return "submitted";
   if (s === "in_progress") return "in_progress";
   return "not_started";
 };
+
+// Fixed page size — matches User Management + the student Feedback list, so
+// every listing surface in the app paginates at the same rhythm.
+const PAGE_SIZE = 10;
+
+// ─── Shared column widths (Users List table) ─────────────────────────────────
+// `table-layout: fixed`, percentages sum to 100. Same shape as User
+// Management's UsersTable: checkbox column dropped (no bulk actions here),
+// Actions column matches the same 8% kebab slot.
+const USERS_COL = {
+  user:    "w-[32%] pl-4 sm:pl-5 pr-3 text-left",
+  email:   "w-[36%] px-3 text-left",
+  status:  "w-[24%] px-3 text-right whitespace-nowrap",
+  actions: "w-[8%]  pl-2 pr-4 sm:pr-5 text-right",
+};
+
+// Request List column widths — six columns, wider Message column since it
+// carries a free-form reason from the student.
+const REQ_COL = {
+  user:      "w-[20%] pl-4 sm:pl-5 pr-3 text-left",
+  email:     "w-[20%] px-3 text-left",
+  status:    "w-[10%] px-3 text-left whitespace-nowrap",
+  message:   "w-[26%] px-3 text-left",
+  requested: "w-[12%] px-3 text-left whitespace-nowrap",
+  action:    "w-[12%] pl-2 pr-4 sm:pr-5 text-right",
+};
+
+const HEAD_CELL =
+  "h-9 text-xs font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline whitespace-nowrap";
+const BODY_CELL = "h-12 align-middle";
 
 // ─── Main inner component ─────────────────────────────────────────────────────
 function ManageUsersInner() {
@@ -402,7 +362,7 @@ function ManageUsersInner() {
   // Context params — populated by the Assessment card's Manage Users nav so
   // the header buttons (Live Screens) and per-row Check Answer button can
   // deep-link into liveScreens / reviewSubmission with the right breadcrumb
-  // trail. Empty strings are safe — the target pages tolerate missing values.
+  // trail.
   const nodeId = sp.get("nodeId") || "";
   const nodeType = sp.get("nodeType") || "";
   const moduleName = sp.get("moduleName") || "";
@@ -422,9 +382,14 @@ function ManageUsersInner() {
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Toolbar state — mirrors User Management's compact search + Filter toggle
+  // + expanding filter panel + chip strip pattern exactly.
   const [search, setSearch] = useState("");
-  // Status filter (Users List only).
+  const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Message-a-student modal target (null = closed). Broadcast modal open flag.
   const [messageStudent, setMessageStudent] = useState<EnrolledStudent | null>(null);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -436,7 +401,7 @@ function ManageUsersInner() {
   const [unlocking, setUnlocking] = useState(false);
   // Whether the assessment is still within its own schedule. If it has ended,
   // the coordinator sets a per-student retest window on unlock; if still open,
-  // unlocking is a plain reset (the student retakes within the current window).
+  // unlocking is a plain reset (student retakes within the current window).
   const [assessmentActive, setAssessmentActive] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -523,13 +488,29 @@ function ManageUsersInner() {
     return rows;
   }, [students, search, statusFilter]);
 
+  // ── Pagination (client-side; enrolment lists are small) ──
+  const totalFiltered = filteredStudents.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const rangeStart = totalFiltered === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(safePage * PAGE_SIZE, totalFiltered);
+  const pageStudents = useMemo(
+    () => filteredStudents.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filteredStudents, safePage],
+  );
+  useEffect(() => { setCurrentPage(1); }, [search, statusFilter, tab]);
+  useEffect(() => { setCurrentPage(p => Math.min(p, totalPages)); }, [totalPages]);
+
   const pendingCount = useMemo(() => requests.filter(r => r.status === "Pending").length, [requests]);
 
-  // ─── Header actions (Message All / Live Screens) + Check Answer nav ──────
-  // Builds the shared context query string used by the outbound links.
-  // Reports button was removed — dashboard is no longer part of the flow
-  // (all controls now live inside this page), so a Reports button whose
-  // sole purpose was to open the dashboard's Reports view has no target.
+  const activeFilterCount = statusFilter === "all" ? 0 : 1;
+  const hasActiveFilters = activeFilterCount > 0 || !!search.trim();
+  const clearAllFilters = () => { setStatusFilter("all"); setSearch(""); };
+  const statusChipLabel = statusFilter === "not_started" ? "Not Submitted"
+    : statusFilter === "in_progress" ? "In Progress"
+      : statusFilter === "submitted" ? "Submitted" : "";
+
+  // ─── Header actions (Message All / Live Screens / Reports) + Check Answer ──
   const buildDashboardParams = useCallback(() => {
     const q = new URLSearchParams();
     if (assessmentId) { q.set("assessmentId", assessmentId); q.set("exerciseId", assessmentId); }
@@ -553,17 +534,11 @@ function ManageUsersInner() {
     router.push(`/lms/pages/courses/liveScreens?${q.toString()}`);
   }, [buildDashboardParams, router]);
 
-  // Reports → navigate to the Reports page that lives INSIDE this folder
-  // (`manageUsers/reports`). Its Back button already returns to Manage Users
-  // so no `returnTo` sentinel is needed anymore.
   const openReports = useCallback(() => {
     const q = buildDashboardParams();
     router.push(`${sectionHref("manageUsers/reports")}?${q.toString()}`);
   }, [buildDashboardParams, router, sectionHref]);
 
-  // Check Answer → open the reviewSubmission page in single-student mode. This
-  // is the exact same navigation the Dashboard's StudentRow makes; keeping the
-  // two entry points in sync means both surfaces land on the same grading UI.
   const handleCheckAnswers = useCallback((studentId: string) => {
     if (!assessmentId || !studentId) return;
     const q = buildDashboardParams();
@@ -583,280 +558,462 @@ function ManageUsersInner() {
     [assessmentId],
   );
 
-  return (
-    <div className="min-h-screen" style={{ background: T.pageBg, fontFamily: "'Poppins','Segoe UI',system-ui,sans-serif" }}>
-      <div className="max-w-6xl mx-auto px-4 py-5">
+  // ── Empty state — same three-way (error / filtered / no data) that User
+  //    Management's UsersTable emptyState uses. ────────────────────────────
+  const usersEmpty =
+    error ? (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Couldn't load students"
+        message={error}
+        secondaryAction={
+          <button
+            type="button"
+            onClick={fetchStudents}
+            className="h-9 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+          >
+            Try again
+          </button>
+        }
+      />
+    ) : hasActiveFilters ? (
+      <EmptyState
+        icon={SearchX}
+        title="No students match your filters"
+        message="Try a different search, or clear the filters to see everyone."
+        secondaryAction={
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="h-9 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+          >
+            Clear filters
+          </button>
+        }
+      />
+    ) : (
+      <EmptyState
+        icon={Users}
+        title="No enrolled students yet"
+        message="Students enrolled in this course will appear here once they're added."
+      />
+    );
 
-        {/* Back link */}
+  return (
+    <motion.div
+      variants={pageEnter}
+      initial="hidden"
+      animate="visible"
+      className="min-h-screen bg-surface-sunken"
+    >
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 md:px-8 pt-3 pb-6">
+
+        {/* Back link — matches the tone/size of secondary navigation buttons
+            used elsewhere; no bespoke coloured link. */}
         <button
+          type="button"
           onClick={() => router.back()}
-          className="inline-flex items-center gap-1.5 text-[13px] font-semibold mb-3"
-          style={{ color: T.blue, background: "transparent", border: "none", cursor: "pointer" }}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-subtle hover:text-heading transition-colors duration-150 mb-3"
         >
-          <ArrowLeft size={15} /> Back to Assessments
+          <ArrowLeft size={13} /> Back to Assessments
         </button>
 
-        {/* Title */}
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-          <div>
-            <h1 className="text-[22px] font-bold" style={{ color: T.textMain }}>Manage Users</h1>
-            <p className="text-[12.5px] mt-0.5" style={{ color: T.textMuted }}>
+        {/* Slim heading — same weight and scale as User Management's H1. */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-lg font-semibold text-heading tracking-[-0.01em]">
+              Manage Users
+            </h1>
+            <p className="mt-0.5 text-xs text-subtle truncate">
               {assessmentName}
             </p>
           </div>
-          {/* Header action strip — Reports / Message All / Live Screens.
-              Reports navigates to the local `./reports` route (owned by
-              this folder, no dependency on liveDashboard). All three are
-              Users-List-only. */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+        </div>
+
+        {/* One toolbar — search left, Refresh + Filter + Reports + Message All +
+            Live Screens right. Mirrors User Management's toolbar composition,
+            including the brand-strong primary button on the right for the
+            "start a live operation" action (Live Screens here). */}
+        <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0">
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={tab === "users" ? "Search students…" : "Search requests…"}
+              className="w-full h-9 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+            />
+            {search && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => { fetchStudents(); fetchRequests(); }}
+              aria-label="Refresh"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-control border border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+            >
+              <RefreshCw size={14} className={loadingStudents || loadingRequests ? "animate-spin" : ""} />
+            </button>
+
+            {tab === "users" && (
+              <button
+                type="button"
+                onClick={() => setShowFilters(v => !v)}
+                aria-expanded={showFilters}
+                className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-control border text-sm font-medium transition-colors duration-150 relative ${
+                  activeFilterCount > 0 || showFilters
+                    ? "border-brand text-brand-strong bg-brand-wash"
+                    : "border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading"
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Filter</span>
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             {tab === "users" && (
               <>
                 <button
+                  type="button"
                   onClick={openReports}
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold text-white"
-                  style={{ background: "#059669", border: "none", cursor: "pointer" }}
-                  title="Open the Reports view"
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
                 >
-                  <FileText size={13} /> Reports
+                  <FileText size={14} />
+                  <span className="hidden sm:inline">Reports</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setBroadcastOpen(true)}
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold"
-                  style={{ color: T.textSub, background: T.bg, border: `1px solid ${T.border}`, cursor: "pointer" }}
-                  title="Send a message to all students in live session"
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
                 >
-                  <Send size={13} /> Message All
+                  <Send size={14} />
+                  <span className="hidden sm:inline">Message All</span>
                 </button>
-                <button
+                <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
+                <motion.button
+                  type="button"
                   onClick={openLiveScreens}
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold text-white"
-                  style={{ background: "#4f46e5", border: "none", cursor: "pointer" }}
-                  title="View students' live screens"
+                  whileTap={{ scale: 0.98 }}
+                  className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-control bg-brand-strong text-white text-sm font-semibold shadow-xs hover:bg-brand-800 transition-colors duration-150 ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
                 >
-                  <MonitorPlay size={13} /> Live Screens
-                </button>
+                  <MonitorPlay size={14} />
+                  <span className="hidden sm:inline">Live Screens</span>
+                </motion.button>
               </>
             )}
-            <button
-              onClick={() => { fetchStudents(); fetchRequests(); }}
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold"
-              style={{ color: T.textSub, background: T.bg, border: `1px solid ${T.border}`, cursor: "pointer" }}
+          </div>
+        </div>
+
+        {/* Inline filter panel — expands under the toolbar exactly like User
+            Management's UserFilterPanel. Only Status matters for this list, so
+            the panel is a single dropdown; the shell (rounded-xl border
+            hairline shadow-xs card, header row with Reset + close) matches. */}
+        <AnimatePresence initial={false}>
+          {tab === "users" && showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+              className="overflow-hidden"
             >
-              <RefreshCw size={13} className={loadingStudents || loadingRequests ? "animate-spin" : ""} /> Refresh
+              <div className="mt-3 rounded-xl border border-hairline bg-surface shadow-xs p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h3 className="text-sm font-semibold text-heading">Filters</h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter("all")}
+                      disabled={activeFilterCount === 0}
+                      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control text-xs font-medium text-subtle hover:text-heading hover:bg-row-hover disabled:opacity-40 disabled:hover:bg-transparent transition-colors duration-150"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilters(false)}
+                      aria-label="Close filters"
+                      className="inline-flex size-8 items-center justify-center rounded-control text-faint hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div className="max-w-xs">
+                  <span className="block text-2xs font-semibold uppercase tracking-wider text-subtle mb-1.5">
+                    Submission
+                  </span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as StatusFilterValue)}
+                    className="w-full h-9 px-3 rounded-control border border-hairline-strong bg-surface text-sm text-body focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+                  >
+                    {STATUS_FILTER_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Active-filter chips (visible only when filters are on) */}
+        {tab === "users" && activeFilterCount > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong">
+              {statusChipLabel}
+              <button
+                type="button"
+                aria-label={`Remove ${statusChipLabel} filter`}
+                onClick={() => setStatusFilter("all")}
+                className="inline-flex size-4 items-center justify-center rounded-full hover:bg-brand-500/20 transition-colors duration-150"
+              >
+                <X size={11} />
+              </button>
+            </span>
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-medium text-subtle hover:text-heading transition-colors duration-150 ml-0.5"
+            >
+              Clear all
             </button>
           </div>
+        )}
+
+        {/* Tabs — same underline strip as before but retuned to the brand
+            palette: idle = text-subtle, active = text-brand-strong with a
+            2px brand-strong underline. */}
+        <div className="mt-4 flex items-center gap-1 border-b border-hairline">
+          {([
+            { key: "users",    label: "Users List",   icon: <Users size={14} /> },
+            { key: "requests", label: "Request List", icon: <ClipboardList size={14} /> },
+          ] as const).map(t => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`inline-flex items-center gap-2 h-10 px-4 text-sm font-semibold transition-colors duration-150 -mb-px border-b-2 ${
+                  active
+                    ? "text-brand-strong border-brand-strong"
+                    : "text-subtle hover:text-heading border-transparent"
+                }`}
+              >
+                {t.icon}{t.label}
+                {t.key === "requests" && pendingCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-2xs font-semibold bg-warn-50 text-warn-700 ring-1 ring-inset ring-warn-500/20">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Card */}
-        <div className="rounded-2xl overflow-hidden" style={{ background: T.bg, border: `1px solid ${T.border}` }}>
-
-          {/* Tabs */}
-          <div className="flex items-center gap-1 px-3 pt-2" style={{ borderBottom: `1px solid ${T.border}` }}>
-            {([
-              { key: "users", label: "Users List", icon: <Users size={15} /> },
-              { key: "requests", label: "Request List", icon: <ClipboardList size={15} /> },
-            ] as const).map(t => {
-              const active = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold"
-                  style={{
-                    color: active ? T.blue : T.textMuted,
-                    borderBottom: `2px solid ${active ? T.blue : "transparent"}`,
-                    background: "transparent", cursor: "pointer", marginBottom: -1,
-                  }}
-                >
-                  {t.icon}{t.label}
-                  {t.key === "requests" && pendingCount > 0 && (
-                    <span className="inline-flex items-center justify-center text-[10px] font-bold text-white rounded-full"
-                      style={{ minWidth: 18, height: 18, padding: "0 5px", background: T.amber }}>
-                      {pendingCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── Users List ── */}
-          {tab === "users" && (
-            <div>
-              <div className="px-4 pt-4 pb-3 flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h2 className="text-[15px] font-bold" style={{ color: T.textMain }}>Enrolled Students</h2>
-                  <p className="text-[11.5px]" style={{ color: T.textMuted }}>
-                    View and manage students assigned to this assessment.
-                  </p>
-                </div>
-                {/* Filter row — search + status filter. The status filter uses
-                    the raw exerciseProgress.status vocabulary the retest API
-                    returns, bucketed into Not Submitted / In Progress /
-                    Submitted for the same three-way UX as the Dashboard. */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="relative">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: T.textHint }} />
-                    <input
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                      placeholder="Search students…"
-                      className="pl-7 pr-3 h-8 w-56 text-[12px] rounded-lg outline-none"
-                      style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textMain }}
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Filter size={13} style={{ color: T.textHint }} />
-                    <select
-                      value={statusFilter}
-                      onChange={e => setStatusFilter(e.target.value as StatusFilterValue)}
-                      className="h-8 text-[12px] rounded-lg outline-none px-2"
-                      style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textMain }}
-                      aria-label="Filter by status"
-                    >
-                      {STATUS_FILTER_OPTIONS.map(o => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {error ? (
-                <div className="px-4 py-10 text-center text-[13px]" style={{ color: T.red }}>{error}</div>
-              ) : loadingStudents ? (
-                <div className="px-4 py-16 flex flex-col items-center gap-3">
-                  <div className="w-7 h-7 border-2 rounded-full animate-spin" style={{ borderColor: T.blue, borderTopColor: "transparent" }} />
-                  <p className="text-[12px]" style={{ color: T.textMuted }}>Loading students…</p>
-                </div>
-              ) : filteredStudents.length === 0 ? (
-                <div className="px-4 py-16 text-center text-[13px]" style={{ color: T.textMuted }}>No students found.</div>
-              ) : (
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr style={{ background: "#fafbfc", borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
-                      {["Student Name", "Email", "Status", "Action"].map((h, i) => (
-                        <th key={h} className="text-left px-4 py-2.5"
-                          style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.03em", color: T.textMuted, textAlign: i === 3 ? "right" : "left" }}>
-                          {h}
-                        </th>
-                      ))}
+        {/* ── Users List body ── */}
+        {tab === "users" && (
+          <div className="mt-3 flex flex-col rounded-xl border border-hairline bg-surface overflow-hidden">
+            <div className="overflow-y-auto overflow-x-hidden">
+              <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+                <thead className="sticky top-0 z-sticky">
+                  <tr>
+                    <th className={`${HEAD_CELL} ${USERS_COL.user}`}>Student</th>
+                    <th className={`${HEAD_CELL} ${USERS_COL.email}`}>Email</th>
+                    <th className={`${HEAD_CELL} ${USERS_COL.status}`}>Status</th>
+                    <th className={`${HEAD_CELL} ${USERS_COL.actions}`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingStudents ? (
+                    <tr>
+                      <td colSpan={4} className="py-16">
+                        <Loading label="Loading students…" size="size-10" />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filteredStudents.map(s => {
-                      const rawStatus = s.exerciseProgress?.status || "not_started";
-                      const st = STUDENT_STATUS_META[rawStatus] || STUDENT_STATUS_META.not_started;
-                      // "Check Answer" visibility gate — the student must have
-                      // written at least one answer to the DB. bucketStatus
-                      // collapses evaluated/completed/submitted into "submitted"
-                      // and any partial progress into "in_progress"; only the
-                      // truly-never-started bucket hides the button.
-                      const hasAnswerInDb = bucketStatus(rawStatus) !== "not_started";
+                  ) : pageStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-12">
+                        {usersEmpty}
+                      </td>
+                    </tr>
+                  ) : (
+                    pageStudents.map(s => {
+                      const pill = studentStatusPill(s.exerciseProgress?.status);
+                      const hasAnswerInDb = bucketStatus(s.exerciseProgress?.status) !== "not_started";
                       return (
-                        <tr key={s._id} style={{ borderBottom: `1px solid ${T.border}` }}>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <Avatar name={s.name} />
-                              <span className="text-[13px] font-semibold" style={{ color: T.textMain }}>{s.name || "—"}</span>
+                        <tr
+                          key={s._id}
+                          className="group border-b border-hairline last:border-0 hover:bg-row-hover transition-colors duration-150"
+                        >
+                          <td className={`${USERS_COL.user} ${BODY_CELL} text-sm font-medium text-heading`}>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <UserAvatar name={s.name} size="xs" />
+                              <span className="truncate" title={s.name || undefined}>{s.name || "—"}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-[12.5px]" style={{ color: T.textSub }}>{s.email || "—"}</td>
-                          <td className="px-4 py-3"><Badge label={st.label} color={st.color} bg={st.bg} /></td>
-                          <td className="px-4 py-3 text-right">
-                            <UsersRowMenu
-                              canCheck={hasAnswerInDb}
-                              onCheckAnswer={() => handleCheckAnswers(s._id)}
-                              onSendMessage={() => setMessageStudent(s)}
-                              onUnlock={() => setUnlockTarget({ studentId: s._id, name: s.name })}
-                            />
+                          <td className={`${USERS_COL.email} ${BODY_CELL}`}>
+                            <span className="text-sm text-subtle truncate block" title={s.email || undefined}>
+                              {s.email || "—"}
+                            </span>
+                          </td>
+                          <td className={`${USERS_COL.status} ${BODY_CELL}`}>
+                            <StatusPill tone={pill.tone} dot className="max-w-full">
+                              <span className="truncate">{pill.label}</span>
+                            </StatusPill>
+                          </td>
+                          <td className={`${USERS_COL.actions} ${BODY_CELL}`}>
+                            <div className="flex justify-end">
+                              <UsersRowMenu
+                                canCheck={hasAnswerInDb}
+                                onCheckAnswer={() => handleCheckAnswers(s._id)}
+                                onSendMessage={() => setMessageStudent(s)}
+                                onUnlock={() => setUnlockTarget({ studentId: s._id, name: s.name })}
+                              />
+                            </div>
                           </td>
                         </tr>
                       );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
 
-          {/* ── Request List ── */}
-          {tab === "requests" && (
-            <div>
-              <div className="px-4 pt-4 pb-3">
-                <h2 className="text-[15px] font-bold" style={{ color: T.textMain }}>Requested Retest List</h2>
-                <p className="text-[11.5px]" style={{ color: T.textMuted }}>
-                  View and manage students who have requested to retake the assessment.
-                </p>
-              </div>
+            {!loadingStudents && totalFiltered > 0 && (
+              <TableFooter
+                from={rangeStart}
+                to={rangeEnd}
+                total={totalFiltered}
+                pageSize={PAGE_SIZE}
+                onPageSize={() => { /* fixed page size, matches User Management */ }}
+                currentPage={safePage}
+                totalPages={totalPages}
+                onPage={setCurrentPage}
+              />
+            )}
+          </div>
+        )}
 
-              {loadingRequests ? (
-                <div className="px-4 py-16 flex flex-col items-center gap-3">
-                  <div className="w-7 h-7 border-2 rounded-full animate-spin" style={{ borderColor: T.blue, borderTopColor: "transparent" }} />
-                  <p className="text-[12px]" style={{ color: T.textMuted }}>Loading requests…</p>
-                </div>
-              ) : requests.length === 0 ? (
-                <div className="px-4 py-16 text-center">
-                  <ClipboardList size={26} style={{ color: T.textHint }} className="mx-auto mb-2" />
-                  <p className="text-[13px] font-semibold" style={{ color: T.textSub }}>No retest requests yet</p>
-                  <p className="text-[12px] mt-0.5" style={{ color: T.textMuted }}>Requests from students will appear here.</p>
-                </div>
-              ) : (
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr style={{ background: "#fafbfc", borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
-                      {["Student Name", "Email", "Status", "Message (Reason)", "Requested On", "Action"].map((h, i) => (
-                        <th key={h} className="text-left px-4 py-2.5"
-                          style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.03em", color: T.textMuted, textAlign: i === 5 ? "right" : "left" }}>
-                          {h}
-                        </th>
-                      ))}
+        {/* ── Request List body ── */}
+        {tab === "requests" && (
+          <div className="mt-3 flex flex-col rounded-xl border border-hairline bg-surface overflow-hidden">
+            <div className="overflow-y-auto overflow-x-hidden">
+              <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+                <thead className="sticky top-0 z-sticky">
+                  <tr>
+                    <th className={`${HEAD_CELL} ${REQ_COL.user}`}>Student</th>
+                    <th className={`${HEAD_CELL} ${REQ_COL.email}`}>Email</th>
+                    <th className={`${HEAD_CELL} ${REQ_COL.status}`}>Status</th>
+                    <th className={`${HEAD_CELL} ${REQ_COL.message}`}>Message</th>
+                    <th className={`${HEAD_CELL} ${REQ_COL.requested}`}>Requested</th>
+                    <th className={`${HEAD_CELL} ${REQ_COL.action}`}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingRequests ? (
+                    <tr>
+                      <td colSpan={6} className="py-16">
+                        <Loading label="Loading requests…" size="size-10" />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {requests.map(r => {
-                      const st = REQUEST_STATUS_META[r.status] || REQUEST_STATUS_META.Pending;
+                  ) : requests.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12">
+                        <EmptyState
+                          icon={ClipboardList}
+                          title="No retest requests yet"
+                          message="Requests from students will appear here once they submit them."
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    requests.map(r => {
+                      const pill = requestStatusPill(r.status);
                       const isPending = r.status === "Pending";
                       return (
-                        <tr key={r._id} style={{ borderBottom: `1px solid ${T.border}` }}>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <Avatar name={r.studentName || ""} />
-                              <span className="text-[13px] font-semibold" style={{ color: T.textMain }}>{r.studentName || "—"}</span>
+                        <tr
+                          key={r._id}
+                          className="group border-b border-hairline last:border-0 hover:bg-row-hover transition-colors duration-150"
+                        >
+                          <td className={`${REQ_COL.user} ${BODY_CELL} text-sm font-medium text-heading`}>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <UserAvatar name={r.studentName || ""} size="xs" />
+                              <span className="truncate" title={r.studentName || undefined}>{r.studentName || "—"}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-[12.5px]" style={{ color: T.textSub }}>{r.studentEmail || "—"}</td>
-                          <td className="px-4 py-3"><Badge label={st.label} color={st.color} bg={st.bg} /></td>
-                          <td className="px-4 py-3 text-[12px] max-w-[260px]" style={{ color: T.textSub }}>
-                            <span className="line-clamp-2">{r.message || "—"}</span>
+                          <td className={`${REQ_COL.email} ${BODY_CELL}`}>
+                            <span className="text-sm text-subtle truncate block" title={r.studentEmail || undefined}>
+                              {r.studentEmail || "—"}
+                            </span>
                           </td>
-                          <td className="px-4 py-3 text-[12px] whitespace-nowrap" style={{ color: T.textMuted }}>
-                            {formatDateTime(r.createdAt)}
+                          <td className={`${REQ_COL.status} ${BODY_CELL}`}>
+                            <StatusPill tone={pill.tone} dot className="max-w-full">
+                              <span className="truncate">{pill.label}</span>
+                            </StatusPill>
                           </td>
-                          <td className="px-4 py-3 text-right">
-                            {isPending ? (
-                              <button
-                                onClick={() => setUnlockTarget({ studentId: r.studentId, name: r.studentName || "this student", requestId: r._id, subcategory: r.subcategory, exerciseName: r.exerciseName, exerciseId: r.exerciseId })}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
-                                style={{ color: T.blue, background: "rgba(249,115,22,0.06)", border: `1px solid rgba(249,115,22,0.3)`, cursor: "pointer" }}
-                              >
-                                <Lock size={12} /> Unlock
-                              </button>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: T.green }}>
-                                <CheckCircle size={13} /> Unlocked
-                              </span>
-                            )}
+                          <td className={`${REQ_COL.message} ${BODY_CELL}`}>
+                            <span className="text-sm text-subtle line-clamp-2" title={r.message || undefined}>
+                              {r.message || "—"}
+                            </span>
+                          </td>
+                          <td className={`${REQ_COL.requested} ${BODY_CELL}`}>
+                            <span className="text-sm text-subtle tabular-nums truncate block">
+                              {formatDateTime(r.createdAt)}
+                            </span>
+                          </td>
+                          <td className={`${REQ_COL.action} ${BODY_CELL}`}>
+                            <div className="flex justify-end">
+                              {isPending ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setUnlockTarget({
+                                    studentId: r.studentId,
+                                    name: r.studentName || "this student",
+                                    requestId: r._id,
+                                    subcategory: r.subcategory,
+                                    exerciseName: r.exerciseName,
+                                    exerciseId: r.exerciseId,
+                                  })}
+                                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-control border border-brand-500/30 bg-brand-wash text-xs font-semibold text-brand-strong hover:bg-brand-wash-hover transition-colors duration-150"
+                                >
+                                  <Lock size={12} /> Unlock
+                                </button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-success-700">
+                                  <CheckCircle size={13} /> Unlocked
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {unlockTarget && (
@@ -869,9 +1026,6 @@ function ManageUsersInner() {
         />
       )}
 
-      {/* Send Message (per student). Kept as a small local component so we
-          don't have to shim the EnrolledStudent shape into the Dashboard's
-          MessageStudentModal props. */}
       {messageStudent && (
         <SendMessageModal
           name={messageStudent.name}
@@ -881,21 +1035,19 @@ function ManageUsersInner() {
         />
       )}
 
-      {/* Broadcast — sends the same `proctor:broadcast_message` socket event
-          the Dashboard used. Kept as a local component so this page has no
-          runtime dependency on the (removable) liveDashboard folder. */}
       <BroadcastMessageModal
         open={broadcastOpen}
         onClose={() => setBroadcastOpen(false)}
         onSend={sendBroadcast}
       />
-    </div>
+    </motion.div>
   );
 }
 
 // ─── Per-student message modal ────────────────────────────────────────────────
-// Lightweight local variant of the Dashboard's MessageStudentModal — takes the
-// name/email directly instead of the Dashboard-specific StudentProgress shape.
+// Same behaviour as before (proctor:send_message socket, 500-char cap), tokens
+// swapped to the shared design system so it reads like the app's other confirm
+// dialogs.
 interface SendMessageModalProps {
   name: string;
   email?: string;
@@ -926,35 +1078,34 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({ name, email, onClos
 
   return (
     <div
-      className="fixed inset-0 z-[1100] flex items-center justify-center p-4"
-      style={{ background: "rgba(15,23,42,0.45)" }}
+      className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !sending) onClose(); }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-100">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-[15px] font-bold" style={{ color: T.textMain }}>Send Message to Student</h2>
+      <div className="w-full max-w-md rounded-2xl bg-surface shadow-xl border border-hairline overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-hairline">
+          <h2 className="text-md font-semibold text-heading">Send Message to Student</h2>
           <button
             onClick={() => !sending && onClose()}
-            className="p-1 rounded-lg"
-            style={{ color: T.textMuted, background: "transparent", border: "none", cursor: sending ? "not-allowed" : "pointer" }}
             aria-label="Close"
+            className="inline-flex size-8 items-center justify-center rounded-control text-faint hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50"
+            disabled={sending}
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
         <div className="px-5 py-4 space-y-4">
           <div>
-            <label className="block text-[12px] font-medium mb-1.5" style={{ color: T.textMuted }}>Student</label>
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-[13px]" style={{ color: T.textSub }}>
-              <Users size={15} style={{ color: T.textHint }} />
+            <label className="block text-xs font-medium mb-1.5 text-subtle">Student</label>
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-control border border-hairline bg-canvas text-sm text-body">
+              <Users size={14} className="text-faint" />
               <span className="truncate">
-                {name}{email ? <span style={{ color: T.textHint }}> ({email})</span> : null}
+                {name}{email ? <span className="text-faint"> ({email})</span> : null}
               </span>
             </div>
           </div>
           <div>
-            <label className="block text-[12px] font-medium mb-1.5" style={{ color: T.textMuted }}>Message</label>
+            <label className="block text-xs font-medium mb-1.5 text-subtle">Message</label>
             <textarea
               value={text}
               maxLength={MAX_MESSAGE}
@@ -962,31 +1113,29 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({ name, email, onClos
               placeholder="Type your message here…"
               rows={4}
               autoFocus
-              className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"
-              style={{ color: T.textMain }}
+              className="w-full resize-none rounded-control border border-hairline-strong bg-surface px-3 py-2.5 text-sm text-body outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             <div className="flex items-center justify-between mt-1">
-              {error ? <span className="text-[12px]" style={{ color: T.red }}>{error}</span> : <span />}
-              <span className="text-[11px]" style={{ color: T.textHint }}>{text.length}/{MAX_MESSAGE}</span>
+              {error ? <span className="text-xs text-danger-700">{error}</span> : <span />}
+              <span className="text-2xs text-faint">{text.length}/{MAX_MESSAGE}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 px-5 py-4 border-t border-gray-100">
+        <div className="flex items-center justify-end gap-2.5 px-5 py-4 border-t border-hairline">
           <button
             onClick={() => !sending && onClose()}
-            className="px-4 py-2 rounded-lg text-[13px] font-semibold border"
-            style={{ color: T.textSub, background: T.bg, borderColor: T.border, cursor: sending ? "not-allowed" : "pointer" }}
+            className="h-9 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body hover:bg-row-hover hover:text-heading disabled:opacity-50 transition-colors duration-150"
+            disabled={sending}
           >
             Cancel
           </button>
           <button
             onClick={handleSend}
             disabled={!trimmed || sending}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: "#4f46e5", border: "none", cursor: !trimmed || sending ? "not-allowed" : "pointer" }}
+            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-control bg-brand-strong text-white text-sm font-semibold shadow-xs hover:bg-brand-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
           >
-            {sending ? <RefreshCw size={15} className="animate-spin" /> : <Send size={15} />}
+            {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             Send Message
           </button>
         </div>
@@ -996,9 +1145,9 @@ const SendMessageModal: React.FC<SendMessageModalProps> = ({ name, email, onClos
 };
 
 // ─── Broadcast (message all) modal ────────────────────────────────────────────
-// Inlined copy of what used to live in liveDashboard/components — kept here so
-// this page has zero runtime dependency on the (now-optional) liveDashboard
-// folder. Same socket event on send, same UX, same 500-char cap.
+// Same 500-char cap + `proctor:broadcast_message` socket event; tokens
+// retuned to the shared palette. Kept inlined here so the page has no
+// runtime dependency on the (now-optional) liveDashboard folder.
 interface BroadcastModalProps {
   open: boolean;
   onClose: () => void;
@@ -1039,33 +1188,32 @@ const BroadcastMessageModal: React.FC<BroadcastModalProps> = ({ open, onClose, o
 
   return (
     <div
-      className={`fixed inset-0 z-[1100] flex items-center justify-center p-4 transition-opacity duration-150 ${show ? "opacity-100" : "opacity-0"}`}
-      style={{ background: "rgba(15,23,42,0.45)" }}
+      className={`fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50 transition-opacity duration-150 ${show ? "opacity-100" : "opacity-0"}`}
       onMouseDown={(e) => { if (e.target === e.currentTarget && !sending) onClose(); }}
     >
       <div
-        className={`w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-100 transition-all duration-150 ${show ? "scale-100 translate-y-0 opacity-100" : "scale-95 translate-y-2 opacity-0"}`}
+        className={`w-full max-w-md rounded-2xl bg-surface shadow-xl border border-hairline overflow-hidden transition-all duration-150 ${show ? "scale-100 translate-y-0 opacity-100" : "scale-95 translate-y-2 opacity-0"}`}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-[15px] font-bold text-gray-900">Send Message to All Students</h2>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-hairline">
+          <h2 className="text-md font-semibold text-heading">Send Message to All Students</h2>
           <button
             onClick={() => !sending && onClose()}
-            className="p-1 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             aria-label="Close"
-            style={{ background: "transparent", border: "none", cursor: sending ? "not-allowed" : "pointer" }}
+            className="inline-flex size-8 items-center justify-center rounded-control text-faint hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50"
+            disabled={sending}
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
         <div className="px-5 py-4 space-y-4">
-          <div className="flex items-start gap-2.5 rounded-lg bg-indigo-50 border border-indigo-100 px-3.5 py-3">
-            <Info size={16} className="text-indigo-500 flex-shrink-0 mt-0.5" />
-            <p className="text-[12.5px] leading-relaxed text-indigo-700">
+          <div className="flex items-start gap-2.5 rounded-control bg-brand-wash border border-brand-500/30 px-3.5 py-3">
+            <Info size={16} className="text-brand-strong flex-shrink-0 mt-0.5" />
+            <p className="text-sm leading-relaxed text-brand-strong">
               This message will be sent to all students who are currently in live session.
             </p>
           </div>
           <div>
-            <label className="block text-[12px] font-medium text-gray-500 mb-1.5">Message</label>
+            <label className="block text-xs font-medium mb-1.5 text-subtle">Message</label>
             <textarea
               ref={taRef}
               value={text}
@@ -1073,29 +1221,28 @@ const BroadcastMessageModal: React.FC<BroadcastModalProps> = ({ open, onClose, o
               onChange={(e) => setText(e.target.value)}
               placeholder="Type your message here…"
               rows={4}
-              className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2.5 text-[13px] text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"
+              className="w-full resize-none rounded-control border border-hairline-strong bg-surface px-3 py-2.5 text-sm text-body outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             <div className="flex items-center justify-between mt-1">
-              {error ? <span className="text-[12px] text-red-500">{error}</span> : <span />}
-              <span className="text-[11px] text-gray-400">{text.length}/{MAX_MESSAGE}</span>
+              {error ? <span className="text-xs text-danger-700">{error}</span> : <span />}
+              <span className="text-2xs text-faint">{text.length}/{MAX_MESSAGE}</span>
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-end gap-2.5 px-5 py-4 border-t border-gray-100">
+        <div className="flex items-center justify-end gap-2.5 px-5 py-4 border-t border-hairline">
           <button
             onClick={() => !sending && onClose()}
-            className="px-4 py-2 rounded-lg text-[13px] font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
-            style={{ background: T.bg, cursor: sending ? "not-allowed" : "pointer" }}
+            className="h-9 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body hover:bg-row-hover hover:text-heading disabled:opacity-50 transition-colors duration-150"
+            disabled={sending}
           >
             Cancel
           </button>
           <button
             onClick={handleSend}
             disabled={!trimmed || sending}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-            style={{ border: "none", cursor: !trimmed || sending ? "not-allowed" : "pointer" }}
+            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-control bg-brand-strong text-white text-sm font-semibold shadow-xs hover:bg-brand-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
           >
-            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             Send to All
           </button>
         </div>
@@ -1107,8 +1254,8 @@ const BroadcastMessageModal: React.FC<BroadcastModalProps> = ({ open, onClose, o
 export default function ManageUsersPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center" style={{ background: T.pageBg }}>
-        <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: T.blue, borderTopColor: "transparent" }} />
+      <div className="min-h-screen flex items-center justify-center bg-surface-sunken">
+        <Loading label="Loading…" size="size-10" />
       </div>
     }>
       <ManageUsersInner />

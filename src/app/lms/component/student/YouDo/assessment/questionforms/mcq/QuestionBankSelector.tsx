@@ -417,7 +417,7 @@ const getQuestionTitle = (question: any): string => {
                 type="button"
                 onClick={() => { setScope(null); setScopeCourse(null); setCourseSearch(''); setQuestions([]); }}
                 title="Change which bank you're picking from"
-                className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700 transition-colors hover:bg-purple-100"
+                className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-2xs font-semibold text-purple-700 transition-colors hover:bg-purple-100"
               >
                 {scope === 'course'
                   ? <><GraduationCap className="h-3 w-3" /><span className="max-w-[200px] truncate">{scopeCourse?.name}</span></>
@@ -452,7 +452,7 @@ const getQuestionTitle = (question: any): string => {
                     <Globe className="h-5 w-5" />
                   </span>
                   <span className="text-sm font-bold text-gray-900">General</span>
-                  <span className="text-[11.5px] leading-snug text-gray-500">The institution-wide bank — questions reusable in any course.</span>
+                  <span className="text-xs leading-snug text-gray-500">The institution-wide bank — questions reusable in any course.</span>
                 </button>
                 <button
                   type="button"
@@ -463,7 +463,7 @@ const getQuestionTitle = (question: any): string => {
                     <GraduationCap className="h-5 w-5" />
                   </span>
                   <span className="text-sm font-bold text-gray-900">Course Specific</span>
-                  <span className="text-[11.5px] leading-snug text-gray-500">Pick a course, then choose from the questions authored for it.</span>
+                  <span className="text-xs leading-snug text-gray-500">Pick a course, then choose from the questions authored for it.</span>
                 </button>
               </div>
             </div>
@@ -634,13 +634,13 @@ const getQuestionTitle = (question: any): string => {
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${getQuestionTypeBadge(question.questionType)}`}>
+                        <span className={`text-2xs px-2 py-0.5 rounded-full border ${getQuestionTypeBadge(question.questionType)}`}>
                           {question.questionType?.toUpperCase() || 'UNKNOWN'}
                         </span>
                         
                         {/* Duplicate indicator */}
                         {isDuplicateQuestion && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-200 flex items-center gap-1">
+                          <span className="text-2xs px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-200 flex items-center gap-1">
                             <AlertCircle className="h-3 w-3" />
                             Already exists
                           </span>
@@ -648,7 +648,7 @@ const getQuestionTitle = (question: any): string => {
 
                         {/* Quota-full indicator — the WHY behind the disabled row */}
                         {rowQuotaFull && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-200 flex items-center gap-1">
+                          <span className="text-2xs px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-200 flex items-center gap-1">
                             <AlertCircle className="h-3 w-3" />
                             Quota full
                           </span>

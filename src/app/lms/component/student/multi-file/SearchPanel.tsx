@@ -53,7 +53,7 @@ export default function SearchPanel({ files, onOpenFile }: SearchPanelProps) {
   return (
     <div className="flex flex-col h-full min-h-0" style={{ background: "#fafafa" }}>
       <div className="flex items-center justify-between px-2 py-1.5 border-b" style={{ borderColor: "#e5e7eb" }}>
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Search</span>
+        <span className="text-2xs font-semibold uppercase tracking-wide text-gray-500">Search</span>
         <button
           onClick={() => setCaseSensitive((v) => !v)}
           title="Match case"
@@ -71,7 +71,7 @@ export default function SearchPanel({ files, onOpenFile }: SearchPanelProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search across files"
-            className="w-full pl-7 pr-7 py-1 text-[12px] rounded outline-none"
+            className="w-full pl-7 pr-7 py-1 text-xs rounded outline-none"
             style={{ background: "#fff", border: "1px solid #d1d5db" }}
             autoFocus
           />
@@ -87,19 +87,19 @@ export default function SearchPanel({ files, onOpenFile }: SearchPanelProps) {
         </div>
       </div>
 
-      <div className="px-2 text-[10px] text-gray-500">
+      <div className="px-2 text-2xs text-gray-500">
         {query.trim() ? `${results.length} result${results.length === 1 ? "" : "s"}${results.length >= 200 ? " (limit)" : ""} in ${Object.keys(grouped).length} file${Object.keys(grouped).length === 1 ? "" : "s"}` : "Type to search…"}
       </div>
 
       <div className="flex-1 overflow-auto py-1">
         {Object.entries(grouped).map(([path, hits]) => (
           <div key={path}>
-            <div className="px-2 py-1 text-[11px] font-semibold text-gray-700 truncate" title={path}>{hits[0].file.filename} <span className="font-normal text-gray-400">{path}</span></div>
+            <div className="px-2 py-1 text-2xs font-semibold text-gray-700 truncate" title={path}>{hits[0].file.filename} <span className="font-normal text-gray-400">{path}</span></div>
             {hits.map((m, i) => (
               <button
                 key={i}
                 onClick={() => onOpenFile(m.file.id)}
-                className="w-full text-left px-3 py-0.5 text-[11.5px] hover:bg-indigo-50 flex items-center gap-2"
+                className="w-full text-left px-3 py-0.5 text-xs hover:bg-indigo-50 flex items-center gap-2"
                 style={{ fontFamily: "ui-monospace, monospace" }}
               >
                 <span className="text-gray-400 flex-shrink-0">{m.line}</span>

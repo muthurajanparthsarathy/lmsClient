@@ -5,9 +5,10 @@
  * one continuous gray canvas, the sidebar flat on it (no card, no border on
  * desktop), and the page content inside a white rounded panel inset by a gray
  * gutter on its top, right and bottom. There is NO top navbar — the old
- * StudentNavbar's jobs moved: notifications → bell pinned inside the panel's
- * top-right corner; theme toggle → sidebar footer; logo → sidebar brand card;
- * the mobile hamburger → a floating button inside the panel (mobile only).
+ * StudentNavbar's jobs moved: notifications → the rail's Notification entry
+ * (which carries its own unread count); theme toggle → sidebar footer; logo →
+ * sidebar brand card; the mobile hamburger → a floating button inside the
+ * panel (mobile only).
  * Content scrolls INSIDE the panel; the gray frame stays fixed.
  */
 
@@ -15,10 +16,27 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { Menu } from "lucide-react"
+import { Poppins } from "next/font/google"
 import { StudentSidebar } from "./student-sidebar"
-import NotificationBell from "../NotificationBell"
 import { cn } from "@/lib/utils"
 import { useSyncPermissions } from "@/hooks/useSyncPermissions"
+
+// The SAME next/font declaration the admin shell makes (component/layout.tsx),
+// weight list included. It is not cosmetic duplication: without it this shell
+// inherited only the body's `font-sans`, whose 'Poppins' is served by the
+// Google Fonts <link> in app/layout.tsx and degrades to ui-sans-serif /
+// system-ui (Segoe UI on Windows) whenever that copy has not loaded. Segoe UI
+// carries a noticeably larger x-height than Poppins at the same size, so the
+// student rail rendered visibly bigger than the admin rail even though every
+// one of its type classes is identical — and it also flashed the fallback on
+// every cold load. next/font self-hosts the file and ships a metric-adjusted
+// fallback, so both shells now resolve to the same faces at the same metrics.
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+  variable: "--font-poppins",
+})
 
 interface StudentLayoutProps {
   children: React.ReactNode
@@ -48,6 +66,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
   }, [pathname])
 
   const getActiveRoute = () => {
+    if (pathname.includes('/studentcalendar')) return 'studentcalendar'
     if (pathname.includes('/notifications')) return 'notifications'
     if (pathname.includes('/codinganalytics')) return 'codinganalytics'
     if (pathname.includes('/courses')) return 'courses'
@@ -67,13 +86,32 @@ export function StudentLayout({ children }: StudentLayoutProps) {
   const activeRoute = getActiveRoute()
 
   return (
-    <div className="flex min-h-screen bg-[#F5F6F8] dark:bg-[#0E0F12]">
+    // Outer flex shell — matched to the admin shell so both rails sit in the
+    // same containment context. `h-screen` (not min-h-screen) mirrors admin's
+    // dashboard-shell so the whole page is a fixed-height frame with content
+    // scrolling INSIDE the workspace panel, not the outer div.
+    <div
+      className={`${poppins.variable} flex h-screen bg-[#F5F6F8] dark:bg-[#0E0F12]`}
+      style={{ fontFamily: "var(--font-poppins), 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}
+    >
 
-      <StudentSidebar
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        activeRoute={activeRoute}
-      />
+      {/* <aside flex-shrink-0 h-full> wrapper — matches admin's DashboardLayout
+          exactly (its <Sidebar/> is wrapped the same way). Puts the rail in
+          the SAME flex context on both shells: `flex-shrink-0` guarantees the
+          268px width can never be squeezed by long content elsewhere, and
+          `h-full` makes the aside inherit the frame's height rather than
+          declaring its own `h-screen` — which is what admin does. Without
+          this wrapper, framer motion animates width from inside a flex
+          container that HAD been allowing shrink until `md:shrink-0` kicked
+          in, and mid-animation widths differed by a subpixel between the two
+          shells. Purely a structural fix, no visible change beyond that. */}
+      <aside className="flex-shrink-0 h-full max-md:h-auto">
+        <StudentSidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          activeRoute={activeRoute}
+        />
+      </aside>
 
       <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden p-3.5 pl-0 max-md:p-2.5">
         {/* White workspace card — the gray gutter around it is the canvas
@@ -95,14 +133,11 @@ export function StudentLayout({ children }: StudentLayoutProps) {
             "sc-panel-scroll",
             "animate-in fade-in slide-in-from-bottom-2 duration-400"
           )}>
-            {/* Notifications sit inside the panel's top-right corner, but as
-                an absolute anchored to a relative wrapper INSIDE the scroll
-                flow — the bell scrolls up with the content instead of staying
-                pinned over it. Matches the admin shell's behavior. */}
+            {/* No notification bell in the student shell: the rail's
+                Notification entry already carries the unread count, and the
+                floating bell duplicated it on every page. Notifications live
+                at /lms/pages/notifications. */}
             <div className="relative min-h-full">
-              <div className="absolute top-3 right-4 z-30">
-                <NotificationBell />
-              </div>
               {children}
             </div>
           </div>

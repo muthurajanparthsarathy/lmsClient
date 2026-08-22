@@ -273,19 +273,19 @@ const StatisticsPanel = ({ exercises, user, course }: {
       {/* Key Stats Grid */}
       <div className="grid grid-cols-2 gap-2 mb-4">
         <div className="bg-slate-50 rounded-lg p-2 text-center">
-          <div className="text-[10px] text-slate-500 font-semibold mb-0.5">Exercises</div>
+          <div className="text-2xs text-slate-500 font-semibold mb-0.5">Exercises</div>
           <div className="text-base font-bold text-slate-900">{stats.totalExercises}</div>
         </div>
         <div className="bg-slate-50 rounded-lg p-2 text-center">
-          <div className="text-[10px] text-slate-500 font-semibold mb-0.5">Questions</div>
+          <div className="text-2xs text-slate-500 font-semibold mb-0.5">Questions</div>
           <div className="text-base font-bold text-slate-900">{stats.totalQuestions}</div>
         </div>
         <div className="bg-slate-50 rounded-lg p-2 text-center">
-          <div className="text-[10px] text-slate-500 font-semibold mb-0.5">Solved</div>
+          <div className="text-2xs text-slate-500 font-semibold mb-0.5">Solved</div>
           <div className="text-base font-bold text-slate-900">{stats.totalSolved}</div>
         </div>
         <div className="bg-slate-50 rounded-lg p-2 text-center">
-          <div className="text-[10px] text-slate-500 font-semibold mb-0.5">Accuracy</div>
+          <div className="text-2xs text-slate-500 font-semibold mb-0.5">Accuracy</div>
           <div className={`text-base font-bold ${
             stats.overallAccuracy >= 80 ? 'text-emerald-600' :
             stats.overallAccuracy >= 60 ? 'text-amber-600' : 'text-rose-600'
@@ -842,11 +842,11 @@ export default function DetailedGradePage() {
                         {exercise.exerciseName || "Unnamed"}
                       </h3>
                       {!hasQuestions && (
-                        <span className="text-[9px] italic text-slate-400">(no q)</span>
+                        <span className="text-2xs italic text-slate-400">(no q)</span>
                       )}
                     </div>
                     
-                    <div className="flex items-center gap-1.5 text-[10px]">
+                    <div className="flex items-center gap-1.5 text-2xs">
                       <span className={`truncate ${isActive ? 'text-orange-100' : 'text-slate-500'}`}>
                         {exercise.entity?.title?.slice(0, 12) || 'Unknown'}
                       </span>
@@ -867,7 +867,7 @@ export default function DetailedGradePage() {
                       <div className={`text-xs font-medium ${isActive ? 'text-white' : 'text-slate-700'}`}>
                         {exercise.statistics?.totalScore || 0} pts
                       </div>
-                      <div className={`text-[10px] ${isActive ? 'text-orange-100' : 'text-slate-500'}`}>
+                      <div className={`text-2xs ${isActive ? 'text-orange-100' : 'text-slate-500'}`}>
                         {exercise.userProgress.completionRate.toFixed(0)}%
                       </div>
                     </div>
@@ -943,7 +943,7 @@ export default function DetailedGradePage() {
               {(statusFilter !== 'all' || difficultyFilter !== 'all' || sectionFilter !== 'all') && (
                 <button 
                   onClick={resetFilters}
-                  className="w-full mt-1.5 text-[10px] text-orange-600 hover:text-orange-800 font-medium text-center"
+                  className="w-full mt-1.5 text-2xs text-orange-600 hover:text-orange-800 font-medium text-center"
                 >
                   Clear filters
                 </button>
@@ -960,11 +960,11 @@ export default function DetailedGradePage() {
               <div className="flex justify-between items-start mb-4 flex-shrink-0">
                 <div className="pr-2 flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500">
+                    <span className="px-1.5 py-0.5 rounded text-2xs font-bold uppercase tracking-wider bg-slate-100 text-slate-500">
                       {selectedExercise.entity?.title || 'Unknown'}
                     </span>
                     {selectedExercise.subcategory && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-100 text-orange-700">
+                      <span className="px-1.5 py-0.5 rounded text-2xs font-bold uppercase tracking-wider bg-orange-100 text-orange-700">
                         {selectedExercise.subcategory}
                       </span>
                     )}
@@ -997,7 +997,7 @@ export default function DetailedGradePage() {
                 {selectedExercise.questions && selectedExercise.questions.length > 0 ? (
                   <table className="w-full text-left border-collapse">
                     <thead className="sticky top-0 bg-white z-10">
-                      <tr className="text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      <tr className="text-2xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
                         <th className="py-2 pr-3 w-10">#</th>
                         <th className="py-2 px-2">Question</th>
                         <th className="py-2 px-2 w-24">Status</th>
@@ -1024,13 +1024,13 @@ export default function DetailedGradePage() {
                               {q.title || `Question ${idx + 1}`}
                             </td>
                             <td className="py-2 px-2">
-                              <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${status.bg} ${status.color} ${status.border}`}>
+                              <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-semibold border ${status.bg} ${status.color} ${status.border}`}>
                                 {status.icon}
                                 {status.text}
                               </div>
                             </td>
                             <td className="py-2 px-2">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${diffColor}`}>
+                              <span className={`px-1.5 py-0.5 rounded text-2xs font-bold uppercase ${diffColor}`}>
                                 {q.difficulty}
                               </span>
                             </td>
@@ -1049,7 +1049,7 @@ export default function DetailedGradePage() {
                   <div className="flex flex-col items-center justify-center h-full text-slate-400">
                     <Info className="w-10 h-10 text-slate-300 mb-2" />
                     <p className="text-xs font-medium text-slate-500 mb-0.5">No questions available</p>
-                    <p className="text-[11px] text-slate-400">This exercise doesn't have any questions to display.</p>
+                    <p className="text-2xs text-slate-400">This exercise doesn't have any questions to display.</p>
                   </div>
                 )}
               </div>

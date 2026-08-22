@@ -2923,8 +2923,8 @@ const PreviewModal: React.FC<{
                               <span className="lms-marks-value" style={{ color: 'var(--lms-orange)', fontSize: 12 }}>
                                 {diffFixedScore}
                                 {isScoreEditable(activeDiff)
-                                  ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
-                                  : <span className="lms-badge" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
+                                  ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
+                                  : <span className="lms-badge" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
                               </span>
                             </div>
                             <div className="lms-marks-row">
@@ -5152,8 +5152,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
                         <Database size={14} style={{ color: '#a855f7' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
-                        <div className="text-[10px]" style={{ color: bankNoSlots ? '#d97706' : '#8b8b9e' }}>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
+                        <div className="text-2xs" style={{ color: bankNoSlots ? '#d97706' : '#8b8b9e' }}>
                           {bankNoSlots ? 'Limit reached' : 'Import from bank'}
                         </div>
                       </div>
@@ -5179,8 +5179,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
                         <Sparkles size={14} style={{ color: '#F27757' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
-                        <div className="text-[10px]" style={{ color: aiNoSlots ? '#d97706' : '#8b8b9e' }}>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
+                        <div className="text-2xs" style={{ color: aiNoSlots ? '#d97706' : '#8b8b9e' }}>
                           {aiNoSlots ? 'Limit reached' : 'Auto-generate'}
                         </div>
                       </div>
@@ -5208,8 +5208,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
                         <Globe size={14} style={{ color: '#0891b2' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Other Platform</div>
-                        <div className="text-[10px]" style={{ color: thirdPartyNoSlots ? '#d97706' : '#8b8b9e' }}>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Other Platform</div>
+                        <div className="text-2xs" style={{ color: thirdPartyNoSlots ? '#d97706' : '#8b8b9e' }}>
                           {thirdPartyNoSlots ? 'Limit reached' : 'Import from platforms'}
                         </div>
                       </div>
@@ -5237,8 +5237,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
                         <CloudUpload size={14} style={{ color: '#0891b2' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
-                        <div className="text-[10px]" style={{ color: '#8b8b9e' }}>Import from .txt file</div>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
+                        <div className="text-2xs" style={{ color: '#8b8b9e' }}>Import from .txt file</div>
                       </div>
                     </button>
                     )}
@@ -5996,8 +5996,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
                     <span className="lms-marks-value" style={{ color: 'var(--lms-orange)', fontSize: 12 }}>
                       {displayScore}
                       {isScoreEditable(currentDiff)
-                        ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
-                        : <span className="lms-badge" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
+                        ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
+                        : <span className="lms-badge" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
                     </span>
                   </div>
                   {maxAssignableForCurrentQ !== null && (

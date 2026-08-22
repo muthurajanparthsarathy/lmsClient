@@ -286,15 +286,14 @@ export function DataTable<T>({
                                             />
                                         </td>
                                     )}
-                                    {columns.map((c, ci) => (
-                                        // First column carries the row's identity, so
-                                        // it reads a step heavier than the rest.
-                                        // h-11 (44px) + 12px cell text = the compact
-                                        // reference density — ~11 rows visible in the
-                                        // same vertical span that h-14 fit ~8.
+                                    {columns.map((c) => (
+                                        // Uniform row cells — no first-column emphasis.
+                                        // h-11 (44px) + 12px cell text = the Course
+                                        // Setup density the four admin lists (Clients,
+                                        // Users, Services, Course Setup) now share.
                                         <td
                                             key={c.key}
-                                            className={`${c.className || 'px-3'} h-11 align-middle text-[12px] ${ci === 0 ? 'font-medium text-heading' : 'text-body'}`}
+                                            className={`${c.className || 'px-3'} h-11 align-middle text-[12px] text-body`}
                                         >
                                             {c.render(row, i)}
                                         </td>

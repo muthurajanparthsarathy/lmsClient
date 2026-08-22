@@ -7,7 +7,16 @@ import { SectionLabel, ODropdown, ONumberInput, OToggle } from './UIComponents';
 import {
   EvaluationMethodConfig,
   DEFAULT_EVALUATION_METHOD,
+  type EvaluationMethod,
 } from '@/app/lms/component/evaluation/EvaluationMethodConfig';
+
+// You_Do assessments only ever grade themselves — the whole point of the tab.
+// Manual is deliberately absent: the config picker is Test Case OR AI, and the
+// student's Submit routes to exactly the one method the trainer picked.
+// EvaluationMethodConfig migrates any pre-restriction You_Do saved as Manual
+// up to the first allowed method silently on mount, so switching to this
+// narrower list can't strand an old exercise on an invalid value.
+const YOUDO_ALLOWED_METHODS: EvaluationMethod[] = ['testcase', 'ai'];
 
 export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
   formData, setFormData, setValidationErrors, validationErrors, touchedFields, markTouched,
@@ -325,8 +334,12 @@ export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
           </div>
         </div>
 
-        {/* Evaluation Method — Test Case and/or AI. Stored on the exercise as
-            `evaluationMethod`; nothing evaluates from it yet. */}
+        {/* Evaluation Method — Test Case OR AI (no Manual for You_Do; the
+            allowed set is enforced by the shared config). The picked method is
+            the single source of truth for the student's Submit: Test Case runs
+            the question's authored cases via Piston; AI hands the (multi-file
+            or single-file) submission to the shared client-side AI grader.
+            See the You_Do editor's `resolveEvaluationMethod` branch. */}
         <div className="pt-3 border-t" style={{ borderColor: designTokens.border }}>
           <EvaluationMethodConfig
             value={formData.evaluationMethod || DEFAULT_EVALUATION_METHOD}
@@ -334,6 +347,7 @@ export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
             D={designTokens}
             ODropdown={ODropdown}
             SectionLabel={SectionLabel}
+            allowedMethods={YOUDO_ALLOWED_METHODS}
           />
         </div>
 

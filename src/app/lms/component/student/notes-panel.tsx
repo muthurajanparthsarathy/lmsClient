@@ -2349,7 +2349,7 @@ const renderTiptapToolbar = () => {
                                     }
                                   }}
                                   title={resourceContext?.onJumpTo ? 'Jump to this location' : 'Anchor'}
-                                  className={`flex-shrink-0 no-drag px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-colors ${currentNote?._id === note._id ? 'bg-white/20 text-white border-white/40 hover:bg-white/30' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`}
+                                  className={`flex-shrink-0 no-drag px-1.5 py-0.5 rounded text-2xs font-semibold border transition-colors ${currentNote?._id === note._id ? 'bg-white/20 text-white border-white/40 hover:bg-white/30' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100'}`}
                                 >
                                   {note.anchor.page != null
                                     ? `p.${note.anchor.page}`

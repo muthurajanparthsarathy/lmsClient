@@ -1697,8 +1697,8 @@ export default function Assessments({
         <div className="mb-4 p-5 rounded-2xl" style={{ background: 'rgba(249,115,22,0.05)', border: '1.5px dashed rgba(249,115,22,0.2)' }}>
           <BookOpen size={28} style={{ color: 'rgba(249,115,22,0.35)' }} />
         </div>
-        <h3 className="text-[14px] font-bold mb-1" style={{ color: '#1a1a2e' }}>No Assessments Yet</h3>
-        <p className="text-[12px] max-w-xs leading-relaxed" style={{ color: '#8b8b9e' }}>
+        <h3 className="text-base font-bold mb-1" style={{ color: '#1a1a2e' }}>No Assessments Yet</h3>
+        <p className="text-xs max-w-xs leading-relaxed" style={{ color: '#8b8b9e' }}>
           Assessments for this section haven't been added yet.
         </p>
       </div>
@@ -1819,7 +1819,7 @@ export default function Assessments({
             <span className="flex items-center justify-center" style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(249,115,22,0.10)', color: '#f97316' }}>
               <FileText size={15} />
             </span>
-            <span className="text-[12px] font-semibold" style={{ color: '#1a1a2e' }}>
+            <span className="text-xs font-semibold" style={{ color: '#1a1a2e' }}>
               Total Assessments: <span style={{ color: '#f97316' }}>{filteredExercises.length}</span>
             </span>
           </div>
@@ -1834,7 +1834,7 @@ export default function Assessments({
               placeholder="Search assessments…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-7 h-6 text-[12px] rounded-lg outline-none transition-all"
+              className="w-full pl-7 pr-7 h-6 text-xs rounded-lg outline-none transition-all"
               style={{ background: '#f8fafc', border: '1px solid #e4e4ed', color: '#1a1a2e' }}
               onFocus={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(249,115,22,0.08)'; e.currentTarget.style.background = '#fff' }}
               onBlur={e => { e.currentTarget.style.borderColor = '#e4e4ed'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#f8fafc' }}
@@ -1851,7 +1851,7 @@ export default function Assessments({
           <div className="relative" ref={filterRef}>
             <button
               onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-              className="h-6 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-medium transition-all"
+              className="h-6 px-3 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all"
               style={{
                 border: (filterLevel !== "all" || filterStatus.length > 0) ? '1px solid rgba(249,115,22,0.35)' : '1px solid #e4e4ed',
                 background: (filterLevel !== "all" || filterStatus.length > 0) ? 'rgba(249,115,22,0.06)' : '#f8fafc',
@@ -1861,7 +1861,7 @@ export default function Assessments({
               <Filter size={12} />
               <span>Filter</span>
               {(filterLevel !== "all" || filterStatus.length > 0) && (
-                <span className="w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ background: '#f97316' }}>
+                <span className="w-4 h-4 rounded-full text-white text-2xs font-bold flex items-center justify-center" style={{ background: '#f97316' }}>
                   {(filterLevel !== "all" ? 1 : 0) + filterStatus.length}
                 </span>
               )}
@@ -1872,11 +1872,11 @@ export default function Assessments({
               <div className="absolute top-full right-0 mt-1.5 w-60 rounded-xl bg-white z-50 p-3 space-y-3"
                 style={{ border: '1px solid #e4e4ed', boxShadow: '0 8px 24px rgba(26,26,46,0.12)' }}>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Level</p>
+                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Level</p>
                   <div className="flex flex-wrap gap-1.5">
                     {["all", "beginner", "intermediate", "advanced", "hard", "medium"].map(level => (
                       <button key={level} onClick={() => setFilterLevel(level)}
-                        className="px-2 py-0.5 rounded-md text-[11px] font-medium border transition-all"
+                        className="px-2 py-0.5 rounded-md text-2xs font-medium border transition-all"
                         style={filterLevel === level
                           ? { background: '#f97316', color: '#fff', borderColor: '#f97316', cursor: 'pointer' }
                           : { background: '#fff', color: '#6b6b7e', borderColor: '#e4e4ed', cursor: 'pointer' }}>
@@ -1886,7 +1886,7 @@ export default function Assessments({
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Status</p>
+                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Status</p>
                   <div className="flex flex-wrap gap-1.5">
                     {[
                       { val: "active", label: "Active" },
@@ -1900,7 +1900,7 @@ export default function Assessments({
                           onClick={() => setFilterStatus(prev =>
                             selected ? prev.filter(s => s !== val) : [...prev, val]
                           )}
-                          className="px-2 py-0.5 rounded-md text-[11px] font-medium border transition-all"
+                          className="px-2 py-0.5 rounded-md text-2xs font-medium border transition-all"
                           style={selected
                             ? { background: '#f97316', color: '#fff', borderColor: '#f97316', cursor: 'pointer' }
                             : { background: '#fff', color: '#6b6b7e', borderColor: '#e4e4ed', cursor: 'pointer' }}>
@@ -1912,7 +1912,7 @@ export default function Assessments({
                 </div>
                 {(filterLevel !== "all" || filterStatus.length > 0) && (
                   <button onClick={() => { setFilterLevel("all"); setFilterStatus([]) }}
-                    className="w-full py-1.5 rounded-lg text-[11px] font-medium transition-all"
+                    className="w-full py-1.5 rounded-lg text-2xs font-medium transition-all"
                     style={{ border: '1px solid #e4e4ed', color: '#6b6b7e', background: '#fafafa', cursor: 'pointer' }}>
                     Clear Filters
                   </button>
@@ -1926,24 +1926,24 @@ export default function Assessments({
         {(searchQuery || filterLevel !== "all" || filterStatus.length > 0) && (
           <div className="flex-none flex flex-wrap items-center gap-2 px-4 py-1.5"
             style={{ background: 'rgba(249,115,22,0.04)', borderBottom: '1px solid rgba(249,115,22,0.12)' }}>
-            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#f97316' }}>Filters:</span>
+            <span className="text-2xs font-semibold uppercase tracking-wide" style={{ color: '#f97316' }}>Filters:</span>
             {searchQuery && (
               <button onClick={() => setSearchQuery("")}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full transition-all"
+                className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full transition-all"
                 style={{ background: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)', cursor: 'pointer' }}>
                 "{searchQuery}" <X size={9} />
               </button>
             )}
             {filterLevel !== "all" && (
               <button onClick={() => setFilterLevel("all")}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full capitalize transition-all"
+                className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full capitalize transition-all"
                 style={{ background: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)', cursor: 'pointer' }}>
                 {filterLevel} <X size={9} />
               </button>
             )}
             {filterStatus.map(s => (
               <button key={s} onClick={() => setFilterStatus(prev => prev.filter(x => x !== s))}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full capitalize transition-all"
+                className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full capitalize transition-all"
                 style={{ background: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.2)', cursor: 'pointer' }}>
                 {s === 'not-submitted' ? 'Not Submitted' : s.charAt(0).toUpperCase() + s.slice(1)} <X size={9} />
               </button>
@@ -1958,8 +1958,8 @@ export default function Assessments({
               <div className="mb-4 p-5 rounded-2xl" style={{ background: 'rgba(249,115,22,0.05)', border: '1.5px dashed rgba(249,115,22,0.2)' }}>
                 <BookOpen size={28} style={{ color: 'rgba(249,115,22,0.35)' }} />
               </div>
-              <h3 className="text-[14px] font-bold mb-1" style={{ color: '#1a1a2e' }}>No assessments found</h3>
-              <p className="text-[12px] max-w-xs leading-relaxed" style={{ color: '#8b8b9e' }}>
+              <h3 className="text-base font-bold mb-1" style={{ color: '#1a1a2e' }}>No assessments found</h3>
+              <p className="text-xs max-w-xs leading-relaxed" style={{ color: '#8b8b9e' }}>
                 Try adjusting your search or clearing the filters.
               </p>
             </div>
@@ -2048,7 +2048,7 @@ export default function Assessments({
 
                       {/* # */}
                       <td className="pl-4 pr-2 py-3 align-middle">
-                        <span className="text-[11px] font-mono"
+                        <span className="text-2xs font-mono"
                           style={{ color: isHovered ? '#f97316' : '#bcbccc', fontWeight: isHovered ? 600 : 400, transition: 'color 0.15s' }}>
                           {rowNum}
                         </span>
@@ -2056,7 +2056,7 @@ export default function Assessments({
 
                       {/* ID */}
                       <td className="px-3 py-3 align-middle">
-                        <span className="text-[11px] font-mono truncate block" style={{ color: '#8b8b9e' }}>
+                        <span className="text-2xs font-mono truncate block" style={{ color: '#8b8b9e' }}>
                           {exercise.exerciseInformation.exerciseId}
                         </span>
                       </td>
@@ -2064,7 +2064,7 @@ export default function Assessments({
                       {/* Name */}
                       <td className="px-3 py-3 align-middle min-w-0">
                         <div className="flex flex-col justify-center min-w-0">
-                          <span className="text-[12.5px] font-semibold truncate block"
+                          <span className="text-sm font-semibold truncate block"
                             title={exercise.exerciseInformation.exerciseName}
                             style={{ color: isHovered ? '#ea580c' : '#1a1a2e', transition: 'color 0.15s' }}>
                             {exercise.exerciseInformation.exerciseName}
@@ -2075,7 +2075,7 @@ export default function Assessments({
                             const clean = desc.replace(/<[^>]*>/g, '').substring(0, 80)
                             if (!clean.trim()) return null
                             return (
-                              <span className="text-[10.5px] truncate block mt-0.5" style={{ color: '#8b8b9e' }}>
+                              <span className="text-2xs truncate block mt-0.5" style={{ color: '#8b8b9e' }}>
                                 {clean}
                               </span>
                             )
@@ -2085,7 +2085,7 @@ export default function Assessments({
 
                       {/* Start Date */}
                       <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-[11px] flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
+                        <span className="text-2xs flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
                           <Calendar size={10} style={{ flexShrink: 0, color: '#94a3b8' }} />
                           {exercise.availabilityPeriod?.startDate
                             ? `${new Date(exercise.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
@@ -2095,7 +2095,7 @@ export default function Assessments({
 
                       {/* End Date */}
                       <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-[11px] flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
+                        <span className="text-2xs flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
                           <Clock size={10} style={{ flexShrink: 0, color: '#94a3b8' }} />
                           {exercise.availabilityPeriod?.endDate
                             ? `${new Date(exercise.availabilityPeriod.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
@@ -2105,7 +2105,7 @@ export default function Assessments({
 
                       {/* Level */}
                       <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-[11px] font-medium" style={{ color: '#64748b' }}>
+                        <span className="text-2xs font-medium" style={{ color: '#64748b' }}>
                           {diff.label}
                         </span>
                       </td>
@@ -2120,7 +2120,7 @@ export default function Assessments({
                           appeared yet. */}
                       <td className="pl-0 pr-2 py-3 align-middle text-center">
                         <span
-                          className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold px-2.5 py-1 rounded-full cursor-help"
+                          className="inline-flex items-center gap-1.5 text-2xs font-semibold px-2.5 py-1 rounded-full cursor-help"
                           title={
                             !exercise.availabilityPeriod?.startDate && !exercise.availabilityPeriod?.endDate
                               ? 'No schedule saved yet — open Settings → Schedule and click Save.'
@@ -2140,30 +2140,30 @@ export default function Assessments({
                           <div className="flex flex-col items-center gap-0.5">
                             {!availability.canStart ? (
                               /* Inactive */
-                              <span className="text-[10px] font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
+                              <span className="text-2xs font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
                                 {isCompleted ? 'Submitted' : 'Not Submitted'}
                               </span>
                             ) : limitReached ? (
                               /* All attempts used */
-                              <span className="text-[10px] font-semibold" style={{ color: '#15803d' }}>Submitted</span>
+                              <span className="text-2xs font-semibold" style={{ color: '#15803d' }}>Submitted</span>
                             ) : canRetake ? (
                               /* Active + submitted + retake available */
                               <>
                                 <button
                                   onClick={e => handleStartClick(exercise, e)}
-                                  className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
+                                  className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
                                   style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }}
                                   onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
                                   onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
                                   {isSec ? 'Retake' : 'Re Submit'}
                                 </button>
-                                <span className="text-[9px] font-medium" style={{ color: '#15803d' }}>Submitted</span>
+                                <span className="text-2xs font-medium" style={{ color: '#15803d' }}>Submitted</span>
                               </>
                             ) : (
                               /* Active + not submitted (incl. coordinator-granted retest window) */
                               <button
                                 onClick={e => handleStartClick(exercise, e)}
-                                className="px-3 py-1 text-[11px] font-semibold rounded-lg transition-all"
+                                className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
                                 style={isSec
                                   ? { background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', cursor: 'pointer' }
                                   : isGraded
@@ -2199,7 +2199,7 @@ export default function Assessments({
         {/* ── Pagination ── */}
         {filteredExercises.length > 0 && (
           <div className="flex-none bg-white px-4 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #e4e4ed' }}>
-            <div className="text-[11px]" style={{ color: '#8b8b9e' }}>
+            <div className="text-2xs" style={{ color: '#8b8b9e' }}>
               Showing{' '}
               <span className="font-semibold" style={{ color: '#1a1a2e' }}>{startIdx + 1}</span>
               {' '}–{' '}
@@ -2220,10 +2220,10 @@ export default function Assessments({
                 <div className="flex gap-0.5">
                   {getPageNums().map((p, i) =>
                     p === '...' ? (
-                      <span key={`e-${i}`} className="px-1 text-[11px] self-center" style={{ color: '#bcbccc' }}>…</span>
+                      <span key={`e-${i}`} className="px-1 text-2xs self-center" style={{ color: '#bcbccc' }}>…</span>
                     ) : (
                       <button key={p} onClick={() => setCurrentPage(p as number)}
-                        className="h-6 w-6 rounded-md text-[11px] font-semibold transition-all"
+                        className="h-6 w-6 rounded-md text-2xs font-semibold transition-all"
                         style={safePage === p
                           ? { background: '#f97316', color: '#fff', boxShadow: '0 2px 6px rgba(249,115,22,0.3)', cursor: 'default' }
                           : { color: '#6b6b7e', cursor: 'pointer' }}

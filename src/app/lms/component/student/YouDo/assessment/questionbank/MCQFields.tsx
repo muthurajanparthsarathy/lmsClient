@@ -171,13 +171,13 @@ const ImageToolbar: React.FC<{
     <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl dark:shadow-gray-900/50 border border-indigo-100 dark:border-indigo-900/50 overflow-visible select-none min-w-[280px]">
       <div className="flex items-stretch divide-x divide-gray-100 dark:divide-gray-700">
         <div className="flex flex-col items-center justify-center px-3 py-2 gap-1">
-          <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Align</span>
+          <span className="text-2xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Align</span>
           <div className="flex items-center gap-0.5">
             {(['left', 'center', 'right'] as const).map((a) => (
               <button
                 key={a}
                 onClick={() => onAlignmentChange(a)}
-                className={`w-6 h-6 rounded-lg text-[10px] font-bold transition-all ${
+                className={`w-6 h-6 rounded-lg text-2xs font-bold transition-all ${
                   alignment === a
                     ? 'bg-indigo-600 text-white shadow-md dark:bg-indigo-500'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400'
@@ -190,7 +190,7 @@ const ImageToolbar: React.FC<{
         </div>
 
         <div className="flex flex-col justify-center px-3 py-2 gap-1 flex-1">
-          <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Size</span>
+          <span className="text-2xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Size</span>
           <div className="flex items-center gap-1.5">
             <ZoomOut className="h-3 w-3 text-gray-400 dark:text-gray-500" />
             <input
@@ -203,7 +203,7 @@ const ImageToolbar: React.FC<{
               className="flex-1 h-1.5 accent-indigo-600 dark:accent-indigo-500 cursor-pointer"
             />
             <ZoomIn className="h-3 w-3 text-gray-400 dark:text-gray-500" />
-            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 w-8 text-right">{sizePercent}%</span>
+            <span className="text-2xs font-bold text-indigo-600 dark:text-indigo-400 w-8 text-right">{sizePercent}%</span>
           </div>
         </div>
 
@@ -214,7 +214,7 @@ const ImageToolbar: React.FC<{
             title="Remove image"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            <span className="text-[9px] font-semibold">Remove</span>
+            <span className="text-2xs font-semibold">Remove</span>
           </button>
           <button
             onClick={onClose}
@@ -222,7 +222,7 @@ const ImageToolbar: React.FC<{
             title="Close"
           >
             <X className="h-3.5 w-3.5" />
-            <span className="text-[9px] font-semibold">Close</span>
+            <span className="text-2xs font-semibold">Close</span>
           </button>
         </div>
       </div>
@@ -251,12 +251,12 @@ const QuestionImageSection: React.FC<{
   return (
     <div className="px-4 pt-2 pb-1">
       <div className="flex items-center gap-2 mb-1">
-        <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full font-semibold">
+        <span className="inline-flex items-center gap-1 text-2xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full font-semibold">
           <Image className="h-2.5 w-2.5" /> Question Image · {imageSizePercent}% · {imageAlignment}
         </span>
         <button
           onClick={onImageClick}
-          className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-semibold underline underline-offset-2"
+          className="text-2xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-semibold underline underline-offset-2"
         >
           Edit
         </button>
@@ -301,12 +301,12 @@ const OptionsPerRowPicker: React.FC<{
 }> = ({ value, onChange }) => (
   <div className="flex items-center gap-1.5">
     <Columns className="h-3 w-3 text-gray-400 dark:text-gray-500" />
-    <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase">Per row:</span>
+    <span className="text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Per row:</span>
     {([1, 2, 3, 4] as const).map(n => (
       <button
         key={n}
         onClick={() => onChange(n)}
-        className={`w-6 h-6 rounded-lg text-[11px] font-bold transition-all ${
+        className={`w-6 h-6 rounded-lg text-2xs font-bold transition-all ${
           value === n
             ? 'bg-indigo-600 text-white shadow-md dark:bg-indigo-500'
             : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400'
@@ -352,7 +352,7 @@ const MatchingPairComponent: React.FC<{
   canRemove: boolean;
 }> = ({ pair, index, onUpdate, onRemove, canRemove }) => (
   <div className="flex items-center gap-2 mb-2 group">
-    <span className="w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center flex-shrink-0 bg-blue-100 text-blue-700">
+    <span className="w-6 h-6 rounded-md text-2xs font-bold flex items-center justify-center flex-shrink-0 bg-blue-100 text-blue-700">
       {index + 1}
     </span>
     <input
@@ -409,7 +409,7 @@ const OrderingItemComponent: React.FC<{
         <ChevronDown className="h-3 w-3" />
       </button>
     </div>
-    <span className="w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center flex-shrink-0 bg-cyan-100 text-cyan-700">
+    <span className="w-6 h-6 rounded-md text-2xs font-bold flex items-center justify-center flex-shrink-0 bg-cyan-100 text-cyan-700">
       {index + 1}
     </span>
     <input
@@ -1436,7 +1436,7 @@ const formatPayload = () => {
             value={block.optionsPerRow || 1}
             onChange={(v) => setOptionsPerRow(block.id, v)}
           />
-          <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">
+          <span className="text-2xs text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">
             {isMultiSelect ? 'Click checkbox to mark correct (multiple allowed)' : 'Click radio to mark correct answer'}
           </span>
         </div>
@@ -1456,12 +1456,12 @@ const formatPayload = () => {
                 {option.imageUrl && (
                   <div className="relative px-2 pt-2">
                     <div className="flex items-center gap-1 mb-1">
-                      <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                      <span className="text-2xs font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-full">
                         {option.imageSizePercent || 60}% · {option.imageAlignment || 'center'}
                       </span>
                       <button
                         onClick={() => handleOptionImageClick(block.id, option.id)}
-                        className="text-[9px] text-indigo-600 font-bold underline"
+                        className="text-2xs text-indigo-600 font-bold underline"
                       >
                         Edit
                       </button>
@@ -1886,13 +1886,13 @@ const formatPayload = () => {
       <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl dark:shadow-gray-900/50 border border-indigo-100 dark:border-indigo-900/50 overflow-visible select-none min-w-[280px]">
         <div className="flex items-stretch divide-x divide-gray-100 dark:divide-gray-700">
           <div className="flex flex-col items-center justify-center px-3 py-2 gap-1">
-            <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Align</span>
+            <span className="text-2xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Align</span>
             <div className="flex items-center gap-0.5">
               {(['left', 'center', 'right'] as const).map((a) => (
                 <button
                   key={a}
                   onClick={() => onAlignmentChange(a)}
-                  className={`w-6 h-6 rounded-lg text-[10px] font-bold transition-all ${
+                  className={`w-6 h-6 rounded-lg text-2xs font-bold transition-all ${
                     alignment === a
                       ? 'bg-indigo-600 text-white shadow-md dark:bg-indigo-500'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400'
@@ -1905,7 +1905,7 @@ const formatPayload = () => {
           </div>
 
           <div className="flex flex-col justify-center px-3 py-2 gap-1 flex-1">
-            <span className="text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Size</span>
+            <span className="text-2xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Size</span>
             <div className="flex items-center gap-1.5">
               <ZoomOut className="h-3 w-3 text-gray-400 dark:text-gray-500" />
               <input
@@ -1918,7 +1918,7 @@ const formatPayload = () => {
                 className="flex-1 h-1.5 accent-indigo-600 dark:accent-indigo-500 cursor-pointer"
               />
               <ZoomIn className="h-3 w-3 text-gray-400 dark:text-gray-500" />
-              <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 w-8 text-right">{sizePercent}%</span>
+              <span className="text-2xs font-bold text-indigo-600 dark:text-indigo-400 w-8 text-right">{sizePercent}%</span>
             </div>
           </div>
 
@@ -1929,7 +1929,7 @@ const formatPayload = () => {
               title="Remove image"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              <span className="text-[9px] font-semibold">Remove</span>
+              <span className="text-2xs font-semibold">Remove</span>
             </button>
             <button
               onClick={onClose}
@@ -1937,7 +1937,7 @@ const formatPayload = () => {
               title="Close"
             >
               <X className="h-3.5 w-3.5" />
-              <span className="text-[9px] font-semibold">Close</span>
+              <span className="text-2xs font-semibold">Close</span>
             </button>
           </div>
         </div>
@@ -1981,7 +1981,7 @@ const formatPayload = () => {
               <h2 className="text-sm font-bold text-white">
                 {isEditing ? 'Edit MCQ Questions' : 'Add MCQ Questions'}
               </h2>
-              <p className="text-[10px] text-white/70">Multiple choice, True/False, Matching, Ordering & more</p>
+              <p className="text-2xs text-white/70">Multiple choice, True/False, Matching, Ordering & more</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-xl transition-colors">
@@ -2053,12 +2053,12 @@ const formatPayload = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                               {block.isRequired && (
-                                <span className="text-[10px] font-bold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">
+                                <span className="text-2xs font-bold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">
                                   Required
                                 </span>
                               )}
                               {!block.questionImageUrl && (
-                                <label className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-800/40 px-2 py-0.5 rounded-full cursor-pointer transition-colors">
+                                <label className="inline-flex items-center gap-1 text-2xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-800/40 px-2 py-0.5 rounded-full cursor-pointer transition-colors">
                                   <Image className="h-2.5 w-2.5" /> Add image
                                   <input
                                     type="file"
@@ -2097,7 +2097,7 @@ const formatPayload = () => {
                                   if (items.length === 0) return null;
                                   return (
                                     <div key={group}>
-                                      <div className="px-3 py-1 text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
+                                      <div className="px-3 py-1 text-2xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
                                         {group}
                                       </div>
                                       {items.map((qt) => (
@@ -2122,7 +2122,7 @@ const formatPayload = () => {
                                           </span>
                                           {qt.label}
                                           {block.type === qt.type && (
-                                            <span className="ml-auto text-indigo-500 dark:text-indigo-400 text-[10px] font-bold">✓</span>
+                                            <span className="ml-auto text-indigo-500 dark:text-indigo-400 text-2xs font-bold">✓</span>
                                           )}
                                         </button>
                                       ))}
@@ -2156,7 +2156,7 @@ const formatPayload = () => {
                               onChange={() => toggleExplanation(block.id)}
                               className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-700"
                             />
-                            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 group-hover/exp:text-indigo-600 dark:group-hover/exp:text-indigo-400 flex items-center gap-1">
+                            <span className="text-2xs font-semibold text-gray-500 dark:text-gray-400 group-hover/exp:text-indigo-600 dark:group-hover/exp:text-indigo-400 flex items-center gap-1">
                               <HelpCircle className="h-3 w-3" /> Add explanation
                             </span>
                           </label>
@@ -2167,7 +2167,7 @@ const formatPayload = () => {
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Explanation</span>
                                   {!block.explanationImage?.url && (
-                                    <label className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-800/40 px-2 py-0.5 rounded-full cursor-pointer transition-colors">
+                                    <label className="inline-flex items-center gap-1 text-2xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-800/40 px-2 py-0.5 rounded-full cursor-pointer transition-colors">
                                       <Image className="h-2.5 w-2.5" /> Add image
                                       <input
                                         type="file"
@@ -2187,12 +2187,12 @@ const formatPayload = () => {
                               {block.explanationImage?.url && (
                                 <div className="mb-3 relative">
                                   <div className="flex items-center gap-1 mb-1">
-                                    <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                                    <span className="text-2xs font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-full">
                                       Explanation Image · {block.explanationImage.sizePercent}% · {block.explanationImage.alignment}
                                     </span>
                                     <button
                                       onClick={() => setActiveImageToolbar({ type: 'explanation', blockId: block.id })}
-                                      className="text-[9px] text-indigo-600 font-bold underline"
+                                      className="text-2xs text-indigo-600 font-bold underline"
                                     >
                                       Edit
                                     </button>

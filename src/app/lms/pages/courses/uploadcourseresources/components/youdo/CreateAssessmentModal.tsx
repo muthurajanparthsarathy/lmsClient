@@ -640,17 +640,52 @@ const CreateAssessmentModal: React.FC<ExerciseSettingsProps> = ({
       if (populatedForIdRef.current === loadKey) return;
       populatedForIdRef.current = loadKey;
 
-      // Flip the hydration flag on the moment we commit to loading, so the
-      // modal body shows a spinner instead of empty fields. Cleared in the
-      // finally of every branch below.
-      setIsHydratingEdit(true);
+      // ── Cache-first hydration (new) ──
+      // When the parent hands us the row's already-loaded exercise, populate
+      // from it INSTANTLY so the modal opens with the fields filled in — no
+      // full-card "Loading assessment… Fetching your saved settings and
+      // questions" overlay to sit through. Then fire a silent background
+      // refresh so any edits saved elsewhere still land, without a loader
+      // and without a toast if it fails (the preloaded copy is on screen).
+      //
+      // The old primary path always did a loud fetch first and toasted
+      // "Failed to load exercise data" whenever the network was slow or the
+      // request failed, which is exactly the "so much time taking, some time
+      // failed to fetch" the trainer reported. The stale-data guard the old
+      // comment worried about is still covered: the background refresh below
+      // overrides the preloaded values as soon as fresh data arrives.
+      if (preloadedExercise) {
+        populateFormFromExercise(preloadedExercise);
+        const savedSet = computeEditSavedSteps(preloadedExercise);
+        setSavedSteps(savedSet);
+        setCompletedSteps(savedSet);
+        setIsHydratingEdit(false);
 
-      // ── Primary path: fetch fresh data from API when we have an ID ──
-      // Always prefer the API fetch over the preloaded prop so edits saved in a
-      // previous session are not clobbered by a stale cached version the parent
-      // may have fetched before those saves were made (e.g. question count showing
-      // as 0 after being saved, because the parent's list snapshot predates the save).
+        if (exercise_Id) {
+          try {
+            const response = await exerciseApi.getExerciseById(exercise_Id);
+            const exerciseData = response?.data?.exercise || response?.data || response;
+            if (exerciseData) {
+              populateFormFromExercise(exerciseData);
+              const savedSet2 = computeEditSavedSteps(exerciseData);
+              setSavedSteps(savedSet2);
+              setCompletedSteps(savedSet2);
+            }
+          } catch (error) {
+            // Silent fail — the preloaded row's data is already on screen,
+            // so the user isn't blocked. Log for debugging only.
+            console.warn('Background refresh failed for exercise', exercise_Id, error);
+          }
+        }
+        return;
+      }
+
+      // ── No preloaded copy → loud fetch with the overlay ──
+      // This is the fresh-open path (e.g. deep link straight into edit
+      // without going through the list). The overlay is warranted here
+      // because there's nothing to render underneath it.
       if (exercise_Id) {
+        setIsHydratingEdit(true);
         setIsLoading(true);
         try {
           const response = await exerciseApi.getExerciseById(exercise_Id);
@@ -671,15 +706,6 @@ const CreateAssessmentModal: React.FC<ExerciseSettingsProps> = ({
         return;
       }
 
-      // ── Fallback: no ID available, use preloaded prop if provided ──
-      if (preloadedExercise) {
-        populateFormFromExercise(preloadedExercise);
-        const savedSet = computeEditSavedSteps(preloadedExercise);
-        setSavedSteps(savedSet);
-        setCompletedSteps(savedSet);
-        setIsHydratingEdit(false);
-        return;
-      }
       // No source at all — clear the flag anyway so we don't strand the spinner.
       setIsHydratingEdit(false);
     };

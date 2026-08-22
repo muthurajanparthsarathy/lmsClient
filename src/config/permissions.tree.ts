@@ -327,6 +327,23 @@ export const PERMISSION_TREE: PermissionNode[] = [
     page("student-codinganalytics", "codinganalytics", "Coding Analytics",
       { icon: "Activity", color: "slate" }),
 
+    // Read-only holiday calendar for the learner: the institute-wide calendar
+    // merged with the calendar of the client they are enrolled with, with a
+    // switch to narrow it to that client alone.
+    //
+    // `defaultSelected` because a learner needs to know when there is no
+    // class — it is reference data, not a privilege — so Add User pre-checks
+    // it. The route gate grants /lms/pages/studentcalendar on the STUDENT
+    // ROLE as well (providers.tsx), so an existing learner whose user doc
+    // predates this module still opens the page; this checkbox is what lets
+    // an admin hand the same page to a non-student account.
+    //
+    // No `aliases: ["calendar"]` on purpose — admin-calendar already claims
+    // that stored id, and a shared alias would make one grant resolve to two
+    // different pages.
+    page("student-calendar", "studentcalendar", "Calendar",
+      { icon: "Calendar", color: "emerald", defaultSelected: true }),
+
     page("student-notification", "notifications", "Student Notification",
       { icon: "Bell", color: "amber", aliases: ["Notification"] }),
 

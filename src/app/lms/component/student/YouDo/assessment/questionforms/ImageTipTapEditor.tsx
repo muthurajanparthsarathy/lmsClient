@@ -142,13 +142,13 @@ const ImageToolbar: React.FC<ImageToolbarProps> = ({
         <div className="bg-white rounded-2xl shadow-2xl border border-indigo-100 overflow-visible select-none min-w-[280px]">
             <div className="flex items-stretch divide-x divide-gray-100">
                 <div className="flex flex-col items-center justify-center px-3 py-2 gap-1">
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Align</span>
+                    <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest">Align</span>
                     <div className="flex items-center gap-0.5">
                         {(['left', 'center', 'right'] as const).map((a) => (
                             <button
                                 key={a}
                                 onClick={() => onAlignmentChange(a)}
-                                className={`w-6 h-6 rounded-lg text-[10px] font-bold transition-all ${alignment === a
+                                className={`w-6 h-6 rounded-lg text-2xs font-bold transition-all ${alignment === a
                                     ? 'bg-indigo-600 text-white shadow-md'
                                     : 'bg-gray-100 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600'
                                     }`}
@@ -160,7 +160,7 @@ const ImageToolbar: React.FC<ImageToolbarProps> = ({
                 </div>
 
                 <div className="flex flex-col justify-center px-3 py-2 gap-1 flex-1">
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Size</span>
+                    <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest">Size</span>
                     <div className="flex items-center gap-1.5">
                         <ZoomOut className="h-3 w-3 text-gray-400" />
                         <input
@@ -173,7 +173,7 @@ const ImageToolbar: React.FC<ImageToolbarProps> = ({
                             className="flex-1 h-1.5 accent-indigo-600 cursor-pointer"
                         />
                         <ZoomIn className="h-3 w-3 text-gray-400" />
-                        <span className="text-[10px] font-bold text-indigo-600 w-8 text-right">{sizePercent}%</span>
+                        <span className="text-2xs font-bold text-indigo-600 w-8 text-right">{sizePercent}%</span>
                     </div>
                 </div>
 
@@ -184,7 +184,7 @@ const ImageToolbar: React.FC<ImageToolbarProps> = ({
                         title="Remove image"
                     >
                         <Trash2 className="h-3.5 w-3.5" />
-                        <span className="text-[9px] font-semibold">Remove</span>
+                        <span className="text-2xs font-semibold">Remove</span>
                     </button>
                     <button
                         onClick={onClose}
@@ -192,7 +192,7 @@ const ImageToolbar: React.FC<ImageToolbarProps> = ({
                         title="Close"
                     >
                         <X className="h-3.5 w-3.5" />
-                        <span className="text-[9px] font-semibold">Close</span>
+                        <span className="text-2xs font-semibold">Close</span>
                     </button>
                 </div>
             </div>
@@ -894,7 +894,7 @@ const TipTapEditor: React.FC<TipTapEditorProps> = ({
 
             {/* Status indicator for images */}
             {selectedImage && (
-                <div className="absolute bottom-2 right-2 bg-indigo-600 text-white text-[10px] px-2 py-1 rounded-full shadow-lg">
+                <div className="absolute bottom-2 right-2 bg-indigo-600 text-white text-2xs px-2 py-1 rounded-full shadow-lg">
                     Image selected
                 </div>
             )}

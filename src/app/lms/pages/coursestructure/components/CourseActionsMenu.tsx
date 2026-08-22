@@ -3,7 +3,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarDays, ChevronDown, Eye, GitBranch, ListTree, MessageSquare, Pencil, Upload, Users } from 'lucide-react'
+import { CalendarDays, ChevronDown, Eye, GitBranch, GraduationCap, ListTree, MessageSquare, Pencil, Upload, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PERMISSION_IDS } from '@/components/permissions'
@@ -25,9 +25,11 @@ export type CourseMenuStatus = {
 }
 
 /** Which entries this menu offers. Defaults to all eight. */
-export type CourseMenuItem = 'view' | 'edit' | 'structure' | 'resources' | 'calendar' | 'enrollment' | 'feedback' | 'approval'
+export type CourseMenuItem = 'view' | 'edit' | 'structure' | 'resources' | 'calendar' | 'enrollment' | 'feedback' | 'grade' | 'approval'
 
-const ALL_ITEMS: CourseMenuItem[] = ['view', 'edit', 'structure', 'resources', 'calendar', 'enrollment', 'feedback', 'approval']
+// 'grade' sits directly below 'feedback' so the same course-context grouping
+// (per-course actions, not global) reads top-to-bottom.
+const ALL_ITEMS: CourseMenuItem[] = ['view', 'edit', 'structure', 'resources', 'calendar', 'enrollment', 'feedback', 'grade', 'approval']
 
 // Which functionality (as spelled in PermissionModal) each menu item requires.
 // The parent's `items` prop still decides the SET; this only decides which of
@@ -41,6 +43,14 @@ const ITEM_PERMISSION: Record<CourseMenuItem, string> = {
     calendar: 'Program Calendar',
     enrollment: 'Add Participants',
     feedback: 'Add Feedback',
+    // Grade opens the course's Grades detail view directly (no client/course
+    // picker step, because the course is already in hand). Reads from the
+    // course-management permission the rest of this menu uses; "View Full
+    // Details" is the closest fit — Grade is a course-scoped read of what
+    // students have scored. Deliberately NOT gated on the admin-grades
+    // sidebar permission: the trainer removed that from the sidebar but
+    // still wants Grade reachable per-course from here.
+    grade: 'View Full Details',
     // Setting an approval chain is a course-configuration task, so it rides
     // on Edit Course rather than needing a new permission slot.
     approval: 'Edit Course',
@@ -55,6 +65,7 @@ export default function CourseActionsMenu({
     onCalendar,
     onEnrollment,
     onFeedback,
+    onGrade,
     onApproval,
     items = ALL_ITEMS,
     label = 'Actions',
@@ -70,6 +81,10 @@ export default function CourseActionsMenu({
     onEnrollment: () => void
     /** Optional — defaults to navigating to the course's feedback manager. */
     onFeedback?: () => void
+    /** Optional — defaults to navigating to the course's Grades detail page
+     *  (`/lms/pages/grades/<courseId>`), which skips the client/course picker
+     *  because the course is already known from this menu's context. */
+    onGrade?: () => void
     /** Only required when 'approval' is among `items`. Opens the parent-owned
      *  ApprovalHierarchyModal so the manager can set the ordered role → person
      *  approvers for this course without leaving Course Management. */
@@ -192,6 +207,31 @@ export default function CourseActionsMenu({
             label: 'Feedback',
             icon: <MessageSquare size={14} />,
             onClick: onFeedback ?? (() => router.push(`/lms/pages/coursestructure/feedback?courseId=${status.id}`)),
+            enabled: true, hint: '',
+        },
+        grade: {
+            // Same rationale as Feedback above: Grade is per-course, and the
+            // course is already known here — so this deep-links straight to
+            // the detail view (`/lms/pages/grades/<courseId>`), skipping the
+            // client/course picker at /lms/pages/grades. The detail page
+            // reads its id off `window.location.pathname`, so a plain
+            // router.push is enough for that part.
+            //
+            // `returnTo` carries the URL of THIS page (usually the Course
+            // Structure listing with `?openMappingId=…`) so the Back arrow
+            // on the Grades detail page lands the trainer where they came
+            // from instead of on the client picker they never wanted to
+            // see. Captured off window.location at click time so any query
+            // params (openMappingId, filters, tabs) round-trip cleanly.
+            label: 'Grade',
+            icon: <GraduationCap size={14} />,
+            onClick: onGrade ?? (() => {
+                const here = typeof window !== 'undefined'
+                    ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+                    : '';
+                const q = here ? `?returnTo=${encodeURIComponent(here)}` : '';
+                router.push(`/lms/pages/grades/${status.id}${q}`);
+            }),
             enabled: true, hint: '',
         },
         approval: {

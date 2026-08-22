@@ -405,7 +405,54 @@ function systemSettingsMerge(items: SidebarItem[]): SidebarItem[] {
  * hold the entire catalog and the rail would otherwise be unusable.
  */
 export const buildNavForStoredUser = (userData: UserData | null): SidebarItem[] => {
-    const items = buildSidebarItems(userData?.permissions || [], isAdminRole(userData));
+    // Detect POC first — its permissions get a small role-scoped patch
+    // BEFORE the sidebar is built, so the Question Bank collapse logic
+    // (which reads directly from the granted permission set) picks up
+    // any synthetic entries as if the trainer had granted them.
+    const role: any = userData?.role;
+    const isPoc = [role?.roleValue, role?.originalRole, role?.renameRole, typeof role === "string" ? role : null]
+        .some(isPocRoleValue);
+
+    // POCs get External Questions on the rail whenever they hold the
+    // Internal question bank grant. Live POC accounts predate the split
+    // (the External page shipped later) and never had the extra
+    // `questionbanksexternal` seeded on their user doc, which is why the
+    // External Questions row was missing from their Question Bank submenu.
+    // The External page is read-only for POCs (role-gated in-file), so
+    // exposing it here is safe and lets a POC browse the shared platform
+    // library the same way admins do.
+    let effectivePermissions = userData?.permissions || [];
+    if (isPoc) {
+        const keys = new Set(
+            effectivePermissions.map((p) => canonicalPermissionKey(p.permissionKey)),
+        );
+        if (keys.has("questionbanks") && !keys.has("questionbanksexternal")) {
+            const now = new Date().toISOString();
+            const internal = effectivePermissions.find(
+                (p) => canonicalPermissionKey(p.permissionKey) === "questionbanks",
+            );
+            effectivePermissions = [
+                ...effectivePermissions,
+                {
+                    _id: "synthetic-poc-qb-external",
+                    permissionName: "External Questions",
+                    permissionKey: "questionbanksexternal",
+                    permissionFunctionality: [],
+                    // Match the Internal row's icon / colour metadata so the
+                    // submenu reads as one section.
+                    icon: internal?.icon || "Globe",
+                    color: internal?.color || "slate",
+                    description: "Shared platform-imported bank",
+                    isActive: true,
+                    order: (internal?.order ?? 0) + 1,
+                    createdAt: now,
+                    updatedAt: now,
+                },
+            ];
+        }
+    }
+
+    const items = buildSidebarItems(effectivePermissions, isAdminRole(userData));
 
     // ── POC rail adjustments (role-scoped presentation, not permissions) ────
     // The POC console doesn't surface Attendance Management or Grades even
@@ -413,9 +460,6 @@ export const buildNavForStoredUser = (userData: UserData | null): SidebarItem[] 
     // "Report" entry — the same Performance Report the L&D console owns,
     // rendered standalone at /lms/pages/reports/performance (no L&D shell).
     // The route gate allows it via POC_COMPANION_ROUTES in providers.tsx.
-    const role: any = userData?.role;
-    const isPoc = [role?.roleValue, role?.originalRole, role?.renameRole, typeof role === "string" ? role : null]
-        .some(isPocRoleValue);
     if (!isPoc) return items;
 
     const HIDDEN_FOR_POC = new Set(["attendancemanagement", "grades", "grade"]);

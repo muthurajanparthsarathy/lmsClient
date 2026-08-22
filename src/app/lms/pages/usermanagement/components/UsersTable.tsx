@@ -13,7 +13,7 @@ import { User } from "./types";
 // status toggles and row actions all arrive as props from page.tsx.
 //
 // Its METRICS are deliberately DataTable's, so this directory and the Client
-// Management listing read as the same table on two routes: 44px header, 48px
+// Management listing read as the same table on two routes: 36px header, 48px
 // row, 28px avatar, one line per row. Email used to sit under the name in a
 // two-line cell, which cost 16px of row height on every row and left the
 // address in a different place than every other listing puts it — it is now
@@ -71,8 +71,10 @@ const COL = {
 
 const HEAD_CELL =
   "h-8 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline whitespace-nowrap";
-// 44px — matches the shared DataTable's compact row height.
-const BODY_CELL = "h-11 align-middle";
+// h-11 (44px) + text-[12px] — matches the shared DataTable and the Course
+// Setup list rhythm. No first-column emphasis (uniform text-body across
+// every cell) so the four admin lists read as one system.
+const BODY_CELL = "h-11 align-middle text-[12px] text-body";
 // Skeleton bar, matching DataTable's.
 const BAR = "h-3 rounded bg-ink-100 animate-pulse";
 
@@ -249,7 +251,7 @@ export function UsersTable({
                       className="size-4 rounded border-hairline-strong accent-brand cursor-pointer align-middle"
                     />
                   </td>
-                  <td className={`${COL.user} ${BODY_CELL} text-[12px] font-medium text-heading`}>
+                  <td className={`${COL.user} ${BODY_CELL}`}>
                     <div className="flex items-center gap-2 min-w-0">
                       <UserAvatar name={user.firstName} size="xs" />
                       {/* Long values ellipsize with the full value in the
@@ -258,12 +260,12 @@ export function UsersTable({
                     </div>
                   </td>
                   <td className={`${COL.email} ${BODY_CELL}`}>
-                    <span className="text-[12px] text-subtle truncate block" title={user.email || undefined}>
+                    <span className="text-subtle truncate block" title={user.email || undefined}>
                       {user.email || "—"}
                     </span>
                   </td>
                   <td className={`${COL.phone} ${BODY_CELL}`}>
-                    <span className="text-[12px] text-body tabular-nums truncate block">{user.phone || "—"}</span>
+                    <span className="tabular-nums truncate block">{user.phone || "—"}</span>
                   </td>
                   <td className={`${COL.role} ${BODY_CELL}`}>
                     {/* max-w-full + an inner truncate: the pill is a fixed-height

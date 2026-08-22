@@ -635,8 +635,8 @@ const ToastContainer: React.FC<{ toasts: Toast[]; onRemove: (id: string) => void
           <div className="flex items-start gap-3 px-3 py-3 flex-1">
             <div className="flex-shrink-0 mt-0.5">{icons[t.type]}</div>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-bold leading-tight" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-main)' }}>{t.title}</p>
-              {t.message && <p className="text-[11px] mt-0.5 leading-snug" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-sec)' }}>{t.message}</p>}
+              <p className="text-sm font-bold leading-tight" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-main)' }}>{t.title}</p>
+              {t.message && <p className="text-2xs mt-0.5 leading-snug" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-sec)' }}>{t.message}</p>}
             </div>
             <button onClick={() => onRemove(t.id)} className="flex-shrink-0 p-0.5 rounded-lg transition-colors mt-0.5 hover:bg-slate-100">
               <X className="h-3.5 w-3.5" style={{ color: 'var(--lms-text-hint)' }} />
@@ -890,7 +890,7 @@ const MockModal: React.FC<{
           </div>
           <div>
             <p className="text-sm font-bold" style={{ color: T.textMain }}>Mock Test Preview</p>
-            <p className="text-[10px]" style={{ color: T.textMuted }}>Select an answer to check immediately</p>
+            <p className="text-2xs" style={{ color: T.textMuted }}>Select an answer to check immediately</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -930,14 +930,14 @@ const MockModal: React.FC<{
               <div className="w-px h-5" style={{ background: T.border }} />
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-full" style={{ background: diff.bg }}>
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: diff.dot }} />
-                <span className="text-[10px] font-semibold capitalize" style={{ color: diff.text }}>{block.difficulty || 'Not set'}</span>
+                <span className="text-2xs font-semibold capitalize" style={{ color: diff.text }}>{block.difficulty || 'Not set'}</span>
               </div>
               <div className="px-2 py-1 rounded-full" style={{ background: qtype.bg }}>
-                <span className="text-[10px] font-semibold" style={{ color: qtype.color }}>{qtype.label}</span>
+                <span className="text-2xs font-semibold" style={{ color: qtype.color }}>{qtype.label}</span>
               </div>
               {block.score && block.score > 0 && (
                 <div className="px-2 py-1 rounded-full" style={{ background: T.amberLight }}>
-                  <span className="text-[10px] font-semibold" style={{ color: T.amber }}>{block.score} pts</span>
+                  <span className="text-2xs font-semibold" style={{ color: T.amber }}>{block.score} pts</span>
                 </div>
               )}
             </div>
@@ -1041,7 +1041,7 @@ const MockModal: React.FC<{
                     border = T.green;
                     textColor = T.greenDark;
                     badge = (
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      <span className="flex items-center gap-1 text-2xs font-bold px-2 py-0.5 rounded-full"
                         style={{ background: T.greenLight, color: T.greenDark }}>
                         <Check className="h-2.5 w-2.5" /> Correct
                       </span>
@@ -1052,7 +1052,7 @@ const MockModal: React.FC<{
                     border = T.red;
                     textColor = T.red;
                     badge = (
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      <span className="flex items-center gap-1 text-2xs font-bold px-2 py-0.5 rounded-full"
                         style={{ background: T.redLight, color: T.red }}>
                         <X className="h-2.5 w-2.5" /> Wrong
                       </span>
@@ -1064,7 +1064,7 @@ const MockModal: React.FC<{
                     border = T.green;
                     textColor = T.greenDark;
                     badge = (
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      <span className="flex items-center gap-1 text-2xs font-bold px-2 py-0.5 rounded-full"
                         style={{ background: T.greenLight, color: T.greenDark }}>
                         <Check className="h-2.5 w-2.5" /> Correct Answer
                       </span>
@@ -1199,7 +1199,7 @@ const MockModal: React.FC<{
               <Grid3x3 className="h-3.5 w-3.5" style={{ color: T.orange }} />
               <span className="text-xs font-bold" style={{ color: T.textMain }}>Questions</span>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+            <span className="text-2xs font-bold px-2 py-0.5 rounded-full"
               style={{ background: T.orangeLight, color: T.orange }}>{answeredCount}/{mockBlocks.length}</span>
           </div>
 
@@ -1253,7 +1253,7 @@ const MockModal: React.FC<{
           </div>
 
           <div className="mt-5 pt-3 border-t" style={{ borderTopColor: T.borderLight }}>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[10px]">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-2xs">
               <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: T.orange }} /><span style={{ color: T.textSub }}>Current</span></div>
               <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: T.green }} /><span style={{ color: T.textSub }}>Correct</span></div>
               <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: T.red }} /><span style={{ color: T.textSub }}>Incorrect</span></div>
@@ -1555,15 +1555,15 @@ const QuestionFormBreadcrumb: React.FC<{
     <nav className="flex items-center" style={{ fontFamily: 'var(--lms-font)' }}>
       <ol className="flex items-center flex-wrap gap-y-0.5">
         {courseName && (
-          <><li><span className="text-[12.5px] font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{courseName}</span></li>
+          <><li><span className="text-sm font-semibold" style={{ color: 'var(--lms-text-sec)' }}>{courseName}</span></li>
             <li><span className="lms-breadcrumb-sep">»</span></li></>
         )}
         {exerciseName && (
-          <><li><span className="text-[12.5px] font-semibold truncate max-w-[120px]" style={{ color: 'var(--lms-text-main)' }}>{exerciseName}</span></li>
+          <><li><span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: 'var(--lms-text-main)' }}>{exerciseName}</span></li>
             <li><span className="lms-breadcrumb-sep">»</span></li></>
         )}
         <li>
-          <span className="text-[12.5px] font-bold" style={{ color: 'var(--lms-text-main)' }}>
+          <span className="text-sm font-bold" style={{ color: 'var(--lms-text-main)' }}>
             {actionLabel}
             {questionLabel && <span className="ml-1.5 font-normal" style={{ color: 'var(--lms-text-muted)' }}>· {questionLabel}</span>}
           </span>
@@ -1615,11 +1615,11 @@ const DeleteConfirmationDialog: React.FC<{
   return (
     <SmallModal icon={<Trash2 className="h-4 w-4 text-red-600" />} iconBg="bg-red-50" title="Delete Question">
       <p className="text-xs font-medium mb-1" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>Are you sure you want to delete this question?</p>
-      <p className="text-[11px] mb-3 px-3 py-2 rounded-lg line-clamp-2"
+      <p className="text-2xs mb-3 px-3 py-2 rounded-lg line-clamp-2"
         style={{ background: 'var(--lms-bg-surface)', border: '1.5px solid var(--lms-border)', color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>
         {questionTitle || 'Untitled question'}
       </p>
-      <p className="text-[11px] font-medium mb-1" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
+      <p className="text-2xs font-medium mb-1" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
         This action cannot be undone.
       </p>
       <ModalActions>
@@ -1650,7 +1650,7 @@ const ConfirmationDialog: React.FC<{
           </div>
           <div>
             <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-main)' }}>Unsaved Questions</h3>
-            <p className="text-[11px] mt-0.5" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-muted)' }}>These will be lost if you close now</p>
+            <p className="text-2xs mt-0.5" style={{ fontFamily: 'var(--lms-font)', color: 'var(--lms-text-muted)' }}>These will be lost if you close now</p>
           </div>
         </div>
         <div className="lms-modal-body space-y-2.5">
@@ -1658,12 +1658,12 @@ const ConfirmationDialog: React.FC<{
             <div key={i} className="flex items-center gap-3 px-3.5 py-3 rounded-xl"
               style={{ background: row.bg, border: `1.5px solid ${row.border}` }}>
               <span className="text-sm font-black" style={{ color: row.color }}>{row.icon}</span>
-              <p className="text-[12px] font-semibold" style={{ color: row.color, fontFamily: 'var(--lms-font)' }}>{row.label}</p>
+              <p className="text-xs font-semibold" style={{ color: row.color, fontFamily: 'var(--lms-font)' }}>{row.label}</p>
             </div>
           ))}
           <div className="flex items-start gap-2 px-1">
             <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: 'var(--lms-danger)' }} />
-            <p className="text-[11px] font-medium" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
+            <p className="text-2xs font-medium" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
               Closing without saving will permanently discard all changes.
             </p>
           </div>
@@ -1748,11 +1748,11 @@ const ImageToolbar: React.FC<{
       boxShadow: 'var(--lms-shadow-md)', divideColor: 'var(--lms-border)'
     }}>
     <div className="flex flex-col items-center justify-center px-3 py-2 gap-1">
-      <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--lms-text-hint)' }}>Align</span>
+      <span className="text-2xs font-bold uppercase tracking-widest" style={{ color: 'var(--lms-text-hint)' }}>Align</span>
       <div className="flex gap-0.5">
         {(['left', 'center', 'right'] as const).map(a => (
           <button key={a} onClick={() => onAlignmentChange(a)}
-            className="w-6 h-6 rounded-md text-[10px] font-bold transition-all"
+            className="w-6 h-6 rounded-md text-2xs font-bold transition-all"
             style={{
               background: alignment === a ? 'var(--lms-orange)' : 'var(--lms-bg-surface)',
               color: alignment === a ? 'white' : 'var(--lms-text-muted)',
@@ -1763,7 +1763,7 @@ const ImageToolbar: React.FC<{
       </div>
     </div>
     <div className="flex flex-col justify-center px-3 py-2 gap-1 flex-1">
-      <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--lms-text-hint)' }}>Size {sizePercent}%</span>
+      <span className="text-2xs font-bold uppercase tracking-widest" style={{ color: 'var(--lms-text-hint)' }}>Size {sizePercent}%</span>
       <div className="flex items-center gap-1.5">
         <ZoomOut className="h-3 w-3" style={{ color: 'var(--lms-text-hint)' }} />
         <input type="range" min={10} max={100} step={5} value={sizePercent}
@@ -1801,7 +1801,7 @@ const PreviewContentBlocks: React.FC<{ block: QuestionBlock }> = ({ block }) => 
           if (!plain) return null;
           return (
             <div key={i}
-              className="text-[13px] font-semibold leading-snug [&_strong]:font-bold [&_em]:italic [&_u]:underline"
+              className="text-sm font-semibold leading-snug [&_strong]:font-bold [&_em]:italic [&_u]:underline"
               style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}
               dangerouslySetInnerHTML={{ __html: cb.value }}
             />
@@ -1888,7 +1888,7 @@ const PreviewQuestionCard: React.FC<{
         <div className="px-4 pt-3 pb-2 space-y-1.5">
           <p className="lms-section-label">Answer Options</p>
           {block.options.map((opt, oi) => (
-            <div key={opt.id || oi} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px]"
+            <div key={opt.id || oi} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs"
               style={{
                 background: opt.isCorrect ? 'var(--lms-success-bg)' : 'var(--lms-bg-white)',
                 border: `1.5px solid ${opt.isCorrect ? 'var(--lms-success-bdr)' : 'var(--lms-border)'}`,
@@ -1911,7 +1911,7 @@ const PreviewQuestionCard: React.FC<{
                 {opt.text || <span className="italic" style={{ color: 'var(--lms-text-hint)' }}>Empty option</span>}
               </span>
               {opt.isCorrect && (
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                <span className="text-2xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
                   style={{ color: 'var(--lms-success)', background: 'white', border: '1px solid var(--lms-success-bdr)' }}>Correct</span>
               )}
             </div>
@@ -1926,7 +1926,7 @@ const PreviewQuestionCard: React.FC<{
           <p className="lms-section-label">Answer</p>
           <div className="flex gap-2">
             {[true, false].map(val => (
-              <div key={String(val)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold"
+              <div key={String(val)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold"
                 style={{
                   background: block.trueFalseAnswer === val ? 'var(--lms-success-bg)' : 'var(--lms-bg-white)',
                   border: `1.5px solid ${block.trueFalseAnswer === val ? 'var(--lms-success-bdr)' : 'var(--lms-border)'}`,
@@ -1949,7 +1949,7 @@ const PreviewQuestionCard: React.FC<{
       return (
         <div className="px-4 pt-3 pb-2">
           <p className="lms-section-label">Expected Answer</p>
-          <div className="px-3 py-2 rounded-lg text-[12px]"
+          <div className="px-3 py-2 rounded-lg text-xs"
             style={{ background: 'var(--lms-bg-white)', border: '1.5px solid var(--lms-border)', color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>
             {block.shortAnswer?.trim()
               ? <span className="font-medium" style={{ color: 'var(--lms-success)' }}>{block.shortAnswer}</span>
@@ -1965,7 +1965,7 @@ const PreviewQuestionCard: React.FC<{
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
             style={{ background: 'var(--lms-orange-50)', border: '1.5px solid var(--lms-orange-100)' }}>
             <BookOpen className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--lms-orange)' }} />
-            <span className="text-[12px] font-medium" style={{ color: '#c85a30', fontFamily: 'var(--lms-font)' }}>Essay / Long-form answer — add a sample answer for auto-correction</span>
+            <span className="text-xs font-medium" style={{ color: '#c85a30', fontFamily: 'var(--lms-font)' }}>Essay / Long-form answer — add a sample answer for auto-correction</span>
           </div>
         </div>
       );
@@ -1978,14 +1978,14 @@ const PreviewQuestionCard: React.FC<{
           <div className="space-y-1.5">
             {block.matchingPairs.map((pair, idx) => (
               <div key={pair.id || idx} className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center flex-shrink-0"
+                <span className="w-5 h-5 rounded-md text-2xs font-bold flex items-center justify-center flex-shrink-0"
                   style={{ background: 'var(--lms-info-bg)', color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>{idx + 1}</span>
-                <div className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-[12px] truncate"
+                <div className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-xs truncate"
                   style={{ background: 'var(--lms-bg-white)', border: '1.5px solid var(--lms-border)', color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>
                   {pair.left || <span className="italic" style={{ color: 'var(--lms-text-hint)' }}>Left item</span>}
                 </div>
                 <Equal className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--lms-text-hint)' }} />
-                <div className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-[12px] truncate"
+                <div className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-xs truncate"
                   style={{ background: 'var(--lms-success-bg)', border: '1.5px solid var(--lms-success-bdr)', color: '#14532d', fontFamily: 'var(--lms-font)' }}>
                   {pair.right || <span className="italic" style={{ color: 'var(--lms-text-hint)' }}>Right item</span>}
                 </div>
@@ -2004,9 +2004,9 @@ const PreviewQuestionCard: React.FC<{
           <div className="space-y-1.5">
             {sorted.map((item, idx) => (
               <div key={item.id || idx} className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center flex-shrink-0"
+                <span className="w-5 h-5 rounded-md text-2xs font-bold flex items-center justify-center flex-shrink-0"
                   style={{ background: 'var(--lms-info-bg)', color: '#0891b2', fontFamily: 'var(--lms-font)' }}>{idx + 1}</span>
-                <div className="flex-1 px-2.5 py-1.5 rounded-lg text-[12px]"
+                <div className="flex-1 px-2.5 py-1.5 rounded-lg text-xs"
                   style={{ background: 'var(--lms-bg-white)', border: '1.5px solid var(--lms-border)', color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>
                   {item.text || <span className="italic" style={{ color: 'var(--lms-text-hint)' }}>Empty item</span>}
                 </div>
@@ -2024,16 +2024,16 @@ const PreviewQuestionCard: React.FC<{
           <div className="flex gap-2 flex-wrap">
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
               style={{ background: 'var(--lms-bg-white)', border: '1.5px solid var(--lms-border)' }}>
-              <span className="text-[9px] font-bold uppercase" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>Answer</span>
-              <span className="text-[13px] font-bold" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
+              <span className="text-2xs font-bold uppercase" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>Answer</span>
+              <span className="text-sm font-bold" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
                 {block.numericAnswer !== null && block.numericAnswer !== undefined ? block.numericAnswer : <span style={{ color: 'var(--lms-text-hint)', fontWeight: 400 }} className="italic">Not set</span>}
               </span>
             </div>
             {block.numericTolerance !== null && block.numericTolerance !== undefined && block.numericTolerance > 0 && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
                 style={{ background: 'var(--lms-warning-bg)', border: '1.5px solid var(--lms-warning-bdr)' }}>
-                <span className="text-[9px] font-bold" style={{ color: 'var(--lms-warning)', fontFamily: 'var(--lms-font)' }}>±</span>
-                <span className="text-[13px] font-bold" style={{ color: 'var(--lms-warning)', fontFamily: 'var(--lms-font)' }}>{block.numericTolerance}</span>
+                <span className="text-2xs font-bold" style={{ color: 'var(--lms-warning)', fontFamily: 'var(--lms-font)' }}>±</span>
+                <span className="text-sm font-bold" style={{ color: 'var(--lms-warning)', fontFamily: 'var(--lms-font)' }}>{block.numericTolerance}</span>
               </div>
             )}
           </div>
@@ -2046,12 +2046,12 @@ const PreviewQuestionCard: React.FC<{
   return (
     <div className={`lms-preview-card ${isActive ? 'active' : ''}`}>
       <div className="flex items-start gap-3 px-4 py-3">
-        <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black mt-0.5"
+        <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-2xs font-black mt-0.5"
           style={{ background: isActive ? 'var(--lms-orange)' : 'var(--lms-bg-surface)', color: isActive ? 'white' : 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
           {globalIndex + 1}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>
+          <div className="text-sm font-semibold leading-snug" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>
             <PreviewContentBlocks block={block} />
           </div>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -2097,14 +2097,14 @@ const PreviewQuestionCard: React.FC<{
             <div className="mx-4 mb-3 mt-2 px-3 py-2.5 rounded-lg"
               style={{ background: 'var(--lms-bg-white)', border: '1.5px solid var(--lms-info-bdr)' }}>
               <p className="lms-section-label mb-1">Explanation</p>
-              <p className="text-[12px] leading-relaxed" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
                 {block.explanation.replace(/<[^>]*>/g, '')}
               </p>
             </div>
           )}
           <div className="px-4 pb-3 mt-2">
             <button onClick={onEdit}
-              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-2xs font-semibold transition-colors"
               style={{ border: '1.5px solid var(--lms-border)', background: 'var(--lms-bg-white)', color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
               <Edit2 className="h-3 w-3" />Edit this question
             </button>
@@ -2518,7 +2518,7 @@ const PreviewModal: React.FC<{
             {/* ── Footer ── */}
             <div className="flex-shrink-0 px-5 py-3 flex items-center justify-between"
               style={{ borderTop: '1.5px solid var(--lms-border)', background: 'var(--lms-bg-white)' }}>
-              <span className="text-[11px] flex items-center gap-1.5"
+              <span className="text-2xs flex items-center gap-1.5"
                 style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>
                 <Edit2 className="h-3 w-3" />Click the edit icon on any question to load it in the editor
               </span>
@@ -2545,7 +2545,7 @@ const PreviewModal: React.FC<{
                     style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
                     {deleteConfirm.block.questionText.replace(/<[^>]*>/g, '').trim() || 'Untitled question'}
                   </p>
-                  <p className="text-[11px] font-medium"
+                  <p className="text-2xs font-medium"
                     style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
                     This action cannot be undone.
                   </p>
@@ -2733,7 +2733,7 @@ const ExerciseDetailsPanel: React.FC<{
                     style={{ width: `${progressPercent}%`, background: overQuestionLimit ? 'var(--lms-danger)' : progressPercent >= 100 ? 'var(--lms-success)' : 'var(--lms-orange)' }} />
                 </div>
                 {overQuestionLimit && (
-                  <p className="text-[10px] font-medium mt-1" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
+                  <p className="text-2xs font-medium mt-1" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
                     ⚠ Exceeds limit by {totalUsed - totalMcqQuestions} question{totalUsed - totalMcqQuestions > 1 ? 's' : ''}
                   </p>
                 )}
@@ -2770,7 +2770,7 @@ const ExerciseDetailsPanel: React.FC<{
               style={{ background: 'var(--lms-danger-bg)', border: '1.5px solid var(--lms-danger-bdr)' }}>
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--lms-danger)' }} />
-                <p className="text-[11px] font-semibold" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
+                <p className="text-2xs font-semibold" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
                   {scoringType === 'equalDistribution' ? 'No questions remaining' : 'No remaining marks left'}
                 </p>
               </div>
@@ -2785,7 +2785,7 @@ const ExerciseDetailsPanel: React.FC<{
         {isSaving && saveProgress !== undefined && (
           <div className="flex-shrink-0 px-3 py-3" style={{ borderTop: '1.5px solid var(--lms-border)', background: 'var(--lms-bg-white)' }}>
             <div className="flex items-center gap-2">
-              <span className="text-[10px]" style={{ color: 'var(--lms-orange)', fontFamily: 'var(--lms-font)' }}>{saveMessage || 'Saving…'}</span>
+              <span className="text-2xs" style={{ color: 'var(--lms-orange)', fontFamily: 'var(--lms-font)' }}>{saveMessage || 'Saving…'}</span>
               <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--lms-bg-surface2)' }}>
                 <div className="h-full rounded-full transition-all" style={{ width: `${saveProgress}%`, background: 'var(--lms-orange)' }} />
               </div>
@@ -4939,7 +4939,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                 onClick={() => { if (isMultiSelect) toggleCorrectAnswer(block.id, opt.id); else setCorrectAnswer(block.id, opt.id); }}
                 className={`lms-ak-option-btn ${opt.isCorrect ? 'correct' : 'neutral'}`}>
                 {isDropdown ? (
-                  <span className="text-[13px] font-semibold w-5 flex-shrink-0" style={{ fontFamily: 'var(--lms-font)', color: opt.isCorrect ? 'var(--lms-success)' : 'var(--lms-text-muted)' }}>{idx + 1}.</span>
+                  <span className="text-sm font-semibold w-5 flex-shrink-0" style={{ fontFamily: 'var(--lms-font)', color: opt.isCorrect ? 'var(--lms-success)' : 'var(--lms-text-muted)' }}>{idx + 1}.</span>
                 ) : isMultiSelect ? (
                   <div className="w-4 h-4 border-2 flex items-center justify-center flex-shrink-0"
                     style={{ borderColor: opt.isCorrect ? 'var(--lms-success)' : 'var(--lms-border-hover)', background: opt.isCorrect ? 'var(--lms-success)' : 'transparent' }}>
@@ -4997,14 +4997,14 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                   style={isEmptyWarned ? { borderBottomColor: 'var(--lms-danger)' } : {}}
                   onClick={e => { if ((e.target as HTMLElement).tagName !== 'INPUT') { const inp = (e.currentTarget as HTMLElement).querySelector('input'); inp?.focus(); } }}>
                   {isEmptyWarned && (
-                    <div className="absolute -top-7 left-0 z-50 text-white text-[10px] font-semibold px-2 py-1 rounded shadow-md whitespace-nowrap pointer-events-none opacity-0 group-hover/opt-inner:opacity-100 transition-opacity"
+                    <div className="absolute -top-7 left-0 z-50 text-white text-2xs font-semibold px-2 py-1 rounded shadow-md whitespace-nowrap pointer-events-none opacity-0 group-hover/opt-inner:opacity-100 transition-opacity"
                       style={{ background: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
                       Option {idx + 1} must be filled
                       <div className="absolute bottom-[-4px] left-3 w-2 h-2 rotate-45" style={{ background: 'var(--lms-danger)' }} />
                     </div>
                   )}
                   {isDropdown ? (
-                    <span className="flex-shrink-0 text-[11px] font-semibold w-5 text-right" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>{idx + 1}.</span>
+                    <span className="flex-shrink-0 text-2xs font-semibold w-5 text-right" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>{idx + 1}.</span>
                   ) : isMultiSelect ? (
                     <div className="flex-shrink-0 w-4 h-4 border-2 flex-none" style={{ borderColor: 'var(--lms-border-hover)' }} />
                   ) : (
@@ -5064,7 +5064,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
         </div>
         <div className="flex items-center justify-end gap-3 py-2 px-1 mt-1">
           <button onClick={() => addOption(block.id)}
-            className="flex items-center gap-1 text-[13.5px] font-medium transition-colors"
+            className="flex items-center gap-1 text-base font-medium transition-colors"
             style={{ color: 'var(--lms-info)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--lms-font)' }}>
             <Plus className="h-3.5 w-3.5" />Add option
           </button>
@@ -5213,15 +5213,15 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
         <div className="px-5 py-4 flex-shrink-0">
           <p className="lms-section-label">Matching Pairs</p>
           <div className="flex items-center gap-2 mb-2 pl-7">
-            <div className="flex-1 text-center text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>Left Column</div>
+            <div className="flex-1 text-center text-2xs font-bold uppercase tracking-widest" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>Left Column</div>
             <div className="w-6 flex-shrink-0" />
-            <div className="flex-1 text-center text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>Right Column</div>
+            <div className="flex-1 text-center text-2xs font-bold uppercase tracking-widest" style={{ color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>Right Column</div>
             <div className="w-7 flex-shrink-0" />
           </div>
           <div className="space-y-2">
             {(block.matchingPairs || []).map((pair, idx) => (
               <div key={pair.id} className="flex items-center gap-2 group/pair">
-                <span className="w-5 h-5 rounded-md text-[10px] font-bold flex items-center justify-center flex-shrink-0"
+                <span className="w-5 h-5 rounded-md text-2xs font-bold flex items-center justify-center flex-shrink-0"
                   style={{ background: 'var(--lms-info-bg)', color: 'var(--lms-info)', fontFamily: 'var(--lms-font)' }}>{idx + 1}</span>
                 <input type="text" value={pair.left} onChange={e => updateMatchingPair(block.id, pair.id, 'left', e.target.value)}
                   placeholder="Left item…"
@@ -5248,7 +5248,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
             ))}
           </div>
           <button onClick={() => addMatchingPair(block.id)}
-            className="mt-2 flex items-center gap-1 text-[11px] font-semibold"
+            className="mt-2 flex items-center gap-1 text-2xs font-semibold"
             style={{ color: 'var(--lms-info)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--lms-font)' }}>
             <Plus className="h-3 w-3" />Add Pair
           </button>
@@ -5276,7 +5276,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                     <ChevronDown className="h-3 w-3" style={{ color: 'var(--lms-text-muted)' }} />
                   </button>
                 </div>
-                <span className="w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center flex-shrink-0"
+                <span className="w-6 h-6 rounded-md text-2xs font-bold flex items-center justify-center flex-shrink-0"
                   style={{ background: 'var(--lms-info-bg)', color: '#0891b2', fontFamily: 'var(--lms-font)' }}>{idx + 1}</span>
                 <input type="text" value={item.text} onChange={e => updateOrderingItem(block.id, item.id, e.target.value)}
                   placeholder={`Item ${idx + 1}…`}
@@ -5293,7 +5293,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
             ))}
           </div>
           <button onClick={() => addOrderingItem(block.id)}
-            className="mt-2 flex items-center gap-1 text-[11px] font-semibold"
+            className="mt-2 flex items-center gap-1 text-2xs font-semibold"
             style={{ color: '#0891b2', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--lms-font)' }}>
             <Plus className="h-3 w-3" />Add Item
           </button>
@@ -5327,7 +5327,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
             </div>
           </div>
           {block.numericAnswer !== null && block.numericTolerance !== null && block.numericTolerance > 0 && (
-            <p className="mt-2 text-[11px]" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
+            <p className="mt-2 text-2xs" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>
               Accepted range: <span className="font-bold" style={{ color: 'var(--lms-text-main)' }}>{(block.numericAnswer! - block.numericTolerance!).toFixed(2)}</span>
               {' '}to{' '}
               <span className="font-bold" style={{ color: 'var(--lms-text-main)' }}>{(block.numericAnswer! + block.numericTolerance!).toFixed(2)}</span>
@@ -5441,7 +5441,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
 
         <div className="flex items-center gap-2 flex-shrink-0 ml-3">
           {loadingExercise && (
-            <span className="flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-lg mr-2"
+            <span className="flex items-center gap-1.5 text-2xs font-semibold px-2 py-1 rounded-lg mr-2"
               style={{ color: 'var(--lms-orange)', background: 'var(--lms-orange-50)', border: '1.5px solid var(--lms-orange-100)', fontFamily: 'var(--lms-font)' }}>
               <Loader className="h-3 w-3 animate-spin" />Loading…
             </span>
@@ -5460,7 +5460,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
           >
             <Eye className="h-3.5 w-3.5" />Preview
             {savedBlocks.length > 0 && (
-              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full" style={{ background: 'var(--lms-violet)', color: 'white' }}>
+              <span className="text-2xs font-black px-1.5 py-0.5 rounded-full" style={{ background: 'var(--lms-violet)', color: 'white' }}>
                 {savedBlocks.length}
               </span>
             )}
@@ -5496,8 +5496,8 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                      <Database size={14} style={{ color: '#a855f7' }} />
                    </div>
                    <div className="min-w-0">
-                     <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
-                     <div className="text-[10px]" style={{ color: limitReachedForScratch ? '#d97706' : '#8b8b9e' }}>
+                     <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
+                     <div className="text-2xs" style={{ color: limitReachedForScratch ? '#d97706' : '#8b8b9e' }}>
                        {limitReachedForScratch ? 'Limit reached' : 'Import from bank'}
                      </div>
                    </div>
@@ -5523,8 +5523,8 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                      <Sparkles size={14} style={{ color: '#F27757' }} />
                    </div>
                    <div className="min-w-0">
-                     <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
-                     <div className="text-[10px]" style={{ color: limitReachedForAiSlice ? '#d97706' : '#8b8b9e' }}>
+                     <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
+                     <div className="text-2xs" style={{ color: limitReachedForAiSlice ? '#d97706' : '#8b8b9e' }}>
                        {limitReachedForAiSlice ? 'Limit reached' : 'Auto-generate'}
                      </div>
                    </div>
@@ -5550,8 +5550,8 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                      <CloudUpload size={14} style={{ color: '#0891b2' }} />
                    </div>
                    <div className="min-w-0">
-                     <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
-                     <div className="text-[10px]" style={{ color: limitReachedForScratch ? '#d97706' : '#8b8b9e' }}>
+                     <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
+                     <div className="text-2xs" style={{ color: limitReachedForScratch ? '#d97706' : '#8b8b9e' }}>
                        {limitReachedForScratch ? 'Limit reached' : 'Import from .txt file'}
                      </div>
                    </div>
@@ -5582,7 +5582,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
           )}
 
           {!isEditing && exerciseData?.id && (
-            <span className="text-[10px] font-semibold px-1.5 py-1 rounded-lg hidden sm:block mr-2"
+            <span className="text-2xs font-semibold px-1.5 py-1 rounded-lg hidden sm:block mr-2"
               style={{ background: 'var(--lms-orange-50)', color: '#c85a30', border: '1.5px solid var(--lms-orange-100)', fontFamily: 'var(--lms-font)' }}>Auto-saved</span>
           )}
 
@@ -5623,7 +5623,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                             {currentIndex + 1}
                           </div>
                           {currentBlock.origin === 'db' && (
-                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${currentBlock.isDirty ? 'lms-badge-amber' : 'lms-badge-green'}`}
+                            <span className={`text-2xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${currentBlock.isDirty ? 'lms-badge-amber' : 'lms-badge-green'}`}
                               style={{ border: '1px solid' }}>
                               {currentBlock.isDirty ? 'edited' : 'saved'}
                             </span>
@@ -5756,7 +5756,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                                 <span className={`lms-score-label ${(blockMarksErr || needsScore) ? '!text-red-400' : ''}`}>marks</span>
                               </div>
                               {(blockMarksErr || needsScore) && (
-                                <div className="absolute top-full left-0 mt-1 z-50 whitespace-nowrap text-white text-[9px] font-semibold px-2 py-0.5 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                                <div className="absolute top-full left-0 mt-1 z-50 whitespace-nowrap text-white text-2xs font-semibold px-2 py-0.5 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
                                   style={{ background: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
                                   {blockMarksErr || 'Score required'}
                                 </div>
@@ -5926,7 +5926,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                         <HelpCircle className="h-3.5 w-3.5" />
                         Add Explanation
                         {currentBlock.hasExplanation && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded ml-1"
+                          <span className="text-2xs font-bold px-1.5 py-0.5 rounded ml-1"
                             style={{ color: 'var(--lms-danger)', background: 'var(--lms-danger-bg)', fontFamily: 'var(--lms-font)' }}>*required</span>
                         )}
                       </span>
@@ -5970,7 +5970,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                   <ChevronLeft className="h-3.5 w-3.5" />Prev
                 </button>
 
-                <span className="text-[12px] font-medium flex-shrink-0" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)', whiteSpace: 'nowrap' }}>
+                <span className="text-xs font-medium flex-shrink-0" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)', whiteSpace: 'nowrap' }}>
                   <span style={{ color: 'var(--lms-orange)', fontWeight: 700 }}>{currentIndex + 1}</span>
                   <span style={{ color: 'var(--lms-text-hint)' }}> / </span>
                   {questionBlocks.length}
@@ -6067,12 +6067,12 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
                   const isDbClean = currentBlock.origin === 'db' && !currentBlock.isDirty;
                   const alreadySaved = isSavedClean || isDbClean;
                   return alreadySaved ? (
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold flex-shrink-0"
+                    <span className="flex items-center gap-1.5 text-2xs font-semibold flex-shrink-0"
                       style={{ color: 'var(--lms-success)', fontFamily: 'var(--lms-font)' }}>
                       <CheckCircle2 className="h-3.5 w-3.5" />Saved
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1.5 text-[11px] font-semibold flex-shrink-0"
+                    <span className="flex items-center gap-1.5 text-2xs font-semibold flex-shrink-0"
                       style={{ color: 'var(--lms-warning)', fontFamily: 'var(--lms-font)' }}>
                       <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--lms-warning)', flexShrink: 0 }} />
                       Unsaved
@@ -6084,7 +6084,7 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
 
                 {currentBlock && (
                   <label className="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0">
-                    <span className="text-[11px] font-medium" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>Required</span>
+                    <span className="text-2xs font-medium" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>Required</span>
                     <button type="button" onClick={() => updateBlock(currentBlock.id, { isRequired: !currentBlock.isRequired })}
                       className="relative rounded-full transition-colors flex-shrink-0"
                       style={{ width: 28, height: 16, background: currentBlock.isRequired ? 'var(--lms-orange)' : 'var(--lms-border-hover)' }}>

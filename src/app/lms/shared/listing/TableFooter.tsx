@@ -13,8 +13,8 @@ function pageWindow(current: number, total: number): (number | '…')[] {
 }
 
 const PAGER_STEP =
-    'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-control border border-hairline-strong bg-surface ' +
-    'text-xs font-medium text-subtle hover:border-line-hover hover:text-heading disabled:opacity-40 ' +
+    'inline-flex items-center gap-1.5 h-8 px-3 rounded-control border border-hairline-strong bg-surface ' +
+    'text-sm font-medium text-subtle hover:border-line-hover hover:text-heading disabled:opacity-40 ' +
     'disabled:hover:border-hairline-strong disabled:cursor-not-allowed transition-colors duration-150'
 
 export default function TableFooter({
@@ -60,14 +60,14 @@ export default function TableFooter({
 
             {pages.map((p, i) => (
                 p === '…' ? (
-                    <span key={`gap-${i}`} className="w-6 h-7 flex items-center justify-center text-xs text-faint">…</span>
+                    <span key={`gap-${i}`} className="w-6 h-8 flex items-center justify-center text-sm text-faint">…</span>
                 ) : (
                     <button
                         key={p}
                         type="button"
                         onClick={() => onPage(p)}
                         aria-current={p === currentPage ? 'page' : undefined}
-                        className={`w-7 h-7 rounded-control text-xs font-semibold tabular-nums flex items-center justify-center transition-colors duration-150 ${
+                        className={`w-8 h-8 rounded-control text-sm font-semibold tabular-nums flex items-center justify-center transition-colors duration-150 ${
                             p === currentPage
                                 ? 'bg-brand-strong text-white shadow-xs'
                                 : 'border border-hairline-strong bg-surface text-subtle hover:border-line-hover hover:text-heading'

@@ -366,7 +366,13 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, "Fira Sans",
+    /* --font-poppins is set on <html> by next/font in app/layout.tsx (a
+       self-hosted copy with a metric-adjusted fallback), so this resolves to
+       the same face on every route without the shells needing their own
+       fontFamily inline. The literal 'Poppins' still trails in the stack for
+       react-toastify / react-hot-toast and any legacy inline fallbacks that
+       hardcoded that family name. */
+    font-family: var(--font-poppins), 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, "Fira Sans",
       "Droid Sans", "Helvetica Neue", sans-serif;
   }
 }

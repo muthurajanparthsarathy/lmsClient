@@ -167,12 +167,57 @@ interface Props {
   disabled?: boolean;
   /** Constrains the control width to match the denser ExerciseSettings rows. */
   dense?: boolean;
+  /**
+   * The evaluation methods the caller wants to expose.
+   *
+   * Undefined (default) → every method in EVALUATION_METHOD_OPTIONS is shown.
+   * This is what I_Do / We_Do (ExerciseSettings) uses.
+   *
+   * Passed → the option list AND validation are narrowed to this set. Used by
+   * You_Do assessments to hide Manual so trainers can only pick Test Case or
+   * AI — Manual is not a valid outcome for a You_Do (per the product rule that
+   * a You_Do must auto-grade end-to-end, either against test cases or by AI).
+   *
+   * If the stored value is NOT in this set (e.g. a legacy You_Do saved as
+   * Manual before this restriction landed), it is promoted to allowedMethods[0]
+   * on mount via onChange so the picker never renders a value not in its
+   * list — the migration is silent, not blocking.
+   */
+  allowedMethods?: EvaluationMethod[];
 }
 
 export const EvaluationMethodConfig: React.FC<Props> = ({
   value, onChange, D, ODropdown, SectionLabel, font, disabled = false, dense = false,
+  allowedMethods,
 }) => {
   const v = normalizeEvaluationMethod(value);
+
+  // Narrowed option list, if the caller passed one. The `allowedMethods`
+  // reference itself is stable across renders in the callers we have (both
+  // pass a module-scope literal), so the useMemo dependency is on the array's
+  // JSON — cheap for 3 values and avoids re-filtering on every keystroke.
+  const options = React.useMemo(
+    () =>
+      Array.isArray(allowedMethods) && allowedMethods.length > 0
+        ? EVALUATION_METHOD_OPTIONS.filter(o => allowedMethods.includes(o.value))
+        : EVALUATION_METHOD_OPTIONS,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(allowedMethods)],
+  );
+
+  // Silently promote a stored method that's outside the allowed set (e.g. a
+  // pre-restriction You_Do saved as Manual) up to the first allowed method.
+  // The picker never renders a value not in its list, and the promoted value
+  // is persisted immediately so the next save is coherent.
+  React.useEffect(() => {
+    if (!Array.isArray(allowedMethods) || allowedMethods.length === 0) return;
+    if (disabled) return;
+    if (allowedMethods.includes(v.method)) return;
+    onChange({ ...v, method: allowedMethods[0] });
+    // Depend only on the current stored method + the allowed set. `v` and
+    // `onChange` change identity every render and would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.method, JSON.stringify(allowedMethods), disabled]);
 
   const toggleCriterion = (c: AiCriterion) => {
     if (disabled) return;
@@ -211,7 +256,7 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
       <div style={dense ? { maxWidth: '45%' } : undefined}>
         <ODropdown
           value={v.method}
-          options={EVALUATION_METHOD_OPTIONS}
+          options={options}
           disabled={disabled}
           onChange={m => onChange({ ...v, method: m as EvaluationMethod })}
         />

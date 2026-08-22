@@ -18,11 +18,69 @@ export const avatarTone = (name: string) => AVATARS[nameHash(name || "?") % AVAT
 export const initials = (name: string) => (name || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() || "").join("") || "?";
 
 // Table header definitions per tab.
-export function headersFor(tab: string): { label: string; align?: "right" }[] {
+//
+// Exercises: the leading column heading is contextual — the trainer picks an
+// Activity (We Do → Assignment, You Do → Assessment) from the toolbar select,
+// and the column header rewrites to match. When Activity = All the header
+// falls back to "Exercise" (both kinds of activity are in the list, so the
+// generic term is the honest label).
+//
+// Everything else on the exercises row is unchanged: Questions count · Total
+// Marks (renamed from Points) · trailing chevron. The Section and Status
+// columns are gone (moved to the toolbar / dropped as noise).
+export function headersFor(
+  tab: string,
+  opts: { activityLabel?: string } = {},
+): { label: string; align?: "right" }[] {
+  const activity = opts.activityLabel || "Exercise";
   switch (tab) {
-    case "exercises": return [{ label: "Exercise" }, { label: "Section" }, { label: "Questions" }, { label: "Points" }, { label: "Status" }, { label: "" }];
-    case "students": return [{ label: "Student" }, { label: "Progress" }, { label: "Score" }, { label: "Result" }, { label: "Last activity" }, { label: "Status" }, { label: "" }];
-    case "questions": return [{ label: "Question" }, { label: "Difficulty" }, { label: "Answer" }, { label: "Score" }, { label: "Attempts" }, { label: "Status" }];
+    // `#` is a serial number column — separate from the Activity name so
+    // long titles never squeeze the index out of the row. Kept narrow via
+    // an align class the page reads back off the header spec (right-aligned
+    // text-faint style in the body cell).
+    // "Total Questions" / "Total Marks" — the exercises tab lists whole
+    // exercises, so both counts belong to the exercise as a whole; the
+    // "Total" prefix reads more accurately than the bare noun did.
+    // Actions column added last so the trainer can View a row without
+    // having to click the whole row.
+    case "exercises": return [{ label: "#", align: "right" }, { label: activity }, { label: "Total Questions", align: "right" }, { label: "Total Marks", align: "right" }, { label: "Actions", align: "right" }];
+    // Students: `#` serial · Student Name (no avatar, plain text) · Email
+    // (its own column, truncated with hover tooltip) · Total Questions ·
+    // Attended · Mark Scored · Grade (Poor/Average/Good/Excellent) ·
+    // Status (Completed/In Progress/Not Started, computed client-side from
+    // attempted vs total so a "still In Progress" row that has actually
+    // finished flips to Completed) · Actions (View Details icon).
+    case "students": return [
+      { label: "#", align: "right" },
+      { label: "Student Name" },
+      { label: "Email" },
+      // Shortened: "Total Questions" was overflowing the narrow numeric
+      // column and bleeding into the next header ("Attended") in the live
+      // screenshot. "Questions" alone is unambiguous — the whole tab is a
+      // single exercise's students, so every row's Questions count is the
+      // total. Same rationale for "Marks" (was "Mark Scored").
+      { label: "Questions", align: "right" },
+      { label: "Attended", align: "right" },
+      { label: "Marks", align: "right" },
+      { label: "Grade" },
+      { label: "Status" },
+      { label: "Actions", align: "right" },
+    ];
+    // Questions: `#` serial · Question title · Difficulty · Mark Scored
+    // (X/Y, renamed from "Score") · Attempts · Status. The "Answer"
+    // column that used to show Submitted / Not attempted was dropped
+    // because the row already conveyed the same signal twice — Status
+    // now takes over as the single "did they attempt / how did it go"
+    // column (Submitted / Not attempted), matching the student rows'
+    // Completed / Not Started semantics.
+    case "questions": return [
+      { label: "#", align: "right" },
+      { label: "Question" },
+      { label: "Difficulty" },
+      { label: "Mark Scored", align: "right" },
+      { label: "Attempts", align: "right" },
+      { label: "Status" },
+    ];
     default: return [];
   }
 }

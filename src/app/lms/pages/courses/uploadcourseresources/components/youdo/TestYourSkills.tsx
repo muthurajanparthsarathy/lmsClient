@@ -29,6 +29,7 @@ import { youDoMcqApi, getEntityTypeFromNodeType } from "@/apiServices/pedagogyAn
 // the list refetches when the batch strip changes.
 import { withBatchBody, getActiveBatchId } from "@/apiServices/resourceBatch";
 import { toast } from "react-hot-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import AddQuestionViaDocument from "@/app/lms/component/AddQuestionViaDocument";
 import { questionBankService } from "@/apiServices/questionBankService";
 import TestYourSKillsQuestionBanklist from "./testyouskillscomponents/TestYourSKillsQuestionBanklist";
@@ -1570,6 +1571,14 @@ export default function TestYourSkills({
   configuredLanguages,
   onRefresh,
 }: YouDoProps) {
+  // React Query cache — used ONLY to survive an unmount/remount cycle
+  // (switching We_Do → You_Do → back into Test Your Skills used to drop
+  // the local `questions` state and re-fire the network call, showing
+  // "Loading questions…" every time). On mount we seed local state from
+  // cache instantly (no loader) and refresh in the background; the cache
+  // is refreshed after every successful loadQuestions. Same pattern as
+  // ProblemSolving / Assessment.
+  const queryClient = useQueryClient();
   const [questions, setQuestions] = useState<QuestionRecord[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [showCreateOptionModal, setShowCreateOptionModal] = useState(false);
@@ -1866,14 +1875,26 @@ const getEntityPath = (entityType: string): string => {
   };
   return pathMap[entityType] || 'topics';
 };
-const loadQuestions = async () => {
+// Cache key for the Test Your Skills question list. Any two calls with
+// the same (entityType, entityId, batch) share a cached list, so remount
+// after a tab switch reads from memory instead of hitting the network.
+const tysCacheKey = (): readonly [string, string, string, string] => [
+  'testYourSkillsQuestions',
+  getEntityTypeFromNodeType(nodeType),
+  nodeId || '',
+  getActiveBatchId() || '',
+];
+
+const loadQuestions = async (opts: { silent?: boolean } = {}) => {
   if (!nodeId?.trim()) {
     setQuestions([]);
     setIsLoading(false);
     return;
   }
-  
-  setIsLoading(true);
+
+  // Silent path (fired from the cache-hit hydration below) — the previous
+  // rows are already on screen, so skip the loader flicker.
+  if (!opts.silent) setIsLoading(true);
   setError(null);
   try {
     const entityType = getEntityTypeFromNodeType(nodeType);
@@ -1933,7 +1954,10 @@ const loadQuestions = async () => {
     );
     
     setQuestions(sorted);
-    
+    // Persist into the React Query cache so a later remount at the same
+    // (node, batch) reads instantly without a loader.
+    queryClient.setQueryData<QuestionRecord[]>(tysCacheKey(), sorted);
+
   } catch (err: any) {
     console.error("Failed to load questions:", err);
     setError(err.message || "Failed to load questions");
@@ -1942,7 +1966,7 @@ const loadQuestions = async () => {
       setError(null);
     }
   } finally {
-    setIsLoading(false);
+    if (!opts.silent) setIsLoading(false);
   }
 };
 
@@ -1950,8 +1974,20 @@ const loadQuestions = async () => {
   // just of the request. Without it the questions loaded for the previously
   // selected batch stay on screen after the batch strip is switched, and the
   // switch looks like it did nothing.
+  //
+  // Cache hit → paint immediately, then refresh silently in the background so
+  // the user never sees a loader on a revisit. Cache miss → fall through to
+  // the loud fetch (spinner + first paint).
   useEffect(() => {
-    loadQuestions();
+    const cached = queryClient.getQueryData<QuestionRecord[]>(tysCacheKey());
+    if (cached && cached.length > 0) {
+      setQuestions(cached);
+      setIsLoading(false);
+      loadQuestions({ silent: true });
+    } else {
+      loadQuestions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeId, nodeType, getActiveBatchId()]);
 
   const loadQuestionsForModal = async () => {
@@ -2283,18 +2319,19 @@ const loadQuestions = async () => {
 
   const filteredQuestions = getFilteredQuestions();
   
-  // Table header styles
-  const thCls = "text-[9px] font-black uppercase tracking-[0.12em]";
-  
+  // Header cells — DataTable rhythm: `text-[10px] font-semibold uppercase
+  // tracking-wider text-subtle`, same as CM / UM / SM.
+  const thCls = "text-[10px] font-semibold uppercase tracking-wider text-subtle";
+
+  // Grid row — padding-based height replaced by fixed h-8 / h-11 so the
+  // list matches the DataTable rhythm the other admin lists share.
   const rowBase: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns: "40px minmax(0,2.5fr) 120px 120px 100px 90px 80px",
-    gap: 12, 
+    gap: 12,
     alignItems: "center",
-    padding: "11px 16px",
-    borderBottom: `1px solid ${T.border}`,
-    transition: "all 0.14s",
-    borderLeft: "2.5px solid transparent",
+    padding: "0 12px",
+    transition: "background-color 0.15s",
   };
 
   if (isLoading) {
@@ -2312,7 +2349,7 @@ const loadQuestions = async () => {
         <AlertCircle size={32} style={{ color: "#ef4444" }} />
         <p className="mt-3 text-sm font-medium" style={{ color: "#ef4444" }}>{error}</p>
         <button
-          onClick={loadQuestions}
+          onClick={() => loadQuestions()}
           className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium"
           style={{ background: T.green, color: "#fff" }}
         >
@@ -2355,121 +2392,112 @@ const loadQuestions = async () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Selection controls */}
-          {filteredQuestions.length > 0 && (
-            <div className="flex items-center gap-3 mr-2">
-          
-              
-              {selectedQuestions.size > 0 && (
-                <button
-                  onClick={handleBulkDelete}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white"
-                  style={{ background: '#ef4444', boxShadow: '0 2px 6px rgba(239,68,68,0.3)' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#dc2626'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = '#ef4444'; }}
-                >
-                  <Trash2 size={12} />
-                  Delete ({selectedQuestions.size})
-                </button>
-              )}
-            </div>
-          )}
-          
+        {/* ── Toolbar controls — Client Management pattern: h-8 tokened
+            pills, search + refresh + bulk delete on the left, primary
+            actions (Preview / Mock Test / Add Question) separated by a
+            slim divider. */}
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          {/* Search */}
           <div className="relative">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#bcbccc' }} />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
             <input
               placeholder="Search questions…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="pl-7 pr-7 h-7 w-44 text-[12px] rounded-lg outline-none transition-all"
-              style={{ background: '#fafafa', border: '1.5px solid #e4e4ed', color: '#1a1a2e' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#F27757'; e.currentTarget.style.background = '#fff'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = '#e4e4ed'; e.currentTarget.style.background = '#fafafa'; }}
+              className="h-8 w-44 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2">
-                <X size={11} style={{ color: '#bcbccc' }} />
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+              >
+                <X size={12} />
               </button>
             )}
           </div>
 
           <button
-            onClick={loadQuestions}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11.5px] font-medium"
-            style={{ background: T.pageBg, color: T.textSub, border: `1px solid ${T.border}` }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = T.green; (e.currentTarget as HTMLElement).style.color = T.green; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = T.border; (e.currentTarget as HTMLElement).style.color = T.textSub; }}
+            type="button"
+            onClick={() => loadQuestions()}
+            title="Refresh"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
           >
-            <RefreshCw size={12} /> Refresh
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Refresh</span>
           </button>
 
+          {filteredQuestions.length > 0 && selectedQuestions.size > 0 && (
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-danger-500/30 bg-danger-50 text-xs font-semibold text-danger-700 hover:bg-danger-100 transition-colors duration-150"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete ({selectedQuestions.size})
+            </button>
+          )}
+
+          {/* Divider before primary cluster — matches CM's Add-button treatment */}
+          <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
+
           <button
+            type="button"
             onClick={() => setShowPreviewModal(true)}
             disabled={questions.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11.5px] font-bold text-white flex-shrink-0"
-            style={{ 
-              background: '#6366f1', 
-              boxShadow: '0 3px 12px rgba(99,102,241,0.22)',
-              opacity: questions.length === 0 ? 0.5 : 1,
-              cursor: questions.length === 0 ? 'not-allowed' : 'pointer'
-            }}
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Eye size={13} strokeWidth={2.5} />
+            <Eye className="w-3.5 h-3.5" />
             Preview ({questions.length})
           </button>
 
           <button
+            type="button"
             onClick={handleMockTest}
             disabled={questions.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11.5px] font-bold text-white flex-shrink-0"
-            style={{ 
-              background: '#8b5cf6', 
-              boxShadow: '0 3px 12px rgba(139,92,246,0.22)',
-              opacity: questions.length === 0 ? 0.5 : 1,
-              cursor: questions.length === 0 ? 'not-allowed' : 'pointer'
-            }}
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <ClipboardList size={13} strokeWidth={2.5} />
+            <ClipboardList className="w-3.5 h-3.5" />
             Mock Test ({questions.length})
           </button>
 
           <button
+            type="button"
             onClick={handleAddQuestion}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11.5px] font-bold text-white flex-shrink-0"
-            style={{ background: T.green, boxShadow: `0 3px 12px ${T.greenGlow}`, transition: "all 0.18s" }}
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
           >
-            <Plus size={13} strokeWidth={2.5} />
-            Add Question
+            <Plus size={14} strokeWidth={2.4} />
+            <span className="text-xs font-semibold">Add Question</span>
           </button>
         </div>
       </div>
 
       {/* Body */}
-      <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: `${T.border} transparent` }}>
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "thin", scrollbarColor: `${T.border} transparent` }}>
         {searchQuery && (
-          <div className="flex items-center gap-2 px-4 py-1.5 mx-4 mt-3 mb-3 rounded-lg" style={{ background: 'rgba(242,119,87,0.05)', border: '1px solid rgba(242,119,87,0.15)' }}>
-            <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#F27757' }}>Filtering:</span>
-            <button onClick={() => setSearchQuery('')} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(242,119,87,0.1)', color: '#F27757' }}>
-              "{searchQuery}" <X size={9} />
+          <div className="flex items-center gap-2 px-3 sm:px-4 md:px-6 pt-3 pb-2 flex-wrap min-w-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-strong">Filtering:</span>
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-full border border-brand-500/30 bg-brand-wash text-2xs font-medium text-brand-strong hover:bg-brand-100 transition-colors duration-150"
+            >
+              "{searchQuery}" <X size={11} />
             </button>
-            <span className="text-[10px] ml-auto" style={{ color: '#F27757' }}>{filteredQuestions.length} result{filteredQuestions.length !== 1 ? 's' : ''}</span>
+            <span className="text-2xs ml-auto text-subtle tabular-nums">
+              {filteredQuestions.length} result{filteredQuestions.length !== 1 ? 's' : ''}
+            </span>
           </div>
         )}
 
-        {/* Flush list — no card margins, the table runs edge to edge. */}
-        <div style={{ background: T.bg }}>
+        {/* Flush list with a small horizontal gutter so the table has
+            breathing room instead of running edge-to-edge (which caused a
+            horizontal scroll on narrow viewports). */}
+        <div className="px-3 sm:px-4 md:px-6">
 
-          {/* Table Header - with Select All checkbox */}
-          <div
-            style={{
-              ...rowBase,
-              background: T.pageBg,
-              borderBottom: `1px solid ${T.border}`,
-              borderLeft: "2.5px solid transparent",
-              padding: "8px 16px",
-            }}
-          >
+          {/* Table Header — h-8, bg-canvas, hairline bottom border */}
+          <div style={rowBase} className="h-8 border-b border-hairline bg-canvas">
             {/* Select All Checkbox Column */}
             <div className={thCls}>
               <input
@@ -2516,12 +2544,11 @@ const loadQuestions = async () => {
               return (
                 <div
                   key={question.id}
-                  style={{
-                    ...rowBase,
-                    borderBottom: isLast ? "none" : `1px solid ${T.border}`,
-                    background: T.bg,
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = T.warm; (e.currentTarget as HTMLElement).style.borderLeftColor = T.green; }}
+                  // h-11 hairline-bounded row on tokens — same rhythm as
+                  // Client Management / We_Do assignments.
+                  className={`${isLast ? '' : 'border-b border-hairline'} bg-surface hover:bg-row-hover transition-colors duration-150`}
+                  style={{ ...rowBase, height: 44 }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = T.green; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = T.bg; (e.currentTarget as HTMLElement).style.borderLeftColor = "transparent"; }}
                 >
                   {/* Checkbox Column */}
@@ -2535,35 +2562,53 @@ const loadQuestions = async () => {
                     />
                   </div>
 
-                  {/* Question Column */}
+                  {/* Question Column — regular row-body weight (was
+                      font-bold; the CM/UM rhythm keeps the first column
+                      at the same weight as the rest of the row). */}
                   <div className="flex flex-col min-w-0">
-                    <span className="text-[12px] font-bold truncate" style={{ color: T.textMain }}>{question.title}</span>
-                    <span className="text-[9.5px] font-medium" style={{ color: T.textHint }}>{question.id.slice(-8)}</span>
+                    <span className="text-[12px] text-body truncate" title={question.title}>{question.title}</span>
+                    <span className="text-2xs text-faint">{question.id.slice(-8)}</span>
                   </div>
 
                   {/* Created Column */}
-                  <div className="text-[10.5px] font-medium" style={{ color: T.textMuted }}>
+                  <div className="text-[12px] text-body">
                     {createdDate}
                   </div>
 
-                  {/* Type Column */}
+                  {/* Type Column — one neutral chip for every type (was
+                      nine different colours: blue / purple / green /
+                      amber / grey / orange). The icon alone differentiates
+                      types; the colour bath was pure noise. */}
                   <div>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide" style={{ background: typeMeta.bg, color: typeMeta.color }}>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-semibold bg-ink-100 text-ink-700 ring-1 ring-inset ring-ink-500/15">
                       {typeMeta.icon}{typeMeta.label}
                     </span>
                   </div>
 
-                  {/* Difficulty Column */}
+                  {/* Difficulty Column — 3 semantic tones (was hex-code
+                      inline colours). Easy = success, Medium = warn,
+                      Hard = danger — same 3-tone meaning, tokenised. */}
                   <div>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide" style={{ background: `${lc}12`, color: lc }}>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-semibold ring-1 ring-inset ${
+                      question.level === 'easy' ? 'bg-success-50 text-success-700 ring-success-500/20'
+                        : question.level === 'hard' ? 'bg-danger-50 text-danger-700 ring-danger-500/20'
+                        : 'bg-warn-50 text-warn-700 ring-warn-500/20'
+                    }`}>
                       {question.level.charAt(0).toUpperCase() + question.level.slice(1)}
                     </span>
                   </div>
 
-                  {/* Status Column */}
+                  {/* Status Column — Active vs Draft, tokenised so Active
+                      isn't a third green in the row (Difficulty already
+                      claims green when the level is Easy). Draft reads as
+                      a neutral chip. */}
                   <div>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide" style={{ background: T.greenLight, color: T.green }}>
-                      {question.status === "active" ? "Active" : "Draft"}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-semibold ring-1 ring-inset ${
+                      question.status === 'active'
+                        ? 'bg-success-50 text-success-700 ring-success-500/20'
+                        : 'bg-ink-100 text-ink-600 ring-ink-500/15'
+                    }`}>
+                      {question.status === 'active' ? 'Active' : 'Draft'}
                     </span>
                   </div>
 

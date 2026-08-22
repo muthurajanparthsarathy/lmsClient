@@ -1340,7 +1340,7 @@ const PreviewModal: React.FC<{
                         <div style={{ borderTop: '1.5px solid var(--lms-border)', paddingTop: 14, marginBottom: 14 }}>
                           <div className="lms-sidebar-section-title" style={{ fontSize: 11 }}><Award size={12} style={{ color: diffDS.text }} /><span style={{ textTransform: 'capitalize', color: diffDS.text }}>{activeDiff} Marks</span></div>
                           <div className="lms-marks-row"><span className="lms-marks-label">Total Mark</span><span className="lms-marks-value" style={{ fontSize: 12 }}>{diffMarksTotal}</span></div>
-                          <div className="lms-marks-row"><span className="lms-marks-label">Mark Per Question</span><span className="lms-marks-value" style={{ color: 'var(--lms-orange)', fontSize: 12 }}>{diffFixedScore}{isScoreEditable(activeDiff) ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3 }}>Custom</span> : <span className="lms-badge" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}</span></div>
+                          <div className="lms-marks-row"><span className="lms-marks-label">Mark Per Question</span><span className="lms-marks-value" style={{ color: 'var(--lms-orange)', fontSize: 12 }}>{diffFixedScore}{isScoreEditable(activeDiff) ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3 }}>Custom</span> : <span className="lms-badge" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}</span></div>
                           <div className="lms-marks-row"><span className="lms-marks-label">Used Marks</span><span className="lms-marks-value" style={{ color: 'var(--lms-warning)', fontSize: 12 }}>{fmtMark(diffMarksUsed)}<span style={{ color: 'var(--lms-text-hint)', fontWeight: 400, fontSize: 10 }}>/{diffMarksTotal}</span></span></div>
                           <div className="lms-marks-row"><span className="lms-marks-label">Remaining Marks</span><span className="lms-marks-value" style={{ color: (diffMarksTotal - diffMarksUsed) <= 0 ? 'var(--lms-success)' : 'var(--lms-violet)', fontSize: 12 }}>{fmtMark(Math.max(0, diffMarksTotal - diffMarksUsed))}</span></div>
                           <div className="lms-progress-bar"><div className="lms-progress-fill" style={{ width: `${Math.min(100, (diffMarksUsed / diffMarksTotal) * 100)}%`, background: diffMarksUsed >= diffMarksTotal ? 'var(--lms-success)' : diffDS.bar }} /></div>
@@ -2648,8 +2648,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
                         <BookOpen size={14} style={{ color: '#7c3aed' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
-                        <div className="text-[10px]" style={{ color: '#8b8b9e' }}>Pick from saved questions</div>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Question Bank</div>
+                        <div className="text-2xs" style={{ color: '#8b8b9e' }}>Pick from saved questions</div>
                       </div>
                     </button>
                     )}
@@ -2671,8 +2671,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
                         <Sparkles size={14} style={{ color: '#10b981' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
-                        <div className="text-[10px]" style={{ color: '#8b8b9e' }}>Auto-generate with Gemini</div>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Generate AI</div>
+                        <div className="text-2xs" style={{ color: '#8b8b9e' }}>Auto-generate with Gemini</div>
                       </div>
                     </button>
                     )}
@@ -2694,8 +2694,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
                         <CloudUpload size={14} style={{ color: '#0891b2' }} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[12.5px] font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
-                        <div className="text-[10px]" style={{ color: '#8b8b9e' }}>Import from .txt file</div>
+                        <div className="text-sm font-semibold" style={{ color: '#1a1a2e' }}>Upload via Document</div>
+                        <div className="text-2xs" style={{ color: '#8b8b9e' }}>Import from .txt file</div>
                       </div>
                     </button>
                     )}
@@ -3015,8 +3015,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
               <span className="lms-marks-value" style={{ color: 'var(--lms-orange)', fontSize: 12 }}>
                 {displayScore}
                 {isScoreEditable(currentDiff)
-                  ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
-                  : <span className="lms-badge" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
+                  ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
+                  : <span className="lms-badge" style={{ fontSize: '11px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
               </span>
             </div>
             <div className="lms-marks-row">

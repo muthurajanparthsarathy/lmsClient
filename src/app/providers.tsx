@@ -257,6 +257,24 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
     }
   }
 
+  // Student calendar at /lms/pages/studentcalendar — the read-only holiday
+  // calendar for the learner's institute and the client they are enrolled
+  // with. Granted on the ROLE, like the feedback list above: knowing when
+  // there is no class is reference data every learner needs, and most student
+  // user docs seed only `studentdashboard`, so requiring a per-user grant
+  // would leave the page dark for everyone already in the system.
+  //
+  // The `studentcalendar` module still exists in the permission tree, so an
+  // admin can hand this page to a non-student account with one checkbox —
+  // those fall through to the normal matching below.
+  if (pathname.startsWith('/lms/pages/studentcalendar')) {
+    const previewingAsStudent = typeof window !== 'undefined'
+      && localStorage.getItem('smartcliff_isDummyStudent') === 'true'
+    if (isStudent || previewingAsStudent) {
+      return { hasAccess: true, requiredPermission: 'studentcalendar' }
+    }
+  }
+
   if (pathname === '/lms/pages/admindashboard') {
     return { hasAccess: !isStudent, requiredPermission: 'admindashboard' }
   }
