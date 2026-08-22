@@ -11,7 +11,8 @@ import {
   ChevronRight, MoreVertical, Plus, Edit2, Trash2,
   List, Code, Layers, Brain, FlaskConical, PenLine, Settings,
   X, AlertTriangle, ChevronLeft, ChevronsLeft, ChevronRight as ChevronRightIcon, ChevronsRight,
-  Check, Calendar, Search, RefreshCw, Activity, Users, LayoutDashboard
+  Check, Calendar, Search, RefreshCw, Activity, Users, LayoutDashboard,
+  GraduationCap,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useQuery } from "@tanstack/react-query";
@@ -1545,6 +1546,37 @@ export default function Assessment({
                             <DropItem
                               icon={<Settings size={11} />} label="Manage Questions"
                               onClick={() => handleManageQuestion(asm)}
+                            />
+                          )}
+                          {/* Grade — deep-link into the Grades student list
+                              for THIS assessment (skips the exercises tab
+                              since the trainer already picked the row).
+                              Gated on `hasParticipants`, the same server
+                              flag Dashboard uses: it turns true the moment
+                              at least one student has an ExamSession row —
+                              i.e. status has flipped from "not started" to
+                              in-progress or completed — and never unsets.
+                              Before that point there's nothing to grade.
+                              `returnTo` carries the current URL so the
+                              Grades page's Back button lands back on this
+                              uploadcourseresources view (not the client
+                              picker at /lms/pages/grades). */}
+                          {asm.hasParticipants && (
+                            <DropItem
+                              icon={<GraduationCap size={11} />} label="Grade"
+                              onClick={() => {
+                                setOpenDrop(null);
+                                if (!courseId) return;
+                                const here = typeof window !== 'undefined'
+                                  ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+                                  : '';
+                                const q = new URLSearchParams({
+                                  exerciseId: asm._id || asm.id || '',
+                                  openTab: 'students',
+                                  ...(here ? { returnTo: here } : {}),
+                                }).toString();
+                                router.push(`/lms/pages/grades/${courseId}?${q}`);
+                              }}
                             />
                           )}
                           <DropItem

@@ -294,6 +294,14 @@ export default function ExerciseStudentsQuestionsFlow() {
   const searchParams = useSearchParams();
   const rawReturnTo = searchParams?.get("returnTo") || "";
   const returnTo = rawReturnTo.startsWith("/") ? rawReturnTo : "";
+  // Deep-link: `?exerciseId=X&openTab=students` lets a caller (the You_Do
+  // Assessment three-dot menu, or We_Do Assignment's) jump straight to
+  // the student list for one specific exercise, skipping the exercises
+  // picker step. `Back` from students still returns to exercises inside
+  // the same page — the deep-link only preloads the state, doesn't
+  // hijack the back navigation.
+  const deepLinkExerciseId = searchParams?.get("exerciseId") || "";
+  const deepLinkOpenTab = (searchParams?.get("openTab") as "exercises" | "students" | "questions" | null) || null;
 
   const [activeTab, setActiveTab] = useState<"exercises" | "students" | "questions">("exercises");
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -355,6 +363,29 @@ export default function ExerciseStudentsQuestionsFlow() {
     enabled: !!courseId,
   });
   const exercises = exercisesQuery.data ?? [];
+
+  // Deep-link hydration: when the URL says `exerciseId=X&openTab=students`
+  // AND the exercises list has landed, pick that row and jump to the
+  // Students tab. Fires ONCE per deep-link visit (guarded by the ref so
+  // hitting Back inside the page doesn't re-trigger the jump). If the id
+  // doesn't match anything in the current course's exercises the effect
+  // does nothing — the exercises picker stays visible and the trainer
+  // can see the list as if they arrived without a deep link.
+  const deepLinkAppliedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deepLinkExerciseId) return;
+    if (deepLinkAppliedRef.current === deepLinkExerciseId) return;
+    if (!exercises || exercises.length === 0) return;
+    const ex = exercises.find((e: any) => (e._id || e.id) === deepLinkExerciseId);
+    if (!ex) return;
+    deepLinkAppliedRef.current = deepLinkExerciseId;
+    setSelectedExercise(ex);
+    if (deepLinkOpenTab === "students" || deepLinkOpenTab === "questions") {
+      setActiveTab(deepLinkOpenTab);
+    } else {
+      setActiveTab("students");
+    }
+  }, [deepLinkExerciseId, deepLinkOpenTab, exercises]);
 
   const studentsQuery = useQuery<any[]>({
     queryKey: ["grades", "students", courseId, selectedExercise?._id],

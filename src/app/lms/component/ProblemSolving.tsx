@@ -3856,6 +3856,38 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
               </>
             )}
 
+            {/* Grade — deep-link into the Grades student list for THIS
+                exercise so the trainer skips the outer exercises picker.
+                Gated on submissionStatusMap[_id] (server-flagged true the
+                moment any student has an ExamSession row for this
+                exercise) — before that there's nothing to grade. Same
+                completion signal Review Submissions uses. `returnTo` is
+                the current URL so the Grades page's Back lands back
+                here instead of at the client picker. */}
+            {submissionStatusMap[exercise._id] && (
+              <>
+                <DropdownMenuItem
+                  onClick={() => {
+                    if (!courseId) return;
+                    const here = typeof window !== 'undefined'
+                      ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+                      : '';
+                    const q = new URLSearchParams({
+                      exerciseId: exercise._id,
+                      openTab: 'students',
+                      ...(here ? { returnTo: here } : {}),
+                    }).toString();
+                    router.push(`/lms/pages/grades/${courseId}?${q}`);
+                  }}
+                  className="cursor-pointer text-xs gap-2"
+                  style={{ color: '#1a1a2e', fontFamily: JKT.fontFamily }}>
+                  <GraduationCap className="h-3.5 w-3.5" style={{ color: '#059669' }} />
+                  Grade
+                </DropdownMenuItem>
+                <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
+              </>
+            )}
+
             {/* Continue Incomplete Exercise OR Edit Exercise based on completion status */}
             {exerciseComplete ? (
               <DropdownMenuItem
