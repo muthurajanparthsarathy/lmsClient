@@ -31,34 +31,43 @@ const MCQPageContent = () => {
   const hierarchyParam = searchParams.get('hierarchy') || "";
 
   useEffect(() => {
+    // Aborts the fetch if the server takes longer than 30 s (Render free
+    // tier can cold-start for that long). Without this, the loader used
+    // to spin forever whenever the backend went to sleep — the "endless
+    // loading" the trainer reported. Also cancels on unmount / exerciseId
+    // change so a fast tab-away doesn't leak a promise that still resolves
+    // and races with the next mount's state.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      try { (controller as any).abort(new Error('timeout')); }
+      catch { controller.abort(); }
+    }, 30000);
+
     const fetchExerciseData = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
-        // Get token from localStorage
         const token = getToken() || localStorage.getItem('token') || '';
-        
+
         if (!token) {
-          throw new Error('Authentication token not found');
+          throw new Error('Authentication token not found. Please log in again.');
         }
 
-        // Use exerciseId from URL params
         const finalExerciseId = exerciseId;
-        
         if (!finalExerciseId) {
           throw new Error('Exercise ID is required');
         }
 
-        console.log("Fetching exercise data for ID:", finalExerciseId);
+        console.log('Fetching exercise data for ID:', finalExerciseId);
 
-        // Fetch exercise data from API
         const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${finalExerciseId}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -66,57 +75,72 @@ const MCQPageContent = () => {
         }
 
         const data = await response.json();
-        console.log("API Response:", data);
+        console.log('API Response:', data);
 
-        // Check if the response contains exercise data
-        if (data.message?.[0]?.key === 'success' && data.data?.exercise) {
-          const fetchedExercise = data.data.exercise;
+        // Accept every historical envelope: `data.data.exercise`, plain
+        // `data.data` (when the shape carries `exerciseInformation` /
+        // `_id`), or `data.exercise`. The old success-key gate rejected
+        // valid responses whose envelope varied slightly.
+        const fetchedExercise = data?.data?.exercise
+          || (data?.data && (data.data.exerciseInformation || data.data._id) ? data.data : null)
+          || (data?.exercise || null);
+
+        if (fetchedExercise) {
           setExerciseData(fetchedExercise);
-          
-          // Set course ID from URL or from exercise data
-          const extractedCourseId = urlCourseId || 
-                                   fetchedExercise.courseId || 
-                                   fetchedExercise.context?.courseId || 
-                                   "";
+
+          const extractedCourseId = urlCourseId
+            || fetchedExercise.courseId
+            || fetchedExercise.context?.courseId
+            || '';
           setCourseId(extractedCourseId);
-          
-          // Set course name from URL or from exercise data
-          const extractedCourseName = urlCourseName || 
-                                     fetchedExercise.courseName || 
-                                     "Course";
+
+          const extractedCourseName = urlCourseName
+            || fetchedExercise.courseName
+            || 'Course';
           setCourseName(extractedCourseName);
-          
-          // Parse hierarchy
+
           if (hierarchyParam) {
             const hierarchyArray = hierarchyParam
               .split(',')
               .map(item => item.trim())
               .filter(item => item !== '');
-            
             setHierarchy(hierarchyArray);
-            console.log("Dynamic hierarchy loaded:", hierarchyArray);
           } else if (fetchedExercise.context?.hierarchy) {
             setHierarchy(fetchedExercise.context.hierarchy);
           }
         } else {
           throw new Error('Invalid exercise data received from API');
         }
-        
+
       } catch (error: any) {
-        console.error("Error loading assessment:", error);
-        setError(error.message || 'Failed to load assessment');
-        toast.error(error.message || 'Failed to load assessment');
+        // Suppress abort noise on component unmount — that's a normal
+        // cancellation and shouldn't toast the trainer.
+        const wasTimeout = error?.message === 'timeout'
+          || (error?.name === 'AbortError' && error?.message === 'timeout');
+        if (error?.name === 'AbortError' && !wasTimeout) return;
+        console.error('Error loading assessment:', error);
+        const msg = wasTimeout
+          ? 'The server took too long to respond. Please retry.'
+          : (error?.message || 'Failed to load assessment');
+        setError(msg);
+        toast.error(msg);
       } finally {
+        clearTimeout(timeoutId);
         setIsLoading(false);
       }
     };
-    
+
     if (exerciseId) {
       fetchExerciseData();
     } else {
       setError('No exercise ID provided');
       setIsLoading(false);
     }
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [exerciseId, urlCourseId, urlCourseName, hierarchyParam]);
 
   const handleCloseExercise = () => {
@@ -169,12 +193,30 @@ const MCQPageContent = () => {
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Unable to Load</h2>
           <p className="text-gray-600 mb-6">{error}</p>
-          <button
-            onClick={() => router.back()}
-            className="bg-gray-900 text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors w-full"
-          >
-            Go Back
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => {
+                // Re-run the fetch effect by nudging one of its deps —
+                // clearing then re-setting error resets local state and
+                // the useEffect re-runs on next render.
+                setError(null);
+                setIsLoading(true);
+                // Force a fresh mount by cycling the exerciseId dep is
+                // overkill; instead call the fetch by reloading params —
+                // the simplest is a soft refetch via window.location.
+                if (typeof window !== 'undefined') window.location.reload();
+              }}
+              className="bg-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors w-full"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => router.back()}
+              className="bg-gray-900 text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors w-full"
+            >
+              Go Back
+            </button>
+          </div>
         </div>
       </div>
     );

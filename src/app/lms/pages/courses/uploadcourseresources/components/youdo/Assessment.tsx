@@ -1494,28 +1494,56 @@ export default function Assessment({
                               when it becomes useful and stays visible for the
                               rest of the assessment's life. Nothing to
                               dashboard when no student has ever started. */}
+                          {/* Dashboard + Grade are gated on the SAME
+                              `hasParticipants` flag and paired as sibling
+                              menu items — one conditional block so it's
+                              impossible for one to appear without the
+                              other. Server flips hasParticipants true the
+                              moment any student has an ExamSession row and
+                              never unsets it. */}
                           {asm.hasParticipants && (
-                          <DropItem
-                            icon={<LayoutDashboard size={11} />} label="Dashboard"
-                            onClick={() => {
-                              setOpenDrop(null);
-                              const q = new URLSearchParams({
-                                exerciseId: asm._id || asm.id || '',
-                                assessmentId: asm._id || asm.id || '',
-                                assessmentName: asm.name || '',
-                                nodeId: nodeId || '',
-                                nodeType: nodeType || '',
-                                subcategory: subcategoryLabel || subcategory || '',
-                                courseId: courseId || '',
-                                moduleName: hierarchyData?.moduleName || '',
-                                submoduleName: hierarchyData?.submoduleName || '',
-                                topicName: hierarchyData?.topicName || nodeName || '',
-                                subtopicName: hierarchyData?.subtopicName || '',
-                                tabType: 'You_Do',
-                              }).toString();
-                              router.push(`${sectionHref("liveDashboard")}?${q}`);
-                            }}
-                          />
+                            <>
+                              <DropItem
+                                icon={<LayoutDashboard size={11} />} label="Dashboard"
+                                onClick={() => {
+                                  setOpenDrop(null);
+                                  const q = new URLSearchParams({
+                                    exerciseId: asm._id || asm.id || '',
+                                    assessmentId: asm._id || asm.id || '',
+                                    assessmentName: asm.name || '',
+                                    nodeId: nodeId || '',
+                                    nodeType: nodeType || '',
+                                    subcategory: subcategoryLabel || subcategory || '',
+                                    courseId: courseId || '',
+                                    moduleName: hierarchyData?.moduleName || '',
+                                    submoduleName: hierarchyData?.submoduleName || '',
+                                    topicName: hierarchyData?.topicName || nodeName || '',
+                                    subtopicName: hierarchyData?.subtopicName || '',
+                                    tabType: 'You_Do',
+                                  }).toString();
+                                  router.push(`${sectionHref("liveDashboard")}?${q}`);
+                                }}
+                              />
+                              <DropItem
+                                icon={<GraduationCap size={11} />} label="Grade"
+                                onClick={() => {
+                                  setOpenDrop(null);
+                                  if (!courseId) {
+                                    toast.error('Course context is missing — cannot open the grades view for this assessment.');
+                                    return;
+                                  }
+                                  const here = typeof window !== 'undefined'
+                                    ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+                                    : '';
+                                  const q = new URLSearchParams({
+                                    exerciseId: asm._id || asm.id || '',
+                                    openTab: 'students',
+                                    ...(here ? { returnTo: here } : {}),
+                                  }).toString();
+                                  router.push(`/lms/pages/grades/${courseId}?${q}`);
+                                }}
+                              />
+                            </>
                           )}
                           {/* "Review Submission" entry removed: the review-submission
                               page is being repurposed for per-student grading
@@ -1546,37 +1574,6 @@ export default function Assessment({
                             <DropItem
                               icon={<Settings size={11} />} label="Manage Questions"
                               onClick={() => handleManageQuestion(asm)}
-                            />
-                          )}
-                          {/* Grade — deep-link into the Grades student list
-                              for THIS assessment (skips the exercises tab
-                              since the trainer already picked the row).
-                              Gated on `hasParticipants`, the same server
-                              flag Dashboard uses: it turns true the moment
-                              at least one student has an ExamSession row —
-                              i.e. status has flipped from "not started" to
-                              in-progress or completed — and never unsets.
-                              Before that point there's nothing to grade.
-                              `returnTo` carries the current URL so the
-                              Grades page's Back button lands back on this
-                              uploadcourseresources view (not the client
-                              picker at /lms/pages/grades). */}
-                          {asm.hasParticipants && (
-                            <DropItem
-                              icon={<GraduationCap size={11} />} label="Grade"
-                              onClick={() => {
-                                setOpenDrop(null);
-                                if (!courseId) return;
-                                const here = typeof window !== 'undefined'
-                                  ? `${window.location.pathname}${window.location.search}${window.location.hash}`
-                                  : '';
-                                const q = new URLSearchParams({
-                                  exerciseId: asm._id || asm.id || '',
-                                  openTab: 'students',
-                                  ...(here ? { returnTo: here } : {}),
-                                }).toString();
-                                router.push(`/lms/pages/grades/${courseId}?${q}`);
-                              }}
                             />
                           )}
                           <DropItem
