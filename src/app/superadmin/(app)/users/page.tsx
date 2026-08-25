@@ -426,6 +426,7 @@ function UsersPageInner() {
           userId={permUser._id}
           userName={`${permUser.firstName} ${permUser.lastName || ''}`.trim()}
           userEmail={permUser.email}
+          roleName={permUser.role?.renameRole || permUser.role?.originalRole}
           allowedIds={allowedIds}
           allowedFunctions={allowedFunctions}
           loadPermissions={() => getUserPermissions(permUser._id).then((r) => r.permissions)}
@@ -441,6 +442,13 @@ function UsersPageInner() {
           userId=""
           userName={form.firstName || 'New user'}
           userEmail={form.email || ''}
+          // `form.role` is the role _id — resolve it to a name so a learner
+          // being created gets the same Student-only catalog Assign Permission
+          // gives an existing one.
+          roleName={(() => {
+            const r = roles.find((x: { _id: string }) => x._id === form.role);
+            return r ? (r.renameRole || r.originalRole) : undefined;
+          })()}
           saveLabel="Apply"
           allowedIds={allowedIds}
           allowedFunctions={allowedFunctions}

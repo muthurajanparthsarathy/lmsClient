@@ -31,6 +31,37 @@ const MCQPageContent = () => {
   const hierarchyParam = searchParams.get('hierarchy') || "";
 
   useEffect(() => {
+    // Hydrate synchronously from the parent's localStorage stash BEFORE
+    // firing the network fetch. The Start-button flow writes the full
+    // exercise under `currentMCQExercise` and then router.push()'es
+    // here, so on frame 1 we already have every field the MCQ view
+    // needs — no need to sit on a 30 s Render cold-start before the
+    // student sees anything. The fetch still fires so the display stays
+    // in sync with the server; only the loader flag is skipped when the
+    // hydration succeeded.
+    let hydratedFromStash = false;
+    try {
+      const raw = typeof window !== 'undefined'
+        ? window.localStorage.getItem('currentMCQExercise')
+        : null;
+      if (raw) {
+        const stash = JSON.parse(raw);
+        const stashId = String(stash?._id || stash?.id || '');
+        if (stashId && stashId === String(exerciseId)) {
+          setExerciseData(stash);
+          setCourseId(urlCourseId || stash.courseId || stash.context?.courseId || '');
+          setCourseName(urlCourseName || stash.courseName || 'Course');
+          if (hierarchyParam) {
+            setHierarchy(hierarchyParam.split(',').map(s => s.trim()).filter(Boolean));
+          } else if (stash?.context?.hierarchy) {
+            setHierarchy(stash.context.hierarchy);
+          }
+          setIsLoading(false);
+          hydratedFromStash = true;
+        }
+      }
+    } catch { /* fall through to the loud fetch */ }
+
     // Aborts the fetch if the server takes longer than 30 s (Render free
     // tier can cold-start for that long). Without this, the loader used
     // to spin forever whenever the backend went to sleep — the "endless
@@ -44,7 +75,7 @@ const MCQPageContent = () => {
     }, 30000);
 
     const fetchExerciseData = async () => {
-      setIsLoading(true);
+      if (!hydratedFromStash) setIsLoading(true);
       setError(null);
 
       try {

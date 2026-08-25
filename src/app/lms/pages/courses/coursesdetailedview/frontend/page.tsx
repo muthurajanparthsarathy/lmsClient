@@ -27,20 +27,23 @@ const CompilerPageContent = () => {
   const nodeId = searchParams.get('nodeId');
   const hierarchy = searchParams.get('hierarchy')?.split(',') || [];
 
-  // Function to fetch exercise data from API
-  const fetchExerciseData = async () => {
+  // Function to fetch exercise data from API. `silent=true` skips
+  // toggling the full-screen loader so a background revalidation after
+  // the localStorage hydration doesn't blank the compiler that's already
+  // painted.
+  const fetchExerciseData = async (opts: { silent?: boolean } = {}) => {
     if (!exerciseId) {
       console.error("No exercise ID provided");
-      setIsLoading(false);
+      if (!opts.silent) setIsLoading(false);
       return;
     }
 
     try {
       const token = getToken() || localStorage.getItem('token') || '';
-      
+
       if (!token) {
         console.error("Authentication token missing");
-        setIsLoading(false);
+        if (!opts.silent) setIsLoading(false);
         return;
       }
 
@@ -94,9 +97,12 @@ const CompilerPageContent = () => {
       }
     } catch (error) {
       console.error("❌ Error fetching exercise:", error);
-      toast.error("Failed to load exercise data");
+      // Suppress the toast on the silent (background) refresh — if the
+      // student is already looking at the compiler because we hydrated
+      // from localStorage, a network hiccup shouldn't scream at them.
+      if (!opts.silent) toast.error("Failed to load exercise data");
     } finally {
-      setIsLoading(false);
+      if (!opts.silent) setIsLoading(false);
     }
   };
 
@@ -239,9 +245,44 @@ const CompilerPageContent = () => {
     return foundId.toString();
   };
 
-  // Load data on component mount
+  // Load data on component mount.
+  //
+  // The parent stashes the full exercise under `currentFrontendExercise`
+  // in localStorage before router.push()'ing here. Read that FIRST and
+  // paint the compiler on frame 1 (no full-screen spinner), then fire a
+  // silent background refresh so the display stays in sync with the
+  // server. Falls back to the loud fetch on cache miss.
   useEffect(() => {
+    if (!exerciseId) {
+      setIsLoading(false);
+      return;
+    }
+    try {
+      const raw = typeof window !== 'undefined'
+        ? window.localStorage.getItem('currentFrontendExercise')
+        : null;
+      if (raw) {
+        const stash = JSON.parse(raw);
+        // Only trust the stash if it matches THIS exerciseId — the key is
+        // a single slot shared across every exercise the student opens.
+        const stashId = String(stash?._id || stash?.id || '');
+        if (stashId && stashId === String(exerciseId)) {
+          setExerciseData(stash);
+          const qs = Array.isArray(stash.questions) ? stash.questions
+            : Array.isArray(stash?.exerciseInformation?.questions) ? stash.exerciseInformation.questions
+            : [];
+          setQuestions(qs);
+          setCourseId(urlCourseId || stash.courseId || '');
+          setIsLoading(false);
+          // Fire the fetch silently — updates state in the background
+          // if the server has a newer copy.
+          fetchExerciseData({ silent: true });
+          return;
+        }
+      }
+    } catch { /* fall through to the loud fetch */ }
     fetchExerciseData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exerciseId, urlCourseId]);
 
   const handleBack = () => {

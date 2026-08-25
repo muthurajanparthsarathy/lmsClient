@@ -152,6 +152,12 @@ export const PERMISSION_TREE: PermissionNode[] = [
             fn("Edit"),
             fn("Deactivate", { aliases: ["Toggle Client Status"] }),
             fn("Delete"),
+            // Row kebab shortcut: jumps to Service Mapping with the wizard
+            // already open on this client. Granted here (not under Service
+            // Mapping) because it is a Client Management row action — the
+            // Service Mapping page honours it as the enabling grant for the
+            // auto-opened wizard.
+            fn("New Mapping"),
           ],
         }),
         page("admin-servicemapping", "servicemapping", "Service Mapping", {
@@ -304,13 +310,13 @@ export const PERMISSION_TREE: PermissionNode[] = [
 
   // ══════════ STUDENT ══════════
   container("student", "Student", { icon: "Users", children: [
+    // No `children` — a flat, non-expandable row, exactly like Admin Dashboard
+    // and POC Dashboard. Same reasoning as the POC one above: the dashboard is
+    // one screen you either have or don't, and the three toggles that used to
+    // live here (View Courses / View Grades / Submit Assignments) only ever hid
+    // parts of a page the learner had already been granted.
     page("student-dashboard", "studentdashboard", "Student Dashboard", {
       icon: "Home", color: "indigo", defaultSelected: true,
-      children: [
-        fn("View Courses",       { aliases: ["view_courses"] }),
-        fn("View Grades",        { aliases: ["view_grades"] }),
-        fn("Submit Assignments", { aliases: ["submit_assignments"] }),
-      ],
     }),
 
     page("student-courses", "courses", "Student Courses", {

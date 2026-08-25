@@ -14,8 +14,6 @@ import { useRouter } from 'next/navigation';
 import { CalendarDays, GraduationCap, Trophy } from 'lucide-react';
 
 import { StudentLayout } from '../../component/student/student-layout';
-import { usePermissions } from '@/hooks/usePermissions';
-import { PERMISSION_IDS } from '@/components/permissions';
 import { useCurrentUserQuery } from '@/queries/auth';
 import {
     useStudentAnalyticsQuery,
@@ -123,11 +121,11 @@ const Header =({ m, onGrades, onCalendar, showGrades }: { m: DashboardModel; onG
 export default function StudentDashboardPage() {
     const router = useRouter();
 
-    // Full-id gating against the studentdashboard permission — mirrors the
-    // three functionalities defined in PermissionModal so the header/nav
-    // affordances match what this account was actually granted.
-    const { can } = usePermissions();
-    const canViewGrades = can(PERMISSION_IDS.STUDENT_DASHBOARD, 'view_grades');
+    // Grades is no longer gated by a per-function toggle. Student Dashboard is
+    // a flat permission now (see permissions.tree.ts) — the View Grades /
+    // View Courses / Submit Assignments checkboxes are gone, so there is no
+    // grant left to read. Holding the dashboard permission at all is what
+    // shows the header's Grades affordance.
 
     // Three cached reads (queries/studentDashboard.ts) in place of one
     // useEffect with four useStates. The secondary two stay non-blocking, as
@@ -201,7 +199,7 @@ export default function StudentDashboardPage() {
     return (
         <StudentLayout>
             <div className="mx-auto max-w-[1440px] space-y-6">
-                <Header m={model} onGrades={goGrades} onCalendar={goCalendar} showGrades={canViewGrades} />
+                <Header m={model} onGrades={goGrades} onCalendar={goCalendar} showGrades />
 
                 {/* Row 1 — KPI strip */}
                 <KpiRow m={model} />

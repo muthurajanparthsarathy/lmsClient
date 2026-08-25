@@ -9,6 +9,7 @@ export * from "./StatCard";
 export * from "./StatusPill";
 
 export * from "./Modal";
+export * from "./DiscardChangesDialog";
 export * from "./Drawer";
 export * from "./Tabs";
 export * from "./Toolbar";

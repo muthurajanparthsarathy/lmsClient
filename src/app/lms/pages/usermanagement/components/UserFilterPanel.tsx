@@ -32,13 +32,10 @@ interface UserFilterPanelProps {
   setSelectedDepartment: (v: string) => void;
   selectedYear: string;
   setSelectedYear: (v: string) => void;
-  selectedBatch: string;
-  setSelectedBatch: (v: string) => void;
 
   degreeOptions: string[];
   departmentOptions: string[];
   yearOptions: string[];
-  batchOptions: string[];
 
   basedOn: string | null;
   activeCount: number;
@@ -97,12 +94,9 @@ export function UserFilterPanel({
   setSelectedDepartment,
   selectedYear,
   setSelectedYear,
-  selectedBatch,
-  setSelectedBatch,
   degreeOptions,
   departmentOptions,
   yearOptions,
-  batchOptions,
   basedOn,
   activeCount,
   onClear,
@@ -207,15 +201,6 @@ export function UserFilterPanel({
                     );
                   })}
                 </div>
-              </Labeled>
-
-              <Labeled label="Batch">
-                <NativeSelect
-                  value={selectedBatch === "all" ? "" : selectedBatch}
-                  onChange={setSelectedBatch}
-                  allLabel="All batches"
-                  options={batchOptions}
-                />
               </Labeled>
 
               {isCollege && (

@@ -1,7 +1,8 @@
 "use client"
 import { getToken } from "@/lib/session";
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
     Layers, Trash2, Plus, X, Building, Check, ChevronDown, Search,
@@ -72,7 +73,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { PERMISSION_IDS } from '@/components/permissions'
 // Reuse Client Management's business-model helpers so the mapping listing
 // renders the same coloured B2B / B2I pill and the two pages stay in lockstep.
-import { businessModelFullName } from '@/features/clientmanagement/lib'
+import { businessModelFullName, businessModelLabel } from '@/features/clientmanagement/lib'
 
 // ─── Configuration (data-driven — extend here, no component changes needed) ───
 
@@ -4201,11 +4202,14 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     // entries for admin-servicemapping. Each action button, kebab item and
     // drawer control below is gated (hidden entirely) when the signed-in user
     // was not granted that functionality.
-    const { can } = usePermissions()
+    const { can, isReady: permsReady } = usePermissions()
     const canMap = can(PERMISSION_IDS.ADMIN_SERVICE_MAPPING, 'Map Service')
     const canView = can(PERMISSION_IDS.ADMIN_SERVICE_MAPPING, 'View Full Details')
     const canEdit = can(PERMISSION_IDS.ADMIN_SERVICE_MAPPING, 'Edit')
     const canDelete = can(PERMISSION_IDS.ADMIN_SERVICE_MAPPING, 'Delete')
+    // Client Management's row kebab has its own "New Mapping" functionality
+    // that deep-links here; it counts as a grant for the auto-opened wizard.
+    const canNewMappingFromClient = can(PERMISSION_IDS.ADMIN_CLIENT_MANAGEMENT, 'New Mapping')
     // The list is fetched a page at a time, below — it needs the filter state,
     // which is declared further down, so the queries live there rather than here.
     const { data: clientList = [] } = useClients()
@@ -4250,6 +4254,9 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     const [statusFilter, setStatusFilter] = useState<'' | 'active' | 'inactive'>('')
     const [yearFilter, setYearFilter] = useState('')
     const [clientFilter, setClientFilter] = useState('')
+    // The client's business model (B2B / B2I / B2C) — one of the table's own
+    // columns, so it filters alongside the rest.
+    const [businessModelFilter, setBusinessModelFilter] = useState('')
     const [sortKey, setSortKey] = useState<SortKey | null>(null)
     const [sortDir, setSortDir] = useState<SortDir>('asc')
     // Workspace chrome: table vs hierarchy cards, the filter drawer, and the
@@ -4279,10 +4286,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         status: statusFilter,
         year: yearFilter,
         client: clientFilter,
+        businessModel: businessModelFilter,
         // A cleared sort is a real state here — it returns the server's own
         // createdAt-desc order, which is otherwise unreachable.
         ...(sortKey ? { sortKey, sortDir } : {}),
-    }), [debouncedSearch, statusFilter, yearFilter, clientFilter, sortKey, sortDir])
+    }), [debouncedSearch, statusFilter, yearFilter, clientFilter, businessModelFilter, sortKey, sortDir])
 
     // Any filter change goes back to page 1. Adjusting during render (rather
     // than in an effect) means the OLD page number never reaches a request:
@@ -4347,6 +4355,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     // facets, computed in the same aggregation that counted the rows, rather
     // than from an array the browser no longer holds.
     const availableYears = facets?.years ?? []
+    const availableBusinessModels = facets?.businessModels ?? []
     const availableClients: [string, string][] = useMemo(
         () => (facets?.clients ?? []) as [string, string][],
         [facets]
@@ -4361,11 +4370,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     const filteredRows = rows
 
     const hasActiveFilters = Boolean(
-        search.trim() || statusFilter || yearFilter || clientFilter
+        search.trim() || statusFilter || yearFilter || clientFilter || businessModelFilter
     )
     // Drawer filters only (search has its own box) — badges the Filter button.
     const activeFilterCount =
-        (clientFilter ? 1 : 0) + (yearFilter ? 1 : 0) + (statusFilter ? 1 : 0)
+        (clientFilter ? 1 : 0) + (businessModelFilter ? 1 : 0) + (yearFilter ? 1 : 0) + (statusFilter ? 1 : 0)
 
     // ── Sorting ──
     // Clicking the sorted column flips direction; clicking a third time clears it
@@ -4445,6 +4454,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         setStatusFilter('')
         setYearFilter('')
         setClientFilter('')
+        setBusinessModelFilter('')
         setCurrentPage(1)
     }
 
@@ -4485,6 +4495,28 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         setWizard({ open: true, mapping: null, clientId })
     const openEdit = (mapping: ServiceMapping) =>
         setWizard({ open: true, mapping, clientId: null })
+
+    // ── Deep link from Client Management ──
+    // Its row kebab ("New Mapping") sends ?newMapping=1&clientId=… — open the
+    // wizard on that client once, then strip the params so a refresh or a
+    // Back/Forward step doesn't re-open it. Guarded by a ref as well, because
+    // the replace() lands a render later than the effect.
+    const searchParams = useSearchParams()
+    const pathname = usePathname()
+    const router = useRouter()
+    const deepLinkHandled = useRef(false)
+    useEffect(() => {
+        if (deepLinkHandled.current) return
+        if (searchParams.get('newMapping') !== '1') return
+        // Permissions hydrate from storage in an effect, so the first render
+        // reports "no grants" — deciding then would silently drop the link.
+        if (!permsReady) return
+        deepLinkHandled.current = true
+        if (canMap || canNewMappingFromClient) openCreate(searchParams.get('clientId') || null)
+        router.replace(pathname, { scroll: false })
+        // openCreate is a stable setState wrapper; re-running on it would loop.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams, pathname, router, permsReady, canMap, canNewMappingFromClient])
     const closeWizard = () => setWizard({ open: false, mapping: null, clientId: null })
 
     // Save the mapping — and, on a FULL save (coursePayload present), its course
@@ -4713,6 +4745,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     // Removable chips for the applied drawer filters (search has its own box).
     const filterChips: { key: string; label: string; onRemove: () => void }[] = [
         ...(clientFilter ? [{ key: 'client', label: availableClients.find(([v]) => v === clientFilter)?.[1] || 'Client', onRemove: () => setClientFilter('') }] : []),
+        ...(businessModelFilter ? [{ key: 'businessModel', label: businessModelFilter, onRemove: () => setBusinessModelFilter('') }] : []),
         ...(yearFilter ? [{ key: 'year', label: yearFilter, onRemove: () => setYearFilter('') }] : []),
         ...(statusFilter ? [{ key: 'status', label: statusFilter === 'active' ? 'Active' : 'Inactive', onRemove: () => setStatusFilter('') }] : []),
     ]
@@ -5187,7 +5220,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                 type="text"
                                 value={search}
                                 onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }}
-                                placeholder="Search client, service…"
+                                placeholder="Search client…"
                                 className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
                             />
                             {search && (
@@ -5265,11 +5298,13 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                     <MappingWorkspaceFilterPanel
                         open={showFilters}
                         onClose={() => setShowFilters(false)}
-                        current={{ client: clientFilter, year: yearFilter, status: statusFilter }}
+                        current={{ client: clientFilter, businessModel: businessModelFilter, year: yearFilter, status: statusFilter }}
                         clientOptions={availableClients.map(([value, label]) => ({ value, label }))}
+                        businessModelOptions={availableBusinessModels.map((m) => ({ value: m, label: businessModelLabel(m) }))}
                         yearOptions={availableYears.map((y) => ({ value: y, label: y }))}
                         onApply={(f) => {
                             setClientFilter(f.client)
+                            setBusinessModelFilter(f.businessModel)
                             setYearFilter(f.year)
                             setStatusFilter(f.status as '' | 'active' | 'inactive')
                             setCurrentPage(1)
@@ -5683,5 +5718,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
 }
 
 export default function ServiceMappingPage() {
-    return <ServiceMappingView />
+    // useSearchParams (the Client Management deep link) needs a Suspense
+    // boundary above it for Next's static/streaming render.
+    return (
+        <Suspense fallback={null}>
+            <ServiceMappingView />
+        </Suspense>
+    )
 }

@@ -888,78 +888,13 @@ export default function MultiFileCodeEditor({
       // the trainer reviews/marks it manually.
       log("info", "🔗 Link question — submission recorded; the trainer reviews the external-site solution.")
     } else if (method === "testcase") {
-      // Multi-file test-case harness. Piston already runs the whole project
-      // in one shot (see runOnPiston in pistonClient.ts — the entry file goes
-      // first and cross-file imports resolve), so we can feed each test case's
-      // input as stdin, compare stdout, and derive the score the same way the
-      // single-file editor does (score = passed / total × maxMarks). Previously
-      // this branch just posted score:0 and asked the trainer to grade by hand.
-      const cases: Array<{ input?: string; expectedOutput?: string; isHidden?: boolean }> =
-        (currentQuestion as any)?.testCases || []
-      const maxMarks = Number(currentQuestion?.score ?? currentQuestion?.points ?? 10) || 10
-
-      if (cases.length === 0) {
-        log("info", "⚠️ No test cases configured on this question — code saved without an auto-score.")
-      } else {
-        // Match the single-file editor: CRLF→LF, strip trailing whitespace per
-        // line, trim leading/trailing blank lines. Keeps auto-scores from being
-        // torpedoed by an extra newline or platform line endings.
-        const norm = (s: string) =>
-          (s || "").replace(/\r\n/g, "\n").split("\n").map((l) => l.replace(/\s+$/, "")).join("\n").trim()
-
-        // pistonClient wants { path, content, isEntryPoint } — submitFiles
-        // already carries all three, so just narrow the type.
-        const runFiles = submitFiles.map((f) => ({
-          path: f.path || `/${f.filename}`,
-          content: f.content,
-          isEntryPoint: !!f.isEntryPoint,
-        }))
-
-        log("system", `🧪 Running ${cases.length} test case${cases.length > 1 ? "s" : ""}…`)
-        let passed = 0
-        // input/expected/actual ride along so the Review page can show the
-        // trainer WHICH cases failed, not just the count.
-        const perCase: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> = []
-        for (let i = 0; i < cases.length; i++) {
-          const tc = cases[i]
-          const label = tc.isHidden ? `Hidden test #${i + 1}` : `Test #${i + 1}`
-          const base = { index: i, hidden: !!tc.isHidden, input: tc.input ?? "", expectedOutput: tc.expectedOutput ?? "" }
-          try {
-            const result = await runOnPiston({
-              language: selectedLanguage as any,
-              files: runFiles,
-              stdin: tc.input ?? "",
-            })
-            if (result.compileError) {
-              perCase.push({ ...base, passed: false, actualOutput: `compile: ${result.compileError.split("\n")[0]}` })
-              log("error", `✗ ${label} failed — compile: ${result.compileError.split("\n")[0]}`)
-            } else {
-              const ok = norm(result.stdout) === norm(tc.expectedOutput ?? "")
-              const actual = (result.stdout || "").trim() || result.stderr || ""
-              perCase.push({ ...base, passed: ok, actualOutput: actual })
-              if (ok) { passed++; log("success", `✓ ${label} passed`) }
-              else if (tc.isHidden) log("error", `✗ ${label} failed`)
-              else log(
-                "error",
-                `✗ ${label} failed — expected: ${tc.expectedOutput ?? ""} | got: ${actual || "(no output)"}`,
-              )
-            }
-          } catch (e: any) {
-            perCase.push({ ...base, passed: false, actualOutput: `(execution error: ${e?.message || e})` })
-            log("error", `✗ ${label} failed (execution error: ${e?.message || e})`)
-          }
-          // Same soft rate-limit guard the single-file grader uses against the
-          // public Piston API — cheap enough on self-hosted, matters on emkc.
-          if (i < cases.length - 1) await new Promise((r) => setTimeout(r, 300))
-        }
-        submitScore = Math.round((passed / cases.length) * maxMarks * 100) / 100
-        submitStatus = passed === cases.length ? "solved" : "submitted"
-        evaluationBreakdown = { method: "testcase", testcase: { passed, total: cases.length, cases: perCase } }
-        log(
-          passed === cases.length ? "success" : "info",
-          `🏁 Passed ${passed}/${cases.length} — Score: ${submitScore}/${maxMarks}`,
-        )
-      }
+      // Server-side judge (Phase 1 P0). The submit endpoint re-runs the
+      // project against the trainer's authoritative testCases — including
+      // hidden ones the browser never sees — and returns the breakdown in
+      // its response. So we just note it in the terminal and let the axios
+      // call below do the work; the per-case pass/fail lines get printed
+      // after the response lands.
+      log("system", "🧪 Running test cases on server judge…")
     } else if (method === "ai") {
       log("system", "🤖 Running AI evaluation…")
       // Concatenate every file with a header so Gemini sees the whole project
@@ -1049,6 +984,35 @@ export default function MultiFileCodeEditor({
     const res = await axios.post(`${API}/courses/answers/submit-multiple-files`, payload, {
       headers: { "Content-Type": "application/json", ...authHeaders() },
     })
+
+    // Render the server-authored per-case breakdown in the terminal — the
+    // client no longer runs test cases itself, so this is where the ✓/✗
+    // lines students used to see get printed.
+    const serverBreakdown = res.data?.data?.evaluationBreakdown
+    const serverScore = res.data?.data?.score
+    const serverStatus = res.data?.data?.status
+    if (serverBreakdown?.method === "testcase" && serverBreakdown.testcase) {
+      const tc = serverBreakdown.testcase
+      const cases: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> = tc.cases || []
+      const maxMarks = Number(currentQuestion?.score ?? currentQuestion?.points ?? 10) || 10
+      for (const c of cases) {
+        const label = c.hidden ? `Hidden test #${c.index + 1}` : `Test #${c.index + 1}`
+        if (c.passed) log("success", `✓ ${label} passed`)
+        else if (c.hidden) log(
+          "error",
+          // Trainer's input/expected stay hidden; student's own output is
+          // safe to show — it helps them debug format mismatches (e.g.
+          // returning "true" when the trainer expected "Even").
+          `✗ ${label} failed — got: ${c.actualOutput || "(no output)"}`,
+        )
+        else log("error", `✗ ${label} failed — expected: ${c.expectedOutput} | got: ${c.actualOutput || "(no output)"}`)
+      }
+      log(
+        tc.passed === tc.total ? "success" : "info",
+        `🏁 Passed ${tc.passed}/${tc.total} — Score: ${serverScore}/${maxMarks}${serverStatus === "solved" ? " ✓ SOLVED" : ""}`,
+      )
+    }
+
     return res.data?.success ? { ok: true } : { ok: false, message: res.data?.message || "unknown" }
   }
 

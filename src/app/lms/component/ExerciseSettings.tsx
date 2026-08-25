@@ -28,6 +28,8 @@ import { exerciseApi } from '@/apiServices/exercise';
 // see — the batch has to be put on the URL by hand. See withBatchUrl.
 import { withBatchUrl } from '@/apiServices/resourceBatch';
 import TipTapEditor from './tiptopEditor';
+// Shown when the X is clicked with edits that have not been written to the DB yet.
+import { DiscardChangesDialog } from '@/app/lms/shared/ui/DiscardChangesDialog';
 
 // ─── Shared design tokens, helpers, step components ──────────────────────────
 // Step renders progressively extracted into ExerciseSettings/steps/* — see
@@ -423,6 +425,61 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
     },
     allQuestionsRequired: false,
   });
+
+  // ── Unsaved-changes guard ──────────────────────────────────────────────────
+  // The wizard writes each step to the DB as you go, so "unsaved" here means
+  // "changed since the last successful step save" — not "changed since the
+  // modal opened". Closing right after a Save must NOT nag; typing a single
+  // character after it must.
+  //
+  // Dirtiness is a serialized snapshot compared against a baseline rather than
+  // a flag set from the field handlers: the form state is one deep object
+  // written from ~80 call sites across five step components, and a flag would
+  // have to be threaded through every one of them.
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const dirtySnapshot = useMemo(() => JSON.stringify({
+    formData,
+    questionSource, scratchMode, customSources, customDistribution,
+    questionSourceMcq, customSourcesMcq, customDistributionMcq,
+  }), [
+    formData,
+    questionSource, scratchMode, customSources, customDistribution,
+    questionSourceMcq, customSourcesMcq, customDistributionMcq,
+  ]);
+  // Mirror for the callbacks below, which must read the snapshot without taking
+  // it as a dependency (performSave would otherwise rebuild on every keystroke).
+  const dirtySnapshotRef = useRef(dirtySnapshot);
+  dirtySnapshotRef.current = dirtySnapshot;
+  const dirtyBaselineRef = useRef<string | null>(null);
+  // Until the user physically touches the modal, every formData change is the
+  // form setting itself up — edit-mode hydration, the configured-language
+  // auto-select, the marks/grade auto-calcs — so the baseline keeps tracking it.
+  // The first pointerdown/keydown inside the modal freezes it; from then on a
+  // differing snapshot means the user changed something. Freezing on real input
+  // rather than on a timer means no arbitrary "hydration should be done by now"
+  // window to get wrong, and a slow async hydration cannot masquerade as an edit.
+  const dirtyArmedRef = useRef(false);
+  const armDirtyTracking = useCallback(() => { dirtyArmedRef.current = true; }, []);
+
+  useEffect(() => {
+    if (!dirtyArmedRef.current) dirtyBaselineRef.current = dirtySnapshot;
+  }, [dirtySnapshot]);
+
+  /** Re-baseline after a successful save — those edits are on the server now. */
+  const markDirtyBaseline = useCallback(() => {
+    dirtyBaselineRef.current = dirtySnapshotRef.current;
+  }, []);
+
+  const hasUnsavedChanges = useCallback(
+    () => dirtyBaselineRef.current !== null && dirtySnapshotRef.current !== dirtyBaselineRef.current,
+    [],
+  );
+
+  /** X-button close: confirm first when there is something to lose. */
+  const requestClose = useCallback(() => {
+    if (hasUnsavedChanges()) { setShowDiscardConfirm(true); return; }
+    onClose();
+  }, [hasUnsavedChanges, onClose]);
 
   // Pure-MCQ exercises have no Other Platform import path (the MCQ question
   // form only offers Manual / Bank / AI), so the source picker hides that
@@ -1906,26 +1963,37 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
 
   // ── buildFullPayload — shared by step-save and handleComplete ───────────────
   const buildFullPayload = useCallback(() => {
-    const pad = (n: number) => String(n).padStart(2, '0');
+    // Convert the user's LOCAL date/time pieces into an unambiguous UTC
+    // ISO string. Previously this returned a bare `"YYYY-MM-DDTHH:mm"`
+    // with no timezone marker, so each runtime read it differently:
+    // the browser as local time, the Node server as its local time, the
+    // DB as UTC. That's what turned "18:00 today" (IST) into
+    // "23:34" on the student side — the server treated the naive string
+    // as UTC and the browser then rendered it back as local (+5:30).
+    // `new Date(y, m-1, d, h, mi)` creates a Date in the trainer's LOCAL
+    // clock; `.toISOString()` emits a proper `…Z` UTC value that every
+    // consumer (server, DB, student's `new Date(iso)`) agrees on.
+    const toIso = (y: number, m: number, d: number, h: number, mi: number) =>
+      new Date(y, m - 1, d, h, mi).toISOString();
     const sd = formData.schedule.startDate;
     const startDT = (sd.day > 0 && sd.month > 0 && sd.year > 0)
-      ? `${sd.year}-${pad(sd.month)}-${pad(sd.day)}T${pad(sd.hour || 0)}:${pad(sd.minute || 0)}`
+      ? toIso(sd.year, sd.month, sd.day, sd.hour || 0, sd.minute || 0)
       : null;
     const ed = (formData.schedule as any).endDate;
     const endDT = (ed && ed.day > 0 && ed.month > 0 && ed.year > 0)
-      ? `${ed.year}-${pad(ed.month)}-${pad(ed.day)}T${pad(ed.hour || 0)}:${pad(ed.minute || 0)}`
+      ? toIso(ed.year, ed.month, ed.day, ed.hour || 0, ed.minute || 0)
       : null;
     const cod = (formData.schedule as any).cutOffDate;
     const cutOffDT = (cod && cod.day > 0 && cod.month > 0 && cod.year > 0)
-      ? `${cod.year}-${pad(cod.month)}-${pad(cod.day)}T${pad(cod.hour || 23)}:${pad(cod.minute || 59)}`
+      ? toIso(cod.year, cod.month, cod.day, cod.hour || 23, cod.minute || 59)
       : null;
     const gd = formData.schedule.gracePeriodDate;
     const graceDT = (formData.schedule.gracePeriodEnabled && gd.day > 0 && gd.month > 0 && gd.year > 0)
-      ? `${gd.year}-${pad(gd.month)}-${pad(gd.day)}T${pad(gd.hour || 23)}:${pad(gd.minute || 59)}`
+      ? toIso(gd.year, gd.month, gd.day, gd.hour || 23, gd.minute || 59)
       : null;
     const rgb = (formData.schedule as any).remindGradeBy;
     const remindDT = (rgb && rgb.day > 0 && rgb.month > 0 && rgb.year > 0 && (formData.schedule as any).remindGradeByEnabled)
-      ? `${rgb.year}-${pad(rgb.month)}-${pad(rgb.day)}T${pad(rgb.hour || 0)}:${pad(rgb.minute || 0)}`
+      ? toIso(rgb.year, rgb.month, rgb.day, rgb.hour || 0, rgb.minute || 0)
       : null;
 
     let mcqTotalMarks = 0;
@@ -2691,6 +2759,9 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
       // Clear all validation errors on successful save — sidebar indicators reset
       setValidationErrors({});
       setTouchedFields(new Set());
+      // Everything on screen is on the server now, so closing is lossless until
+      // the next edit.
+      markDirtyBaseline();
 
       afterSave?.();
     } catch (err: any) {
@@ -2716,6 +2787,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
     steps,
     isStepCompleted,
     patternTotalMismatch,
+    markDirtyBaseline,
   ]);
   // ← Added isStepCompleted to deps
   // ── handleSaveAndNext — save current step to DB then advance ────────────────
@@ -4836,7 +4908,20 @@ const renderNotifications = useCallback(() => (
   const busy = isLoading || isSavingStep;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(30,41,59,0.55)', backdropFilter: 'blur(6px)', fontFamily: FONT }}>
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(30,41,59,0.55)', backdropFilter: 'blur(6px)', fontFamily: FONT }}
+      // Arms the unsaved-changes baseline. Capture phase so it lands before the
+      // handler that actually mutates state — the baseline has to freeze on the
+      // value as it was *before* this interaction.
+      onPointerDownCapture={armDirtyTracking}
+      onKeyDownCapture={armDirtyTracking}>
+      {/* Unsaved-changes guard on the X. Portals to the body at z-modal (1200),
+          so it layers above this z-50 shell. */}
+      <DiscardChangesDialog
+        open={showDiscardConfirm}
+        onCancel={() => setShowDiscardConfirm(false)}
+        onConfirm={() => { setShowDiscardConfirm(false); onClose(); }}
+      />
+
       {/* Phase 6 — Save Decision modal (Use only / Use + Save to Bank) */}
       {saveDecisionOpen && (
         <div className="fixed inset-0 flex items-center justify-center z-[60] p-4" style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}>
@@ -5031,7 +5116,7 @@ const renderNotifications = useCallback(() => (
         <div className="flex-1 flex flex-col overflow-hidden relative" style={{ background: '#ffffff' }}>
 
           {/* Floating close (Back moved to bottom action row) */}
-          <button onClick={onClose}
+          <button onClick={requestClose}
             className="absolute top-5 right-8 z-10 w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-100"
             style={{ color: D.textMuted }}>
             <X size={18} />

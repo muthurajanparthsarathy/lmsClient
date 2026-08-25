@@ -3475,9 +3475,9 @@ const MCQQuestionForm: React.FC<MCQQuestionFormProps> = ({
     setShowExerciseSettings(false);
     // Re-fetch so the form reflects the latest config (marks, question count, etc.)
     try {
-      const freshResponse = await exerciseApi.getExerciseById(exerciseDbId);
-      const fresh = freshResponse?.data?.exercise || freshResponse?.data || freshResponse;
-      if (fresh) toast.success('Assessment settings updated');
+      // No toast — CreateAssessmentModal already confirmed the save, and both
+      // firing together was two toasts for one action.
+      await exerciseApi.getExerciseById(exerciseDbId);
     } catch { /* silent — modal already closed */ }
   }, [exerciseDbId]);
 

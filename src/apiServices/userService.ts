@@ -56,6 +56,9 @@ export type UsersPageParams = {
   page: number;
   limit: number;
   search?: string;
+  /** Scope the search to one column: 'user' | 'email' | 'phone' | 'role'.
+   *  Absent or 'all' searches every searchable field. */
+  searchField?: string;
   roles?: string[];
   status?: string;
   degree?: string;
@@ -79,7 +82,12 @@ export type UsersPageResponse = {
  *  omitting it keeps the query string (and so the cache key) stable. */
 const buildUsersPageParams = (p: UsersPageParams, isExport = false) => {
   const q: Record<string, string> = { page: String(p.page), limit: String(p.limit) };
-  if (p.search?.trim()) q.search = p.search.trim();
+  if (p.search?.trim()) {
+    q.search = p.search.trim();
+    // Only meaningful alongside a term, and omitting the default keeps the
+    // query string (and the cache key) identical to what it was before.
+    if (p.searchField && p.searchField !== "all") q.searchField = p.searchField;
+  }
   if (p.roles?.length) q.roles = p.roles.join(",");
   if (p.status && p.status !== "all") q.status = p.status;
   if (p.degree && p.degree !== "all") q.degree = p.degree;
@@ -263,6 +271,7 @@ export const updateUser = async (userId: string, userData: any, token: string) =
     if (userData.batch !== undefined) updateData.batch = userData.batch;
     if (userData.phase !== undefined) updateData.phase = userData.phase;
     if (userData.serviceModel !== undefined) updateData.serviceModel = userData.serviceModel;
+    if (userData.serviceMappingId !== undefined) updateData.serviceMappingId = userData.serviceMappingId;
     if (userData.studentType !== undefined) updateData.studentType = userData.studentType;
     if (userData.clientName !== undefined) updateData.clientName = userData.clientName;
        if (userData.clientId !== undefined) updateData.clientId = userData.clientId;
@@ -1077,4 +1086,43 @@ export const saveApprovalHierarchy = async (
     throw new Error(data?.message || 'Failed to save approval hierarchy');
   }
   return data;
+};
+// ─── Self-service profile update ──────────────────────────────────────────────
+// Photo and password only, for the CALLER — the server route takes no user id
+// (see UpdateMyProfile in server/controllers/userAuth.js). Sent as FormData
+// because the photo is a file; Content-Type is left unset so the browser adds
+// the multipart boundary.
+export interface UpdateMyProfileInput {
+  photo?: File | null;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
+export const updateMyProfile = async (input: UpdateMyProfileInput, token: string) => {
+  const form = new FormData();
+  if (input.photo) form.append('profile', input.photo);
+  if (input.newPassword) {
+    form.append('currentPassword', input.currentPassword || '');
+    form.append('newPassword', input.newPassword);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/user/me/profile`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    // The API answers with `message: [{ key, value }]` throughout, so the
+    // first entry's value is the human-readable reason.
+    const reason = Array.isArray(data?.message)
+      ? data.message[0]?.value
+      : data?.message;
+    throw new Error(reason || 'Failed to update profile');
+  }
+  return data as {
+    message: { key: string; value: string }[];
+    user: { _id: string; email: string; firstName: string; lastName: string; profile?: string; updatedAt: string };
+  };
 };

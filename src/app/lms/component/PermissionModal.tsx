@@ -4,7 +4,6 @@ import { API_BASE_URL } from "@/lib/http";
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { X, Save, Loader2 } from "lucide-react"
 import { toast } from "react-toastify"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -14,7 +13,7 @@ import {
   selectionFromStored,
   storedFromSelection,
 } from "@/components/permissions/TreePermissionSelector"
-import { defaultSelectionForNewUser } from "@/config/permissions.helpers"
+import { defaultSelectionForNewUser, classifyRole } from "@/config/permissions.helpers"
 
 interface PermissionModalProps {
   isOpen: boolean
@@ -38,13 +37,26 @@ interface PermissionModalProps {
   // function ids in this map (keyed by permission id) — so a user can only be
   // granted the functions the institution enabled. Omit for all functions.
   allowedFunctions?: Record<string, string[]>
+  // The role of the account being edited (renameRole / originalRole — anything
+  // classifyRole understands). A STUDENT is shown the Student catalog only:
+  // granting a learner an Admin or Trainer page is never the intent, and the
+  // tabs invited exactly that mistake. Every other role still sees all three
+  // categories. Omit entirely for the institution-level Permission Management
+  // in the Super Admin console, which is not scoped to one person's role.
+  roleName?: string
 }
 
 type CategoryTab = "all" | "admin" | "staff" | "student"
 
-export function PermissionModal({ isOpen, onClose, userId, userName, userEmail, loadPermissions, savePermissions, saveLabel, allowedIds, allowedFunctions }: PermissionModalProps) {
+export function PermissionModal({ isOpen, onClose, userId, userName, userEmail, loadPermissions, savePermissions, saveLabel, allowedIds, allowedFunctions, roleName }: PermissionModalProps) {
+  // A learner's catalog is the Student tree and nothing else, so the tab strip
+  // has one reachable value and is hidden rather than shown with three tabs
+  // that must not be used. Any other role keeps the full All/Admin/Staff/
+  // Student picker.
+  const studentOnly = !!roleName && classifyRole(roleName) === "student"
+
   const [selection, setSelection] = useState<SelectionState>({})
-  const [category, setCategory] = useState<CategoryTab>("all")
+  const [category, setCategory] = useState<CategoryTab>(studentOnly ? "student" : "all")
   const [search, setSearch] = useState("")
   const [customSaving, setCustomSaving] = useState(false)
   const queryClient = useQueryClient()
@@ -105,7 +117,7 @@ export function PermissionModal({ isOpen, onClose, userId, userName, userEmail, 
 
     setSelection({})
     setSearch("")
-    setCategory("all")
+    setCategory(studentOnly ? "student" : "all")
 
     // 1. Injected loader (Super Admin console — its own auth, or a local
     //    collect-mode selection for a not-yet-created user).
@@ -170,7 +182,10 @@ export function PermissionModal({ isOpen, onClose, userId, userName, userEmail, 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] p-0 overflow-hidden">
+      {/* The kit's own close button is suppressed and re-rendered inside the
+          header below, so the red treatment lands here WITHOUT restyling the
+          shared Dialog every other modal in the app uses. */}
+      <DialogContent className="max-w-5xl max-h-[90vh] p-0 overflow-hidden" showCloseButton={false}>
         <div className="flex flex-col h-[80vh]">
           {/* Header */}
           <DialogHeader className="p-4 border-b bg-white">
@@ -180,14 +195,17 @@ export function PermissionModal({ isOpen, onClose, userId, userName, userEmail, 
                   Permissions for {userName}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-gray-600">
-                  {userEmail} • {selectedPageCount} permission(s) selected
+                  {userEmail}
                 </DialogDescription>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-xs">
-                  {getTotalSelectedFunctionalities()} functions
-                </Badge>
-              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-danger-500 text-white transition-colors hover:bg-danger-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40"
+              >
+                <X className="h-4 w-4" strokeWidth={2.5} />
+              </button>
             </div>
           </DialogHeader>
 
@@ -201,27 +219,32 @@ export function PermissionModal({ isOpen, onClose, userId, userName, userEmail, 
                   placeholder="Search…"
                   className="flex-1 px-3 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
-                <div className="flex gap-1">
-                  {tabs.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setCategory(c)}
-                      className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                        category === c
-                          ? "bg-orange-500 text-white border border-orange-500"
-                          : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      {c === "all" ? "All" : c[0].toUpperCase() + c.slice(1)}
-                    </button>
-                  ))}
-                </div>
+                {!studentOnly && (
+                  <div className="flex gap-1">
+                    {tabs.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setCategory(c)}
+                        className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                          category === c
+                            ? "bg-orange-500 text-white border border-orange-500"
+                            : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                        }`}
+                      >
+                        {c === "all" ? "All" : c[0].toUpperCase() + c.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Red because it IS destructive — one click drops every
+                    permission on the account. Outlined rather than solid so it
+                    does not compete with Save Changes for primary weight. */}
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleClearAll}
-                  className="h-7 px-2 text-xs text-gray-600 hover:text-gray-900"
+                  className="h-7 px-2.5 text-xs font-medium text-danger-500 border border-danger-500/30 hover:bg-danger-50 hover:text-danger-700"
                 >
                   <X className="h-3 w-3 mr-1" />
                   Clear All

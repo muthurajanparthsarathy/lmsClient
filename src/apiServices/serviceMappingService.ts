@@ -216,7 +216,9 @@ export interface MappingPageFilters {
   /** Which list's haystack to search. 'service' = the workspace's second list
    *  (service + models + year + serviceCode + courseName); 'setup' = Course
    *  Setup's (client + serviceCode + service + year + models + the course names
-   *  the mapping teaches). Omit for the workspace table's. */
+   *  the mapping teaches). Omit for the workspace table's, which searches the
+   *  client and partner names only — it groups by client and shows no service
+   *  name, so a service match would surface an unexplainable row. */
   searchScope?: "service" | "setup";
   /** The MAPPING's own state — active / inactive. Not the setup state below. */
   status?: string;
@@ -227,6 +229,9 @@ export interface MappingPageFilters {
   client?: string;
   service?: string;
   serviceModel?: string;
+  /** The client's business model — B2B / B2I / B2C. Lives on the client, so
+   *  the server matches it after the client join, not in the base match. */
+  businessModel?: string;
   /** One course name; matches any mapping that teaches it. */
   course?: string;
   /** Created-at cutoff as epoch ms — mappings created before it are dropped. */
@@ -248,6 +253,8 @@ export interface MappingFacets {
   years: string[];
   services: string[];
   serviceModels: string[];
+  /** The CLIENT-level business models in play (B2B / B2I / B2C). */
+  businessModels: string[];
   /** [id, name] pairs, already sorted by name. */
   clients: [string, string][];
   /** Every course name any mapping teaches, deduped case-insensitively.
@@ -331,7 +338,7 @@ export const buildMappingPageParams = (
   if (f.search?.trim()) q.search = f.search.trim();
   if (f.searchScope) q.searchScope = f.searchScope;
   (["status", "setupStatus", "year", "client", "service", "serviceModel", "course",
-    "degree", "department", "section", "semester"] as const).forEach((k) => {
+    "businessModel", "degree", "department", "section", "semester"] as const).forEach((k) => {
       const v = f[k];
       if (v) q[k] = String(v);
     });
@@ -419,6 +426,14 @@ export function useServiceMappingsPage(
     },
     enabled,
     placeholderData: keepPreviousData,
+    // Revisiting the route within a minute is a cache hit with no
+    // background refetch — the coursestructure list otherwise refetched
+    // silently on every remount even when data was fresh, so isFetching
+    // stayed true long enough to dim the table. 10 min gcTime keeps the
+    // cache alive through a brief detour to a sub-page and back.
+    staleTime: 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 

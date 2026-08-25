@@ -140,6 +140,180 @@ const optionClass = (selected: boolean) =>
     selected ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"
   }`
 
+// ─── The template contract ───────────────────────────────────────────────────
+//
+// Role, client and service model are NOT columns. All three are chosen in the
+// pickers at the top of this modal and applied to every row, so repeating them
+// per row only invited a typo to contradict the picks. The server still READS
+// those columns when an older file carries them (a row value wins over the
+// picker) — dropping them here changed the template, not the parser.
+const TEMPLATE_COLUMNS = [
+  'email', 'firstName', 'lastName', 'phone', 'gender', 'password', 'rollNumber',
+]
+
+// The server destructures these keys VERBATIM off each parsed row
+// (`bulkUploadUsers` in server/controllers/userAuth.js) and the User schema
+// marks phone and password required. A file that misspells one does not fail
+// loudly — every row simply arrives with the field undefined and is rejected
+// one at a time, which is why the check below happens before the upload.
+const REQUIRED_COLUMNS = new Set(['email', 'firstName', 'lastName', 'phone', 'password'])
+
+// Columns the previous template carried. Still honoured by the server, so they
+// are reported as an override rather than as ignored noise.
+const LEGACY_COLUMNS = new Set(['role', 'clientname', 'servicemodel'])
+
+type ColumnStatus = 'matched' | 'mismatch' | 'missing' | 'optional-missing' | 'extra' | 'legacy'
+
+interface ColumnCheck {
+  expected?: string
+  found?: string
+  status: ColumnStatus
+}
+
+interface FileInspection {
+  /** false when the format cannot be read in the browser (legacy .xls). */
+  parsed: boolean
+  note?: string
+  columns: ColumnCheck[]
+  /** Blocking — the upload would produce a row error for every row. */
+  problems: string[]
+  /** Non-blocking — worth showing, but the file will still import. */
+  warnings: string[]
+  sample: string[][]
+  headers: string[]
+  totalRows: number
+}
+
+const normHeader = (s: string) => String(s ?? '').trim().toLowerCase()
+
+/** Split one CSV line, honouring "quoted, fields" and "" escapes. */
+const splitCsvLine = (line: string): string[] => {
+  const out: string[] = []
+  let cur = ''
+  let quoted = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++ } else quoted = false
+      } else cur += ch
+    } else if (ch === '"') quoted = true
+    else if (ch === ',') { out.push(cur); cur = '' }
+    else cur += ch
+  }
+  out.push(cur)
+  return out.map(v => v.trim())
+}
+
+/** ExcelJS cell values are unions (rich text, formula, hyperlink, date…). */
+const cellText = (v: any): string => {
+  if (v == null) return ''
+  if (typeof v === 'object') {
+    if (Array.isArray(v.richText)) return v.richText.map((r: any) => r.text).join('')
+    if ('text' in v) return String(v.text ?? '')
+    if ('result' in v) return String(v.result ?? '')
+    if (v instanceof Date) return v.toISOString()
+    return ''
+  }
+  return String(v)
+}
+
+const SAMPLE_ROWS = 5
+
+/**
+ * Read the header row and the first few data rows in the BROWSER, so a wrong
+ * column name is caught before the file is sent rather than coming back as N
+ * identical row errors.
+ *
+ * Returns null for a format that cannot be read here — legacy binary .xls has
+ * no parser on this side, and guessing would be worse than saying so.
+ */
+async function readSheet(
+  f: File,
+): Promise<{ headers: string[]; rows: string[][]; totalRows: number } | null> {
+  const name = f.name.toLowerCase()
+
+  if (name.endsWith('.csv')) {
+    const lines = (await f.text()).split(/\r?\n/).filter(l => l.trim() !== '')
+    if (!lines.length) return { headers: [], rows: [], totalRows: 0 }
+    const all = lines.map(splitCsvLine)
+    const body = all.slice(1).filter(r => r.some(c => c !== ''))
+    return { headers: all[0], rows: body.slice(0, SAMPLE_ROWS), totalRows: body.length }
+  }
+
+  if (name.endsWith('.xlsx')) {
+    // Dynamic — exceljs is large and only needed once a file is actually picked.
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(await f.arrayBuffer())
+    const ws = wb.worksheets[0]
+    if (!ws) return { headers: [], rows: [], totalRows: 0 }
+
+    // `.values` is 1-indexed with a leading hole, hence the slice.
+    const rowValues = (n: number): string[] =>
+      (ws.getRow(n).values as any[] ?? []).slice(1).map(cellText).map(s => s.trim())
+
+    const headers = rowValues(1)
+    const rows: string[][] = []
+    let totalRows = 0
+    for (let n = 2; n <= ws.rowCount; n++) {
+      const r = rowValues(n)
+      if (!r.some(c => c !== '')) continue
+      totalRows++
+      if (rows.length < SAMPLE_ROWS) rows.push(r)
+    }
+    return { headers, rows, totalRows }
+  }
+
+  return null
+}
+
+/** Compare a file's headers against the template contract. */
+function inspectHeaders(headers: string[], sample: string[][], totalRows: number): FileInspection {
+  const columns: ColumnCheck[] = []
+  const problems: string[] = []
+  const warnings: string[] = []
+  const found = headers.map(h => ({ raw: String(h ?? '').trim(), key: normHeader(h) }))
+  const claimed = new Set<string>()
+
+  for (const expected of TEMPLATE_COLUMNS) {
+    const hit = found.find(f => f.key === normHeader(expected) && !claimed.has(f.raw))
+    if (!hit) {
+      if (REQUIRED_COLUMNS.has(expected)) {
+        columns.push({ expected, status: 'missing' })
+        problems.push(`Missing required column "${expected}"`)
+      } else {
+        columns.push({ expected, status: 'optional-missing' })
+      }
+      continue
+    }
+    claimed.add(hit.raw)
+    // Case and spacing matter: the server reads `row.email`, not `row.Email`.
+    if (hit.raw === expected) {
+      columns.push({ expected, found: hit.raw, status: 'matched' })
+    } else {
+      columns.push({ expected, found: hit.raw, status: 'mismatch' })
+      problems.push(`Column "${hit.raw}" must be spelled exactly "${expected}"`)
+    }
+  }
+
+  for (const f of found) {
+    if (!f.raw || claimed.has(f.raw)) continue
+    if (LEGACY_COLUMNS.has(f.key)) {
+      columns.push({ found: f.raw, status: 'legacy' })
+      warnings.push(`"${f.raw}" is an old template column — a value in it overrides the picks above for that row`)
+    } else {
+      columns.push({ found: f.raw, status: 'extra' })
+      warnings.push(`"${f.raw}" is not a template column and will be ignored`)
+    }
+  }
+
+  if (!headers.length) problems.push('The first row must be the column names')
+  else if (!totalRows) problems.push('The file has no data rows')
+
+  return { parsed: true, columns, problems, warnings, sample, headers, totalRows }
+}
+
 const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   isOpen,
   onClose,
@@ -158,6 +332,13 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   const [mappings, setMappings] = useState<ServiceMapping[]>([])
   const [isLoadingContext, setIsLoadingContext] = useState(false)
   const [isDragging, setIsDragging] = useState<boolean>(false)
+  // What the picked file's header row actually says, checked against
+  // TEMPLATE_COLUMNS the moment it is chosen. Null until a file is read.
+  const [inspection, setInspection] = useState<FileInspection | null>(null)
+  const [isInspecting, setIsInspecting] = useState(false)
+  // "Upload & create" shows this confirmation of what was read before anything
+  // is sent; the button on it performs the real upload.
+  const [showPreview, setShowPreview] = useState(false)
   const [uploadResults, setUploadResults] = useState<UploadResults | null>(null)
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
     percentage: 0,
@@ -169,6 +350,12 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   const [roleOpen, setRoleOpen] = useState(false)
   const [clientOpen, setClientOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
+  // A file that was turned away (wrong type, too big, unreadable, or wrong
+  // columns). It is NOT held as the picked file — the dropzone stays empty and
+  // ready for the corrected file — but its name and the reasons are kept so the
+  // error says WHICH file failed and why.
+  const [rejectedFile, setRejectedFile] = useState<{ name: string; reasons: string[] } | null>(null)
+  const [confirmDiscardBulk, setConfirmDiscardBulk] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch course structures
@@ -214,6 +401,13 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   const selectedClient = clients.find(c => c._id === clientId) || null
   const selectedRole = roles.find(r => r._id === roleId) || null
 
+  // Client + service model place a learner inside a client's programme, which
+  // only means anything for students. Staff roles are institution-level, so
+  // those two pickers stay hidden until a student role is picked.
+  const isStudentRole = /student/i.test(
+    selectedRole?.renameRole || selectedRole?.originalRole || ''
+  )
+
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
@@ -242,6 +436,17 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
     }
   }, [])
 
+  // One place to turn a file away: the dropzone goes back to empty, the input
+  // is cleared so re-picking the same file still fires onChange, and the toast
+  // names the file rather than just saying "wrong file".
+  const rejectFile = (name: string, reasons: string[]): void => {
+    setFile(null)
+    setInspection(null)
+    setRejectedFile({ name, reasons })
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    toast.error(`${name} — ${reasons[0]}${reasons.length > 1 ? ` (+${reasons.length - 1} more)` : ''}`)
+  }
+
   const handleFileSelect = (selectedFile: File): void => {
     const validTypes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -249,24 +454,64 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
       'text/csv'
     ]
 
-    if (!validTypes.includes(selectedFile.type)) {
-      toast.error("Please upload an Excel file (.xlsx, .xls) or CSV file")
+    // Browsers report a blank or odd MIME type for spreadsheets often enough
+    // (CSVs saved by Excel especially) that the extension is the tiebreaker.
+    const extOk = /\.(xlsx|xls|csv)$/i.test(selectedFile.name)
+    if (!validTypes.includes(selectedFile.type) && !extOk) {
+      rejectFile(selectedFile.name, ['Not an Excel or CSV file (.xlsx, .xls or .csv only)'])
       return
     }
 
     if (selectedFile.size > 5 * 1024 * 1024) {
-      toast.error("File size must be less than 5MB")
+      rejectFile(selectedFile.name, [`File is ${formatFileSize(selectedFile.size)} — the limit is 5MB`])
       return
     }
 
+    setRejectedFile(null)
     setFile(selectedFile)
     setUploadResults(null)
+    setShowPreview(false)
     setUploadProgress({
       percentage: 0,
       status: 'idle',
       stage: 'upload',
       message: ''
     })
+    void inspectFile(selectedFile)
+  }
+
+  // Read the header row now, not at upload time. The server matches column
+  // names verbatim, so a "Email" or a missing "password" turns into one row
+  // error per row — which is a slow, confusing way to learn the header is wrong.
+  const inspectFile = async (selectedFile: File): Promise<void> => {
+    setIsInspecting(true)
+    setInspection(null)
+    try {
+      const sheet = await readSheet(selectedFile)
+      if (!sheet) {
+        // Legacy binary .xls — no parser on this side. Say so instead of
+        // implying the file was checked.
+        setInspection({
+          parsed: false,
+          note: 'This .xls file cannot be checked in the browser. Save it as .xlsx or .csv to see the column check before uploading.',
+          columns: [], problems: [], warnings: [], sample: [], headers: [], totalRows: 0,
+        })
+        return
+      }
+      const result = inspectHeaders(sheet.headers, sheet.rows, sheet.totalRows)
+      // A file whose columns don't match the template can't be uploaded, so it
+      // is turned away rather than left sitting in the dropzone looking picked.
+      // The reasons are listed under the dropzone with the file's name.
+      if (result.problems.length) {
+        rejectFile(selectedFile.name, result.problems)
+        return
+      }
+      setInspection(result)
+    } catch (err: any) {
+      rejectFile(selectedFile.name, ['Could not be read — is it a valid .xlsx or .csv?'])
+    } finally {
+      setIsInspecting(false)
+    }
   }
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -277,6 +522,9 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 
   const handleRemoveFile = (): void => {
     setFile(null)
+    setInspection(null)
+    setRejectedFile(null)
+    setShowPreview(false)
     setUploadProgress({
       percentage: 0,
       status: 'idle',
@@ -288,32 +536,21 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
     }
   }
 
-  // One example per shape: a Student row with the student-only columns filled,
-  // and a non-student row that leaves them blank. `role` must name a role that
-  // already exists — an unrecognised name is now reported as a row error rather
-  // than quietly creating a new role. Leave it blank to use the default picked
-  // above. Client and service model are never columns: they must be stored as
-  // ids and a spreadsheet only carries text, so they come from the pickers.
-  const TEMPLATE_COLUMNS = [
-    'email', 'firstName', 'lastName', 'phone', 'gender', 'password',
-    'rollNumber', 'role', 'clientName', 'serviceModel',
-  ]
-
   const downloadTemplate = (): void => {
-    // The per-row fields the New user form collects. role / clientName /
-    // serviceModel are NAMES here; the server resolves each to the id it stores
-    // (role → role ref, clientName → clientId, serviceModel → serviceMappingId)
-    // and rejects a name it does not recognise instead of inventing a record.
-    // Leave any of the three blank to fall back to the pickers above.
+    // The per-row fields the New user form collects. Role, client and service
+    // model come from the pickers above and are sent once for the whole file,
+    // so they are not columns here.
     //
     // The degree-hierarchy columns (degree, department, year, semester, section,
     // batch, studentType) are intentionally NOT here — a placement student's
     // record does not carry them. The server still reads them when a file
     // includes them, for clients that run degree programs.
+    //
+    // Two rows so both shapes are visible: one with a roll number, one without.
     const templateData = [
       TEMPLATE_COLUMNS,
-      ['sam.k@example.com', 'sam', 'K', '9898989898', 'male', 'password123', '611222104076', 'Student', 'Knowledge Institute of Technology', 'placement training'],
-      ['arun.k@example.com', 'Arun', 'K', '9123456780', 'male', 'password789', '', 'Admin', 'Knowledge Institute of Technology', '']
+      ['sam.k@example.com', 'sam', 'K', '9898989898', 'male', 'password123', '611222104076'],
+      ['arun.k@example.com', 'Arun', 'K', '9123456780', 'male', 'password789', '']
     ]
 
     const csvContent = templateData.map(row => row.join(',')).join('\n')
@@ -408,7 +645,9 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
     }
   })
 
-  const handleUpload = async (): Promise<void> => {
+  // Step one of "Upload & create": confirm what was actually read out of the
+  // file. Nothing is sent until the preview's own button is pressed.
+  const handleReviewFile = (): void => {
     if (!file) {
       toast.error("Please select a file to upload")
       return
@@ -419,7 +658,38 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
       toast.error("Please choose a role assignment for these users")
       return
     }
+    if (isInspecting) {
+      toast.error("Still reading the file — one moment")
+      return
+    }
+    if (inspection?.problems.length) {
+      toast.error(
+        inspection.problems.length === 1
+          ? inspection.problems[0]
+          : `Fix ${inspection.problems.length} column problems before uploading`,
+      )
+      return
+    }
+    setShowPreview(true)
+  }
 
+  const handleUpload = async (): Promise<void> => {
+    if (!file) {
+      toast.error("Please select a file to upload")
+      return
+    }
+    if (!roleId) {
+      toast.error("Please choose a role assignment for these users")
+      return
+    }
+    // Re-checked here, not just in handleReviewFile: the preview stays mounted
+    // while the picks can still change, and this is the last gate before send.
+    if (inspection?.problems.length) {
+      toast.error("Fix the column problems before uploading")
+      return
+    }
+
+    setShowPreview(false)
     setUploadProgress({
       percentage: 0,
       status: 'uploading',
@@ -447,8 +717,28 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
     uploadMutation.mutate(formData)
   }
 
+  // Anything picked yet? Closing then would throw away the setup, so the X and
+  // Cancel confirm first. An untouched modal closes straight away.
+  // Once the upload has run, the picks are spent — there is nothing left to
+  // warn about, so results close without a prompt.
+  const hasBulkWork = (): boolean =>
+    !uploadResults && Boolean(file || roleId || clientId || mappingId)
+
+  const requestCloseBulk = (): void => {
+    if (isUploadInProgress) return
+    if (hasBulkWork()) {
+      setConfirmDiscardBulk(true)
+      return
+    }
+    handleClose()
+  }
+
   const handleClose = (): void => {
+    setConfirmDiscardBulk(false)
+    setRejectedFile(null)
     setFile(null)
+    setInspection(null)
+    setShowPreview(false)
     setUploadResults(null)
     // Clear the placement picks too — reopening should not silently reuse the
     // last client/service for a different set of users.
@@ -486,6 +776,9 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 
   const handleUploadAnotherFile = (): void => {
     setFile(null)
+    setInspection(null)
+    setRejectedFile(null)
+    setShowPreview(false)
     setUploadResults(null)
     setUploadProgress({
       percentage: 0,
@@ -533,18 +826,38 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   const steps = ["Configure", "Upload", "Results"]
 
   return (
-    <Dialog open={isOpen} onOpenChange={(o) => { if (!o && !isUploadInProgress) handleClose() }}>
-      <DialogContent className="sm:max-w-[640px] max-h-[88vh] flex flex-col gap-0 p-0 overflow-hidden">
+    <Dialog open={isOpen} onOpenChange={(o) => { if (!o) requestCloseBulk() }}>
+      <DialogContent
+        showCloseButton={false}
+        // The backdrop can't dismiss this: a configured upload with a validated
+        // file is too much work to lose to a stray click.
+        onInteractOutside={(e) => e.preventDefault()}
+        className="sm:max-w-[640px] max-h-[88vh] flex flex-col gap-0 p-0 overflow-hidden"
+      >
         <DialogHeader className="border-b border-hairline px-5 py-4">
-          <DialogTitle className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-tile bg-brand-wash flex items-center justify-center">
-              <FileSpreadsheet className="h-4 w-4 text-brand-strong" />
-            </span>
-            Bulk user upload
-          </DialogTitle>
-          <DialogDescription>
-            Pick the role, client and service model, download the template, fill it, and upload.
-          </DialogDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <DialogTitle className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-tile bg-brand-wash flex items-center justify-center">
+                  <FileSpreadsheet className="h-4 w-4 text-brand-strong" />
+                </span>
+                Bulk user upload
+              </DialogTitle>
+              <DialogDescription>
+                Pick the role{isStudentRole ? ', client and service model' : ''}, download the template, fill it, and upload.
+              </DialogDescription>
+            </div>
+            <button
+              type="button"
+              onClick={requestCloseBulk}
+              disabled={isUploadInProgress}
+              title="Close"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-500 text-white transition-colors duration-150 hover:bg-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <X className="h-4 w-4" strokeWidth={3} />
+              <span className="sr-only">Close</span>
+            </button>
+          </div>
           <div className="flex items-center gap-2 pt-1" aria-hidden="true">
             {steps.map((s, i) => (
               <div key={s} className="flex items-center gap-2">
@@ -576,8 +889,8 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {/* Access & placement — applied to every row in the file */}
-          {!uploadResults && uploadProgress.status === 'idle' && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {!uploadResults && uploadProgress.status === 'idle' && !showPreview && (
+            <div className={`grid grid-cols-1 gap-3 ${isStudentRole ? 'sm:grid-cols-3' : 'sm:grid-cols-1'}`}>
               <Dropdown
                 label="Role"
                 required
@@ -591,13 +904,27 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                 {roles.length === 0 ? <p className="px-3 py-2 text-xs text-faint">No roles</p> :
                   roles.map((r) => (
                     <button key={r._id} type="button"
-                      onClick={() => { setRoleId(r._id); setRoleOpen(false) }}
+                      onClick={() => {
+                        setRoleId(r._id)
+                        setRoleOpen(false)
+                        // Leaving a student role drops the placement picks —
+                        // they're hidden from here on, so keeping them would
+                        // silently apply a client the user can no longer see.
+                        if (!/student/i.test(r.renameRole || r.originalRole || '')) {
+                          setClientId('')
+                          setMappingId('')
+                          setClientOpen(false)
+                          setModelOpen(false)
+                        }
+                      }}
                       className={optionClass(roleId === r._id)}>
                       {r.renameRole || r.originalRole}
                     </button>
                   ))}
               </Dropdown>
 
+              {/* Placement pickers appear only for students — see isStudentRole. */}
+              {isStudentRole && (
               <Dropdown
                 label="Client"
                 icon={<Building2 size={14} className="text-subtle" />}
@@ -616,7 +943,9 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                     </button>
                   ))}
               </Dropdown>
+              )}
 
+              {isStudentRole && (
               <Dropdown
                 label="Service model"
                 icon={<Briefcase size={14} className="text-subtle" />}
@@ -635,11 +964,12 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                     </button>
                   ))}
               </Dropdown>
+              )}
             </div>
           )}
 
           {/* What a row must contain, and where to get a file shaped like it */}
-          {!uploadResults && uploadProgress.status === 'idle' && (
+          {!uploadResults && uploadProgress.status === 'idle' && !showPreview && (
             <div className="rounded-tile border border-brand-500/20 bg-brand-wash p-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-heading">Template columns</p>
@@ -652,7 +982,7 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           )}
 
           {/* File Upload Section */}
-          {!uploadResults && uploadProgress.status === 'idle' && (
+          {!uploadResults && uploadProgress.status === 'idle' && !showPreview && (
             <div className="space-y-3">
               <div
                 className={`border-2 border-dashed rounded-tile p-6 text-center cursor-pointer transition-colors duration-150 ${
@@ -699,12 +1029,213 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                   </div>
                 )}
               </div>
-              <p className="text-2xs text-subtle text-center leading-relaxed">
-                Required: email, firstName, lastName, phone, password · Optional: gender, rollNumber,
-                role, clientName, serviceModel.<br />
-                role / clientName / serviceModel are matched by name and saved as ids — leave a cell
-                blank to use the picks above.
-              </p>
+
+              {/* Why the last file was turned away — named, so it's obvious
+                  which one to fix when several are being tried. */}
+              {rejectedFile && (
+                <div className="rounded-tile border border-danger-500/40 bg-danger-50 p-3">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 text-danger-500 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-danger-700 break-all">
+                        {rejectedFile.name} was not accepted
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {rejectedFile.reasons.map((r, i) => (
+                          <li key={i} className="text-2xs text-danger-700/90">• {r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRejectedFile(null)}
+                      className="text-danger-500 hover:text-danger-700 shrink-0"
+                      title="Dismiss"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Column check ──────────────────────────────────────────────────
+              The header row of the picked file, matched against the template.
+              Shown as soon as a file is chosen so a wrong column name is a
+              five-second fix rather than N identical row errors after upload. */}
+          {!uploadResults && uploadProgress.status === 'idle' && !showPreview && file && (
+            <div className="rounded-tile border border-hairline p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-heading">
+                  {isInspecting ? 'Reading the file…' : 'Column check'}
+                </p>
+                {isInspecting
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin text-subtle" />
+                  : inspection?.parsed && (
+                    <span className="text-2xs text-subtle">
+                      {inspection.totalRows} data row{inspection.totalRows === 1 ? '' : 's'}
+                    </span>
+                  )}
+              </div>
+
+              {!isInspecting && inspection && !inspection.parsed && (
+                <p className="text-2xs text-warn-700 flex items-start gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-px" />
+                  {inspection.note}
+                </p>
+              )}
+
+              {!isInspecting && inspection?.parsed && (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {inspection.columns.map((c, i) => {
+                      const style: Record<ColumnStatus, string> = {
+                        matched: 'bg-success-50 text-success-700 border-success-500/25',
+                        mismatch: 'bg-danger-50 text-danger-700 border-danger-500/25',
+                        missing: 'bg-danger-50 text-danger-700 border-danger-500/25',
+                        'optional-missing': 'bg-ink-50 text-subtle border-hairline',
+                        legacy: 'bg-warn-50 text-warn-700 border-warn-500/25',
+                        extra: 'bg-warn-50 text-warn-700 border-warn-500/25',
+                      }
+                      const label =
+                        c.status === 'mismatch' ? `${c.found} → ${c.expected}`
+                        : c.status === 'missing' ? `${c.expected} missing`
+                        : c.status === 'optional-missing' ? `${c.expected} — not provided`
+                        : (c.found ?? c.expected)
+                      return (
+                        <span
+                          key={`${c.expected ?? c.found}-${i}`}
+                          className={`inline-flex items-center gap-1 rounded-chip border px-2 py-0.5 text-2xs font-medium ${style[c.status]}`}
+                        >
+                          {c.status === 'matched' && <CheckCircle className="h-3 w-3" />}
+                          {(c.status === 'mismatch' || c.status === 'missing') && <XCircle className="h-3 w-3" />}
+                          {(c.status === 'legacy' || c.status === 'extra') && <AlertTriangle className="h-3 w-3" />}
+                          {label}
+                        </span>
+                      )
+                    })}
+                  </div>
+
+                  {inspection.problems.length > 0 && (
+                    <ul className="space-y-1">
+                      {inspection.problems.map((p, i) => (
+                        <li key={i} className="text-2xs text-danger-700 flex items-start gap-1.5">
+                          <XCircle className="h-3.5 w-3.5 flex-shrink-0 mt-px" />{p}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {inspection.warnings.length > 0 && (
+                    <ul className="space-y-1">
+                      {inspection.warnings.map((w, i) => (
+                        <li key={i} className="text-2xs text-warn-700 flex items-start gap-1.5">
+                          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-px" />{w}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {!inspection.problems.length && !inspection.warnings.length && (
+                    <p className="text-2xs text-success-700 flex items-center gap-1.5">
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      Every column matches the template.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Preview ───────────────────────────────────────────────────────
+              Step one of "Upload & create": what was actually read out of the
+              file, and the context every row will be created with. Nothing has
+              been sent at this point. */}
+          {showPreview && !uploadResults && uploadProgress.status === 'idle' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-heading">Ready to create</p>
+                <span className="text-2xs text-subtle truncate max-w-[55%]">{file?.name}</span>
+              </div>
+
+              {/* Applied to every row — the picks, not the spreadsheet */}
+              <div className="rounded-tile border border-brand-500/20 bg-brand-wash p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { label: 'Role', value: selectedRole ? (selectedRole.renameRole || selectedRole.originalRole) : '—' },
+                  { label: 'Client', value: selectedClient?.clientCompany || '—' },
+                  { label: 'Service model', value: selectedMapping ? modelNameOf(selectedMapping) : '—' },
+                ].map(f => (
+                  <div key={f.label} className="min-w-0">
+                    <p className="text-2xs text-subtle">{f.label}</p>
+                    <p className="text-xs font-semibold text-heading truncate">{f.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Header row → template field, as read from the file */}
+              <div className="rounded-tile border border-hairline overflow-hidden">
+                <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-hairline bg-ink-50">
+                  <p className="text-xs font-semibold text-heading">Columns read from your file</p>
+                  <span className="text-2xs text-subtle">
+                    {inspection?.totalRows ?? 0} row{(inspection?.totalRows ?? 0) === 1 ? '' : 's'} will be created
+                  </span>
+                </div>
+                <div className="max-h-40 overflow-y-auto divide-y divide-hairline">
+                  {(inspection?.columns ?? []).map((c, i) => (
+                    <div key={`${c.expected ?? c.found}-${i}`} className="flex items-center gap-2 px-3 py-1.5">
+                      <span className="text-xs text-body flex-1 truncate">{c.found ?? '—'}</span>
+                      <span className="text-2xs text-faint">→</span>
+                      <span className="text-xs font-medium text-heading flex-1 truncate">
+                        {c.expected ?? <span className="text-faint">not a template column</span>}
+                      </span>
+                      <span className="text-2xs flex-shrink-0">
+                        {c.status === 'matched' && <span className="text-success-700">matched</span>}
+                        {c.status === 'optional-missing' && <span className="text-subtle">not provided</span>}
+                        {c.status === 'legacy' && <span className="text-warn-700">overrides picks</span>}
+                        {c.status === 'extra' && <span className="text-warn-700">ignored</span>}
+                        {(c.status === 'missing' || c.status === 'mismatch') && <span className="text-danger-700">problem</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* First rows, exactly as parsed */}
+              {!!inspection?.sample.length && (
+                <div className="rounded-tile border border-hairline overflow-hidden">
+                  <p className="text-xs font-semibold text-heading px-3 py-2 border-b border-hairline bg-ink-50">
+                    First {inspection.sample.length} row{inspection.sample.length === 1 ? '' : 's'}
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-2xs">
+                      <thead>
+                        <tr className="border-b border-hairline">
+                          {inspection.headers.map((h, i) => (
+                            <th key={`${h}-${i}`} className="text-left font-semibold text-subtle px-3 py-1.5 whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-hairline">
+                        {inspection.sample.map((row, r) => (
+                          <tr key={r}>
+                            {inspection.headers.map((_, c) => (
+                              <td key={c} className="px-3 py-1.5 text-body whitespace-nowrap max-w-[160px] truncate">
+                                {row[c] || <span className="text-faint">—</span>}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {inspection && !inspection.parsed && (
+                <p className="text-2xs text-warn-700 flex items-start gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-px" />
+                  {inspection.note} The server will still validate every row.
+                </p>
+              )}
             </div>
           )}
 
@@ -801,7 +1332,14 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 
         <DialogFooter className="border-t border-hairline bg-surface px-5 py-3.5">
           <div className="flex w-full justify-between items-center">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={isUploadInProgress}>
+            {/* Once results are in there is nothing left to lose — Close goes
+                straight through; Cancel mid-setup confirms. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={uploadResults ? handleClose : requestCloseBulk}
+              disabled={isUploadInProgress}
+            >
               {uploadResults ? 'Close' : 'Cancel'}
             </Button>
 
@@ -812,22 +1350,61 @@ const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                 </Button>
               )}
 
+              {showPreview && !uploadResults && !isUploadInProgress && (
+                <Button onClick={() => setShowPreview(false)} variant="outline" size="sm">
+                  Back
+                </Button>
+              )}
+
               {!uploadResults && uploadProgress.status !== 'completed' && (
                 <Button
-                  onClick={handleUpload}
-                  disabled={!file || !roleId || isUploadInProgress}
-                  title={!roleId ? "Choose a role assignment first" : undefined}
+                  onClick={showPreview ? handleUpload : handleReviewFile}
+                  disabled={
+                    !file || !roleId || isUploadInProgress || isInspecting ||
+                    !!inspection?.problems.length
+                  }
+                  title={
+                    !roleId ? "Choose a role assignment first"
+                    : inspection?.problems.length ? "Fix the column problems first"
+                    : undefined
+                  }
                   size="sm"
                 >
                   {isUploadInProgress
                     ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
-                    : <><Upload className="h-3.5 w-3.5" /> Upload &amp; create</>}
+                    : isInspecting
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading…</>
+                      : showPreview
+                        ? <><CheckCircle className="h-3.5 w-3.5" /> Confirm &amp; create</>
+                        : <><Upload className="h-3.5 w-3.5" /> Upload &amp; create</>}
                 </Button>
               )}
             </div>
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Discard confirmation — only when something has actually been set up */}
+      <Dialog open={confirmDiscardBulk} onOpenChange={setConfirmDiscardBulk}>
+        <DialogContent showCloseButton={false} className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Discard this upload?</DialogTitle>
+            <DialogDescription>
+              {file
+                ? `${file.name} and the role/placement picks will be cleared.`
+                : 'The role and placement picks will be cleared.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDiscardBulk(false)}>
+              Keep editing
+            </Button>
+            <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleClose}>
+              Discard &amp; close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

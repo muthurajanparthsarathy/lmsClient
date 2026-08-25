@@ -4,7 +4,7 @@ import { API_BASE_URL } from "@/lib/http";
 
 import { useState, useEffect, useMemo } from 'react'
 import { Poppins } from 'next/font/google'
-import { GraduationCap, Mail, Phone, UserIcon, UserPlus, Trash2, Calendar, Clock, Settings, CheckCircle, XCircle, Clock as ClockIcon, ToggleLeft, ToggleRight } from "lucide-react"
+import { GraduationCap, Mail, Phone, UserIcon, UserPlus, Trash2, Calendar, Clock, Settings, CheckCircle, XCircle, Clock as ClockIcon, ToggleLeft, ToggleRight, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -158,6 +158,7 @@ export default function EnrollmentTab({
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [selectedUsersToAdd, setSelectedUsersToAdd] = useState<string[]>([])
   const [selectedUsersToRemove, setSelectedUsersToRemove] = useState<string[]>([])
+  const [confirmDiscardEnrol, setConfirmDiscardEnrol] = useState(false)
   const [showBulkRemoveConfirm, setShowBulkRemoveConfirm] = useState(false)
   const [showSingleRemoveConfirm, setShowSingleRemoveConfirm] = useState(false)
   const [userToRemove, setUserToRemove] = useState<string | null>(null)
@@ -273,6 +274,19 @@ export default function EnrollmentTab({
   const batchOptions: string[] = ((courseData?.batchAndParticipants as { batchName?: string }[]) || [])
     .map((b) => (b?.batchName || '').trim())
     .filter(Boolean)
+
+  // "Default" is the fallback container the enrol path creates when a course
+  // has no batches of its own (see courseStructure.js — it's absorbed into the
+  // first real batch the moment one appears). So a course is batch-based only
+  // once it carries a batch that isn't that placeholder; otherwise the picker
+  // is shown disabled — there is nothing to choose between.
+  const isBatchBased = batchOptions.some((bn) => bn.toLowerCase() !== 'default')
+  const defaultBatchName = batchOptions[0] || ''
+
+  // Course ▸ client ▸ service model, for the enrol dialog's subtitle.
+  const courseTitle: string = courseData?.courseName || ''
+  const courseClientName: string = courseData?.clientName || ''
+  const courseServiceModal: string = courseData?.serviceModal || ''
 
   // Sections are stored on the user document — matching is by the user's
   // section field (trim + case-insensitive, sections are short codes like "A").
@@ -818,7 +832,7 @@ export default function EnrollmentTab({
     }
     // Only REQUIRE a batch when the course actually has batches. A course with no
     // batches enrols students straight into the course (implicit single batch).
-    if (batchOptions.length > 0 && !(targetBatchName || batchName)) {
+    if (isBatchBased && !(targetBatchName || batchName)) {
       showWarningToast("No batch selected. Open this page from a batch's Manage Participants action.")
       return
     }
@@ -843,7 +857,7 @@ export default function EnrollmentTab({
   const handleAddAllMatching = () => {
     // Only REQUIRE a batch when the course actually has batches. A course with no
     // batches enrols students straight into the course (implicit single batch).
-    if (batchOptions.length > 0 && !(targetBatchName || batchName)) {
+    if (isBatchBased && !(targetBatchName || batchName)) {
       showWarningToast("No batch selected. Open this page from a batch's Manage Participants action.")
       return
     }
@@ -924,7 +938,18 @@ export default function EnrollmentTab({
     // matching the initial state above.
     setAllSystemUsers(true)
     setAllClientStudents(false)
+    setConfirmDiscardEnrol(false)
     if (onAddModalClose) onAddModalClose()
+  }
+
+  // Closing with users ticked would silently drop the whole selection, so the
+  // X and Cancel confirm first. The backdrop can't close it at all.
+  const requestCloseAddModal = () => {
+    if (selectedUsersToAdd.length > 0) {
+      setConfirmDiscardEnrol(true)
+      return
+    }
+    handleCloseAddModal()
   }
 
   const handleCloseSettingsModal = () => {
@@ -1028,8 +1053,15 @@ function calculateDuration(startDate: string, endDate: string): string {
       />
 
       {/* Add Individual Modal */}
-      <Dialog open={isAddModalOpen} onOpenChange={handleCloseAddModal}>
-        <DialogContent className={`${poppins.className} flex flex-col w-[calc(100vw-1.5rem)] max-w-[1400px] h-[calc(100vh-1rem)] max-h-[96vh] my-2 overflow-hidden p-0 rounded-lg`}>
+      <Dialog open={isAddModalOpen} onOpenChange={(o) => { if (!o) requestCloseAddModal() }}>
+        <DialogContent
+          showCloseButton={false}
+          // Backdrop clicks are inert here: losing a 200-row selection to a
+          // mis-click is the expensive mistake. gap-0 so the table — not dead
+          // space between header/body/footer — gets the dialog's height.
+          onInteractOutside={(e) => e.preventDefault()}
+          className={`${poppins.className} flex flex-col gap-0 w-[calc(100vw-1.5rem)] max-w-[1400px] h-[calc(100vh-1rem)] max-h-[96vh] my-2 overflow-hidden p-0 rounded-lg`}
+        >
           {/* The table is the point of this dialog, so the chrome around it is
               kept to two compact rows — batch and pool sit side by side rather
               than stacking, which used to push the list down to ~3 visible rows. */}
@@ -1045,36 +1077,71 @@ function calculateDuration(startDate: string, endDate: string): string {
                 </DialogTitle>
                 <DialogDescription className="text-xs text-subtle mt-0.5">
                   Choose users below and enrol them into{' '}
-                  <span className="font-semibold text-ink-700">{courseData?.courseName || 'this course'}</span>.
+                  <span className="font-semibold text-ink-700">{courseTitle || 'this course'}</span>
+                  {/* Client and service model alongside the course name: the
+                      same course name can exist under several clients/services,
+                      so the name alone doesn't say which setup you're in. */}
+                  {courseClientName && (
+                    <>
+                      <span className="text-faint"> · </span>
+                      <span className="font-medium text-ink-700">{courseClientName}</span>
+                    </>
+                  )}
+                  {courseServiceModal && (
+                    <>
+                      <span className="text-faint"> · </span>
+                      <span className="font-medium text-ink-700">{courseServiceModal}</span>
+                    </>
+                  )}
                 </DialogDescription>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleOpenNewUserModal}
-                className="gap-1.5 h-8 px-3 text-xs border-hairline-strong text-ink-700 hover:border-line-hover mr-8 shrink-0"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                New User
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleOpenNewUserModal}
+                  className="gap-1.5 h-8 px-3 text-xs border-hairline-strong text-ink-700 hover:border-line-hover"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  New User
+                </Button>
+                <button
+                  type="button"
+                  onClick={requestCloseAddModal}
+                  title="Close"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500 text-white transition-colors duration-150 hover:bg-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 cursor-pointer"
+                >
+                  <X className="h-4 w-4" strokeWidth={3} />
+                  <span className="sr-only">Close</span>
+                </button>
+              </div>
             </div>
 
             {/* ── Row 2: the TARGET batch + which pool to show, on one line ── */}
             <div className="mt-2 flex items-center gap-x-4 gap-y-2 flex-wrap">
               {batchOptions.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-2xs font-semibold uppercase tracking-wide text-faint">Enrol into batch</span>
+                  <span className={`text-2xs font-semibold uppercase tracking-wide ${isBatchBased ? 'text-faint' : 'text-faint/60'}`}>
+                    Enrol into batch
+                  </span>
                   {/* Dropdown, not pills: only valid batches for this course
                       are offered, and the placeholder forces an explicit
                       choice when nothing is preselected (footer blocks
-                      enrolment until then). */}
+                      enrolment until then). A course that isn't batch-based
+                      has nothing to choose between — the picker is shown
+                      disabled on its single container rather than hidden, so
+                      it's clear WHY there's no choice to make. */}
                   <select
-                    value={targetBatchName || batchName || ''}
+                    value={isBatchBased ? (targetBatchName || batchName || '') : defaultBatchName}
                     onChange={(e) => setTargetBatchName(e.target.value)}
-                    className={`h-8 px-2.5 pr-7 rounded-control text-xs font-semibold border bg-surface cursor-pointer focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors ${
-                      (targetBatchName || batchName)
-                        ? 'border-brand text-brand'
-                        : 'border-warn-500/50 text-warn-700'
+                    disabled={!isBatchBased}
+                    title={isBatchBased ? undefined : 'This course is not batch-based'}
+                    className={`h-8 px-2.5 pr-7 rounded-control text-xs font-semibold border bg-surface focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors ${
+                      !isBatchBased
+                        ? 'border-hairline-strong text-faint bg-canvas cursor-not-allowed opacity-70'
+                        : (targetBatchName || batchName)
+                          ? 'border-brand text-brand cursor-pointer'
+                          : 'border-warn-500/50 text-warn-700 cursor-pointer'
                     }`}
                   >
                     <option value="" disabled>Select batch…</option>
@@ -1082,6 +1149,9 @@ function calculateDuration(startDate: string, endDate: string): string {
                       <option key={bn} value={bn}>{bn}</option>
                     ))}
                   </select>
+                  {!isBatchBased && (
+                    <span className="text-2xs text-faint">Not batch-based</span>
+                  )}
                 </div>
               )}
 
@@ -1121,7 +1191,7 @@ function calculateDuration(startDate: string, endDate: string): string {
             </div>
           </DialogHeader>
 
-          <div className="flex-1 min-h-0 overflow-hidden px-5 py-2 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-hidden px-5 pt-2 pb-1 flex flex-col">
             <FilteredTable
               users={availableUsersToAdd}
               isLoading={isLoadingAllUsers}
@@ -1147,7 +1217,7 @@ function calculateDuration(startDate: string, endDate: string): string {
               {/* Running selection — a live count so you always know how many
                   you're about to enrol before you commit. */}
               <div className="flex items-center gap-2 min-w-0">
-                {batchOptions.length > 0 && !(targetBatchName || batchName) ? (
+                {isBatchBased && !(targetBatchName || batchName) ? (
                   <span className="text-xs font-semibold text-warn-700">Pick a batch to enrol into first</span>
                 ) : selectedUsersToAdd.length > 0 ? (
                   <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold">
@@ -1173,14 +1243,14 @@ function calculateDuration(startDate: string, endDate: string): string {
                   variant="outline"
                   size="sm"
                   className="h-9 px-4 text-xs border-hairline-strong text-ink-700 hover:border-line-hover"
-                  onClick={handleCloseAddModal}
+                  onClick={requestCloseAddModal}
                 >
                   Cancel
                 </Button>
                 <button
                   type="button"
                   onClick={handleSubmitParticipants}
-                  disabled={selectedUsersToAdd.length === 0 || addParticipantsMutation.isPending || (batchOptions.length > 0 && !(targetBatchName || batchName))}
+                  disabled={selectedUsersToAdd.length === 0 || addParticipantsMutation.isPending || (isBatchBased && !(targetBatchName || batchName))}
                   className="inline-flex items-center gap-1.5 h-9 px-4 rounded-tile bg-gradient-to-b from-brand-400 to-brand-600 text-white text-xs font-semibold shadow-brand hover:brightness-105 transition-[filter] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
                 >
                   {addParticipantsMutation.isPending ? (
@@ -1199,6 +1269,30 @@ function calculateDuration(startDate: string, endDate: string): string {
                 </button>
               </div>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Discard confirmation for the enrol picker — only when users are ticked */}
+      <Dialog open={confirmDiscardEnrol} onOpenChange={setConfirmDiscardEnrol}>
+        <DialogContent showCloseButton={false} className={`${poppins.className} sm:max-w-[420px]`}>
+          <DialogHeader>
+            <DialogTitle>Discard your selection?</DialogTitle>
+            <DialogDescription>
+              {selectedUsersToAdd.length} user{selectedUsersToAdd.length === 1 ? '' : 's'} selected but not enrolled yet.
+              Closing now clears the selection.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDiscardEnrol(false)}>
+              Keep selecting
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleCloseAddModal}
+            >
+              Discard &amp; close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -31,6 +31,7 @@ import {
   MessageSquare, Filter, Info, Loader2, FileText, RotateCcw, SearchX,
 } from "lucide-react";
 import { retestApi, type RetestRequestRecord, type EnrolledStudent } from "@/apiServices/retest";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { exerciseApi } from "@/apiServices/exercise";
 import { getSocket } from "@/apiServices/socketClient";
 import { EmptyState, StatusPill, pageEnter } from "@/app/lms/shared/ui";
@@ -377,11 +378,45 @@ function ManageUsersInner() {
   const [tab, setTab] = useState<"users" | "requests">(
     sp.get("tab") === "requests" ? "requests" : "users"
   );
-  const [students, setStudents] = useState<EnrolledStudent[]>([]);
-  const [requests, setRequests] = useState<RetestRequestRecord[]>([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
-  const [loadingRequests, setLoadingRequests] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Students + requests live in React Query so their cache survives an
+  // unmount / remount (navigating away and back used to blank both lists
+  // and re-fetch, per the admin-routes loading-issue pass). Same
+  // (courseId, exerciseId) → same cache key → instant paint on revisit.
+  const queryClient = useQueryClient();
+  const studentsKey = ["manageUsers", "students", courseId || "", exerciseId || ""] as const;
+  const requestsKey = ["manageUsers", "requests", courseId || "", exerciseId || ""] as const;
+  const studentsQuery = useQuery<EnrolledStudent[], Error>({
+    queryKey: studentsKey,
+    queryFn: async () => {
+      const res = await retestApi.getEnrolledStudents(courseId!, exerciseId!);
+      return (res?.data?.students || res?.students || res?.data || []) as EnrolledStudent[];
+    },
+    enabled: !!(courseId && exerciseId),
+    // Background revisits paint from cache instantly; a stale-fetch runs
+    // silently after 60s. 10 min gcTime keeps the cache alive through
+    // brief detours (Dashboard, Reports, etc.).
+    staleTime: 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const requestsQuery = useQuery<RetestRequestRecord[], Error>({
+    queryKey: requestsKey,
+    queryFn: async () => {
+      const res = await retestApi.getRequests(courseId!, exerciseId!);
+      return (res?.data || []) as RetestRequestRecord[];
+    },
+    enabled: !!(courseId && exerciseId),
+    staleTime: 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const students = studentsQuery.data ?? [];
+  const requests = requestsQuery.data ?? [];
+  // Only show the loader on the FIRST fetch (no data yet). Background
+  // refetches keep the previous rows on screen — no spinner flicker.
+  const loadingStudents = studentsQuery.isPending;
+  const loadingRequests = requestsQuery.isPending;
+  const error = studentsQuery.error?.message ?? null;
 
   // Toolbar state — mirrors User Management's compact search + Filter toggle
   // + expanding filter panel + chip strip pattern exactly.
@@ -420,34 +455,25 @@ function ManageUsersInner() {
     return () => { cancelled = true; };
   }, [exerciseId]);
 
+  // Explicit refresh — used by the toolbar Refresh button and after
+  // Unlock. Invalidates the two RQ caches so any concurrent viewer of
+  // the same (courseId, exerciseId) also re-syncs, then re-fires the
+  // fetch. `refetchStudents` / `refetchRequests` names are kept so the
+  // existing call sites (toolbar Refresh, error retry, post-Unlock)
+  // read the same way — only the mechanism changed.
   const fetchStudents = useCallback(async () => {
     if (!courseId || !exerciseId) return;
-    setLoadingStudents(true);
-    setError(null);
-    try {
-      const res = await retestApi.getEnrolledStudents(courseId, exerciseId);
-      setStudents(res?.data?.students || res?.students || res?.data || []);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || "Failed to load students");
-    } finally {
-      setLoadingStudents(false);
-    }
-  }, [courseId, exerciseId]);
+    await studentsQuery.refetch();
+  }, [courseId, exerciseId, studentsQuery]);
 
   const fetchRequests = useCallback(async () => {
     if (!courseId || !exerciseId) return;
-    setLoadingRequests(true);
     try {
-      const res = await retestApi.getRequests(courseId, exerciseId);
-      setRequests(res?.data || []);
+      await requestsQuery.refetch();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || err?.message || "Failed to load requests");
-    } finally {
-      setLoadingRequests(false);
     }
-  }, [courseId, exerciseId]);
-
-  useEffect(() => { fetchStudents(); fetchRequests(); }, [fetchStudents, fetchRequests]);
+  }, [courseId, exerciseId, requestsQuery]);
 
   const handleUnlock = async (startISO?: string, endISO?: string) => {
     if (!unlockTarget) return;

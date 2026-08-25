@@ -15,6 +15,7 @@ import {
   type SupportedLanguage, LANGUAGE_CONFIG,
 } from "@/lib/codeLanguages"
 import { runOnPiston, type RunFile } from "@/lib/pistonClient"
+import { API_BASE_URL } from "@/lib/http"
 import { runInteractivePython, type InteractiveHandle } from "@/lib/pyodideRunner"
 
 // ─── Prop shapes (unchanged from the old code-server version) ────────────────
@@ -48,6 +49,12 @@ interface StaffCodeReviewProps {
   submissionId?: string
   /** Languages allowed by the exercise (first one seeds the runtime). */
   selectedLanguages?: string[]
+  /** Trainer's authoritative test cases for the question — used by the
+   *  "Run Testcases" toolbar button to iterate one-by-one and stream
+   *  ✓/✗ lines to the terminal, mirroring the student multi-file editor's
+   *  test-case verification loop. Hidden cases show as "Hidden #N" without
+   *  leaking the expected output. Missing / empty → button warns. */
+  testCases?: Array<{ input?: string; expectedOutput?: string; isHidden?: boolean; isSample?: boolean }>
   /** Rich question detail (title, description, sample I/O, MCQ options, …)
    *  rendered in the sidebar "Problem" tab and the fullscreen drawer. Kept
    *  as a ReactNode so callers can compose whatever fields the exercise
@@ -80,6 +87,7 @@ export default function StaffCodeReview({
   files, folders, questionTitle,
   submittedAt, attemptCount, lateSubmission, lastTestSubmittedAt,
   submissionId, selectedLanguages,
+  testCases,
   questionNode,
   currentStudentName, studentPosition,
   onPrevStudent, onNextStudent, hasPrevStudent, hasNextStudent,
@@ -197,7 +205,23 @@ export default function StaffCodeReview({
   // Terminal height (px) — remembered while the terminal is closed so re-open
   // restores the same size. Bounds are clamped in the drag handler.
   const [termHeight, setTermHeight] = useState(240)
-  const [editorTheme, setEditorTheme] = useState<"light" | "dark">("light")
+  // Default DARK: the code editor lives inside a dark Monaco tab bar by
+  // default, so shipping the surrounding chrome dark keeps the whole
+  // panel consistent instead of stacking a white header on a dark editor.
+  // The theme toggle below flips both the Monaco tabs AND the chrome —
+  // see `isDark` derivations lower in the file.
+  const [editorTheme, setEditorTheme] = useState<"light" | "dark">("dark")
+  const isDark = editorTheme === "dark"
+  // Toolbar icon-button base — the neutral-slate icons on the right side of
+  // the toolbar (Clear, Terminal, Fullscreen, Theme, sidebar toggle). Was
+  // hard-coded slate-600/slate-200 hover, which vanished against a dark
+  // toolbar. One helper here so we don't repeat the ternary at every call.
+  // In dark mode the icons were too dim to spot against the near-black
+  // toolbar — bumping to slate-200 for the resting state and pure white on
+  // hover so the toolbar affords like the rest of the editor chrome.
+  const toolIconBtn = isDark
+    ? "text-slate-200 hover:bg-slate-800 hover:text-white"
+    : "text-slate-600 hover:bg-slate-200"
   // Sidebar model — VS Code-style. `sidebarView` picks which panel content is
   // shown; `null` collapses the panel and leaves only the activity rail.
   // "problem" only exists when the parent supplied a questionNode.
@@ -427,6 +451,95 @@ export default function StaffCodeReview({
   }, [running, interactiveActive, nodeFiles, runtimeLanguage, stdin, codeNeedsInput,
       addLine, askOneInputLine, pickPythonEntry])
 
+  // ── "Run Testcases" — routes through the server-side judge instead of
+  // hitting Piston per-case directly. This is critical because the judge
+  // AUTO-INJECTS a stdin→call→print driver when the student submitted
+  // bare-function code (e.g. `def isEven(n): ...` with no input()/print()).
+  // A per-case Piston call sends the raw code, which exits with no output
+  // and reads as "all failed" even though the stored verdict is
+  // "all passed" — the exact bug the trainer was seeing. Reusing judge()
+  // guarantees the trainer sees the SAME per-case trace the student did
+  // at submit time. Streams ✓/✗ lines from the judge's own log[], then
+  // the final tally.
+  const runTestcases = useCallback(async () => {
+    if (running || interactiveActive) return
+    if (!nodeFiles.length) { addLine("error", "No files in this submission to run."); return }
+    const cases = (testCases || []).filter((tc) => tc && (tc.input != null || tc.expectedOutput != null))
+    setTermOpen(true)
+    setLastRuntimeMs(null)
+    if (cases.length === 0) {
+      addLine("info", "⚠️ No test cases configured for this question — nothing to run.")
+      return
+    }
+    setRunning(true)
+    addLine("system", `🧪 Judging ${cases.length} test case${cases.length > 1 ? "s" : ""} (${runtimeLanguage}) — driver auto-injected for bare-function code…`)
+
+    const ac = new AbortController()
+    abortRef.current = ac
+    const t0 = performance.now()
+    try {
+      const token = typeof window !== "undefined" ? window.localStorage.getItem("smartcliff_token") : null
+      const res = await fetch(`${API_BASE_URL}/api/run/judge`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal: ac.signal,
+        body: JSON.stringify({
+          language: runtimeLanguage,
+          files: nodeFiles.map((f) => ({ path: f.path, content: f.content, isEntryPoint: !!f.isEntryPoint })),
+          testCases: cases,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        addLine("error", `Judge failed (HTTP ${res.status}): ${body?.error || res.statusText}`)
+        return
+      }
+      const result: {
+        passed: number; total: number; score: number; maxMarks: number;
+        perCase: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string; verdict?: string; timeMs?: number }>;
+        log?: Array<{ type: string; text: string }>;
+        mode?: string; fnName?: string; injected?: boolean;
+      } = await res.json()
+
+      // Judge's own log[] already carries per-case ✓/✗ lines with the
+      // right verdicts, so print them verbatim to match the student's
+      // trace exactly. Fall back to reconstructing from perCase[] if the
+      // log isn't present.
+      const kindMap: Record<string, TermLine["kind"]> = {
+        system: "system", success: "success", error: "error",
+        info: "info", warning: "info", stderr: "stderr", stdout: "stdout",
+      }
+      if (Array.isArray(result.log) && result.log.length > 0) {
+        for (const entry of result.log) {
+          addLine(kindMap[entry.type] || "info", entry.text)
+        }
+      } else {
+        // Fallback: judge returned no log — synthesize from perCase[].
+        for (const pc of (result.perCase || [])) {
+          const label = pc.hidden ? `Hidden test #${pc.index + 1}` : `Test #${pc.index + 1}`
+          if (pc.passed) addLine("success", `✓ ${label} passed`)
+          else if (pc.hidden) addLine("error", `✗ ${label} failed`)
+          else addLine("error", `✗ ${label} failed — expected: ${pc.expectedOutput} | got: ${pc.actualOutput}`)
+        }
+      }
+      const dt = Math.round(performance.now() - t0)
+      setLastRuntimeMs(dt)
+      addLine(
+        result.passed === result.total ? "success" : "info",
+        `🏁 Passed ${result.passed}/${result.total} — Score ${result.score}/${result.maxMarks}${result.injected ? " (driver auto-injected)" : ""} in ${dt}ms`,
+      )
+    } catch (err: any) {
+      if (err?.name === "AbortError") addLine("system", "Run cancelled.")
+      else addLine("error", `Judge failed: ${err?.message || String(err)}`)
+    } finally {
+      setRunning(false)
+      abortRef.current = null
+    }
+  }, [running, interactiveActive, nodeFiles, runtimeLanguage, testCases, addLine])
+
   // Stop any live Pyodide worker on unmount so switching to another submission
   // doesn't leave a background Python interpreter running.
   useEffect(() => {
@@ -496,35 +609,46 @@ export default function StaffCodeReview({
   // In fullscreen we detach from the page.tsx layout and paint the whole
   // viewport ourselves via position: fixed + a high z-index. That way the
   // outer Assessment Questions rail and header don't crop the editor.
+  // Root bg follows the theme so the whole review pane goes full-dark or
+  // full-light — no more white header stacked on a dark editor.
   const rootClass = isFull
-    ? "fixed inset-0 z-[70] flex flex-col bg-white"
-    : "flex flex-col h-full w-full bg-white"
+    ? `fixed inset-0 z-[70] flex flex-col ${isDark ? "bg-slate-950" : "bg-white"}`
+    : `flex flex-col h-full w-full ${isDark ? "bg-slate-950" : "bg-white"}`
   return (
     <div className={rootClass}>
-      {/* Header strip — question title on the left, submission meta on the
-          right. The old "Code Submission" badge was noise (it repeats what
-          the whole pane already communicates) so it was removed. */}
-      <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "#f8f9fa", borderColor: "#e5e7eb" }}>
+      {/* Header strip — themed background + border. */}
+      <div className="flex items-center justify-between px-4 py-2 border-b"
+           style={{ background: isDark ? "#0f172a" : "#f8f9fa", borderColor: isDark ? "#1f2937" : "#e5e7eb" }}>
         <div className="flex items-center gap-2 min-w-0">
           <Code2 size={14} className="text-orange-500 flex-shrink-0" />
-          <div className="text-xs font-semibold text-gray-900 truncate">{questionTitle}</div>
+          <div className={`text-xs font-semibold truncate ${isDark ? "text-slate-100" : "text-gray-900"}`}>{questionTitle}</div>
         </div>
         <div className="flex items-center gap-2 text-[11px] flex-shrink-0">
           {isFull && (
-            <span className="px-2 py-0.5 rounded font-semibold bg-orange-50 text-orange-600 border border-orange-200 flex items-center gap-1">
+            <span className={`px-2 py-0.5 rounded font-semibold border flex items-center gap-1 ${
+              isDark
+                ? "bg-orange-500/15 text-orange-300 border-orange-500/30"
+                : "bg-orange-50 text-orange-600 border-orange-200"
+            }`}>
               <Maximize2 size={11} /> Full screen
             </span>
           )}
-          <span className="flex items-center gap-1 text-[10px] text-gray-500">
-            <TerminalIcon size={11} /> Read-only review · Run uses Piston
+          <span className={`flex items-center gap-1 text-[10px] ${isDark ? "text-slate-400" : "text-gray-500"}`}>
+            <TerminalIcon size={11} /> Read-only review · Test cases run on Piston
           </span>
           {attemptCount != null && (
-            <span className="px-2 py-0.5 rounded font-semibold" style={{ background: "#f3f4f6", color: "#374151" }}>
+            <span
+              className="px-2 py-0.5 rounded font-semibold"
+              style={{ background: isDark ? "#1e293b" : "#f3f4f6", color: isDark ? "#e2e8f0" : "#374151" }}
+            >
               Attempt {attemptCount}
             </span>
           )}
           {submittedAt && (
-            <span className="px-2 py-0.5 rounded" style={{ background: "#f3f4f6", color: "#6b7280" }}>
+            <span
+              className="px-2 py-0.5 rounded"
+              style={{ background: isDark ? "#1e293b" : "#f3f4f6", color: isDark ? "#cbd5e1" : "#6b7280" }}
+            >
               Submitted {new Date(submittedAt).toLocaleString()}
             </span>
           )}
@@ -545,8 +669,9 @@ export default function StaffCodeReview({
         </div>
       </div>
 
-      {/* Toolbar — sidebar toggle · student/question nav · Run/Stop · terminal · fullscreen · theme */}
-      <div className="flex items-center justify-between px-2 py-1.5 border-b bg-slate-50 border-slate-200">
+      {/* Toolbar — themed bg + border so the whole strip flips with the
+          editor theme instead of staying light against a dark editor. */}
+      <div className={`flex items-center justify-between px-2 py-1.5 border-b ${isDark ? "bg-slate-900 border-slate-800" : "bg-slate-50 border-slate-200"}`}>
         <div className="flex items-center gap-1.5 min-w-0">
           {/* Sidebar collapse toggle — hidden in fullscreen mode. Shows a
               chevron pointing inward when the panel is open, outward when
@@ -554,7 +679,7 @@ export default function StaffCodeReview({
           {!isFull && (
             <button
               onClick={() => setSidebarView((v) => (v ? null : "files"))}
-              className="h-7 w-7 flex items-center justify-center rounded-md text-slate-600 hover:bg-slate-200"
+              className={`h-7 w-7 flex items-center justify-center rounded-md ${toolIconBtn}`}
               title={sidebarView ? "Collapse sidebar" : "Expand sidebar"}
             >
               {sidebarView ? <ChevronsLeft className="w-3.5 h-3.5" /> : <ChevronsRight className="w-3.5 h-3.5" />}
@@ -568,49 +693,61 @@ export default function StaffCodeReview({
               what the button does. Icon-only arrows read as "carousel" and
               are ambiguous when there are two nav clusters side by side. */}
           {isFull && (onPrevStudent || onNextStudent) && (
-            <div className="flex items-center gap-2 pl-3 ml-1 border-l border-slate-200">
+            <div className={`flex items-center gap-2 pl-3 ml-1 border-l ${isDark ? "border-slate-800" : "border-slate-200"}`}>
               <button
                 onClick={onPrevStudent}
                 disabled={!hasPrevStudent}
                 title="Previous student"
-                className="h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                className={`h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold disabled:opacity-30 disabled:cursor-not-allowed ${
+                  isDark ? "text-slate-200 hover:bg-slate-800 hover:text-white" : "text-slate-700 hover:bg-slate-200"
+                }`}
               >
                 <ChevronLeft className="w-3 h-3" /> Previous student
               </button>
-              <span className="inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] font-semibold text-slate-700 bg-slate-100 max-w-[180px]">
-                <UserRound className="w-3 h-3 text-slate-400 flex-shrink-0" />
+              <span className={`inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] font-semibold max-w-[180px] ${
+                isDark ? "text-slate-100 bg-slate-800" : "text-slate-700 bg-slate-100"
+              }`}>
+                <UserRound className={`w-3 h-3 flex-shrink-0 ${isDark ? "text-slate-400" : "text-slate-400"}`} />
                 <span className="truncate">{currentStudentName || "Student"}</span>
-                {studentPosition && <span className="text-slate-400 font-normal">· {studentPosition}</span>}
+                {studentPosition && <span className={`font-normal ${isDark ? "text-slate-400" : "text-slate-400"}`}>· {studentPosition}</span>}
               </span>
               <button
                 onClick={onNextStudent}
                 disabled={!hasNextStudent}
                 title="Next student"
-                className="h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                className={`h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold disabled:opacity-30 disabled:cursor-not-allowed ${
+                  isDark ? "text-slate-200 hover:bg-slate-800 hover:text-white" : "text-slate-700 hover:bg-slate-200"
+                }`}
               >
                 Next student <ChevronRight className="w-3 h-3" />
               </button>
             </div>
           )}
           {isFull && (onPrevQuestion || onNextQuestion) && (
-            <div className="flex items-center gap-2 pl-3 ml-1 border-l border-slate-200">
+            <div className={`flex items-center gap-2 pl-3 ml-1 border-l ${isDark ? "border-slate-800" : "border-slate-200"}`}>
               <button
                 onClick={onPrevQuestion}
                 disabled={!hasPrevQuestion}
                 title="Previous question"
-                className="h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                className={`h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold disabled:opacity-30 disabled:cursor-not-allowed ${
+                  isDark ? "text-indigo-300 hover:bg-indigo-500/15 hover:text-indigo-200" : "text-indigo-700 hover:bg-indigo-50"
+                }`}
               >
                 <ChevronLeft className="w-3 h-3" /> Previous question
               </button>
-              <span className="inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] font-semibold text-indigo-700 bg-indigo-50">
-                <FileText className="w-3 h-3 text-indigo-400 flex-shrink-0" />
+              <span className={`inline-flex items-center gap-1 px-1.5 h-6 rounded text-[11px] font-semibold ${
+                isDark ? "text-indigo-200 bg-indigo-500/15" : "text-indigo-700 bg-indigo-50"
+              }`}>
+                <FileText className={`w-3 h-3 flex-shrink-0 ${isDark ? "text-indigo-300" : "text-indigo-400"}`} />
                 <span className="truncate max-w-[120px]">{questionPosition || "Q"}</span>
               </span>
               <button
                 onClick={onNextQuestion}
                 disabled={!hasNextQuestion}
                 title="Next question"
-                className="h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                className={`h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold disabled:opacity-30 disabled:cursor-not-allowed ${
+                  isDark ? "text-indigo-300 hover:bg-indigo-500/15 hover:text-indigo-200" : "text-indigo-700 hover:bg-indigo-50"
+                }`}
               >
                 Next question <ChevronRight className="w-3 h-3" />
               </button>
@@ -626,17 +763,37 @@ export default function StaffCodeReview({
               <Square className="w-3 h-3" /> Stop
             </button>
           ) : (
+            // "Run Testcases" replaces the old freeform Run — it iterates
+            // through the question's test cases one at a time and streams
+            // pass/fail lines to the terminal, matching how the student
+            // multi-file editor deals with test cases. See runTestcases().
             <button
-              onClick={runCode}
-              disabled={!nodeFiles.length}
+              onClick={runTestcases}
+              disabled={!nodeFiles.length || !(testCases && testCases.length)}
+              title={
+                !nodeFiles.length
+                  ? "No submitted files to run"
+                  : !(testCases && testCases.length)
+                    ? "No test cases configured for this question"
+                    : `Run ${testCases!.length} test case${testCases!.length > 1 ? "s" : ""} one by one`
+              }
               className="h-7 px-3 text-[10px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-500 text-white rounded-md inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Play className="w-3 h-3" /> Run
+              <Play className="w-3 h-3" /> Run Testcases
+              {testCases && testCases.length ? (
+                <span className="ml-1 px-1 rounded bg-emerald-800/40 text-[10px] font-semibold">
+                  {testCases.length}
+                </span>
+              ) : null}
             </button>
           )}
           <button
             onClick={clearTerminal}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-slate-600 hover:text-rose-600 hover:bg-slate-200"
+            className={`h-7 w-7 flex items-center justify-center rounded-md ${
+              isDark
+                ? "text-slate-400 hover:text-rose-400 hover:bg-slate-800"
+                : "text-slate-600 hover:text-rose-600 hover:bg-slate-200"
+            }`}
             title="Clear terminal"
           >
             <Trash2 className="w-3 h-3" />
@@ -644,7 +801,7 @@ export default function StaffCodeReview({
           <button
             onClick={() => setTermOpen((v) => !v)}
             className={`h-7 w-7 flex items-center justify-center rounded-md ${
-              termOpen ? "text-slate-600 hover:bg-slate-200" : "text-orange-600 hover:bg-orange-50"
+              termOpen ? toolIconBtn : "text-orange-600 hover:bg-orange-50"
             }`}
             title={termOpen ? "Hide terminal" : "Show terminal"}
           >
@@ -655,7 +812,7 @@ export default function StaffCodeReview({
             className={`h-7 flex items-center justify-center rounded-md gap-1.5 text-[11px] font-semibold ${
               isFull
                 ? "px-2 bg-orange-500 text-white hover:bg-orange-600"
-                : "w-7 text-slate-600 hover:bg-slate-200"
+                : `w-7 ${toolIconBtn}`
             }`}
             title={isFull ? "Exit full screen (Esc)" : "Full screen editor"}
           >
@@ -667,7 +824,7 @@ export default function StaffCodeReview({
           </button>
           <button
             onClick={() => setEditorTheme((t) => (t === "dark" ? "light" : "dark"))}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-slate-600 hover:bg-slate-200"
+            className={`h-7 w-7 flex items-center justify-center rounded-md ${toolIconBtn}`}
             title={editorTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           >
             {editorTheme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
@@ -681,9 +838,13 @@ export default function StaffCodeReview({
       <div className="flex-1 flex min-h-0">
         {!isFull && (
           <>
-            {/* Activity bar — VS Code-style icon rail. Clicking the active
-                icon collapses the panel; clicking an inactive one swaps it. */}
-            <div className="flex-shrink-0 flex flex-col items-stretch border-r border-slate-800" style={{ width: 44, background: "#1e293b" }}>
+            {/* Activity bar — themed so it matches the rest of the chrome
+                (was hard-coded dark, which looked wrong when the trainer
+                switched to light theme). */}
+            <div
+              className="flex-shrink-0 flex flex-col items-stretch border-r"
+              style={{ width: 44, background: isDark ? "#1e293b" : "#f1f5f9", borderColor: isDark ? "#1f2937" : "#e2e8f0" }}
+            >
               <RailBtn
                 icon={<FilesIcon size={18} />}
                 title="Explorer (files)"
@@ -706,10 +867,11 @@ export default function StaffCodeReview({
                 folders={nodeFolders}
                 activeFileId={activeFileId}
                 onOpen={openFile}
+                isDark={isDark}
               />
             )}
             {sidebarView === "problem" && hasQuestionPanel && (
-              <QuestionPanel>{questionNode}</QuestionPanel>
+              <QuestionPanel isDark={isDark}>{questionNode}</QuestionPanel>
             )}
           </>
         )}
@@ -718,7 +880,7 @@ export default function StaffCodeReview({
             has its own close button; when closed, a slim "Show problem"
             re-open strip appears on the far left of the editor area. */}
         {isFull && hasQuestionPanel && fullProblemOpen && (
-          <QuestionPanel onClose={() => setFullProblemOpen(false)}>
+          <QuestionPanel isDark={isDark} onClose={() => setFullProblemOpen(false)}>
             {questionNode}
           </QuestionPanel>
         )}
@@ -726,7 +888,11 @@ export default function StaffCodeReview({
           <button
             onClick={() => setFullProblemOpen(true)}
             title="Show problem"
-            className="flex-shrink-0 w-8 flex items-center justify-center bg-slate-100 hover:bg-orange-50 border-r border-slate-200 text-slate-600 hover:text-orange-600"
+            className={`flex-shrink-0 w-8 flex items-center justify-center border-r hover:text-orange-600 ${
+              isDark
+                ? "bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-400"
+                : "bg-slate-100 hover:bg-orange-50 border-slate-200 text-slate-600"
+            }`}
           >
             <FileText className="w-4 h-4" />
           </button>
@@ -765,7 +931,11 @@ export default function StaffCodeReview({
                 </div>
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+              <div
+                className={`h-full flex items-center justify-center text-sm ${
+                  isDark ? "text-slate-500 bg-[#1e1e1e]" : "text-slate-400"
+                }`}
+              >
                 Select a file from the tree to view its contents.
               </div>
             )}
@@ -776,7 +946,11 @@ export default function StaffCodeReview({
                   resize; double-click resets. The X sits on the right where
                   it won't collide with RunTerminal's own Clear button below. */}
               <div
-                className="group relative flex-shrink-0 flex items-center justify-end bg-slate-200 hover:bg-orange-100 transition-colors"
+                className={`group relative flex-shrink-0 flex items-center justify-end transition-colors ${
+                  isDark
+                    ? "bg-slate-800 hover:bg-orange-950"
+                    : "bg-slate-200 hover:bg-orange-100"
+                }`}
                 style={{ height: 14 }}
               >
                 <div
@@ -817,7 +991,11 @@ export default function StaffCodeReview({
             // never masks an in-flight run or an unanswered input prompt.
             <button
               onClick={() => setTermOpen(true)}
-              className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-t bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold"
+              className={`flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-t text-[11px] font-semibold ${
+                isDark
+                  ? "bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-800"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+              }`}
               title="Show terminal"
             >
               <span className="flex items-center gap-1.5">
@@ -852,9 +1030,13 @@ interface ReadOnlyTreeProps {
   folders: FolderNode[]
   activeFileId: string | null
   onOpen: (fileId: string) => void
+  /** Flip tree chrome (bg, borders, row hover, text) between light and dark
+   *  in step with the editor theme so the rail no longer reads white next
+   *  to a dark editor. */
+  isDark?: boolean
 }
 
-function ReadOnlyTree({ files, folders, activeFileId, onOpen }: ReadOnlyTreeProps) {
+function ReadOnlyTree({ files, folders, activeFileId, onOpen, isDark = false }: ReadOnlyTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["/"]))
 
   const toggle = (path: string) => {
@@ -900,7 +1082,9 @@ function ReadOnlyTree({ files, folders, activeFileId, onOpen }: ReadOnlyTreeProp
     return (
       <div key={folder.id}>
         <button
-          className="w-full flex items-center gap-1 px-2 py-1 text-left text-[12px] text-slate-700 hover:bg-slate-100"
+          className={`w-full flex items-center gap-1 px-2 py-1 text-left text-[12px] ${
+            isDark ? "text-slate-300 hover:bg-slate-800" : "text-slate-700 hover:bg-slate-100"
+          }`}
           style={{ paddingLeft: 8 + depth * 12 }}
           onClick={() => toggle(folder.path)}
         >
@@ -922,8 +1106,12 @@ function ReadOnlyTree({ files, folders, activeFileId, onOpen }: ReadOnlyTreeProp
       <button
         key={file.id}
         onClick={() => onOpen(file.id)}
-        className={`w-full flex items-center gap-1.5 px-2 py-1 text-left text-[12px] hover:bg-slate-100 ${
-          isActive ? "bg-orange-50 text-orange-700 font-semibold" : "text-slate-700"
+        className={`w-full flex items-center gap-1.5 px-2 py-1 text-left text-[12px] ${
+          isDark ? "hover:bg-slate-800" : "hover:bg-slate-100"
+        } ${
+          isActive
+            ? (isDark ? "bg-orange-500/15 text-orange-300 font-semibold" : "bg-orange-50 text-orange-700 font-semibold")
+            : (isDark ? "text-slate-300" : "text-slate-700")
         }`}
         style={{ paddingLeft: 8 + depth * 12 + 14 /* align past chevron */ }}
         title={file.path}
@@ -948,12 +1136,16 @@ function ReadOnlyTree({ files, folders, activeFileId, onOpen }: ReadOnlyTreeProp
 
   return (
     <div
-      className="border-r border-slate-200 bg-slate-50 overflow-y-auto"
+      className={`overflow-y-auto border-r ${
+        isDark ? "bg-slate-900 border-slate-800" : "bg-slate-50 border-slate-200"
+      }`}
       style={{ width: 240, minWidth: 200 }}
     >
       <div className="py-1">
         {files.length === 0 ? (
-          <div className="px-3 py-4 text-[11px] text-slate-400 italic">No files.</div>
+          <div className={`px-3 py-4 text-[11px] italic ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+            No files.
+          </div>
         ) : (
           renderChildren("/", 0)
         )}
@@ -974,7 +1166,7 @@ function RailBtn({
       onClick={onClick}
       title={title}
       className={`relative h-11 w-11 flex items-center justify-center transition-colors ${
-        active ? "text-white" : "text-slate-400 hover:text-white"
+        active ? "text-white" : "text-slate-200 hover:text-white"
       }`}
     >
       {active && (
@@ -992,30 +1184,78 @@ function RailBtn({
 // this component having to know the question shape.
 // ─────────────────────────────────────────────────────────────────────────────
 function QuestionPanel({
-  children, onClose,
-}: { children: React.ReactNode; onClose?: () => void }) {
+  children, onClose, isDark = false,
+}: { children: React.ReactNode; onClose?: () => void; isDark?: boolean }) {
   return (
     <div
-      className="border-r border-slate-200 bg-white overflow-hidden flex flex-col flex-shrink-0"
+      className={`overflow-hidden flex flex-col flex-shrink-0 border-r ${
+        isDark ? "bg-slate-950 border-slate-800" : "bg-white border-slate-200"
+      }`}
       style={{ width: 340, minWidth: 280 }}
     >
-      <div className="px-3 py-2 border-b border-slate-200 flex-shrink-0 bg-slate-50 flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+      <div className={`px-3 py-2 border-b flex-shrink-0 flex items-center justify-between ${
+        isDark ? "bg-slate-900 border-slate-800" : "bg-slate-50 border-slate-200"
+      }`}>
+        <span className={`text-[10px] font-bold uppercase tracking-widest ${isDark ? "text-slate-400" : "text-slate-500"}`}>
           Problem
         </span>
         {onClose && (
           <button
             onClick={onClose}
             title="Close problem panel"
-            className="h-6 w-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            className={`h-6 w-6 flex items-center justify-center rounded ${
+              isDark
+                ? "text-slate-500 hover:text-slate-200 hover:bg-slate-800"
+                : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            }`}
           >
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className={`flex-1 overflow-y-auto ${isDark ? "text-slate-200 staff-qpanel-dark" : ""}`}>
         {children}
       </div>
+      {/* The questionNode is composed in page.tsx with ~30 hard-coded
+          light-mode tailwind utilities (text-gray-900, bg-gray-50, etc.).
+          Threading `isDark` all the way up and rewriting each one there is
+          a lot of surface for what is really "flip these tokens dark".
+          Scoping a single override block to the dark panel does the job
+          in one place — the class is only present when isDark is true, so
+          the light theme is untouched, and any new tokens added later
+          just need one more line here. */}
+      {isDark && (
+        <style>{`
+          .staff-qpanel-dark .text-gray-900,
+          .staff-qpanel-dark .text-slate-900,
+          .staff-qpanel-dark .text-gray-800,
+          .staff-qpanel-dark .text-slate-800 { color: rgb(241 245 249) !important; }
+          .staff-qpanel-dark .text-gray-700,
+          .staff-qpanel-dark .text-slate-700,
+          .staff-qpanel-dark .text-gray-600,
+          .staff-qpanel-dark .text-slate-600 { color: rgb(203 213 225) !important; }
+          .staff-qpanel-dark .text-gray-500,
+          .staff-qpanel-dark .text-slate-500,
+          .staff-qpanel-dark .text-gray-400,
+          .staff-qpanel-dark .text-slate-400 { color: rgb(148 163 184) !important; }
+          .staff-qpanel-dark .bg-white,
+          .staff-qpanel-dark .bg-gray-50,
+          .staff-qpanel-dark .bg-slate-50 { background-color: rgb(15 23 42) !important; }
+          .staff-qpanel-dark .bg-gray-100,
+          .staff-qpanel-dark .bg-slate-100 { background-color: rgb(30 41 59) !important; }
+          .staff-qpanel-dark .border-gray-200,
+          .staff-qpanel-dark .border-slate-200,
+          .staff-qpanel-dark .border-gray-100,
+          .staff-qpanel-dark .border-slate-100 { border-color: rgb(30 41 59) !important; }
+          /* Prose / rich-text container — the description often comes as
+             HTML with its own inline colour palette; force its default text
+             back to slate-200 so paragraphs and lists don't disappear. */
+          .staff-qpanel-dark .prose,
+          .staff-qpanel-dark .prose * { color: rgb(226 232 240); }
+          .staff-qpanel-dark .prose code,
+          .staff-qpanel-dark .prose pre { background-color: rgb(30 41 59); color: rgb(241 245 249); }
+        `}</style>
+      )}
     </div>
   )
 }

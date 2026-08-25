@@ -1,6 +1,5 @@
 "use client";
 import React from "react";
-import { motion } from "framer-motion";
 import {
   ChevronUp,
   ChevronDown,
@@ -128,11 +127,13 @@ export function MappingTable({
             </tr>
           ) : (
             rows.map((row, i) => (
-              <motion.tr
+              // Row fade-in removed — this component remounts on every
+              // stage change in the parent (AnimatePresence mode="wait"),
+              // so the staggered `initial={{ opacity: 0 }}` fade replayed
+              // on every Back-to-list navigation and read like a loader
+              // cascade. Rows now paint instantly from cached data.
+              <tr
                 key={row.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.16, delay: Math.min(i, 10) * 0.02 }}
                 className="group border-b border-hairline last:border-0 transition-colors duration-150 hover:bg-row-hover"
               >
                 {/* Client — plain text, no service subline. */}
@@ -182,7 +183,7 @@ export function MappingTable({
                     <Settings2 size={12} /> Manage
                   </button>
                 </td>
-              </motion.tr>
+              </tr>
             ))
           )}
         </tbody>

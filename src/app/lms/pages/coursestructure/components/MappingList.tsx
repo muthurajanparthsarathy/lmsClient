@@ -129,6 +129,13 @@ const dateCutoff = (d: string): number => {
     return 0
 }
 
+// Module-scope memory of the last pageSize this list rendered at. The list
+// unmounts on stage change (AnimatePresence in the parent) and the auto-fit
+// value nearly always matches the viewport, so persisting it across mounts
+// makes the FIRST render use the same query key the previous visit ended on
+// — instant React Query cache hit, no loader flash on Back-to-list.
+let lastMappingListPageSize = 25
+
 export default function MappingList({
     onOpen,
 }: {
@@ -142,13 +149,24 @@ export default function MappingList({
     const [sortKey, setSortKey] = useState<string | null>(null)
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
     const [currentPage, setCurrentPage] = useState(1)
-    const [pageSize, setPageSize] = useState(25)
+    // Seed pageSize from the last mount's value (module-scope). Without
+    // this, every remount started at 25 → queryKey changed on the very
+    // next tick when auto-fit computed the real viewport pageSize → the
+    // first request was a cache miss and the skeleton flashed for one
+    // round-trip before the second request hit the cache. Persisting the
+    // last computed value means the first request uses the same key the
+    // previous visit ended on — instant cache hit, no loader.
+    const [pageSize, setPageSize] = useState(() => lastMappingListPageSize)
     // Auto-fit page size — matches Client Management + User Management. The
     // wrapper's height / row height picks pageSize, so rows always fill the
     // gap between the toolbar and the pagination footer. Flips off the moment
     // the user picks a size manually.
     const [autoFitPageSize, setAutoFitPageSize] = useState(true)
     const tableCardRef = useRef<HTMLDivElement | null>(null)
+
+    // Mirror every pageSize change into the module-scope memory so the next
+    // mount starts with the same value — makes revisits instant cache hits.
+    useEffect(() => { lastMappingListPageSize = pageSize }, [pageSize])
 
     // Typing is now a request, so it waits for a pause.
     useEffect(() => {
@@ -223,7 +241,7 @@ export default function MappingList({
         serverFilters,
         currentPage,
         pageSize,
-        { setup: true }
+        { setup: true },
     )
 
     const rowVMs: MappingRowVM[] = useMemo(
@@ -984,11 +1002,23 @@ export default function MappingList({
             {viewMode === 'table' ? (
                 <div
                     ref={tableCardRef}
-                    className={`mt-2 flex flex-1 min-h-0 flex-col transition-opacity duration-150 ${isFetching && !isLoading ? 'opacity-60' : ''}`}
+                    // No opacity dim on background refetches — the earlier
+                    // `${isFetching && !isLoading ? 'opacity-60' : ''}` made
+                    // the table look "still loading" on every revisit, even
+                    // though the cached rows were fully visible. Client
+                    // Management renders its cached rows crisp during a
+                    // silent refresh; matching that behaviour here.
+                    className="mt-2 flex flex-1 min-h-0 flex-col"
                 >
                     <MappingTable
                         rows={rows}
-                        isLoading={isLoading}
+                        // Only show the skeleton when there is NO data on
+                        // screen. React Query's `placeholderData:
+                        // keepPreviousData` keeps the previous rows during
+                        // any background refetch, so `isLoading` alone
+                        // used to fire a full skeleton every time the
+                        // queryKey rotated even though rows were visible.
+                        isLoading={isLoading && rows.length === 0}
                         skeletonRows={pageSize}
                         sortKey={sortKey}
                         sortDir={sortDir}
@@ -999,7 +1029,7 @@ export default function MappingList({
                     {footer}
                 </div>
             ) : (
-                <div className={`mt-4 transition-opacity duration-150 ${isFetching && !isLoading ? 'opacity-60' : ''}`}>
+                <div className="mt-4">
                     <MappingCardGrid
                         rows={rows}
                         isLoading={isLoading}

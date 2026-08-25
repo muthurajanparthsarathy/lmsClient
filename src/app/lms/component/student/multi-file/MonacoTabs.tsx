@@ -34,6 +34,12 @@ interface MonacoTabsProps {
 
 export default function MonacoTabs(props: MonacoTabsProps) {
   const { openFiles, activeFileId, theme = "light", highlightLine, readOnly, onSelectTab, onCloseTab, onChange } = props
+  // Match the surrounding chrome — the Monaco editor itself already flips
+  // to vs-dark, but the tab strip above it and its empty-state placeholder
+  // were hard-coded #f9fafb / #ffffff, so a dark editor read as a white
+  // stripe glued on top. One flag drives every token so the strip is one
+  // colour system with the editor below it.
+  const isDark = theme === "dark"
   const editorRef = useRef<any>(null)
   const monacoRef = useRef<any>(null)
   const decorationsRef = useRef<string[]>([])
@@ -64,10 +70,13 @@ export default function MonacoTabs(props: MonacoTabsProps) {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Tab bar */}
-      <div className="flex items-stretch overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: "#e5e7eb", background: "#f9fafb" }}>
+      {/* Tab bar — themed alongside the editor below it. */}
+      <div
+        className="flex items-stretch overflow-x-auto flex-shrink-0 border-b"
+        style={{ borderColor: isDark ? "#1f2937" : "#e5e7eb", background: isDark ? "#1e1e1e" : "#f9fafb" }}
+      >
         {openFiles.length === 0 && (
-          <div className="px-3 py-2 text-2xs text-gray-400">Open a file from the Explorer</div>
+          <div className={`px-3 py-2 text-2xs ${isDark ? "text-slate-500" : "text-gray-400"}`}>Open a file from the Explorer</div>
         )}
         {openFiles.map((f) => {
           const isActive = f.id === activeFileId
@@ -78,19 +87,28 @@ export default function MonacoTabs(props: MonacoTabsProps) {
               onClick={() => onSelectTab(f.id)}
               className="group flex items-center gap-2 px-3 py-1.5 cursor-pointer border-r flex-shrink-0"
               style={{
-                borderColor: "#e5e7eb",
-                background: isActive ? "#ffffff" : "transparent",
+                borderColor: isDark ? "#1f2937" : "#e5e7eb",
+                // Active tab picks up the editor's own canvas colour so it
+                // reads as one continuous surface with the code below —
+                // #1e1e1e is Monaco's vs-dark canvas exactly.
+                background: isActive ? (isDark ? "#1e1e1e" : "#ffffff") : "transparent",
                 borderBottom: isActive ? "2px solid " + (color || "#6366f1") : "2px solid transparent",
               }}
               title={f.path}
             >
               <Circle size={8} style={{ color: color || "#9ca3af", fill: color || "#9ca3af" }} />
-              <span className={`text-xs ${isActive ? "text-gray-900 font-semibold" : "text-gray-500"}`}>{f.filename}</span>
+              <span className={`text-xs ${
+                isActive
+                  ? (isDark ? "text-slate-100 font-semibold" : "text-gray-900 font-semibold")
+                  : (isDark ? "text-slate-400" : "text-gray-500")
+              }`}>{f.filename}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); onCloseTab(f.id) }}
-                className="opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded"
+                className={`opacity-0 group-hover:opacity-100 rounded ${
+                  isDark ? "hover:bg-slate-800" : "hover:bg-gray-200"
+                }`}
               >
-                <X size={12} className="text-gray-500" />
+                <X size={12} className={isDark ? "text-slate-400" : "text-gray-500"} />
               </button>
             </div>
           )

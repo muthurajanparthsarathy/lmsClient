@@ -60,6 +60,7 @@ export function DataTable<T>({
     onSelectionChange,
     bulkActions,
     rowActions,
+    rowClassName,
 }: {
     rows: T[]
     columns: Column<T>[]
@@ -103,6 +104,11 @@ export function DataTable<T>({
     // Per-row kebab menu content (DropdownMenuItem elements). The trigger and
     // the trailing column appear only when this is provided.
     rowActions?: (row: T, index: number) => React.ReactNode
+    // Per-row className override — lets callers tint a row's background
+    // based on its state (e.g. active/inactive, submitted/not-submitted).
+    // Whatever this returns is appended to the base row classes so hover
+    // and selected states still work; return "" for the default surface.
+    rowClassName?: (row: T, index: number) => string
 }) {
     const showSkeleton = isLoading || loading
     const selectable = Boolean(selectedKeys && onSelectionChange)
@@ -136,16 +142,16 @@ export function DataTable<T>({
     return (
         <>
         <div
-            // fixedLayout: no scrollbars in either axis — columns sum to 100%
-            // (x cannot overflow), and the auto-fit page-size effect on the
-            // caller sizes the page to fit the container height (y cannot
-            // overflow either). Both axes are clipped as a safety net for
-            // sub-pixel rounding — the page never shows a scrollbar in this
-            // mode. Non-fixed mode keeps its previous overflow-auto shape.
+            // fixedLayout: columns sum to 100%, so the X axis can never
+            // overflow and stays clipped. The Y axis SCROLLS rather than
+            // clipping — the page size is a plain number, so a page of 10 in a
+            // box that fits 9 used to hide the tenth row with no way to reach
+            // it. When the rows do fit, no scrollbar appears. The header is
+            // sticky, so it survives the scroll either way.
             className={
                 fillHeight
-                    ? `flex-1 min-h-[220px] ${fixedLayout ? 'overflow-hidden' : 'overflow-auto'}`
-                    : `min-h-[220px] ${fixedLayout ? 'overflow-hidden' : 'overflow-auto'}`
+                    ? `flex-1 min-h-[220px] ${fixedLayout ? 'overflow-x-hidden overflow-y-auto' : 'overflow-auto'}`
+                    : `min-h-[220px] ${fixedLayout ? 'overflow-x-hidden overflow-y-auto' : 'overflow-auto'}`
             }
             style={fillHeight ? undefined : { maxHeight }}
         >
@@ -173,7 +179,15 @@ export function DataTable<T>({
                                     // Border on the cell, not the row: a sticky
                                     // <tr>'s own border scrolls away in Chrome
                                     // and leaves the header visually floating.
-                                    className={`${c.className || 'px-3 text-left'} h-8 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline`}
+                                    // `!` on the size / weight / color so column
+                                    // classes (which target BODY cells with
+                                    // things like `text-[12px] text-body`) can't
+                                    // overwrite the header rhythm. Without this
+                                    // the You_Do assessment header rendered as
+                                    // designed (dark 10 px uppercase) but the
+                                    // We_Do assignment header leaked the body
+                                    // text-body colour + text-[12px] size.
+                                    className={`${c.className || 'px-3 text-left'} h-8 !text-[10px] !font-semibold uppercase tracking-wider !text-ink-600 align-middle bg-canvas border-b border-hairline`}
                                 >
                                     {c.sortKey ? (
                                         <button
@@ -275,7 +289,9 @@ export function DataTable<T>({
                                     transition={{ duration: 0.18, delay: Math.min(i, 8) * 0.022 }}
                                     // Thin hairline between rows so the reader has
                                     // a clear separator without heavy grid lines.
-                                    className={`border-b border-hairline last:border-0 transition-colors ${isSelected ? 'bg-brand-wash/60 hover:bg-brand-wash' : 'hover:bg-row-hover'}`}
+                                    // rowClassName lets the caller tint a row
+                                    // by state (active/inactive, submitted, etc.).
+                                    className={`border-b border-hairline last:border-0 transition-colors ${isSelected ? 'bg-brand-wash/60 hover:bg-brand-wash' : 'hover:bg-row-hover'} ${rowClassName ? rowClassName(row, i) : ''}`}
                                 >
                                     {selectable && (
                                         <td className="w-11 px-3 h-11 align-middle">

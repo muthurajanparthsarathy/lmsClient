@@ -1227,6 +1227,11 @@ export default function EnhancedSubmissionReview() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
+  // Test-case detail modal — opens when the trainer clicks the "Passed
+  // X / Y test cases" summary on an auto-scored submission. Shows every
+  // case (passed AND failed), split into two lists, with input /
+  // expected / actual for each.
+  const [tcModal, setTcModal] = useState<{ cases: any[]; passed: number; total: number; title?: string } | null>(null);
   const [assessmentVideoUrl, setAssessmentVideoUrl] = useState<string | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -2988,9 +2993,71 @@ builtins.input = _async_input
                 <ArrowLeft className="h-3.5 w-3.5" />
               </Button>
             )}
+            {/* In grading view, Exit sits at the LEFT of the breadcrumb —
+                same slot as the back-button in the list view — so the trail
+                reads "[Exit] Course > Batch > …" left-to-right. */}
+            {viewMode === 'grading' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => (isSingleStudentMode ? handleBack() : setViewMode('list'))}
+                title={isSingleStudentMode ? 'Back to Dashboard' : 'Exit review panel'}
+                className={`h-7 px-2.5 text-[11px] font-semibold text-slate-600 border-slate-200 bg-white hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 rounded-full shrink-0 ${inter.className}`}
+              >
+                <ArrowLeft className="h-3 w-3 mr-1" />
+                {isSingleStudentMode ? 'Back' : 'Exit'}
+              </Button>
+            )}
             {renderBreadcrumb()}
           </div>
-          <div className="flex items-center shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Grading-only controls — Prev / Student picker / Next.
+                (Exit moved to the LEFT side of the breadcrumb.) */}
+            {viewMode === 'grading' && (
+              <>
+                <Button
+                  size="sm"
+                  onClick={handlePrevStudent}
+                  disabled={getCurrentStudentIndex() === 0}
+                  title="Previous student"
+                  className={`h-7 w-7 p-0 text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 rounded-full shadow-sm ${inter.className}`}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <Select value={selectedParticipant?._id} onValueChange={handleStudentChange}>
+                  <SelectTrigger className={`h-7 border border-slate-200 bg-slate-50 focus:ring-0 px-2.5 min-w-[160px] max-w-[220px] text-[11px] font-semibold text-slate-700 justify-between rounded-full hover:border-indigo-300 hover:bg-white ${inter.className}`}>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <User className="h-3 w-3 text-indigo-500 flex-shrink-0" />
+                      <span className="truncate">
+                        {selectedParticipant
+                          ? `${selectedParticipant.user.firstName} ${selectedParticipant.user.lastName}`
+                          : 'Select Student'}
+                      </span>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent align="end" className="max-h-[300px]">
+                    {participants.map((p) => (
+                      <SelectItem key={p._id} value={p._id} className={`text-xs font-medium cursor-pointer py-1.5 ${inter.className}`}>
+                        <div className="flex items-center gap-2">
+                          <User className="h-3 w-3 text-slate-400" />
+                          <span>{p.user.firstName} {p.user.lastName}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  onClick={handleNextStudent}
+                  disabled={getCurrentStudentIndex() === getTotalStudents() - 1}
+                  title="Next student"
+                  className={`h-7 w-7 p-0 text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 rounded-full shadow-sm ${inter.className}`}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+                <div className="w-px h-5 bg-slate-200 mx-0.5" aria-hidden />
+              </>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -3402,145 +3469,96 @@ builtins.input = _async_input
             )}
           </div>
         ) : (
-          /* GRADING VIEW */
+          /* GRADING VIEW — the old dedicated toolbar row (Exit + Score +
+              Prev/Picker/Next) has been dissolved: Exit + student switcher
+              now live in the top breadcrumb row, and Overall Marks lives
+              inside the question sidebar. That reclaims ~44px of vertical
+              real-estate for the editor without losing any control. */
           <div className="h-full overflow-hidden bg-white flex flex-col">
-            <div className="flex-none border-b border-slate-200 bg-white px-2 py-1">
-              <div className="grid grid-cols-3 items-center w-full bg-white px-6 py-3">
-                {/* LEFT — Back + Overall Score */}
-                <div className="flex items-center gap-4 justify-self-start">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => (isSingleStudentMode ? handleBack() : setViewMode('list'))}
-                    className={`h-9 px-4 text-xs font-bold text-slate-600 border-slate-200 bg-white hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 transition-all duration-200 rounded-full group ${inter.className}`}
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5 mr-2 text-slate-400 group-hover:text-rose-500 transition-colors" />
-                    {isSingleStudentMode ? 'Back to Dashboard' : 'Exit Panel'}
-                  </Button>
-
-                  {/* Overall Score — inline, no progress bar */}
-                  {!isNonGraded && selectedExercise && selectedParticipant && (() => {
-                    const allQuestions = selectedExercise.questions || [];
-                    const answers = getExerciseAnswersForSelectedExercise(selectedParticipant);
-                    let earned = 0;
-                    const total = getDynamicExerciseTotal(selectedExercise);
-                    // A student with no submission has no score — showing
-                    // "0 / 20" here read as a graded zero (pct 0 also picks the
-                    // neutral tone below, so it looked deliberate). Every
-                    // sibling cell in the participant table already guards on
-                    // hasSubmissions; this header was the one that did not.
-                    //
-                    // Test for an ANSWERED QUESTION, not for the presence of an
-                    // exerciseProgress doc: opening this panel makes the server
-                    // mint an empty `status:"in-progress"` record with
-                    // `questions: []` for the student being viewed, so
-                    // `answers.length > 0` becomes true for people who never
-                    // attempted anything.
-                    const hasRealAnswer = answers.some(a =>
-                      (a.questions || []).some(s =>
-                        !!(s?.codeAnswer || s?.files?.length || s?.othersFiles?.length ||
-                          (s && s.isCorrect !== undefined && s.isCorrect !== null))
-                      )
-                    );
-                    if (!hasRealAnswer) {
-                      return (
-                        <div className={`flex items-center gap-2.5 pl-4 border-l border-slate-300 ${inter.className}`}>
-                          <Award className="h-5 w-5 text-slate-300" />
-                          <div className="flex flex-col leading-none">
-                            <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest mb-1">
-                              Overall Score
-                            </span>
-                            <span className="text-sm font-bold text-slate-400">Not attempted</span>
-                          </div>
-                        </div>
-                      );
-                    }
-                    allQuestions.forEach(q => {
-                      const qMax = getQuestionMaxScore(selectedExercise, q);
-                      let sub: SubmissionQuestion | null = null;
-                      for (const ans of answers) {
-                        const s = ans.questions.find(x => x.questionId === q._id);
-                        if (s) { sub = s; break; }
-                      }
-                      if (!sub) return;
-                      const subScore = Number(sub.score) || 0;
-                      if (sub.status === 'evaluated') {
-                        earned += Math.min(subScore, qMax);
-                      } else if (isQuestionMCQ(q)) {
-                        earned += sub.isCorrect ? qMax : 0;
-                      } else {
-                        earned += Math.min(subScore, qMax);
-                      }
-                    });
-                    const pct = total > 0 ? (earned / total) * 100 : 0;
-                    const numTone = pct >= 80 ? 'text-emerald-700' : pct >= 60 ? 'text-amber-700' : pct > 0 ? 'text-rose-700' : 'text-slate-900';
-                    return (
-                      <div className={`flex items-center gap-2.5 pl-4 border-l border-slate-300 ${inter.className}`}>
-                        <Award className="h-5 w-5 text-amber-600" />
-                        <div className="flex flex-col leading-none">
-                          <span className="text-[11px] font-bold text-slate-800 uppercase tracking-widest mb-1">
-                            Overall Score
-                          </span>
-                          <div className="flex items-baseline gap-1">
-                            <span className={`text-2xl font-extrabold tracking-tight ${numTone}`}>{earned}</span>
-                            <span className="text-base font-bold text-slate-700">/</span>
-                            <span className="text-lg font-extrabold text-slate-900">{total}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* CENTER — Prev | Student Selector | Next */}
-                <div className="flex items-center gap-2 justify-self-center">
-                  <Button size="sm" onClick={handlePrevStudent} disabled={getCurrentStudentIndex() === 0} className={`h-9 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 rounded-full shadow-sm transition-all ${inter.className}`}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Prev
-                  </Button>
-                  <Select value={selectedParticipant?._id} onValueChange={handleStudentChange}>
-                    <SelectTrigger className={`h-9 border border-slate-200 bg-slate-50 focus:ring-0 px-3 min-w-[220px] text-xs font-bold text-slate-700 justify-between rounded-full hover:border-indigo-300 hover:bg-white transition-all ${inter.className}`}>
-                      <div className="flex items-center gap-2">
-                        <div className="h-5 w-5 rounded-full bg-indigo-100 flex items-center justify-center border border-indigo-200">
-                          <User className="h-3 w-3 text-indigo-500" />
-                        </div>
-                        <span>
-                          {selectedParticipant
-                            ? `${selectedParticipant.user.firstName} ${selectedParticipant.user.lastName}`
-                            : "Select Student"
-                          }
-                        </span>
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent align="center" className="max-h-[300px]">
-                      {participants.map(p => (
-                        <SelectItem key={p._id} value={p._id} className={`text-xs font-medium cursor-pointer py-2 ${inter.className}`}>
-                          <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200">
-                              <User className="h-3.5 w-3.5 text-slate-400" />
-                            </div>
-                            <span>{p.user.firstName} {p.user.lastName}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" onClick={handleNextStudent} disabled={getCurrentStudentIndex() === getTotalStudents() - 1} className={`h-9 px-4 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 rounded-full shadow-sm transition-all ${inter.className}`}>
-                    Next
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-
-                {/* RIGHT — spacer */}
-                <div className="justify-self-end" />
-              </div>
-            </div>
-
             <div className="flex flex-1 overflow-hidden">
               {/* QUESTION SIDEBAR */}
               <div className={`${questionListMinimized ? 'w-14' : 'w-72'} border-r border-slate-100 bg-white transition-all duration-300 flex flex-col`}>
                 {!questionListMinimized ? (
                   <>
+                    {/* Overall Marks — moved here from the deleted top toolbar.
+                        Sidebar is a more natural home: it's next to the
+                        Assessment Questions list the score sums over, and
+                        keeps the editor header clean. Same computation as
+                        before, just wrapped in a card. */}
+                    {!isNonGraded && selectedExercise && selectedParticipant && (() => {
+                      const allQuestions = selectedExercise.questions || [];
+                      const answers = getExerciseAnswersForSelectedExercise(selectedParticipant);
+                      const total = getDynamicExerciseTotal(selectedExercise);
+                      const hasRealAnswer = answers.some((a) =>
+                        (a.questions || []).some((s) =>
+                          !!(s?.codeAnswer || s?.files?.length || s?.othersFiles?.length ||
+                            (s && s.isCorrect !== undefined && s.isCorrect !== null))
+                        )
+                      );
+                      let earned = 0;
+                      if (hasRealAnswer) {
+                        allQuestions.forEach((q) => {
+                          const qMax = getQuestionMaxScore(selectedExercise, q);
+                          let sub: SubmissionQuestion | null = null;
+                          for (const ans of answers) {
+                            const s = ans.questions.find((x) => x.questionId === q._id);
+                            if (s) { sub = s; break; }
+                          }
+                          if (!sub) return;
+                          const subScore = Number(sub.score) || 0;
+                          if (sub.status === 'evaluated') earned += Math.min(subScore, qMax);
+                          else if (isQuestionMCQ(q)) earned += sub.isCorrect ? qMax : 0;
+                          else earned += Math.min(subScore, qMax);
+                        });
+                      }
+                      const pct = total > 0 ? (earned / total) * 100 : 0;
+                      const numTone = !hasRealAnswer
+                        ? 'text-slate-400'
+                        : pct >= 80 ? 'text-emerald-700'
+                        : pct >= 60 ? 'text-amber-700'
+                        : pct > 0 ? 'text-rose-700'
+                        : 'text-slate-900';
+                      const barTone = !hasRealAnswer
+                        ? 'bg-slate-200'
+                        : pct >= 80 ? 'bg-emerald-500'
+                        : pct >= 60 ? 'bg-amber-500'
+                        : pct > 0 ? 'bg-rose-500'
+                        : 'bg-slate-300';
+                      return (
+                        <div className={`px-4 pt-3 pb-3 border-b border-slate-100 ${inter.className}`}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Award className={`h-3.5 w-3.5 ${hasRealAnswer ? 'text-amber-600' : 'text-slate-300'}`} />
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                Overall Marks
+                              </span>
+                            </div>
+                            {hasRealAnswer && (
+                              <span className="text-[10px] font-bold text-slate-400">{Math.round(pct)}%</span>
+                            )}
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            {hasRealAnswer ? (
+                              <>
+                                <span className={`text-xl font-extrabold tracking-tight leading-none ${numTone}`}>{earned}</span>
+                                <span className="text-sm font-bold text-slate-500 leading-none">/</span>
+                                <span className="text-sm font-bold text-slate-800 leading-none">{total}</span>
+                              </>
+                            ) : (
+                              <span className="text-xs font-bold text-slate-400">Not attempted</span>
+                            )}
+                          </div>
+                          {hasRealAnswer && (
+                            <div className="mt-2 h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+                              <div
+                                className={`h-full ${barTone} transition-all duration-300`}
+                                style={{ width: `${Math.min(100, pct)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="p-4 border-b border-slate-50 flex-shrink-0">
                       <div className="flex items-center justify-between mb-3">
                         <h3 className={`text-xs font-bold text-slate-700 ${inter.className}`}>
@@ -3692,6 +3710,9 @@ builtins.input = _async_input
                     selectedLanguages={selectedExercise?.programmingSettings?.selectedLanguages || []}
                     files={frontendSubmissionData?.files || []}
                     folders={frontendSubmissionData?.folders || []}
+                    // Trainer's authoritative test cases (includes hidden
+                    // ones) — feeds the toolbar's "Run Testcases" button.
+                    testCases={(selectedQuestion as any)?.testCases || []}
                     questionTitle={getQuestionTitle(selectedQuestion)}
                     submittedAt={frontendSubmissionData?.submittedAt}
                     attemptCount={frontendSubmissionData?.attemptCount}
@@ -4348,17 +4369,17 @@ builtins.input = _async_input
 
              {/* GRADING SIDEBAR - Only show when exercise is graded */}
 {!isNonGraded && (
-  // w-96 (was w-72): the Question Score row's `whitespace-nowrap` label plus
-  // the pencil button and the `<input> / maxScore` triplet pushed past 288px
-  // as soon as the max hit two digits, producing a horizontal scrollbar
-  // instead of wrapping. w-96 fits the row + the Test Case card + Feedback
-  // textarea without overflow at every max score in this app.
-  <div className="w-96 shrink-0 flex flex-col bg-white min-h-0 border-l border-slate-100 overflow-x-hidden">
-    <div className="p-5 flex-1 overflow-y-auto overflow-x-hidden min-h-0 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-slate-900 [&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-slate-500" style={{ scrollbarColor: '#475569 #0f172a', scrollbarWidth: 'thin' }}>
+  // Compact sidebar: w-80 (was w-96), p-3 (was p-5), tighter row spacing
+  // so the Grading Header + Score + Test Case card + Feedback + Prev /
+  // Save / Next fit inside the panel WITHOUT triggering the inner
+  // scroll. overflow-y-auto stays as a safety net for very short
+  // viewports but shouldn't fire in normal use.
+  <div className="w-80 shrink-0 flex flex-col bg-white min-h-0 border-l border-slate-100 overflow-x-hidden">
+    <div className="p-3 flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full" style={{ scrollbarWidth: 'thin' }}>
       {/* Grading Header */}
-      <div>
-        <h3 className={`text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2 ${inter.className}`}>
-          <Award className="h-3.5 w-3.5 text-amber-500" />
+      <div className="flex flex-col min-h-0 flex-1">
+        <h3 className={`text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5 ${inter.className}`}>
+          <Award className="h-3 w-3 text-amber-500" />
           Grading
         </h3>
 
@@ -4380,28 +4401,26 @@ builtins.input = _async_input
         )}
 
         {/* Current Question Mark — Programming / Frontend / Code / Others.
-            Locked by default: the score is pre-populated from the code-editor's
-            auto-grader (`verifyTestCasesAndScore`). The grader clicks the
-            pencil icon next to the input to unlock and override the value. */}
+            Compact row: h-7 pencil, h-7 score input, smaller max label. */}
         {!isQuestionMCQ(selectedQuestion) && (
-          <div className={`mb-4 flex items-center justify-between gap-2 py-2 ${inter.className}`}>
-            <span className="text-sm font-bold text-slate-700 whitespace-nowrap">Question Score</span>
-            <div className="flex items-center gap-2">
+          <div className={`mb-2 flex items-center justify-between gap-1.5 ${inter.className}`}>
+            <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Question Score</span>
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setIsScoreEditable((v) => !v)}
                 title={isScoreEditable ? 'Lock score (auto-corrected)' : 'Edit score (override auto-corrected value)'}
                 aria-label={isScoreEditable ? 'Lock score' : 'Edit score'}
                 aria-pressed={isScoreEditable}
-                className={`flex items-center justify-center h-8 w-8 rounded-md border-2 transition-colors ${
+                className={`flex items-center justify-center h-7 w-7 rounded-md border transition-colors ${
                   isScoreEditable
                     ? 'bg-amber-50 border-amber-300 text-amber-600 hover:bg-amber-100'
                     : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-indigo-600'
                 }`}
               >
                 {isScoreEditable
-                  ? <Lock className="w-3.5 h-3.5" />
-                  : <Pencil className="w-3.5 h-3.5" />}
+                  ? <Lock className="w-3 h-3" />
+                  : <Pencil className="w-3 h-3" />}
               </button>
               <Input
                 type="number"
@@ -4414,14 +4433,14 @@ builtins.input = _async_input
                   const val = e.target.value === '' ? 0 : parseInt(e.target.value);
                   setScore(Math.min(maxScore, Math.max(0, val)));
                 }}
-                className={`h-10 w-20 border-2 text-lg font-extrabold text-center px-1 ${inter.className} ${
+                className={`h-7 w-14 border text-sm font-extrabold text-center px-1 ${inter.className} ${
                   isScoreEditable
                     ? 'bg-white border-indigo-300 text-slate-900 focus:border-indigo-500'
                     : 'bg-slate-50 border-slate-200 text-slate-700 cursor-not-allowed'
                 }`}
               />
-              <span className="text-lg font-bold text-slate-400">/</span>
-              <span className="text-xl font-extrabold text-slate-700 min-w-[28px]">{maxScore}</span>
+              <span className="text-sm font-bold text-slate-400">/</span>
+              <span className="text-sm font-extrabold text-slate-700 min-w-[20px]">{maxScore}</span>
             </div>
           </div>
         )}
@@ -4438,9 +4457,9 @@ builtins.input = _async_input
           const isAI = method === 'ai';
           const aiFailed = isAI && !!b?.ai?.failed;
           return (
-            <div className={`mb-4 rounded-xl border p-3 ${aiFailed ? 'border-amber-300 bg-amber-50/60' : isAI ? 'border-indigo-200 bg-indigo-50/40' : 'border-emerald-200 bg-emerald-50/40'} ${inter.className}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${aiFailed ? 'bg-amber-100 text-amber-800' : isAI ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'}`}>
+            <div className={`mb-2 rounded-lg border p-2 ${aiFailed ? 'border-amber-300 bg-amber-50/60' : isAI ? 'border-indigo-200 bg-indigo-50/40' : 'border-emerald-200 bg-emerald-50/40'} ${inter.className}`}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full ${aiFailed ? 'bg-amber-100 text-amber-800' : isAI ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'}`}>
                   {isAI ? 'AI Evaluation' : 'Test Case Auto-Score'}
                 </span>
                 {aiFailed && (
@@ -4451,49 +4470,37 @@ builtins.input = _async_input
                 const tcPassed = Number(b?.testcase?.passed ?? 0);
                 const tcTotal = Number(b?.testcase?.total ?? 0);
                 const tcFailedCount = Math.max(0, tcTotal - tcPassed);
-                // Per-case rows — present on submissions scored after the
-                // breakdown started recording them; older ones only carry
-                // counts, so the hover falls back to a plain explanation.
                 const tcCases: any[] = Array.isArray(b?.testcase?.cases) ? b.testcase.cases : [];
-                const failedCases = tcCases.filter((c: any) => !c?.passed);
+                const questionTitle = (selectedQuestion as any)?.title || (selectedQuestion as any)?.questionTitle || '';
+                const openTcModal = () => setTcModal({ cases: tcCases, passed: tcPassed, total: tcTotal, title: questionTitle });
                 return (
                   <div>
-                    <div className="text-xs font-semibold text-slate-700">
+                    {/* "Passed X / Y test cases" is now a button. Click
+                        opens a small modal listing ALL cases (passed AND
+                        failed) with input / expected / actual for each —
+                        replaces the hover-only tooltip that only showed
+                        failures. */}
+                    <button
+                      type="button"
+                      onClick={openTcModal}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 border-b border-dashed border-slate-300 hover:text-emerald-700 hover:border-emerald-500 transition-colors duration-150"
+                      title="Click to see every test case"
+                    >
                       Passed <span className="text-emerald-700 font-extrabold">{tcPassed}</span>
                       {' / '}
                       <span className="text-slate-700">{tcTotal}</span>
                       {' test cases'}
-                    </div>
+                      <span className="text-[10px] text-slate-400">(details)</span>
+                    </button>
                     {tcFailedCount > 0 && (
-                      <div className="relative group inline-block mt-1">
-                        <span className="text-[11px] font-bold text-rose-600 cursor-help border-b border-dashed border-rose-300">
-                          ✗ {tcFailedCount} failed test case{tcFailedCount > 1 ? 's' : ''} — hover to view
-                        </span>
-                        {/* Hover popover — which cases failed, with input /
-                            expected / got. Hidden cases are fine to show here:
-                            this panel is trainer-only. */}
-                        <div className="absolute left-0 bottom-full mb-1.5 z-50 hidden group-hover:block w-[340px] max-h-[260px] overflow-y-auto rounded-lg border border-rose-200 bg-white shadow-xl p-2">
-                          {failedCases.length > 0 ? failedCases.map((c: any, i: number) => (
-                            <div key={i} className={`text-[10px] py-1.5 ${i > 0 ? 'border-t border-slate-100' : ''}`}>
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className="font-bold text-slate-700">Test #{(c.index ?? i) + 1}</span>
-                                {c.hidden && (
-                                  <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-slate-100 text-slate-500">Hidden</span>
-                                )}
-                                <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-rose-100 text-rose-700">✗ Fail</span>
-                              </div>
-                              {String(c.input || '') !== '' && (
-                                <div className="text-slate-500"><span className="font-semibold text-slate-600">input:</span> <span className="font-mono break-all whitespace-pre-wrap">{String(c.input).length > 120 ? String(c.input).slice(0, 120) + '…' : c.input}</span></div>
-                              )}
-                              <div className="text-slate-500"><span className="font-semibold text-slate-600">expected:</span> <span className="font-mono break-all whitespace-pre-wrap">{String(c.expectedOutput ?? '').length > 120 ? String(c.expectedOutput).slice(0, 120) + '…' : (c.expectedOutput ?? '')}</span></div>
-                              <div className="text-slate-500"><span className="font-semibold text-slate-600">got:</span> <span className="font-mono break-all whitespace-pre-wrap text-rose-600">{String(c.actualOutput ?? '').length > 120 ? String(c.actualOutput).slice(0, 120) + '…' : (String(c.actualOutput ?? '') || '(no output)')}</span></div>
-                            </div>
-                          )) : (
-                            <p className="text-[10px] text-slate-500 py-1">
-                              Per-case details aren&apos;t stored on this submission (scored before detail recording was added). Use Rerun to re-score and capture them.
-                            </p>
-                          )}
-                        </div>
+                      <div className="mt-1">
+                        <button
+                          type="button"
+                          onClick={openTcModal}
+                          className="text-[11px] font-bold text-rose-600 border-b border-dashed border-rose-300 hover:text-rose-700 transition-colors duration-150"
+                        >
+                          ✗ {tcFailedCount} failed test case{tcFailedCount > 1 ? 's' : ''} — click to view
+                        </button>
                       </div>
                     )}
                   </div>
@@ -4590,11 +4597,13 @@ builtins.input = _async_input
           );
         })()}
 
-        {/* Feedback Section */}
-        <div className="flex-1 flex flex-col min-h-0 bg-indigo-50/40 border border-indigo-200 rounded-xl p-3 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className={`text-[11px] font-bold text-indigo-700 uppercase tracking-widest flex items-center gap-1.5 ${inter.className}`}>
-              <MessageSquare className="h-3.5 w-3.5 text-indigo-600" />
+        {/* Feedback Section — compact: smaller header, thinner border,
+            textarea shrinks to a 3-line minimum so it doesn't monopolise
+            the sidebar's vertical space. */}
+        <div className="flex-1 flex flex-col min-h-0 bg-indigo-50/40 border border-indigo-200 rounded-lg p-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <h3 className={`text-[10px] font-bold text-indigo-700 uppercase tracking-widest flex items-center gap-1 ${inter.className}`}>
+              <MessageSquare className="h-3 w-3 text-indigo-600" />
               Feedback
             </h3>
             <span className={`text-[9px] font-semibold text-indigo-500 uppercase tracking-wide ${inter.className}`}>
@@ -4605,16 +4614,16 @@ builtins.input = _async_input
             placeholder="✍ Write your feedback for the student here..."
             value={feedbackText}
             onChange={(e) => setFeedbackText(e.target.value)}
-            className="flex-1 min-h-[140px] bg-white border-2 border-indigo-200 rounded-lg p-3 text-sm font-medium text-slate-800 placeholder:text-indigo-400 placeholder:font-medium resize-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-500 transition-all custom-scrollbar shadow-inner"
+            className="flex-1 min-h-[70px] bg-white border border-indigo-200 rounded-md p-2 text-xs font-medium text-slate-800 placeholder:text-indigo-400 placeholder:font-medium resize-none focus:ring-1 focus:ring-indigo-400/30 focus:border-indigo-500 transition-all custom-scrollbar"
           />
-          <div className={`text-[10px] text-slate-500 mt-1.5 text-right ${inter.className}`}>
+          <div className={`text-[9px] text-slate-500 mt-1 text-right ${inter.className}`}>
             {feedbackText.length} characters
           </div>
         </div>
 
         {/* Save Buttons - Only for non-MCQ questions */}
         {!isQuestionMCQ(selectedQuestion) && (
-          <div className="pt-4 border-t border-slate-50 relative">
+          <div className="pt-2 mt-2 border-t border-slate-100 relative">
             {saveSuccess && (
               <div className="absolute -top-3 left-0 right-0 flex justify-center animate-in slide-in-from-bottom-2 fade-in duration-300 pointer-events-none">
                 <div className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm border border-emerald-100">
@@ -4640,9 +4649,9 @@ builtins.input = _async_input
                   isSaving ||
                   (currentQuestionIndex === 0 && getCurrentStudentIndex() === 0)
                 }
-                className={`flex-1 h-10 text-xs border-2 border-slate-200 bg-white text-slate-700 rounded-md hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${inter.className}`}
+                className={`flex-1 h-8 text-[11px] border border-slate-200 bg-white text-slate-700 rounded-md hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${inter.className}`}
               >
-                <ChevronLeft className="w-4 h-4 mr-1" />
+                <ChevronLeft className="w-3.5 h-3.5 mr-1" />
                 Prev
               </Button>
               <Button
@@ -4652,7 +4661,7 @@ builtins.input = _async_input
                   : () => saveGrade()
                 }
                 disabled={isSaving}
-                className={`flex-1 h-10 text-xs border-2 border-indigo-300 bg-white text-indigo-700 rounded-md hover:bg-indigo-50 hover:border-indigo-400 transition-all ${inter.className}`}
+                className={`flex-1 h-8 text-[11px] border border-indigo-300 bg-white text-indigo-700 rounded-md hover:bg-indigo-50 hover:border-indigo-400 transition-all ${inter.className}`}
               >
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>
@@ -4672,10 +4681,10 @@ builtins.input = _async_input
                   }
                 }}
                 disabled={isSaving}
-                className={`flex-1 h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-sm transition-all ${inter.className}`}
+                className={`flex-1 h-8 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-sm transition-all ${inter.className}`}
               >
                 Next
-                <ChevronRight className="w-4 h-4 ml-1" />
+                <ChevronRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
           </div>
@@ -4683,7 +4692,7 @@ builtins.input = _async_input
 
         {/* MCQ Submit Feedback Buttons */}
         {isQuestionMCQ(selectedQuestion) && (
-          <div className="pt-4 border-t border-slate-50 relative">
+          <div className="pt-2 mt-2 border-t border-slate-100 relative">
             {saveSuccess && (
               <div className="absolute -top-3 left-0 right-0 flex justify-center animate-in slide-in-from-bottom-2 fade-in duration-300 pointer-events-none">
                 <div className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm border border-emerald-100">
@@ -4709,16 +4718,16 @@ builtins.input = _async_input
                   isSaving ||
                   (currentQuestionIndex === 0 && getCurrentStudentIndex() === 0)
                 }
-                className={`flex-1 h-10 text-xs border-2 border-slate-200 bg-white text-slate-700 rounded-md hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${inter.className}`}
+                className={`flex-1 h-8 text-[11px] border border-slate-200 bg-white text-slate-700 rounded-md hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${inter.className}`}
               >
-                <ChevronLeft className="w-4 h-4 mr-1" />
+                <ChevronLeft className="w-3.5 h-3.5 mr-1" />
                 Prev
               </Button>
               <Button
                 variant="outline"
                 onClick={() => saveGrade()}
                 disabled={isSaving}
-                className={`flex-1 h-10 text-xs border-2 border-indigo-300 bg-white text-indigo-700 rounded-md hover:bg-indigo-50 hover:border-indigo-400 transition-all ${inter.className}`}
+                className={`flex-1 h-8 text-[11px] border border-indigo-300 bg-white text-indigo-700 rounded-md hover:bg-indigo-50 hover:border-indigo-400 transition-all ${inter.className}`}
               >
                 {isSaving ? 'Saving...' : 'Save'}
               </Button>
@@ -4738,10 +4747,10 @@ builtins.input = _async_input
                   }
                 }}
                 disabled={isSaving}
-                className={`flex-1 h-10 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-sm transition-all ${inter.className}`}
+                className={`flex-1 h-8 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-sm transition-all ${inter.className}`}
               >
                 Next
-                <ChevronRight className="w-4 h-4 ml-1" />
+                <ChevronRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
           </div>
@@ -4854,6 +4863,83 @@ builtins.input = _async_input
               <Button onClick={() => setShowQuestionModal(false)} className={`bg-slate-900 text-white font-bold text-[10px] uppercase tracking-wide px-6 rounded-md h-9 ${inter.className}`}>Close</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Test-case details modal — opens from the "Passed X / Y test
+             cases" summary on an auto-scored submission. Splits every
+             case into Passed / Failed lists with input / expected /
+             actual for each. Replaces the earlier hover-only tooltip
+             that only surfaced failed cases. ── */}
+      <Dialog open={!!tcModal} onOpenChange={(open) => { if (!open) setTcModal(null); }}>
+        <DialogContent className={`max-w-2xl rounded-2xl ${inter.className}`}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm font-bold text-slate-800">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700">
+                <CheckCircle className="w-3.5 h-3.5" />
+              </span>
+              Test Case Details
+              {tcModal?.title && <span className="text-[11px] font-medium text-slate-500 truncate">· {tcModal.title}</span>}
+            </DialogTitle>
+          </DialogHeader>
+          {tcModal && (() => {
+            const passedCases = tcModal.cases.filter((c: any) => c?.passed);
+            const failedCases = tcModal.cases.filter((c: any) => !c?.passed);
+            const renderCase = (c: any, i: number, kind: 'pass' | 'fail') => (
+              <div key={`${kind}-${i}`} className="border border-slate-200 rounded-lg p-2.5 bg-white">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="font-bold text-[11px] text-slate-700">Test #{(c.index ?? i) + 1}</span>
+                  {c.hidden && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-100 text-slate-500">Hidden</span>
+                  )}
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase ${kind === 'pass' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                    {kind === 'pass' ? '✓ Pass' : '✗ Fail'}
+                  </span>
+                </div>
+                {String(c.input || '') !== '' && (
+                  <div className="text-[11px] text-slate-500 mb-0.5"><span className="font-semibold text-slate-600">input:</span> <span className="font-mono break-all whitespace-pre-wrap">{String(c.input).length > 300 ? String(c.input).slice(0, 300) + '…' : c.input}</span></div>
+                )}
+                <div className="text-[11px] text-slate-500 mb-0.5"><span className="font-semibold text-slate-600">expected:</span> <span className="font-mono break-all whitespace-pre-wrap">{String(c.expectedOutput ?? '').length > 300 ? String(c.expectedOutput).slice(0, 300) + '…' : (c.expectedOutput ?? '')}</span></div>
+                <div className={`text-[11px] mb-0 ${kind === 'pass' ? 'text-emerald-700' : 'text-rose-600'}`}><span className="font-semibold">got:</span> <span className="font-mono break-all whitespace-pre-wrap">{String(c.actualOutput ?? '').length > 300 ? String(c.actualOutput).slice(0, 300) + '…' : (String(c.actualOutput ?? '') || '(no output)')}</span></div>
+              </div>
+            );
+            return (
+              <div className="max-h-[65vh] overflow-y-auto space-y-4 pt-2">
+                <div className="flex items-center justify-between text-[12px] font-bold">
+                  <span className="text-emerald-700">Passed: {tcModal.passed}</span>
+                  <span className="text-slate-400">/</span>
+                  <span className="text-slate-700">Total: {tcModal.total}</span>
+                  {failedCases.length > 0 && (
+                    <span className="text-rose-600">Failed: {failedCases.length}</span>
+                  )}
+                </div>
+                {tcModal.cases.length === 0 ? (
+                  <p className="text-[12px] text-slate-500 py-4 text-center border border-dashed border-slate-200 rounded-lg">
+                    Per-case details aren't stored on this submission (scored before detail recording was added). Use Rerun to re-score and capture them.
+                  </p>
+                ) : (
+                  <>
+                    {failedCases.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-widest text-rose-700 mb-1.5">Failed ({failedCases.length})</p>
+                        <div className="space-y-1.5">
+                          {failedCases.map((c, i) => renderCase(c, i, 'fail'))}
+                        </div>
+                      </div>
+                    )}
+                    {passedCases.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-widest text-emerald-700 mb-1.5">Passed ({passedCases.length})</p>
+                        <div className="space-y-1.5">
+                          {passedCases.map((c, i) => renderCase(c, i, 'pass'))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

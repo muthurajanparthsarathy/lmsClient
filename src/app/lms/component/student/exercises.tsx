@@ -11,8 +11,12 @@ import {
   MoreVertical, ArrowUpDown, ArrowUp, ArrowDown
 } from "lucide-react"
 import { useRouter } from "next/navigation"
+// The exercise description is trainer-authored TipTap HTML, so it is sanitised
+// before it reaches dangerouslySetInnerHTML in the start popup.
+import DOMPurify from "dompurify"
 import DataTable, { type Column as DTColumn } from "@/app/lms/shared/listing/DataTable"
 import TableFooter from "@/app/lms/shared/listing/TableFooter"
+import SmartCliffRingLoader from "@/components/SmartCliffRingLoader"
 
 // Shared Poppins-first font stack for this roster-style list.
 const LIST_FONT = "'Poppins','Poppins','Segoe UI','Roboto',system-ui,-apple-system,BlinkMacSystemFont,sans-serif"
@@ -674,26 +678,84 @@ function StartExercisePopup({
     ? { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe', text: availability.message }
     : { bg: '#fef2f2', color: '#b91c1c', border: '#fecaca', text: availability.message }
 
-  // Simple key-value row
-  const R = ({ label, value }: { label: string; value: React.ReactNode }) => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '7px 0', borderBottom: '1px solid #f1f5f9',
+  // ── Right-column content, resolved from what the exercise actually carries ──
+  // The column is only rendered when at least one of these exists — an empty
+  // "Details" pane next to a full left column reads as a broken layout.
+  const description: string = ex.exerciseInformation?.description || ''
+  const instructions: string = ex.assessmentContent?.instructions || ex.instructions || ''
+  // Tags are DERIVED, never authored: the languages the exercise is configured
+  // for, its module, its difficulty, and the pedagogy path it was filed under
+  // (the last two breadcrumb crumbs — "we do" / "assignment").
+  const tags: string[] = Array.from(new Set([
+    ...languages,
+    ...(selectedModule ? [selectedModule] : []),
+    ...(ex.exerciseInformation?.exerciseLevel
+      ? [String(ex.exerciseInformation.exerciseLevel).replace(/^./, (c: string) => c.toUpperCase())]
+      : []),
+    ...((breadcrumb ?? []).slice(-2).map(c => c.replace(/\b\w/g, m => m.toUpperCase()))),
+  ].filter(Boolean)))
+  const hasDetails = !!(selectedModule || description || instructions || tags.length)
+
+  // Author-written HTML from the TipTap description field. Sanitised before it
+  // reaches dangerouslySetInnerHTML — the field is trainer-authored, not
+  // trusted markup.
+  const safeHtml = (html: string) =>
+    typeof window === 'undefined'
+      ? ''
+      : DOMPurify.sanitize(html, {
+          ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'code', 'pre', 'blockquote'],
+          ALLOWED_ATTR: ['href', 'target', 'rel'],
+        })
+
+  // ── Building blocks ────────────────────────────────────────────────────────
+
+  const IconBadge = ({ icon: Icon, tint, size = 30 }: { icon: any; tint: string; size?: number }) => (
+    <span style={{
+      width: size, height: size, borderRadius: 8, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: `${tint}1a`, color: tint,
     }}>
-      <span style={{ fontSize: 12, color: '#64748b', width: 130, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{value}</span>
+      <Icon style={{ width: size * 0.47, height: size * 0.47 }} />
+    </span>
+  )
+
+  const SectionHead = ({ icon, children }: { icon: any; children: React.ReactNode }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+      <IconBadge icon={icon} tint="#f97316" size={24} />
+      <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{children}</span>
     </div>
   )
 
-  // Section divider label
-  const Sec = ({ children }: { children: React.ReactNode }) => (
+  // Icon · label · value row (left column)
+  const R = ({ icon, label, value }: { icon: any; label: string; value: React.ReactNode }) => (
     <div style={{
-      fontSize: 10, fontWeight: 700, color: '#94a3b8',
-      textTransform: 'uppercase', letterSpacing: '0.08em',
-      paddingTop: 12, paddingBottom: 2,
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: '8px 0', borderBottom: '1px solid #f1f5f9',
     }}>
-      {children}
+      <IconBadge icon={icon} tint="#6366f1" size={26} />
+      <span style={{ fontSize: 12, color: '#64748b', flex: 1, minWidth: 0 }}>{label}</span>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', textAlign: 'right', minWidth: 0, wordBreak: 'break-word' }}>
+        {value}
+      </div>
     </div>
+  )
+
+  // Stat / date tile — the paired cards under Questions Overview and Schedule
+  const Tile = ({ icon, tint, label, value }: { icon: any; tint: string; label: string; value: React.ReactNode }) => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 9,
+      padding: '10px 11px', border: '1px solid #e8ecf2', borderRadius: 10, background: '#fff',
+    }}>
+      <IconBadge icon={icon} tint={tint} size={30} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 10.5, color: '#64748b', marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{value}</div>
+      </div>
+    </div>
+  )
+
+  const DetailLabel = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>{children}</div>
   )
 
   return (
@@ -706,117 +768,201 @@ function StartExercisePopup({
       onClick={onClose}
     >
       <div
+        className="sep-shell"
         style={{
-          width: '100%', maxWidth: 440,
-          borderRadius: 14, background: '#ffffff',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.06)',
+          width: '100%', maxWidth: hasDetails ? 720 : 440,
+          borderRadius: 16, background: '#ffffff',
+          boxShadow: '0 24px 60px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.05)',
           animation: 'popIn .22s cubic-bezier(.34,1.56,.64,1)',
-          maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+          maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}
         onClick={e => e.stopPropagation()}
       >
         {/* Top accent bar */}
-        <div style={{ height: 3, borderRadius: '14px 14px 0 0', flexShrink: 0, background: isGraded ? '#f97316' : '#0891b2' }} />
+        <div style={{ height: 3, flexShrink: 0, background: isGraded ? '#f97316' : '#0891b2' }} />
 
-        {/* Header — breadcrumb + title + close */}
+        {/* Header — type glyph + breadcrumb + title + close */}
         <div style={{
-          padding: '12px 16px', borderBottom: '1px solid #f1f5f9',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexShrink: 0,
+          padding: '12px 16px', borderBottom: '1px solid #eef1f5',
+          display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
         }}>
-          <div style={{ minWidth: 0 }}>
+          <span style={{
+            width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: isGraded ? '#f97316' : '#0891b2', color: '#fff',
+          }}>
+            <Code2 className="w-4 h-4" />
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
             {breadcrumb && breadcrumb.filter(Boolean).length > 0 && (
-              <div style={{
-                display: 'flex', alignItems: 'center', flexWrap: 'wrap',
-                gap: 3, marginBottom: 5, overflow: 'hidden',
-              }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
                 {breadcrumb.filter(Boolean).map((crumb, i) => (
-                  <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    {i > 0 && <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 700, lineHeight: 1 }}>&gt;</span>}
-                    <span style={{ fontSize: 10, color: '#1e293b', fontWeight: 600, whiteSpace: 'nowrap', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }}>{crumb}</span>
+                  <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {i > 0 && <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, lineHeight: 1 }}>&gt;</span>}
+                    <span style={{
+                      fontSize: 11.5, color: '#475569', fontWeight: 600, whiteSpace: 'nowrap',
+                      maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>{crumb}</span>
                   </span>
                 ))}
               </div>
             )}
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}>
+            <div style={{
+              fontSize: 16, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
               {exercise.exerciseInformation.exerciseName}
             </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
-              width: 26, height: 26, borderRadius: '50%', border: '1px solid #e2e8f0',
+              width: 30, height: 30, borderRadius: '50%', border: '1px solid #e2e8f0',
               background: '#f8fafc', color: '#64748b', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}
           >
-            <X className="w-3 h-3" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Scrollable body — single column */}
-        <div style={{
-          flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden',
-          padding: '0 16px 8px',
-          scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent',
-        }}>
-          <R label="Assignment ID" value={exercise.exerciseInformation.exerciseId || exercise._id} />
-          <R label="Assignment Name" value={exercise.exerciseInformation.exerciseName} />
-          <R label="Graded" value={isGraded ? 'Graded' : 'Non-Graded'} />
-
-          {/* Questions & Duration */}
-          <Sec>Questions</Sec>
-          <R label="Total Questions" value={totalQ || '—'} />
-          <R label="Duration" value={duration ? formatDuration(duration) : '—'} />
-
-          {/* Schedule */}
-          <Sec>Schedule</Sec>
-          <R label="Start Date" value={<span style={{ fontSize: 11 }}>{exercise.availabilityPeriod?.startDate ? formatDateTime(exercise.availabilityPeriod.startDate) : '—'}</span>} />
-          <R label="End Date" value={<span style={{ fontSize: 11 }}>{exercise.availabilityPeriod?.endDate ? formatDateTime(exercise.availabilityPeriod.endDate) : '—'}</span>} />
-          {exercise.availabilityPeriod?.gracePeriodAllowed && exercise.availabilityPeriod?.gracePeriodDate && (
-            <R label="Grace Period" value={<span style={{ fontSize: 11 }}>{formatDateTime(exercise.availabilityPeriod.gracePeriodDate)}</span>} />
-          )}
-
-          {/* Details */}
-          <Sec>Details</Sec>
-          {selectedModule && <R label="Module" value={selectedModule} />}
-          {languages.length > 0 && (
-            <R label="Languages" value={
-              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'flex-end' }}>
-                {languages.map(l => (
-                  <span key={l} style={{ padding: '1px 5px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: '#fff7ed', color: '#f97316' }}>
-                    {l.toUpperCase()}
+        {/* Body — two columns; collapses to one on a narrow viewport */}
+        <div
+          className={hasDetails ? 'sep-body sep-body--split' : 'sep-body'}
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
+        >
+          {/* ── Left: the exercise's own facts ── */}
+          <div style={{ padding: '14px 16px' }}>
+            <SectionHead icon={FileText}>Assignment Information</SectionHead>
+            <div style={{ marginBottom: 16 }}>
+              <R icon={Info} label="Assignment ID" value={exercise.exerciseInformation.exerciseId || exercise._id} />
+              <R icon={FileText} label="Assignment Name" value={exercise.exerciseInformation.exerciseName} />
+              <R
+                icon={Target}
+                label="Graded"
+                value={
+                  <span style={{
+                    padding: '4px 11px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+                    background: isGraded ? '#ecfdf5' : '#eff6ff',
+                    color: isGraded ? '#15803d' : '#1d4ed8',
+                    border: `1px solid ${isGraded ? '#bbf7d0' : '#bfdbfe'}`,
+                  }}>
+                    {isGraded ? 'Graded' : 'Non-Graded'}
                   </span>
-                ))}
-              </span>
-            } />
+                }
+              />
+            </div>
+
+            <SectionHead icon={HelpCircle}>Questions Overview</SectionHead>
+            <div className="sep-pair" style={{ marginBottom: 16 }}>
+              <Tile icon={FileText} tint="#6366f1" label="Total Questions" value={totalQ || '—'} />
+              <Tile icon={Clock} tint="#10b981" label="Duration" value={duration ? formatDuration(duration) : '—'} />
+            </div>
+
+            <SectionHead icon={Calendar}>Schedule</SectionHead>
+            <div className="sep-pair">
+              <Tile
+                icon={Calendar} tint="#6366f1" label="Start Date"
+                value={exercise.availabilityPeriod?.startDate ? formatDateTime(exercise.availabilityPeriod.startDate) : '—'}
+              />
+              <Tile
+                icon={Calendar} tint="#6366f1" label="End Date"
+                value={exercise.availabilityPeriod?.endDate ? formatDateTime(exercise.availabilityPeriod.endDate) : '—'}
+              />
+            </div>
+            {exercise.availabilityPeriod?.gracePeriodAllowed && exercise.availabilityPeriod?.gracePeriodDate && (
+              <div style={{ marginTop: 12 }}>
+                <Tile
+                  icon={Hourglass} tint="#f97316" label="Grace Period"
+                  value={formatDateTime(exercise.availabilityPeriod.gracePeriodDate)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* ── Right: module, description, instructions, tags ── */}
+          {hasDetails && (
+            <div className="sep-right" style={{ padding: '14px 16px' }}>
+              <SectionHead icon={BookOpen}>Details</SectionHead>
+
+              {selectedModule && (
+                <div style={{ marginBottom: 18 }}>
+                  <DetailLabel>Module</DetailLabel>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{selectedModule}</div>
+                </div>
+              )}
+
+              {description && (
+                <div style={{ marginBottom: 18, paddingTop: 16, borderTop: '1px solid #eef1f5' }}>
+                  <DetailLabel>Description</DetailLabel>
+                  <div
+                    className="sep-rich"
+                    style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.65 }}
+                    dangerouslySetInnerHTML={{ __html: safeHtml(description) }}
+                  />
+                </div>
+              )}
+
+              {instructions && (
+                <div style={{ marginBottom: 18, paddingTop: 16, borderTop: '1px solid #eef1f5' }}>
+                  <DetailLabel>Instructions</DetailLabel>
+                  <div
+                    className="sep-rich"
+                    style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.65 }}
+                    dangerouslySetInnerHTML={{ __html: safeHtml(instructions) }}
+                  />
+                </div>
+              )}
+
+              {tags.length > 0 && (
+                <div style={{ paddingTop: 16, borderTop: '1px solid #eef1f5' }}>
+                  <DetailLabel>Tags</DetailLabel>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                    {tags.map((t, i) => {
+                      const palette = [
+                        { bg: '#eef2ff', fg: '#4338ca' },
+                        { bg: '#fff7ed', fg: '#c2410c' },
+                        { bg: '#eff6ff', fg: '#1d4ed8' },
+                        { bg: '#ecfdf5', fg: '#15803d' },
+                      ][i % 4]
+                      return (
+                        <span key={`${t}-${i}`} style={{
+                          padding: '5px 11px', borderRadius: 999, fontSize: 11.5, fontWeight: 600,
+                          background: palette.bg, color: palette.fg,
+                        }}>
+                          {t}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
-          {/* <R label="Question Flow" value={questionFlow === 'freeFlow' || !questionFlow ? 'Free Flow' : questionFlow} />
-          <R label="Code Execution" value={allowCodeExecution ? 'Allowed' : 'Not allowed'} />
-          <R label="Sample Cases" value={showSampleCases ? 'Visible' : 'Hidden'} />
-          {isGraded && <R label="Total Marks" value={totalMarks ?? '—'} />}
-          {isGraded && passMark != null && <R label="Pass Mark" value={passMark} />}
-          {isGraded && <R label="Attempts Used" value={`${testSubmissions ?? 0} / ${submissionAttempts ?? 1}`} />} */}
         </div>
 
-        {/* Footer */}
+        {/* Footer — availability banner, then the actions */}
         <div style={{
-          padding: '10px 16px 14px', borderTop: '1px solid #f1f5f9',
-          background: '#fafafa', borderRadius: '0 0 14px 14px', flexShrink: 0,
+          padding: '10px 16px 13px', borderTop: '1px solid #eef1f5',
+          background: '#fafbfc', flexShrink: 0,
         }}>
           <div style={{
-            fontSize: 11, fontWeight: 600, textAlign: 'center',
-            padding: '5px 10px', borderRadius: 6, marginBottom: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            fontSize: 12, fontWeight: 600,
+            padding: '8px 12px', borderRadius: 8, marginBottom: 10,
             background: statusConfig.bg, color: statusConfig.color, border: `1px solid ${statusConfig.border}`,
           }}>
+            <Calendar className="w-4 h-4" style={{ flexShrink: 0 }} />
             {statusConfig.text}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={onClose}
               style={{
-                flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                color: '#64748b', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer',
+                flex: '0 0 auto', minWidth: 118, padding: '10px 0', borderRadius: 9,
+                fontSize: 12.5, fontWeight: 600,
+                color: '#475569', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer',
               }}
             >
               Cancel
@@ -825,9 +971,9 @@ function StartExercisePopup({
               onClick={onConfirm}
               disabled={!canProceed}
               style={{
-                flex: 3, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                flex: 1, padding: '10px 0', borderRadius: 9, fontSize: 13, fontWeight: 700,
                 color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: 6, border: 'none', cursor: canProceed ? 'pointer' : 'not-allowed',
+                gap: 8, border: 'none', cursor: canProceed ? 'pointer' : 'not-allowed',
                 opacity: canProceed ? 1 : 0.5,
                 background: !canProceed ? '#94a3b8'
                   : availability.status === 'late-attempt' ? '#f97316'
@@ -836,14 +982,14 @@ function StartExercisePopup({
               }}
             >
               {limitReached
-                ? <><CheckCircle className="w-3.5 h-3.5" />Already Completed</>
+                ? <><CheckCircle className="w-4 h-4" />Already Completed</>
                 : availability.status === 'late-attempt' && availability.canStart
-                ? <><Play className="w-3.5 h-3.5" style={{ fill: 'white' }} />Start Late Attempt</>
+                ? <><Play className="w-4 h-4" style={{ fill: 'white' }} />Start Late Attempt</>
                 : availability.canStart
-                ? <><Play className="w-3.5 h-3.5" style={{ fill: 'white' }} />{isRetake ? (isPractice ? 'Retake Practice' : isGraded ? 'Retake Graded Exercise' : 'Retake Exercise') : (isPractice ? 'Start Practice' : isGraded ? 'Begin Graded Exercise' : 'Start Exercise')}</>
+                ? <><Play className="w-4 h-4" style={{ fill: 'white' }} />{isRetake ? (isPractice ? 'Retake Practice' : isGraded ? 'Retake Graded Exercise' : 'Retake Exercise') : (isPractice ? 'Start Practice' : isGraded ? 'Begin Graded Exercise' : 'Start Exercise')}</>
                 : availability.status === 'upcoming'
-                ? <><Calendar className="w-3.5 h-3.5" />Not Yet Open</>
-                : <><Lock className="w-3.5 h-3.5" />Expired</>
+                ? <><Calendar className="w-4 h-4" />Not Yet Open</>
+                : <><Lock className="w-4 h-4" />Expired</>
               }
             </button>
           </div>
@@ -854,6 +1000,22 @@ function StartExercisePopup({
         @keyframes popIn {
           from { opacity:0; transform:scale(.92) translateY(8px) }
           to   { opacity:1; transform:scale(1) translateY(0) }
+        }
+        .sep-body--split { display: grid; grid-template-columns: 1.65fr 1fr; align-items: start; }
+        .sep-right { border-left: 1px solid #eef1f5; }
+        .sep-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .sep-rich p { margin: 0 0 8px }
+        .sep-rich p:last-child { margin-bottom: 0 }
+        .sep-rich ul, .sep-rich ol { margin: 0; padding-left: 18px }
+        .sep-rich li { margin-bottom: 5px }
+        /* One column once the split stops earning its keep — the right pane
+           moves below the left instead of squeezing both. */
+        @media (max-width: 720px) {
+          .sep-body--split { grid-template-columns: 1fr; }
+          .sep-right { border-left: none; border-top: 1px solid #eef1f5; }
+        }
+        @media (max-width: 520px) {
+          .sep-pair { grid-template-columns: 1fr; }
         }
       `}</style>
     </div>
@@ -984,6 +1146,12 @@ export default function Exercises({
   const [popupExercise, setPopupExercise] = useState<{ exercise: Exercise; isRetake?: boolean } | null>(null)
   const [resumeModalExercise, setResumeModalExercise] = useState<Exercise | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'warning' } | null>(null)
+  // Full-screen brand loader shown from the moment the student confirms
+  // Start (or Resume) until the target compiler / exercise page mounts.
+  // Without this the list stays visible for the brief moment between
+  // router.push() and the destination route's own loading state — which
+  // read as "nothing happened" on a slow route transition.
+  const [isStartingExercise, setIsStartingExercise] = useState(false)
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [filterLevel, setFilterLevel] = useState<string>("all")
   const [filterStatus, setFilterStatus] = useState<string[]>([])
@@ -1086,13 +1254,21 @@ const filteredExercises = useMemo(
   [exercises, searchQuery, filterLevel, filterStatus, studentAnswers, method, subcategory, sortColumn, sortDir]
 )
 
-// Dynamically compute rows per page from the actual table-body area height
+// Dynamically compute rows per page from the actual table-body area height.
+// tableAreaRef wraps DataTable + TableFooter, so budget must subtract the
+// h-8 header (32) AND the h-11 footer (44) before dividing by the h-11
+// row height. Half-row safety keeps the last row from clipping right at
+// the pager edge (which used to silently roll to page 2).
 useEffect(() => {
   const el = tableAreaRef.current
   if (!el) return
-  const ROW_H = 49  // py-3 rows ≈ 49px (24px padding + ~24px content + 1px border)
+  const HEAD_H = 32
+  const FOOT_H = 44
+  const ROW_H = 44
+  const SAFETY = Math.round(ROW_H / 2)
   const compute = () => {
-    setItemsPerPage(Math.max(5, Math.floor(el.clientHeight / ROW_H)))
+    const budget = Math.max(0, el.clientHeight - HEAD_H - FOOT_H - SAFETY)
+    setItemsPerPage(Math.max(3, Math.min(50, Math.floor(budget / ROW_H))))
   }
   compute()
   const ro = new ResizeObserver(compute)
@@ -1154,6 +1330,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   const handleConfirmStart = () => {
     if (!popupExercise) return
     if (popupExercise.isRetake) {
+      setIsStartingExercise(true)
       onExerciseSelect(popupExercise.exercise, { resetProgress: true })
     } else {
       const { inProgress } = getExerciseAttemptData(popupExercise.exercise._id)
@@ -1162,6 +1339,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
         setPopupExercise(null)
         return
       }
+      setIsStartingExercise(true)
       onExerciseSelect(popupExercise.exercise)
     }
     setPopupExercise(null)
@@ -1169,6 +1347,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
 
   const handleConfirmResume = (resetProgress: boolean) => {
     if (!resumeModalExercise) return
+    setIsStartingExercise(true)
     onExerciseSelect(resumeModalExercise, { resetProgress })
     setResumeModalExercise(null)
   }
@@ -1204,21 +1383,26 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   const hasAnyExercises = !!exercises && exercises.filter(ex => isExerciseFullyConfigured(ex)).length > 0
 
   // ── Columns for the shared DataTable (matches Client Management styling) ──
+  // Column widths tuned so full date+time strings (e.g. "21/08/2026 07:11 PM")
+  // fit without wrapping and without eating into the Name column — the
+  // earlier 14% dates were too narrow and pushed onto the neighbours,
+  // which read as columns "overlapping". All cell text is text-[12px] so
+  // the row has one consistent font size (matches ProblemSolving.tsx).
   const columns: DTColumn<Exercise>[] = [
     {
       key: 'num',
       label: '#',
-      className: 'w-[5%] pl-4 pr-2 text-left text-xs text-faint tabular-nums align-middle whitespace-nowrap',
+      className: 'w-[4%] pl-4 pr-2 text-left text-[12px] text-faint tabular-nums align-middle whitespace-nowrap',
       skeletonWidth: '20px',
       render: (_ex, i) => startIdx + i + 1,
     },
     {
       key: 'id',
       label: 'ID',
-      className: 'w-[8%] px-3 text-left align-middle',
+      className: 'w-[9%] px-3 text-left align-middle text-[12px] text-subtle',
       skeletonWidth: '40px',
       render: (ex) => (
-        <span className="text-2xs font-mono text-subtle truncate block" title={ex.exerciseInformation.exerciseId}>
+        <span className="font-mono truncate block" title={ex.exerciseInformation.exerciseId}>
           {ex.exerciseInformation.exerciseId}
         </span>
       ),
@@ -1227,18 +1411,17 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'name',
       label: 'Assignment Name',
       sortKey: 'name',
-      className: 'w-[27%] px-3 text-left align-middle',
+      className: 'w-[22%] px-3 text-left align-middle text-[12px] text-body',
       skeletonWidth: '80%',
       render: (ex) => {
         const name = ex.exerciseInformation.exerciseName || 'N/A'
-        const desc = ex.exerciseInformation.description
-          ? ex.exerciseInformation.description.replace(/<[^>]*>/g, '').substring(0, 80)
-          : ''
+        // Font-weight dropped from `font-medium text-heading` to plain
+        // row-body weight so the row reads as one uniform line — same
+        // rhythm the We_Do assignments list uses. Description subtitle
+        // dropped: it was making the row taller than the other cells
+        // and produced the mixed-font look the trainer complained about.
         return (
-          <div className="flex flex-col justify-center min-w-0">
-            <span className="block truncate font-medium text-heading" title={name}>{name}</span>
-            {desc && <span className="block truncate mt-0.5 text-2xs text-faint">{desc}</span>}
-          </div>
+          <span className="block truncate" title={name}>{name}</span>
         )
       },
     },
@@ -1246,10 +1429,10 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'start',
       label: 'Start Date',
       sortKey: 'start',
-      className: 'w-[14%] px-3 text-left align-middle',
+      className: 'w-[18%] px-3 text-left align-middle text-[12px] text-body',
       skeletonWidth: '75%',
       render: (ex) => (
-        <span className="text-xs text-body flex items-center gap-1 whitespace-nowrap"
+        <span className="flex items-center gap-1 whitespace-nowrap"
           title={ex.availabilityPeriod?.startDate ? formatDateTime(ex.availabilityPeriod.startDate) : ''}>
           <Calendar size={11} className="text-faint flex-shrink-0" />
           {ex.availabilityPeriod?.startDate
@@ -1262,10 +1445,10 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'end',
       label: 'End Date',
       sortKey: 'end',
-      className: 'w-[14%] px-3 text-left align-middle',
+      className: 'w-[18%] px-3 text-left align-middle text-[12px] text-body',
       skeletonWidth: '75%',
       render: (ex) => (
-        <span className="text-xs text-body flex items-center gap-1 whitespace-nowrap"
+        <span className="flex items-center gap-1 whitespace-nowrap"
           title={ex.availabilityPeriod?.endDate ? formatDateTime(ex.availabilityPeriod.endDate) : ''}>
           <Clock size={11} className="text-faint flex-shrink-0" />
           {ex.availabilityPeriod?.endDate
@@ -1278,7 +1461,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'level',
       label: 'Level',
       sortKey: 'level',
-      className: 'w-[8%] px-3 text-left align-middle',
+      className: 'w-[8%] px-3 text-left align-middle text-[12px] text-body',
       render: (ex) => {
         const d = getDifficultyStyle(ex.exerciseInformation.exerciseLevel)
         return (
@@ -1293,16 +1476,37 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'status',
       label: 'Status',
       sortKey: 'status',
-      className: 'w-[9%] px-3 text-left align-middle',
+      // Wider so "Not Submitted" fits without wrapping.
+      className: 'w-[10%] px-3 text-left align-middle text-[12px] text-body',
       render: (ex) => {
         const canStart = getExerciseAvailability(ex).canStart
+        const testSubmissions = getTestSubmissions(ex, studentAnswers, method, subcategory)
+        const isCompleted = testSubmissions >= 1
+        // Status communicates state via ICON + label — the shape is the
+        // primary cue (accessible to colour-blind viewers) and colour is
+        // secondary. Same rule as the You_Do assessments list:
+        //   • Submitted     → CheckCircle (green)
+        //   • Active        → Zap        (green)
+        //   • Not Submitted → Lock       (grey)
+        const state = isCompleted
+          ? 'submitted'
+          : canStart
+            ? 'active'
+            : 'not-submitted'
+        const label = state === 'submitted'
+          ? 'Submitted'
+          : state === 'active'
+            ? 'Active'
+            : 'Not Submitted'
+        const Icon = state === 'submitted' ? CheckCircle : state === 'active' ? Zap : Lock
+        const isGreen = state !== 'not-submitted'
         return (
-          <span className="inline-flex items-center gap-1.5 text-2xs font-medium px-2.5 py-1 rounded-full"
-            style={canStart
+          <span className="inline-flex items-center gap-1.5 text-2xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+            style={isGreen
               ? { background: '#ecfdf3', color: '#15803d' }
               : { background: '#f1f5f9', color: '#64748b' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: canStart ? '#22c55e' : '#94a3b8' }} />
-            {canStart ? 'Active' : 'Inactive'}
+            <Icon size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+            {label}
           </span>
         )
       },
@@ -1310,7 +1514,12 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
     {
       key: 'action',
       label: 'Action',
-      className: 'w-[15%] pl-2 pr-4 text-center align-middle whitespace-nowrap',
+      // Action column carries JUST the primary write action (Start / Re
+      // Submit) and the three-dot menu. The "Submitted / Not Submitted"
+      // text that used to sit here is dropped — that state already reads
+      // off the Status column above, and repeating it here squashed the
+      // three-dot menu and made the cell feel cramped.
+      className: 'w-[11%] pl-2 pr-4 text-center align-middle text-[12px] text-body whitespace-nowrap',
       render: (ex) => {
         const availability = getExerciseAvailability(ex)
         const isGraded = ex.isGraded !== false
@@ -1319,40 +1528,28 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
         const isCompleted = testSubmissions >= 1
         const limitReached = testSubmissions >= submissionAttempts
         const canRetake = isCompleted && !limitReached && availability.canStart
+
+        // A single primary control (or nothing) sits on the left; the
+        // three-dot menu always sits on the right so it lands in the
+        // same visual slot for every row. `justify-end` with a small
+        // gap keeps the layout tidy — earlier `flex-col` per-row
+        // stacking made "Not Submitted" rows shorter than others.
         return (
-          <div className="flex items-center justify-center gap-1">
-            <div className="flex flex-col items-center gap-0.5">
-              {!availability.canStart ? (
-                <span className="text-2xs font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
-                  {isCompleted ? 'Submitted' : 'Not Submitted'}
-                </span>
-              ) : limitReached ? (
-                <span className="text-2xs font-semibold" style={{ color: '#15803d' }}>Submitted</span>
-              ) : canRetake ? (
-                <>
-                  <button
-                    onClick={e => handleStartClick(ex, e)}
-                    className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
-                    style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }}
-                    onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
-                    onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-                    Re Submit
-                  </button>
-                  <span className="text-2xs font-medium" style={{ color: '#15803d' }}>Submitted</span>
-                </>
-              ) : (
-                <button
-                  onClick={e => handleStartClick(ex, e)}
-                  className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
-                  style={isGraded
+          <div className="flex items-center justify-end gap-1.5">
+            {availability.canStart && !limitReached && (
+              <button
+                type="button"
+                onClick={e => handleStartClick(ex, e)}
+                className="inline-flex items-center h-7 px-2.5 text-2xs font-semibold rounded-control transition-colors duration-150"
+                style={canRetake
+                  ? { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }
+                  : isGraded
                     ? { background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', cursor: 'pointer' }
                     : { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', cursor: 'pointer' }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-                  Start
-                </button>
-              )}
-            </div>
+              >
+                {canRetake ? 'Re Submit' : 'Start'}
+              </button>
+            )}
             <RowActionsMenu
               exercise={ex}
               onGrade={handleGradeClick}
@@ -1367,6 +1564,17 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   // ── Table ────────────────────────────────────────────────────────────────────
   return (
     <>
+      {/* Full-screen brand loader between clicking Start and the target
+          compiler / exercise page mounting. Portalled to <body> so it sits
+          above every list / modal in the page. Cleared automatically when
+          this component unmounts on the route change. */}
+      {isStartingExercise && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-white">
+          <SmartCliffRingLoader title="Loading" subtitle="Preparing your exercise…" />
+        </div>,
+        document.body,
+      )}
+
       {/* Thin, subtle scrollbar for the table body (only shows when needed) */}
       <style>{`
         .roster-scroll { scrollbar-width: thin; scrollbar-color: #94a3b8 transparent; }
@@ -1430,31 +1638,19 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
         document.body
       )}
 
-      {/* ── Assignments listing: shared DataTable + TableFooter shell that matches
-             Client Management's design tokens and toolbar layout. ── */}
+      {/* ── Assignments listing: flat panel. Tight horizontal gutter
+             (`px-2 sm:px-3`) plus tight vertical padding on the toolbar
+             so nothing wastes space around the search / list. ── */}
       <div
         ref={cardRef}
-        className="flex flex-col h-full min-h-0 rounded-xl border border-hairline bg-surface overflow-hidden shadow-xs mx-0.5"
+        className="flex flex-col h-full min-h-0 bg-surface overflow-hidden px-2 sm:px-3"
         style={{ fontFamily: LIST_FONT }}
       >
 
-        {/* ── Toolbar: title/count · search · filter · (optional) show-header ── */}
-        <div className="flex-none flex items-center gap-2 px-4 py-3 border-b border-hairline flex-wrap min-w-0">
-          <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
-            <span className="inline-flex items-center justify-center w-7 h-7 rounded-tile bg-brand-wash text-brand-strong flex-shrink-0">
-              <FileText size={14} />
-            </span>
-            <h2 className="text-sm font-semibold text-heading tracking-[-0.01em] whitespace-nowrap m-0">
-              Assignments
-              <span className="ml-2 inline-flex items-center h-5 min-w-5 px-1.5 rounded-full bg-brand-wash text-brand-strong text-2xs font-semibold tabular-nums">
-                {filteredExercises.length}
-              </span>
-            </h2>
-          </div>
-
-          <div className="flex-1" />
-
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
+        {/* ── Toolbar — small vertical padding so the search row hugs
+             the list header below it instead of floating with a big gap. ── */}
+        <div className="flex-none flex items-center gap-2 pt-1.5 pb-1.5 flex-wrap min-w-0">
+          <div className="relative flex-1 min-w-[220px] max-w-md">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
             <input
               type="text"
@@ -1664,8 +1860,16 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             }
           />
 
-          {filteredExercises.length > 0 && totalPages > 1 && (
-            <div className="border-t border-hairline bg-canvas">
+          {filteredExercises.length > 0 && (
+            // No border-t on the pager — the DataTable's last row already
+            // omits its own border via `last:border-0`, so wrapping the
+            // pager in a top border stacked TWO adjacent lines that read
+            // like a double divider.
+            <div className="bg-surface">
+              {/* Pagination shows whenever there are rows — dropped the
+                  `totalPages > 1` gate so the "Showing X of Y" count and
+                  the pager itself are always in the same spot, even with
+                  a single page of results. */}
               <TableFooter
                 from={startIdx + 1}
                 to={Math.min(startIdx + ITEMS_PER_PAGE, filteredExercises.length)}

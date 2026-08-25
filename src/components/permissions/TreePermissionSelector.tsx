@@ -16,6 +16,9 @@
 //   3. Toggling a container acts on every page under it (cascade).
 //   4. Container checkboxes are tri-state: none / some / all children granted.
 //   5. Selecting a function without the parent page auto-enables the page.
+//   6. A page checkbox is tri-state on the same rule: it ticks only when every
+//      one of its functions is granted (or it has none), and shows the minus
+//      for any partial state — including zero-of-many.
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
@@ -400,8 +403,14 @@ function PageRow({
   const functions = (node.children ?? [])
     .filter((c) => c.kind === "function")
     .filter((c) => fnAllowed(c, fnFilter));
-  const grantedCount = selection[node.id]?.size ?? 0;
   const totalFns = functions.length;
+  // Counted against the VISIBLE functions, not the raw set: a stored selection
+  // can carry function ids the institution's allow-list now hides, which read
+  // as "9/8" in the badge and as fully-granted in the tick.
+  const visibleFnIds = new Set(functions.map((f) => f.id));
+  const grantedCount = [...(selection[node.id] ?? [])].filter((id) =>
+    visibleFnIds.has(id),
+  ).length;
   const isOpen = rowState.expanded[node.id] ?? enabled;
   return (
     <div className="mb-1.5">
@@ -427,16 +436,18 @@ function PageRow({
           <span className="w-4 h-4" />
         )}
         <Tick
+          // A tick means "everything under this row is granted". A page that
+          // holds NONE of its eight functions is not that, so it shows the
+          // minus like any other partial state — the old branch returned "all"
+          // for 0-of-8, which read as fully granted next to its own "0/8".
+          // A page with no functions at all has nothing left to grant, so it
+          // ticks.
           state={
-            enabled
-              ? grantedCount === totalFns && totalFns > 0
+            !enabled
+              ? "none"
+              : totalFns === 0 || grantedCount === totalFns
                 ? "all"
-                : totalFns === 0
-                  ? "all"
-                  : grantedCount > 0
-                    ? "some"
-                    : "all"
-              : "none"
+                : "some"
           }
           onClick={(e) => {
             e.stopPropagation();

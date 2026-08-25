@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation"
 import { SectionStartPopup } from "./section-based-assessments"
 import SectionBasedTestPage from "./YouDo/assessment/components/SectionBasedTestPage"
 import { retestApi } from "@/apiServices/retest"
+import TableFooter from "@/app/lms/shared/listing/TableFooter"
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -1504,15 +1505,20 @@ export default function Assessments({
   // Reset to page 1 when filters change
   useEffect(() => { setCurrentPage(1) }, [searchQuery, filterLevel, filterStatus.join(',')])
 
-  // Fit rows to the available height so the list doesn't scroll (subtract the
-  // sticky header row, ~46px). Falls back to a 5-row minimum on short viewports.
+  // Fit rows to the available height so the list doesn't scroll. This ref
+  // wraps ONLY the scroll region (header + rows) — the TableFooter sits
+  // OUTSIDE, so the budget subtracts the sticky h-8 header only. Half-row
+  // safety stops the last row from clipping at the region's edge and
+  // silently rolling to page 2. Row rhythm is h-11 (44 px).
   useEffect(() => {
     const el = tableAreaRef.current
     if (!el) return
-    const ROW_H = 49      // py-3 row ≈ 49px
-    const HEAD_H = 46     // sticky header row height
+    const HEAD_H = 32
+    const ROW_H = 44
+    const SAFETY = Math.round(ROW_H / 2)
     const compute = () => {
-      setItemsPerPage(Math.max(5, Math.floor((el.clientHeight - HEAD_H) / ROW_H)))
+      const budget = Math.max(0, el.clientHeight - HEAD_H - SAFETY)
+      setItemsPerPage(Math.max(3, Math.min(50, Math.floor(budget / ROW_H))))
     }
     compute()
     const ro = new ResizeObserver(compute)
@@ -1801,48 +1807,34 @@ export default function Assessments({
         document.body
       )}
 
-      {/* Assessment List — roster-style list (see sample) */}
-      <div className="flex flex-col h-full" style={{
-        fontFamily: LIST_FONT,
-        border: '1px solid #e8eaf0',
-        borderRadius: 14,
-        boxShadow: '0 1px 3px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.05)',
-        overflow: 'hidden',
-        background: '#ffffff',
-        margin: '0 2px',
-      }}>
+      {/* Assessment List — flat panel matching the We_Do assignments +
+          student exercises list. No card chrome, horizontal gutter
+          provides the breathing space. Header/toolbar: search anchored
+          left, Filter on the right. */}
+      <div className="flex flex-col h-full bg-surface px-2 sm:px-3" style={{ fontFamily: LIST_FONT }}>
 
-        {/* ── Header: title (left) + search & filter (right) ── */}
-        <div className="flex-none flex items-center gap-3 px-4 py-2 bg-white" style={{ borderBottom: '1px solid #eef0f4' }}>
-          {/* Title / count */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="flex items-center justify-center" style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(249,115,22,0.10)', color: '#f97316' }}>
-              <FileText size={15} />
-            </span>
-            <span className="text-xs font-semibold" style={{ color: '#1a1a2e' }}>
-              Total Assessments: <span style={{ color: '#f97316' }}>{filteredExercises.length}</span>
-            </span>
-          </div>
-
-          <div className="flex-1" />
-
-          {/* Search */}
-          <div className="relative" style={{ width: '100%', maxWidth: '40%' }}>
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#bcbccc' }} />
+        {/* ── Toolbar: search (left) + filter (right). The "Total
+             Assessments N" title tile is dropped — that count already
+             appears in the pagination footer. ── */}
+        <div className="flex-none flex items-center gap-2 pt-1.5 pb-1.5 flex-wrap min-w-0">
+          {/* Search — anchors on the LEFT via flex-1 */}
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
             <input
               type="text"
               placeholder="Search assessments…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-7 h-6 text-xs rounded-lg outline-none transition-all"
-              style={{ background: '#f8fafc', border: '1px solid #e4e4ed', color: '#1a1a2e' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(249,115,22,0.08)'; e.currentTarget.style.background = '#fff' }}
-              onBlur={e => { e.currentTarget.style.borderColor = '#e4e4ed'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#f8fafc' }}
+              className="h-8 w-full pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery("")}
-                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#bcbccc', cursor: 'pointer', lineHeight: 0, border: 'none', background: 'none', padding: 0 }}>
-                <X size={11} />
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+              >
+                <X size={12} />
               </button>
             )}
           </div>
@@ -1850,19 +1842,19 @@ export default function Assessments({
           {/* Filter */}
           <div className="relative" ref={filterRef}>
             <button
+              type="button"
               onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-              className="h-6 px-3 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all"
-              style={{
-                border: (filterLevel !== "all" || filterStatus.length > 0) ? '1px solid rgba(249,115,22,0.35)' : '1px solid #e4e4ed',
-                background: (filterLevel !== "all" || filterStatus.length > 0) ? 'rgba(249,115,22,0.06)' : '#f8fafc',
-                color: (filterLevel !== "all" || filterStatus.length > 0) ? '#f97316' : '#64748b',
-                cursor: 'pointer',
-              }}>
-              <Filter size={12} />
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 ${
+                (filterLevel !== 'all' || filterStatus.length > 0 || showFilterDropdown)
+                  ? 'border-brand text-brand-strong bg-brand-wash'
+                  : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'
+              }`}
+            >
+              <Filter size={13} />
               <span>Filter</span>
-              {(filterLevel !== "all" || filterStatus.length > 0) && (
-                <span className="w-4 h-4 rounded-full text-white text-2xs font-bold flex items-center justify-center" style={{ background: '#f97316' }}>
-                  {(filterLevel !== "all" ? 1 : 0) + filterStatus.length}
+              {(filterLevel !== 'all' || filterStatus.length > 0) && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
+                  {(filterLevel !== 'all' ? 1 : 0) + filterStatus.length}
                 </span>
               )}
               <ChevronDown size={11} className={`transition-transform ${showFilterDropdown ? 'rotate-180' : ''}`} />
@@ -1989,8 +1981,12 @@ export default function Assessments({
                     const isSorted = h.key && sortColumn === h.key
                     return (
                       <th key={h.label}
-                        className={`py-3 text-left select-none ${h.cls}`}
-                        style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.02em', color: isSorted ? '#f97316' : '#94a3b8', textTransform: 'uppercase' }}>
+                        // Header labels darkened from a very light grey
+                        // (#94a3b8) to slate-600 (#475569) so they read
+                        // clearly, and dropped to 10 px to match the
+                        // shared DataTable header size (was 11 px).
+                        className={`h-8 text-left select-none ${h.cls}`}
+                        style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', color: isSorted ? '#f97316' : '#4b5563', textTransform: 'uppercase' }}>
                         {h.key ? (
                           <button
                             type="button"
@@ -2003,7 +1999,7 @@ export default function Assessments({
                               ? (sortDir === 'asc'
                                   ? <ArrowUp size={11} style={{ color: '#f97316' }} />
                                   : <ArrowDown size={11} style={{ color: '#f97316' }} />)
-                              : <ArrowUpDown size={11} style={{ color: '#cbd5e1' }} />}
+                              : <ArrowUpDown size={11} style={{ color: '#94a3b8' }} />}
                           </button>
                         ) : (
                           <span className="inline-flex items-center gap-1">{h.label}</span>
@@ -2033,10 +2029,14 @@ export default function Assessments({
                   const rowNum = startIdx + idx + 1
                   const isHovered = hoveredRow === exercise._id
 
+                  // Drop the border on the LAST row of the current page so
+                  // it doesn't stack right next to the pagination bar and
+                  // read as a doubled divider.
+                  const isLastRow = idx === pagedExercises.length - 1
                   return (
                     <tr key={exercise._id}
                       style={{
-                        borderBottom: '1px solid #f0f0f5',
+                        borderBottom: isLastRow ? 'none' : '1px solid #f0f0f5',
                         background: isHovered
                           ? 'linear-gradient(90deg, rgba(249,115,22,0.05) 0%, rgba(249,115,22,0.02) 100%)'
                           : '#ffffff',
@@ -2047,46 +2047,29 @@ export default function Assessments({
                       onMouseLeave={() => setHoveredRow(null)}>
 
                       {/* # */}
-                      <td className="pl-4 pr-2 py-3 align-middle">
-                        <span className="text-2xs font-mono"
-                          style={{ color: isHovered ? '#f97316' : '#bcbccc', fontWeight: isHovered ? 600 : 400, transition: 'color 0.15s' }}>
-                          {rowNum}
-                        </span>
+                      <td className="pl-4 pr-2 h-11 align-middle">
+                        <span className="text-[12px] tabular-nums text-faint">{rowNum}</span>
                       </td>
 
                       {/* ID */}
-                      <td className="px-3 py-3 align-middle">
-                        <span className="text-2xs font-mono truncate block" style={{ color: '#8b8b9e' }}>
-                          {exercise.exerciseInformation.exerciseId}
+                      <td className="px-3 h-11 align-middle text-[12px] text-subtle">
+                        <span className="font-mono truncate block">{exercise.exerciseInformation.exerciseId}</span>
+                      </td>
+
+                      {/* Name — plain row weight (was text-sm font-semibold
+                          text-heading which read heavier than every other
+                          cell). Description subtitle dropped so the row
+                          height stays uniform. */}
+                      <td className="px-3 h-11 align-middle text-[12px] text-body min-w-0">
+                        <span className="block truncate" title={exercise.exerciseInformation.exerciseName}>
+                          {exercise.exerciseInformation.exerciseName}
                         </span>
                       </td>
 
-                      {/* Name */}
-                      <td className="px-3 py-3 align-middle min-w-0">
-                        <div className="flex flex-col justify-center min-w-0">
-                          <span className="text-sm font-semibold truncate block"
-                            title={exercise.exerciseInformation.exerciseName}
-                            style={{ color: isHovered ? '#ea580c' : '#1a1a2e', transition: 'color 0.15s' }}>
-                            {exercise.exerciseInformation.exerciseName}
-                          </span>
-                          {(() => {
-                            const desc = exercise.exerciseInformation.description
-                            if (typeof desc !== 'string' || !desc.trim()) return null
-                            const clean = desc.replace(/<[^>]*>/g, '').substring(0, 80)
-                            if (!clean.trim()) return null
-                            return (
-                              <span className="text-2xs truncate block mt-0.5" style={{ color: '#8b8b9e' }}>
-                                {clean}
-                              </span>
-                            )
-                          })()}
-                        </div>
-                      </td>
-
                       {/* Start Date */}
-                      <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-2xs flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
-                          <Calendar size={10} style={{ flexShrink: 0, color: '#94a3b8' }} />
+                      <td className="pl-0 pr-2 h-11 align-middle text-[12px] text-body">
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          <Calendar size={11} className="text-faint flex-shrink-0" />
                           {exercise.availabilityPeriod?.startDate
                             ? `${new Date(exercise.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
                             : '—'}
@@ -2094,9 +2077,9 @@ export default function Assessments({
                       </td>
 
                       {/* End Date */}
-                      <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-2xs flex items-center gap-1 whitespace-nowrap" style={{ color: '#6b7280' }}>
-                          <Clock size={10} style={{ flexShrink: 0, color: '#94a3b8' }} />
+                      <td className="pl-0 pr-2 h-11 align-middle text-[12px] text-body">
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          <Clock size={11} className="text-faint flex-shrink-0" />
                           {exercise.availabilityPeriod?.endDate
                             ? `${new Date(exercise.availabilityPeriod.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
                             : '—'}
@@ -2104,86 +2087,85 @@ export default function Assessments({
                       </td>
 
                       {/* Level */}
-                      <td className="pl-0 pr-2 py-3 align-middle">
-                        <span className="text-2xs font-medium" style={{ color: '#64748b' }}>
-                          {diff.label}
-                        </span>
+                      <td className="pl-0 pr-2 h-11 align-middle text-[12px] text-body">
+                        <span>{diff.label}</span>
                       </td>
 
-                      {/* Status — Active / Inactive. Hover to see WHY: the
-                          underlying availability function already computes a
-                          human reason ("Starts Jun 10…", "Expired Jun 8…",
-                          "Ends Jun 15…", etc.) — surfacing it as a tooltip
-                          turns "Inactive" from a black box into a usable
-                          diagnostic when a teacher updates schedule dates
-                          and is checking why the Start button hasn't
-                          appeared yet. */}
-                      <td className="pl-0 pr-2 py-3 align-middle text-center">
-                        <span
-                          className="inline-flex items-center gap-1.5 text-2xs font-semibold px-2.5 py-1 rounded-full cursor-help"
-                          title={
-                            !exercise.availabilityPeriod?.startDate && !exercise.availabilityPeriod?.endDate
-                              ? 'No schedule saved yet — open Settings → Schedule and click Save.'
-                              : availability.message || (availability.canStart ? 'Open' : 'Not open')
-                          }
-                          style={availability.canStart
-                            ? { background: '#ecfdf3', color: '#15803d' }
-                            : { background: '#f1f5f9', color: '#64748b' }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: availability.canStart ? '#22c55e' : '#94a3b8', flexShrink: 0 }} />
-                          {availability.canStart ? 'Active' : 'Inactive'}
-                        </span>
+                      {/* Status — communicates state via ICON + label so
+                          the signal survives colour-blind users and stays
+                          readable if the row bg ever tints. Three states,
+                          three icons:
+                            • Submitted     → CheckCircle (green)
+                            • Active        → Zap        (green)
+                            • Not Submitted → Lock       (grey)
+                          The dot chip that used to sit here relied on
+                          colour alone — the user asked for a non-colour
+                          cue, which shape provides. */}
+                      <td className="pl-0 pr-2 h-11 align-middle text-center">
+                        {(() => {
+                          const state = isCompleted
+                            ? 'submitted'
+                            : availability.canStart
+                              ? 'active'
+                              : 'not-submitted'
+                          const label = state === 'submitted'
+                            ? 'Submitted'
+                            : state === 'active'
+                              ? 'Active'
+                              : 'Not Submitted'
+                          const Icon = state === 'submitted'
+                            ? CheckCircle
+                            : state === 'active'
+                              ? Zap
+                              : Lock
+                          const isGreen = state !== 'not-submitted'
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1.5 text-2xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap cursor-help"
+                              title={
+                                !exercise.availabilityPeriod?.startDate && !exercise.availabilityPeriod?.endDate
+                                  ? 'No schedule saved yet — open Settings → Schedule and click Save.'
+                                  : availability.message || (availability.canStart ? 'Open' : 'Not open')
+                              }
+                              style={isGreen
+                                ? { background: '#ecfdf3', color: '#15803d' }
+                                : { background: '#f1f5f9', color: '#64748b' }}>
+                              <Icon size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                              {label}
+                            </span>
+                          )
+                        })()}
                       </td>
 
-                      {/* Action */}
-                      <td className="px-3 py-3 align-middle">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <div className="flex flex-col items-center gap-0.5">
-                            {!availability.canStart ? (
-                              /* Inactive */
-                              <span className="text-2xs font-semibold" style={{ color: isCompleted ? '#15803d' : '#94a3b8' }}>
-                                {isCompleted ? 'Submitted' : 'Not Submitted'}
-                              </span>
-                            ) : limitReached ? (
-                              /* All attempts used */
-                              <span className="text-2xs font-semibold" style={{ color: '#15803d' }}>Submitted</span>
-                            ) : canRetake ? (
-                              /* Active + submitted + retake available */
-                              <>
-                                <button
-                                  onClick={e => handleStartClick(exercise, e)}
-                                  className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
-                                  style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }}
-                                  onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
-                                  onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-                                  {isSec ? 'Retake' : 'Re Submit'}
-                                </button>
-                                <span className="text-2xs font-medium" style={{ color: '#15803d' }}>Submitted</span>
-                              </>
-                            ) : (
-                              /* Active + not submitted (incl. coordinator-granted retest window) */
-                              <button
-                                onClick={e => handleStartClick(exercise, e)}
-                                className="px-3 py-1 text-2xs font-semibold rounded-lg transition-all"
-                                style={isSec
+                      {/* Action — primary write action (Start / Re Submit /
+                          Retake / Start Retest) + the three-dot menu, in
+                          the SAME visual slot on every row. The redundant
+                          "Submitted / Not Submitted" text is gone — the
+                          Status column above carries that state. */}
+                      <td className="px-3 h-11 align-middle">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {availability.canStart && !limitReached && (
+                            <button
+                              type="button"
+                              onClick={e => handleStartClick(exercise, e)}
+                              className="inline-flex items-center h-7 px-2.5 text-2xs font-semibold rounded-control transition-colors duration-150"
+                              style={canRetake
+                                ? { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }
+                                : isSec
                                   ? { background: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', cursor: 'pointer' }
                                   : isGraded
                                     ? { background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', cursor: 'pointer' }
                                     : { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', cursor: 'pointer' }}
-                                onMouseEnter={e => { e.currentTarget.style.opacity = '0.82' }}
-                                onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-                                {retestOpen ? 'Start Retest' : 'Start'}
-                              </button>
-                            )}
-                          </div>
+                            >
+                              {canRetake ? (isSec ? 'Retake' : 'Re Submit') : (retestOpen ? 'Start Retest' : 'Start')}
+                            </button>
+                          )}
                           <RetestRowMenu
                             exercise={exercise}
                             isPending={pendingRetestIds.has(exercise._id)}
                             onRequest={() => setRetestModalExercise(exercise)}
                             onGrade={handleGradeClick}
                             isGradeEnabled={hasExerciseBeenAttempted(exercise, studentAnswers, method, subcategory)}
-                            // Submitted = the Action column shows a Submitted
-                            // state: inactive+completed, all attempts used, or
-                            // submitted with retake. Mirrors the row's branches.
                             isSubmitted={isCompleted || limitReached || canRetake}
                           />
                         </div>
@@ -2196,53 +2178,22 @@ export default function Assessments({
           )}
         </div>
 
-        {/* ── Pagination ── */}
+        {/* ── Pagination — same shared TableFooter the We_Do assignments
+             list (student exercises) uses, so the pager stays centred and
+             both lists share one visual language. Bespoke chevron + numbered
+             strip removed. ── */}
         {filteredExercises.length > 0 && (
-          <div className="flex-none bg-white px-4 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #e4e4ed' }}>
-            <div className="text-2xs" style={{ color: '#8b8b9e' }}>
-              Showing{' '}
-              <span className="font-semibold" style={{ color: '#1a1a2e' }}>{startIdx + 1}</span>
-              {' '}–{' '}
-              <span className="font-semibold" style={{ color: '#1a1a2e' }}>{Math.min(startIdx + ITEMS_PER_PAGE, filteredExercises.length)}</span>
-              {' '}of{' '}
-              <span className="font-semibold" style={{ color: '#1a1a2e' }}>{filteredExercises.length}</span>
-              {' '}assessments
-            </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
-                  className="h-6 w-6 rounded-md flex items-center justify-center transition-all disabled:opacity-30"
-                  style={{ color: '#8b8b9e', cursor: safePage === 1 ? 'not-allowed' : 'pointer' }}
-                  onMouseEnter={e => { if (safePage !== 1) { e.currentTarget.style.color = '#f97316'; e.currentTarget.style.background = 'rgba(249,115,22,0.08)' } }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#8b8b9e'; e.currentTarget.style.background = 'transparent' }}>
-                  <ChevronLeft size={13} />
-                </button>
-                <div className="flex gap-0.5">
-                  {getPageNums().map((p, i) =>
-                    p === '...' ? (
-                      <span key={`e-${i}`} className="px-1 text-2xs self-center" style={{ color: '#bcbccc' }}>…</span>
-                    ) : (
-                      <button key={p} onClick={() => setCurrentPage(p as number)}
-                        className="h-6 w-6 rounded-md text-2xs font-semibold transition-all"
-                        style={safePage === p
-                          ? { background: '#f97316', color: '#fff', boxShadow: '0 2px 6px rgba(249,115,22,0.3)', cursor: 'default' }
-                          : { color: '#6b6b7e', cursor: 'pointer' }}
-                        onMouseEnter={e => { if (safePage !== p) { e.currentTarget.style.background = 'rgba(249,115,22,0.08)'; e.currentTarget.style.color = '#f97316' } }}
-                        onMouseLeave={e => { if (safePage !== p) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b6b7e' } }}>
-                        {p}
-                      </button>
-                    )
-                  )}
-                </div>
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
-                  className="h-6 w-6 rounded-md flex items-center justify-center transition-all disabled:opacity-30"
-                  style={{ color: '#8b8b9e', cursor: safePage === totalPages ? 'not-allowed' : 'pointer' }}
-                  onMouseEnter={e => { if (safePage !== totalPages) { e.currentTarget.style.color = '#f97316'; e.currentTarget.style.background = 'rgba(249,115,22,0.08)' } }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#8b8b9e'; e.currentTarget.style.background = 'transparent' }}>
-                  <ChevronRight size={13} />
-                </button>
-              </div>
-            )}
+          <div className="flex-none bg-surface">
+            <TableFooter
+              from={startIdx + 1}
+              to={Math.min(startIdx + ITEMS_PER_PAGE, filteredExercises.length)}
+              total={filteredExercises.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageSize={() => {}}
+              currentPage={safePage}
+              totalPages={totalPages}
+              onPage={setCurrentPage}
+            />
           </div>
         )}
       </div>

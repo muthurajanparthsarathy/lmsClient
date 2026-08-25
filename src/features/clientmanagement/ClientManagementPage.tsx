@@ -3,10 +3,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-    Building2, ChevronDown, Eye,
+    Building2, ChevronDown, Eye, Layers,
     MoreVertical, Pencil, Plus, Printer, SearchX, Trash2, X,
     Search, SlidersHorizontal, Download, FileSpreadsheet, FileText,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -70,6 +71,11 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     const canEdit = can(PERMISSION_IDS.ADMIN_CLIENT_MANAGEMENT, 'Edit')
     const canDelete = can(PERMISSION_IDS.ADMIN_CLIENT_MANAGEMENT, 'Delete')
     const canToggle = can(PERMISSION_IDS.ADMIN_CLIENT_MANAGEMENT, 'Toggle Client Status')
+    // Row shortcut into Service Mapping with the New Mapping wizard already
+    // open on this client. Its own functionality so it can be granted (or
+    // withheld) independently of Add/Edit/Delete.
+    const canNewMapping = can(PERMISSION_IDS.ADMIN_CLIENT_MANAGEMENT, 'New Mapping')
+    const router = useRouter()
 
 
     const createClient = useCreateClient()
@@ -663,6 +669,13 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
         ? currentUsers.find((c) => c._id === detailsClientId) ?? null
         : null
 
+    // Hand off to Service Mapping: `newMapping=1` tells that page to open its
+    // New Mapping wizard on mount, and `clientId` pre-selects this row's client
+    // inside it. The params are stripped there once consumed.
+    const handleNewMapping = (id: string) => {
+        router.push(`/lms/pages/servicemapping?newMapping=1&clientId=${encodeURIComponent(id)}`)
+    }
+
     const handleDelete = (id: string) => {
         const client = currentUsers.find((c) => c._id === id)
         setDeleteModal({ open: true, clientId: id, clientName: client?.clientCompany || 'this client' })
@@ -940,7 +953,7 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             className: 'no-print w-[8%] pl-2 pr-4 sm:pr-5 text-right whitespace-nowrap align-middle py-3',
             skeletonWidth: '20px',
             render: (client) => {
-                const anyKebab = canView || canEdit || canToggle || canDelete
+                const anyKebab = canView || canEdit || canNewMapping || canToggle || canDelete
                 const isActive = client.status === 'active'
                 const isToggling = togglingClientId === client._id
                 // Only surface the "view all contacts" affordance when there
@@ -974,6 +987,11 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                                     {canEdit && (
                                         <DropdownMenuItem onClick={() => handleEdit(client._id)} className="cursor-pointer">
                                             <Pencil /> Edit
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canNewMapping && (
+                                        <DropdownMenuItem onClick={() => handleNewMapping(client._id)} className="cursor-pointer">
+                                            <Layers className="text-brand-strong" /> New Mapping
                                         </DropdownMenuItem>
                                     )}
                                     {canToggle && (

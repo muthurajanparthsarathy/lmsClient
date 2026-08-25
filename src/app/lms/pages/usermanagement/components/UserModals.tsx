@@ -1,10 +1,10 @@
 "use client";
 import { useRef, useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Check, Loader2, Send, Upload, Trash2, UserPlus, GraduationCap, ShieldCheck, ChevronDown, BookOpen, Building, Users, Briefcase, Building2, Layers } from "lucide-react";
+import { Check, Loader2, Send, Upload, Trash2, UserPlus, GraduationCap, ShieldCheck, ChevronDown, BookOpen, Building, Users, Briefcase, Building2, Layers, X } from "lucide-react";
 import { toast } from "sonner";
 import { User, Role, UserFormData, ApiPermission } from "./types";
 import { PermissionModal } from "@/app/lms/component/PermissionModal";
@@ -38,20 +38,22 @@ const LEVEL_FIELD: Record<string, string> = {
 const HIERARCHY_PATH_SEP = ' ▸ ';
 
 // ─── FieldKit-aligned control recipes (tokens only) ───────────────────────────
-const LABEL_CLS = "mb-1.5 block text-sm font-medium text-body";
+// Compact sizing — h-9 (36px) inputs, xs labels, tighter padding. Tightened
+// from h-10 / text-sm to bring the whole form under viewport height so the
+// modal no longer needs its inner scroll for typical role states.
+const LABEL_CLS = "mb-1 block text-xs font-medium text-body";
 const INPUT_CLS =
-  "h-10 w-full rounded-control border border-hairline-strong bg-surface px-3 text-sm text-body " +
+  "h-9 w-full rounded-control border border-hairline-strong bg-surface px-2.5 text-sm text-body " +
   "placeholder:text-faint transition-colors hover:border-line-hover focus:border-brand focus:outline-none " +
   "focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-subtle";
 const DROPDOWN_TRIGGER_CLS =
-  "h-10 w-full flex items-center justify-between gap-2 rounded-control border border-hairline-strong " +
-  "bg-surface px-3 text-sm transition-colors hover:border-line-hover focus:border-brand focus:outline-none " +
+  "h-9 w-full flex items-center justify-between gap-2 rounded-control border border-hairline-strong " +
+  "bg-surface px-2.5 text-sm transition-colors hover:border-line-hover focus:border-brand focus:outline-none " +
   "focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-subtle";
 const DROPDOWN_MENU_CLS =
   "absolute z-dropdown mt-1.5 w-full max-h-60 overflow-y-auto rounded-tile border border-hairline bg-surface shadow-lg p-1";
 const DROPDOWN_ITEM_CLS =
   "flex items-center gap-2 rounded-chip px-2.5 py-2 text-sm cursor-pointer transition-colors duration-150";
-const SECTION_TITLE_CLS = "text-2xs font-semibold uppercase tracking-wider text-faint";
 
 interface UserModalsProps {
   institutionId: string | null;
@@ -478,28 +480,63 @@ export const UserModals: React.FC<UserModalsProps> = ({
 
   return (
     <>
-      {/* Add/Edit User Modal */}
+      {/* Add/Edit User Modal — refactored to a larger centred rounded
+          dialog per the reference layout: wider max-w, generous rounding,
+          split header/body/footer with clear dividers, and a bordered
+          inner card wrapping the form. Fields, labels, dropdowns, and
+          handlers are untouched — only the surrounding shell changed. */}
       <Dialog open={showAddUserModal} onOpenChange={(open) => { if (!open) setShowAddUserModal(false); }}>
-        <DialogContent className="w-[calc(100vw-32px)] sm:max-w-[600px] max-h-[88vh] flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="border-b border-hairline px-5 py-4">
-            <DialogTitle>{isEditing ? "Edit user" : "New user"}</DialogTitle>
-            <DialogDescription>
-              {isEditing
-                ? "Update this account's profile and access."
-                : "Create an account, then assign its role and client placement."}
-            </DialogDescription>
+        {/* Fixed height + matching width — Create User and Bulk Upload
+            modals now open at the exact same footprint (820 × 85vh) so
+            toggling between them doesn't feel like the modal is jumping
+            in size. Body flex-1 handles scroll when the form exceeds
+            the reserved height. */}
+        <DialogContent
+          className="w-[calc(100vw-32px)] sm:max-w-[820px] h-[85vh] flex flex-col gap-0 p-0 overflow-hidden rounded-2xl shadow-2xl bg-surface"
+          showCloseButton={false}
+          // A part-filled account form is easy to lose to a stray backdrop
+          // click, so only the header X / Cancel close it. (Bulk-parity
+          // hardening from the 24-8 delivery.)
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          {/* Header — compact: smaller vertical padding and a base-sized
+              title so the header eats less of the viewport. Built-in
+              Radix close is disabled above; we render our own pill-shaped
+              close-in-a-circle to match the reference. */}
+          <DialogHeader className="px-5 pt-4 pb-2.5">
+            <DialogTitle className="text-base font-semibold text-heading text-left">
+              {isEditing ? "Edit user" : "Create new user"}
+            </DialogTitle>
+            {/* Circled X — subtle grey ring around the icon, matches the
+                reference's pill-shaped close control. Positioned top-right
+                via absolute so header padding stays clean. */}
+            <DialogClose
+              aria-label="Close"
+              className="absolute top-3.5 right-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-hairline-strong bg-surface text-subtle transition-colors hover:bg-row-hover hover:text-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 disabled:pointer-events-none"
+            >
+              <X className="h-3.5 w-3.5" />
+            </DialogClose>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto px-5 py-4">
-            <p className="text-xs text-subtle mb-4">
-              Required fields are marked with an asterisk <span className="text-brand-strong">*</span>
-            </p>
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* ── Access & placement ── */}
-              <div className="space-y-3.5">
-                <p className={SECTION_TITLE_CLS}>Access &amp; placement</p>
+          <div className="flex-1 overflow-y-auto px-5 pb-4 pt-1">
+            {/* Single bordered card wrapping the whole form — matches the
+                reference's nested container. Grey wash under the card was
+                removed so the modal and the card share one clean surface
+                instead of a fighting double-tone. */}
+            {/* Compact inner card — reduced padding + section spacing so
+                the whole form fits without inner scroll for common role
+                states (only student-on-degree-program still overflows). */}
+            <div className="rounded-2xl border border-hairline bg-surface p-4">
+              <form onSubmit={handleSubmit} className="space-y-3.5">
+                <div className="space-y-2.5">
 
-                {/* Role Dropdown */}
-                <div ref={roleDropdownRef}>
+                {/* Role + Client — paired in a 2-col grid when the role is
+                    a student (Client is required in that state, so both
+                    dropdowns are always shown together). Role stretches
+                    full-width when no Client sibling is present, so
+                    non-student roles still get a wide dropdown for names
+                    like "L&D Manager" and "POC" that need the room. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5 gap-y-2.5">
+                <div ref={roleDropdownRef} className={isStudent ? '' : 'sm:col-span-2'}>
                   <Label className={LABEL_CLS}>Role Assignment <span className="text-brand-strong">*</span></Label>
                   <div className="relative">
                     <button
@@ -634,6 +671,7 @@ export const UserModals: React.FC<UserModalsProps> = ({
                     </div>
                   </div>
                 )}
+                </div>
 
                 {/* ─── Client type indicator (derived from the selected client) ─── */}
                 {newUser.clientName && (isCollegeClient || isCompanyClient) && (
@@ -689,7 +727,7 @@ export const UserModals: React.FC<UserModalsProps> = ({
 
                 {/* ─── Hierarchy cascade — degree ▸ department ▸ section ── */}
                 {isStudent && newUser.serviceModel && enabledLevels.length > 0 && (
-                  <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+                  <div className="grid grid-cols-2 gap-x-3.5 gap-y-2.5">
                     {enabledLevels.map((level) => (
                       <div key={level} className={enabledLevels.length === 1 ? 'col-span-2' : ''}>
                         {renderDropdown(
@@ -727,12 +765,11 @@ export const UserModals: React.FC<UserModalsProps> = ({
                 )}
               </div>
 
-              {/* ── Profile ── */}
-              <div className="space-y-3.5 border-t border-hairline pt-4">
-                <p className={SECTION_TITLE_CLS}>Profile</p>
-
+              {/* Profile section — the border-t divider keeps the visual
+                  grouping; the "Profile" text label was noise on top of it. */}
+              <div className="space-y-2.5 border-t border-hairline pt-3">
                 {/* Name Fields - Always visible */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5 gap-y-2.5">
                   <div>
                     <Label className={LABEL_CLS}>First Name <span className="text-brand-strong">*</span></Label>
                     <input
@@ -761,34 +798,37 @@ export const UserModals: React.FC<UserModalsProps> = ({
                   </div>
                 </div>
 
-                {/* Email - Always visible */}
-                <div>
-                  <Label className={LABEL_CLS}>Email Address <span className="text-brand-strong">*</span></Label>
-                  <input
-                    name="email"
-                    type="email"
-                    value={newUser.email}
-                    placeholder="Enter Email Address"
-                    onChange={handleInputChange}
-                    disabled={isSubmitting}
-                    className={INPUT_CLS}
-                    required
-                  />
-                </div>
-
-                {/* Phone - Always visible */}
-                <div>
-                  <Label className={LABEL_CLS}>Phone Number <span className="text-brand-strong">*</span></Label>
-                  <input
-                    name="phone"
-                    type="tel"
-                    value={newUser.phone}
-                    placeholder="Enter phone number"
-                    onChange={handleInputChange}
-                    disabled={isSubmitting}
-                    className={INPUT_CLS}
-                    required
-                  />
+                {/* Email + Phone — paired into a two-column grid so the
+                    profile fields all share the same rhythm (first/last
+                    name above already did; email/phone were stacked
+                    single-column). Collapses to one column below sm. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5 gap-y-2.5">
+                  <div>
+                    <Label className={LABEL_CLS}>Email Address <span className="text-brand-strong">*</span></Label>
+                    <input
+                      name="email"
+                      type="email"
+                      value={newUser.email}
+                      placeholder="Enter Email Address"
+                      onChange={handleInputChange}
+                      disabled={isSubmitting}
+                      className={INPUT_CLS}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label className={LABEL_CLS}>Phone Number <span className="text-brand-strong">*</span></Label>
+                    <input
+                      name="phone"
+                      type="tel"
+                      value={newUser.phone}
+                      placeholder="Enter phone number"
+                      onChange={handleInputChange}
+                      disabled={isSubmitting}
+                      className={INPUT_CLS}
+                      required
+                    />
+                  </div>
                 </div>
 
                 {/* Gender Dropdown - Always visible */}
@@ -825,25 +865,23 @@ export const UserModals: React.FC<UserModalsProps> = ({
                   Service Model select), so nothing hierarchy-related lives here. */}
 
               {(!isEditing) && (
-                <div className="space-y-3.5 border-t border-hairline pt-4">
-                  <p className={SECTION_TITLE_CLS}>Account</p>
-
-                  {/* Password - Only for new users */}
-                  <div>
-                    <Label className={LABEL_CLS}>Password</Label>
-                    <input
-                      name="password"
-                      type="password"
-                      value={newUser.password}
-                      onChange={handleInputChange}
-                      disabled={isSubmitting}
-                      className={INPUT_CLS}
-                      placeholder="Enter password..."
-                    />
-                  </div>
-
-                  {/* Status Dropdown - Only for new users */}
-                  <div ref={statusDropdownRef}>
+                <div className="space-y-2.5 border-t border-hairline pt-3">
+                  {/* Password + Status paired 2-col so the account section
+                      matches the profile section's grid rhythm. */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5 gap-y-2.5">
+                    <div>
+                      <Label className={LABEL_CLS}>Password</Label>
+                      <input
+                        name="password"
+                        type="password"
+                        value={newUser.password}
+                        onChange={handleInputChange}
+                        disabled={isSubmitting}
+                        className={INPUT_CLS}
+                        placeholder="Enter password..."
+                      />
+                    </div>
+                    <div ref={statusDropdownRef}>
                     <Label className={LABEL_CLS}>Status</Label>
                     <div className="relative">
                       <button
@@ -871,30 +909,38 @@ export const UserModals: React.FC<UserModalsProps> = ({
                       )}
                     </div>
                   </div>
+                  </div>
                 </div>
               )}
-            </form>
+              </form>
+            </div>
           </div>
-          <DialogFooter className="border-t border-hairline bg-surface px-5 py-3.5">
-            <div className="flex items-center justify-between w-full gap-2">
+          {/* Bottom action area — matches the reference's borderless
+              foot: no divider above, everything just sits on the modal's
+              surface. Bulk Upload stays on the left as a tertiary action;
+              Cancel + Create are the right-aligned secondary/primary
+              pair the spec calls out. */}
+          <DialogFooter className="bg-surface px-5 pb-4 pt-2">
+            <div className="flex items-center justify-between w-full gap-3">
               <div className="flex items-center gap-2">
                 {canBulkUpload && !isSubmitting && (
                   <Button
                     onClick={() => { setShowAddUserModal(false); setShowBulkUploadModal(true); }}
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="flex items-center gap-1.5 text-xs text-subtle hover:text-heading"
+                    className="flex items-center gap-1.5 h-9 px-3.5 text-xs font-semibold rounded-control"
                   >
                     <Upload className="h-3.5 w-3.5" />
-                    Bulk upload users
+                    Bulk Upload
                   </Button>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   onClick={() => setShowAddUserModal(false)}
                   disabled={isSubmitting}
+                  className="h-9 px-4 text-xs font-semibold rounded-control"
                 >
                   Cancel
                 </Button>
@@ -907,6 +953,7 @@ export const UserModals: React.FC<UserModalsProps> = ({
                     isSubmitting ||
                     missingRequired.length > 0
                   }
+                  className="h-9 px-4 text-xs font-semibold rounded-control"
                 >
                   {isSubmitting ? (
                     <>
@@ -1066,6 +1113,7 @@ export const UserModals: React.FC<UserModalsProps> = ({
           userId={selectedUserForPermission.id}
           userName={`${selectedUserForPermission.firstName} ${selectedUserForPermission.lastName}`}
           userEmail={selectedUserForPermission.email}
+          roleName={selectedUserForPermission.role}
         />
       )}
 

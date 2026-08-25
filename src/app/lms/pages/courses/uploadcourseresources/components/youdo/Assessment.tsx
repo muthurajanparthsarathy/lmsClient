@@ -910,7 +910,10 @@ export default function Assessment({
       // Details step still lets the user flip Mock ⇄ Final before finishing.
       const savedType = payload?.exerciseInformation?.testType;
       if (savedType === 'final' || savedType === 'mock') setActiveTestTab(savedType);
-      toast.success(editingAsm ? 'Assessment updated!' : 'Assessment created!');
+      // No success toast here — CreateAssessmentModal already fired one for the
+      // write it performed, and both landing together was two toasts for one
+      // action. The error below stays: a refetch failure is this component's
+      // own problem, and the modal knows nothing about it.
     } catch (err: any) {
       toast.error(err.message || 'Failed to save assessment');
     } finally {

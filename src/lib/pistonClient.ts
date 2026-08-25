@@ -12,10 +12,16 @@ import {
   type SupportedLanguage,
 } from "@/lib/codeLanguages"
 
-// Self-hosted Piston (Docker, port 2000) via NEXT_PUBLIC_PISTON_URL; falls back
-// to the public API. Matches the single-file editor's configuration.
+// Piston runs are proxied through our own server (server/routes/executionRoutes.js)
+// so every call is auth-gated, per-user rate-limited, and shares the same
+// runtime pins the codeJudge uses. The response shape is preserved 1-for-1
+// with what Piston returns natively, so nothing else in this file needs
+// to change beyond the URL. The old direct-to-Piston env var still wins if
+// set — useful for local dev that wants to bypass auth.
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com"
 export const PISTON_API_URL =
-  process.env.NEXT_PUBLIC_PISTON_URL || "https://emkc.org/api/v2/piston/execute"
+  process.env.NEXT_PUBLIC_PISTON_URL || `${API_BASE}/api/run/piston`
 
 // Pinned Piston runtimes (same versions the single-file editor uses).
 const PISTON_RUNTIME: Record<string, { language: string; version: string }> = {
@@ -117,9 +123,18 @@ export async function runOnPiston(opts: RunOptions): Promise<RunResult> {
     run_memory_limit: -1,
   }
 
+  // The proxy endpoint on our server enforces auth + per-user rate limits.
+  // Attach the same bearer token the rest of the client uses; the direct
+  // Piston fallback path (PISTON_URL points at emkc / self-hosted) just
+  // ignores the header.
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (typeof window !== "undefined") {
+    const token = window.localStorage.getItem("smartcliff_token")
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
   const res = await fetch(PISTON_API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
     signal,
   })

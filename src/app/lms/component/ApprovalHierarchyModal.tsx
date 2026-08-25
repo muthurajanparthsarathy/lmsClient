@@ -133,6 +133,41 @@ export default function ApprovalHierarchyModal({
     })
   }
 
+  // ── Unsaved-change guard ──
+  // The chain the server last gave us. Editing away from it means closing
+  // would throw work away, so the X (and Esc) route through a confirmation.
+  const serialize = (list: EditorRow[]) =>
+    JSON.stringify(list.map((r) => [r.roleId, r.userId]))
+
+  const baseline = useMemo(
+    () =>
+      serialize(
+        (data?.steps || []).map((s: ApprovalStep) => ({
+          roleId: String(s.roleId || ""),
+          userId: s.userId ? String(s.userId) : "",
+        })),
+      ),
+    [data?.steps],
+  )
+
+  const isDirty = serialize(rows) !== baseline
+
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+
+  const requestClose = () => {
+    if (isDirty) {
+      setConfirmDiscard(true)
+      return
+    }
+    onClose()
+  }
+
+  const discardAndClose = () => {
+    setConfirmDiscard(false)
+    handleReset()
+    onClose()
+  }
+
   const handleReset = () => {
     if (data?.steps) {
       setRows(
@@ -188,8 +223,13 @@ export default function ApprovalHierarchyModal({
   })
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) requestClose() }}>
       <DialogContent
+        showCloseButton={false}
+        // A half-built approval chain is easy to lose to a stray click on the
+        // backdrop, so only the header X (or Esc) can close — and both go
+        // through requestClose, which confirms when there are edits pending.
+        onInteractOutside={(e) => e.preventDefault()}
         className={`${poppins.className} flex flex-col w-[calc(100vw-2rem)] max-w-3xl h-[calc(100vh-2rem)] max-h-[85vh] my-4 p-0 rounded-lg overflow-hidden`}
       >
         <DialogHeader className="shrink-0 px-5 pt-4 pb-3 border-b">
@@ -222,6 +262,17 @@ export default function ApprovalHierarchyModal({
                 )}
               </DialogDescription>
             </div>
+            {/* Solid red tile with a white glyph — a plain button, not the
+                ghost Button variant, whose hover background would fight it. */}
+            <button
+              type="button"
+              onClick={requestClose}
+              title="Close"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-500 text-white transition-colors duration-150 hover:bg-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 cursor-pointer"
+            >
+              <X className="h-4 w-4" strokeWidth={3} />
+              <span className="sr-only">Close</span>
+            </button>
           </div>
         </DialogHeader>
 
@@ -336,7 +387,7 @@ export default function ApprovalHierarchyModal({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-6 w-6 p-0 text-gray-400 hover:text-red-600 mt-1"
+                              className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 mt-1"
                               onClick={() => removeRow(i)}
                               title="Remove this level"
                             >
@@ -434,6 +485,41 @@ export default function ApprovalHierarchyModal({
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Discard confirmation — only reachable when the chain has unsaved edits. */}
+      <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <DialogContent
+          showCloseButton={false}
+          className={`${poppins.className} max-w-sm p-5 rounded-lg`}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-[15px] font-semibold">
+              Discard unsaved changes?
+            </DialogTitle>
+            <DialogDescription className="text-[12px] text-gray-500 mt-1">
+              Your approval hierarchy edits haven&apos;t been saved. Closing now
+              loses them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setConfirmDiscard(false)}
+            >
+              Keep editing
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 px-3 text-xs bg-red-600 hover:bg-red-700 text-white"
+              onClick={discardAndClose}
+            >
+              Discard &amp; close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

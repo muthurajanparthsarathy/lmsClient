@@ -158,7 +158,10 @@ function CalendarStage({
     const scopeId = scopeIdFor(instituteId, clientId)
 
     // ── Calendar state ──
-    const [holidays, setHolidays] = useState<Holiday[]>([])
+    // `holidays` is declared later, once `range` (which the RQ cache is
+    // keyed on) is in scope — so its useState initializer can hydrate
+    // synchronously from any already-cached window and revisits paint on
+    // frame one. See the `const [holidays, setHolidays]` block below.
     const [month, setMonth] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1) })
     const [focusedDate, setFocusedDate] = useState(() => new Date())
     const [view, setView] = useState<CalView>('month')
@@ -187,6 +190,29 @@ function CalendarStage({
         () => ({ from: `${windowYear - 1}-12-01`, to: `${windowYear + 1}-01-31` }),
         [windowYear]
     )
+
+    // `holidays` — the on-screen holiday list. Seeded synchronously from
+    // the React Query cache for this window so a navigate-away-and-back
+    // within cache TTL paints the real holidays on frame one instead of
+    // flashing an empty grid for one render before the hydration effect
+    // below fills it. Cold visits still fall through to `[]` + the
+    // loading skeleton, unchanged behaviour. Kept as local state (not
+    // derived from `savedCalendar` on every render) because the CRUD
+    // paths below mutate it optimistically for instant feedback.
+    const [holidays, setHolidays] = useState<Holiday[]>(() => {
+        const cached: any = queryClient.getQueryData(
+            ['instituteHolidayCalendar', scopeId, range.from, range.to],
+        )
+        const list: HolidayPayload[] = cached?.holidays ?? []
+        return list.map((h: HolidayPayload) => ({
+            id: h.id || h.holidayId || uid(),
+            name: h.name || 'Holiday',
+            date: h.date,
+            type: (h.type as HolidayType) || 'institute',
+            duration: (h.duration as HolidayDuration) || 'full',
+            note: h.note || '',
+        }))
+    })
 
     // ── Data ──
     const { data: selectedInstitute } = useQuery({ ...institutionApi.getById(instituteId), enabled: !!instituteId })

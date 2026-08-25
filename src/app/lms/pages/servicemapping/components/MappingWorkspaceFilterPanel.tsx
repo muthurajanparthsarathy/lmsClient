@@ -5,18 +5,19 @@ import { RotateCcw } from "lucide-react";
 
 // Inline filter panel for the Service Mapping workspace — expands on the SAME
 // screen under the toolbar (no drawer/modal). The exposed fields mirror the
-// list's own columns (Client · Year · Status), so a filter always corresponds
+// list's own columns (Client · Business Model · Year · Status), so a filter always corresponds
 // to something visible in a row. Free-text search across service / model / etc.
 // lives in the toolbar's search box.
 
 export interface WorkspaceFilters {
   client: string;
+  businessModel: string;
   year: string;
   status: string;
 }
 
 export const EMPTY_WS_FILTERS: WorkspaceFilters = {
-  client: "", year: "", status: "",
+  client: "", businessModel: "", year: "", status: "",
 };
 
 interface Option { value: string; label: string }
@@ -26,6 +27,7 @@ interface MappingWorkspaceFilterPanelProps {
   onClose: () => void;
   current: WorkspaceFilters;
   clientOptions: Option[];
+  businessModelOptions: Option[];
   yearOptions: Option[];
   onApply: (filters: WorkspaceFilters) => void;
   onReset: () => void;
@@ -54,7 +56,7 @@ function Field({ label, value, onChange, allLabel, options }: { label: string; v
 
 export function MappingWorkspaceFilterPanel({
   open, onClose, current,
-  clientOptions, yearOptions,
+  clientOptions, businessModelOptions, yearOptions,
   onApply, onReset,
 }: MappingWorkspaceFilterPanelProps) {
   const [draft, setDraft] = useState<WorkspaceFilters>(current);
@@ -101,6 +103,9 @@ export function MappingWorkspaceFilterPanel({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <Field label="Client" value={draft.client} onChange={set("client")} allLabel="All clients" options={clientOptions} />
+              {/* Business Model is a CLIENT attribute, but it is one of the
+                  table's own columns — so it filters here like the rest. */}
+              <Field label="Business Model" value={draft.businessModel} onChange={set("businessModel")} allLabel="All models" options={businessModelOptions} />
               <Field label="Academic Year" value={draft.year} onChange={set("year")} allLabel="All years" options={yearOptions} />
               <Field label="Status" value={draft.status} onChange={set("status")} allLabel="Any status" options={STATUS_OPTIONS} />
             </div>

@@ -16,11 +16,14 @@ import {
   FileSpreadsheet,
   Download,
   Search,
-  MoreHorizontal,
   Users,
   SearchX,
   Trash2,
   X,
+  ChevronDown,
+  Upload,
+  UserCog,
+  Layers,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import DashboardLayout from "../../component/layout";
@@ -42,12 +45,16 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 // Local components
 import { UserModals } from "./components/UserModals";
 import BulkUserModal from "./components/BulkUserModal";
+import BulkEditModal from "./components/BulkEditModal";
 import { RowActionsMenu, rowHasAnyAction } from "./components/RowActionsMenu";
 import { UsersTable } from "./components/UsersTable";
 import { UserFilterPanel } from "./components/UserFilterPanel";
@@ -95,6 +102,19 @@ const degreeOptions = ["B.Tech", "B.E", "B.Sc", "B.Com", "B.A", "M.Tech", "M.Sc"
 const departmentOptions = ["Computer Science", "Electrical", "Mechanical", "Civil", "Electronics", "Information Technology", "Mathematics", "Physics", "Chemistry"];
 const yearOptions = ["1st Year", "2nd Year", "3rd Year", "4th Year", "5th Year"];
 
+// Search scope — the picker to the right of the search box. "All fields" is the
+// default and is what the box did before the picker existed; the other four name
+// the table's own columns, so what you pick is what you see. Values travel to
+// getUserAccessPaginated as `searchField`, which narrows the Mongo $or.
+type SearchField = "all" | "user" | "email" | "phone" | "role";
+const SEARCH_FIELD_OPTIONS: { value: SearchField; label: string; placeholder: string }[] = [
+  { value: "all", label: "All fields", placeholder: "Search users…" },
+  { value: "user", label: "User", placeholder: "Search by name…" },
+  { value: "email", label: "Email", placeholder: "Search by email…" },
+  { value: "phone", label: "Phone", placeholder: "Search by phone…" },
+  { value: "role", label: "Role", placeholder: "Search by role…" },
+];
+
 const BULK_BTN_BASE =
   "h-7 px-2.5 rounded-full text-xs font-medium disabled:opacity-40 disabled:hover:bg-transparent " +
   "disabled:cursor-not-allowed transition-colors duration-150";
@@ -121,6 +141,7 @@ export default function UserManagementPage() {
   const [canBulkPermission, setCanBulkPermission] = useState(false);
   const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
   const [showBulkUserModal, setShowBulkUserModal] = useState(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [selectedUserForPermission, setSelectedUserForPermission] = useState<User | null>(null);
@@ -130,12 +151,12 @@ export default function UserManagementPage() {
   const [selectedUserForDetails, setSelectedUserForDetails] = useState<User | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+  const [searchField, setSearchField] = useState<SearchField>("all");
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [selectedDegree, setSelectedDegree] = useState<string>("");
   const [selectedDepartment, setSelectedDepartment] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<string>("");
-  const [selectedBatch, setSelectedBatch] = useState<string>("");
 
   // Add loading state for form submission
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -222,8 +243,8 @@ export default function UserManagementPage() {
   // re-runs this render before committing, so only the page-1 request is ever
   // made.
   const filterSignature = JSON.stringify([
-    debouncedSearchTerm, selectedRoles, selectedStatus,
-    selectedDegree, selectedDepartment, selectedYear, selectedBatch,
+    debouncedSearchTerm, searchField, selectedRoles, selectedStatus,
+    selectedDegree, selectedDepartment, selectedYear,
   ]);
   const [lastFilterSignature, setLastFilterSignature] = useState(filterSignature);
   if (lastFilterSignature !== filterSignature) {
@@ -248,17 +269,17 @@ export default function UserManagementPage() {
       page: currentPage,
       limit: pageSize,
       search: debouncedSearchTerm,
+      searchField,
       roles: selectedRoles,
       status: selectedStatus,
       degree: selectedDegree,
       department: selectedDepartment,
       year: selectedYear,
-      batch: selectedBatch,
       sortKey,
       sortDir,
     }),
-    [currentPage, pageSize, debouncedSearchTerm, selectedRoles, selectedStatus,
-      selectedDegree, selectedDepartment, selectedYear, selectedBatch, sortKey, sortDir],
+    [currentPage, pageSize, debouncedSearchTerm, searchField, selectedRoles, selectedStatus,
+      selectedDegree, selectedDepartment, selectedYear, sortKey, sortDir],
   );
 
   // `isLoading` is true only for the very first page — keepPreviousData holds
@@ -267,19 +288,15 @@ export default function UserManagementPage() {
   const { data: usersPage, isLoading: isLoadingUsers } =
     useUsersPageQuery(institutionId, queryParams);
 
-  // Batch options came from the loaded rows; with one page in hand the server
-  // supplies them, over the whole institution exactly as before.
-  const dynamicBatchOptions = usersPage?.batches ?? [];
-
   // The Bulk Permission picker is the one consumer here that still wants every
-  // user at once. It now loads ONLY while that modal is open, instead of on
-  // every page view — so the table's cost no longer includes it. (The picker
-  // itself remains a full-roster read; making it search server-side is its own
-  // piece of work, flagged in the report.)
+  // user at once. It now loads ONLY while a bulk modal is open, instead of on
+  // every page view — so the table's cost no longer includes it. The Bulk
+  // Upload flow (email-existence pre-flight) and Bulk Edit (roster picker)
+  // both need it too, so the gate widens accordingly.
   const { data: allUsersForPicker } = useUsersListQuery(
     institutionId,
     basedOn,
-    showBulkPermissionModal,
+    showBulkPermissionModal || showBulkUserModal || showBulkEditModal,
   );
 
   // Mutations
@@ -513,15 +530,15 @@ export default function UserManagementPage() {
     setSelectedDegree("");
     setSelectedDepartment("");
     setSelectedYear("");
-    setSelectedBatch("");
     setSearchTerm("");
+    setSearchField("all");
     setCurrentPage(1);
   };
 
   const hasActiveFilters = () => {
     return selectedRoles.length > 0 || selectedStatus !== "" ||
       selectedDegree !== "" || selectedDepartment !== "" ||
-      selectedYear !== "" || selectedBatch !== "" || searchTerm !== "";
+      selectedYear !== "" || searchTerm !== "";
   };
 
   // Use role _id for filtering
@@ -575,20 +592,25 @@ export default function UserManagementPage() {
   // whole directory.
   const matchesCurrentFilters = useCallback((user: User) => {
     const q = debouncedSearchTerm.toLowerCase();
-    const matchesSearch = !debouncedSearchTerm ||
-      user.firstName.toLowerCase().includes(q) ||
-      user.lastName.toLowerCase().includes(q) ||
-      user.email.toLowerCase().includes(q) ||
-      (user.degree || '').toLowerCase().includes(q) ||
-      (user.department || '').toLowerCase().includes(q);
+    const has = (v?: string) => (v || '').toLowerCase().includes(q);
+    // Mirrors the scoped $or in getUserAccessPaginated field for field, so a
+    // selection survives exactly as long as the server would still return it.
+    const searchable: Record<SearchField, (string | undefined)[]> = {
+      user: [user.firstName, user.lastName],
+      email: [user.email],
+      phone: [user.phone],
+      role: [user.role],
+      all: [user.firstName, user.lastName, user.email, user.phone,
+        user.degree, user.department, user.role],
+    };
+    const matchesSearch = !debouncedSearchTerm || searchable[searchField].some(has);
     const matchesRoles = selectedRoles.length === 0 || selectedRoles.includes(user.roleId);
     const matchesStatus = !selectedStatus || selectedStatus === "all" || user.status === selectedStatus;
     const matchesDegree = !selectedDegree || selectedDegree === "all" || user.degree === selectedDegree;
     const matchesDepartment = !selectedDepartment || selectedDepartment === "all" || user.department === selectedDepartment;
     const matchesYear = !selectedYear || selectedYear === "all" || user.year === selectedYear;
-    const matchesBatch = !selectedBatch || selectedBatch === "all" || user.batch === selectedBatch;
-    return matchesSearch && matchesRoles && matchesStatus && matchesDegree && matchesDepartment && matchesYear && matchesBatch;
-  }, [debouncedSearchTerm, selectedRoles, selectedStatus, selectedDegree, selectedDepartment, selectedYear, selectedBatch]);
+    return matchesSearch && matchesRoles && matchesStatus && matchesDegree && matchesDepartment && matchesYear;
+  }, [debouncedSearchTerm, searchField, selectedRoles, selectedStatus, selectedDegree, selectedDepartment, selectedYear]);
 
   const visibleSelectedRows = useMemo(
     () => Object.values(selectedRows).filter(matchesCurrentFilters),
@@ -691,12 +713,12 @@ export default function UserManagementPage() {
       try {
         const raw = await fetchUsersForExport(institutionId, token, {
           search: debouncedSearchTerm,
+          searchField,
           roles: selectedRoles,
           status: selectedStatus,
           degree: selectedDegree,
           department: selectedDepartment,
           year: selectedYear,
-          batch: selectedBatch,
           sortKey,
           sortDir,
         });
@@ -885,6 +907,11 @@ export default function UserManagementPage() {
     </>
   );
 
+  // The picked scope drives both the trigger label and the input's placeholder,
+  // so the box always says which column it is about to search.
+  const activeSearchField =
+    SEARCH_FIELD_OPTIONS.find((o) => o.value === searchField) ?? SEARCH_FIELD_OPTIONS[0];
+
   // A filter counts as active only when it holds a real value ("all" and "" both
   // mean "no filter", matching how the users query interprets them).
   const isSet = (v: string) => !!v && v !== "all";
@@ -893,8 +920,7 @@ export default function UserManagementPage() {
     (isSet(selectedStatus) ? 1 : 0) +
     (isSet(selectedDegree) ? 1 : 0) +
     (isSet(selectedDepartment) ? 1 : 0) +
-    (isSet(selectedYear) ? 1 : 0) +
-    (isSet(selectedBatch) ? 1 : 0);
+    (isSet(selectedYear) ? 1 : 0);
 
   // Removable chips for the applied filters (search has its own input, so it is
   // not chipped here). Each chip's remove clears exactly that filter.
@@ -908,7 +934,6 @@ export default function UserManagementPage() {
     ...(isSet(selectedDegree) ? [{ key: "degree", label: selectedDegree, onRemove: () => setSelectedDegree("") }] : []),
     ...(isSet(selectedDepartment) ? [{ key: "dept", label: selectedDepartment, onRemove: () => setSelectedDepartment("") }] : []),
     ...(isSet(selectedYear) ? [{ key: "year", label: selectedYear, onRemove: () => setSelectedYear("") }] : []),
-    ...(isSet(selectedBatch) ? [{ key: "batch", label: selectedBatch, onRemove: () => setSelectedBatch("") }] : []),
   ];
 
   const pageContent = (
@@ -933,26 +958,58 @@ export default function UserManagementPage() {
             · vertical divider · Add User (primary). Mirrors Client
             Management so the two admin lists read the same. */}
         <div className="no-print mt-3 flex items-center gap-2 flex-wrap min-w-0">
-          {/* Compact search */}
-          <div className="relative flex-1 min-w-[220px] max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search users…"
-              className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-[13px] text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setSearchTerm("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
-              >
-                <X size={12} />
-              </button>
-            )}
+          {/* Compact search + the scope picker on its right edge. The two share
+              one bordered shell so they read as a single control: the term on
+              the left, the column it applies to on the right. */}
+          <div className="relative flex-1 min-w-[260px] max-w-md flex items-stretch h-8 rounded-control border border-hairline-strong bg-surface focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15 transition-colors duration-150">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={activeSearchField.placeholder}
+                className="w-full h-full pl-8 pr-7 bg-transparent rounded-l-control text-[13px] text-body placeholder:text-faint focus:outline-none"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-chip text-faint hover:bg-ink-100 hover:text-heading transition-colors duration-150"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Search in: ${activeSearchField.label}`}
+                  className={`inline-flex items-center gap-1 h-full pl-2 pr-2 border-l border-hairline-strong rounded-r-control text-xs font-medium whitespace-nowrap transition-colors duration-150 ${searchField === "all" ? "text-subtle hover:bg-row-hover hover:text-heading" : "bg-brand-wash text-brand-strong"}`}
+                >
+                  {activeSearchField.label}
+                  <ChevronDown className="w-3 h-3 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={6} className="w-44">
+                <DropdownMenuLabel className="text-2xs font-semibold uppercase tracking-wider text-subtle">
+                  Search in
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={searchField}
+                  onValueChange={(v) => setSearchField(v as SearchField)}
+                >
+                  {SEARCH_FIELD_OPTIONS.map((opt) => (
+                    <DropdownMenuRadioItem key={opt.value} value={opt.value} className="cursor-pointer">
+                      {opt.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Secondary-action cluster (Filter · Export · More) pushed right */}
@@ -991,25 +1048,54 @@ export default function UserManagementPage() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Overflow — page-specific actions that don't fit elsewhere
-                (Import, Bulk permissions). Kept behind a kebab so the
-                primary row stays clean. */}
-            {(canAddUser || canBulkPermission) && (
+            {/* Bulk Actions — one dropdown gathering every bulk operation
+                (Upload / Edit / Permission). Replaces the earlier standalone
+                Bulk Upload button + the "More actions" kebab that hid Bulk
+                Permission (spec Sections 1, 16). Only rendered when at least
+                one of the three items is permitted to the caller. */}
+            {(canBulkUpload || canAddUser || canBulkPermission) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" aria-label="More actions" className="inline-flex items-center justify-center h-8 w-8 rounded-control border border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading transition-colors duration-150">
-                    <MoreHorizontal className="w-3.5 h-3.5" />
+                  <button
+                    type="button"
+                    aria-label="Bulk actions"
+                    className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Bulk Actions</span>
+                    <ChevronDown className="w-3 h-3 opacity-70" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" sideOffset={6} className="w-56">
-                  {canAddUser && (
+                  <DropdownMenuLabel className="text-2xs font-semibold uppercase tracking-wider text-subtle">
+                    Bulk operations
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {canBulkUpload && (
                     <DropdownMenuItem onClick={() => setShowBulkUserModal(true)} className="cursor-pointer">
-                      <FileSpreadsheet className="h-4 w-4" /> Import users (Excel)
+                      <Upload className="h-4 w-4" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">Bulk Upload</div>
+                        <div className="text-2xs text-subtle">Upload a spreadsheet, preview and add new users.</div>
+                      </div>
+                    </DropdownMenuItem>
+                  )}
+                  {canAddUser && (
+                    <DropdownMenuItem onClick={() => setShowBulkEditModal(true)} className="cursor-pointer">
+                      <UserCog className="h-4 w-4" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">Bulk Edit</div>
+                        <div className="text-2xs text-subtle">Move users between roles, clients or services in bulk.</div>
+                      </div>
                     </DropdownMenuItem>
                   )}
                   {canBulkPermission && (
                     <DropdownMenuItem onClick={() => setShowBulkPermissionModal(true)} className="cursor-pointer">
-                      <KeyRound className="h-4 w-4" /> Bulk permissions
+                      <KeyRound className="h-4 w-4" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">Bulk Permission</div>
+                        <div className="text-2xs text-subtle">Copy permissions to many users at once.</div>
+                      </div>
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
@@ -1017,7 +1103,8 @@ export default function UserManagementPage() {
             )}
           </div>
 
-          {/* Primary — Add User, matching Client Management's brand button */}
+          {/* Primary action — Add User only. Every bulk path now lives inside
+              the Bulk Actions dropdown above. */}
           {canAddUser && (
             <>
               <span className="hidden sm:inline-block h-5 w-px bg-hairline-strong mx-0.5" aria-hidden />
@@ -1026,6 +1113,7 @@ export default function UserManagementPage() {
                 onClick={handleAddUserClick}
                 whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-control bg-brand-strong text-white shadow-sm hover:bg-brand-800 transition-colors duration-150 ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 flex-shrink-0"
+                aria-label="Add user"
               >
                 <Plus size={14} strokeWidth={2.4} />
                 <span className="text-xs font-semibold hidden sm:inline">Add User</span>
@@ -1049,12 +1137,9 @@ export default function UserManagementPage() {
           setSelectedDepartment={setSelectedDepartment}
           selectedYear={selectedYear}
           setSelectedYear={setSelectedYear}
-          selectedBatch={selectedBatch}
-          setSelectedBatch={setSelectedBatch}
           degreeOptions={degreeOptions}
           departmentOptions={departmentOptions}
           yearOptions={yearOptions}
-          batchOptions={dynamicBatchOptions}
           basedOn={basedOn}
           activeCount={activeFilterCount}
           onClear={clearAllFilters}
@@ -1221,6 +1306,15 @@ export default function UserManagementPage() {
           isOpen={showBulkUserModal}
           onClose={() => setShowBulkUserModal(false)}
           roles={roles}
+          existingUsers={allUsersForPicker ?? []}
+          onComplete={() => queryClient.invalidateQueries({ queryKey: queryKeys.users.all })}
+        />
+
+        <BulkEditModal
+          isOpen={showBulkEditModal}
+          onClose={() => setShowBulkEditModal(false)}
+          roles={roles}
+          existingUsers={allUsersForPicker ?? []}
           onComplete={() => queryClient.invalidateQueries({ queryKey: queryKeys.users.all })}
         />
       </motion.div>

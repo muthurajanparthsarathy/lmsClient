@@ -10,8 +10,14 @@ import {
   CheckCircle, Activity, Briefcase,
   ChevronRight, Home, Star,
   TrendingUp, Bell, Flame, School,
-  BarChart, PieChart, UserCheck, UserX
+  UserCheck, BadgeCheck, MoreVertical, Zap
 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
 import { motion, AnimatePresence } from "framer-motion"
@@ -22,6 +28,7 @@ import { StaffLayout } from "@/app/lms/component/stafflayout/staff-layout"
 import DashboardLayout from "@/app/lms/component/layout"
 import { useProfileUserStatsQuery } from "@/queries/profileStats"
 import { courseStructuresSummaryQuery } from "@/apiServices/createCourseStucture"
+import EditProfileModal from "./EditProfileModal"
 
 interface UserData {
   _id: string; email: string; firstName: string; lastName: string;
@@ -168,6 +175,7 @@ export default function ProfilePage() {
   const [userData, setUserData] = useState<UserData | null>(null)
   const [userDataLoading, setUserDataLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("personal")
+  const [editOpen, setEditOpen] = useState(false)
   const [userRole, setUserRole] = useState<string>("")
   const [originalRoleName, setOriginalRoleName] = useState<string>("")
 
@@ -273,18 +281,23 @@ export default function ProfilePage() {
   // that's the actual win here, not a change to what's shown.
   const loading = userDataLoading || (isAdminRole && (usersQuery.isLoading || coursesQuery.isLoading))
 
-  const fmt = (d: string) => new Date(d).toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric' 
+  const fmt = (d: string) => new Date(d).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
   })
 
-  const statusCls = (s: string) => ({
-    active: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800',
-    inactive: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
-    pending: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800',
-  }[s.toLowerCase()] ?? 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700')
+  // Companion to `fmt` for the activity rail, which shows "Aug 23, 2026 · 10:30 AM".
+  const fmtTime = (d: string) => new Date(d).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  })
 
+  const statusPill = (s: string) => ({
+    active: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400',
+    inactive: 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400',
+    pending: 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400',
+  }[s.toLowerCase()] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400')
   const navigateToDashboard = () => {
     switch(userRole) {
       case 'admin':
@@ -369,7 +382,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 dark:from-gray-950 dark:to-gray-900">
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F6FA] dark:bg-gray-950">
         <Loading size="size-12" label="Loading Profile..." />
       </div>
     )
@@ -377,8 +390,8 @@ export default function ProfilePage() {
 
   if (!userData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 dark:from-gray-950 dark:to-gray-900">
-        <div className="text-center bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-xl border border-orange-100 dark:border-orange-900/30 max-w-xs">
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F6FA] dark:bg-gray-950">
+        <div className="text-center bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-xl border border-gray-100 dark:border-gray-800 max-w-xs">
           <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
             <User className="h-7 w-7 text-orange-500" />
           </div>
@@ -457,10 +470,10 @@ export default function ProfilePage() {
     
     if (userRole === 'admin' && dashboardStats) {
       return [
-        { icon: Users, label: "Total Users", value: stats.totalUsers, sub: "All Users", accent: "#f97316" },
-        { icon: GraduationCap, label: "Students", value: stats.totalStudents, sub: "Enrolled", accent: "#22c55e" },
-        { icon: Briefcase, label: "Staff", value: stats.totalStaff, sub: "Faculty & Staff", accent: "#f59e0b" },
-        { icon: BookOpen, label: "Courses", value: stats.totalCourses, sub: "Total", accent: "#fb923c" },
+        { icon: Users, label: "Total Users", value: stats.totalUsers, sub: "All registered users", accent: "#F97316" },
+        { icon: GraduationCap, label: "Students", value: stats.totalStudents, sub: "Enrolled students", accent: "#22C55E" },
+        { icon: Users, label: "Faculty & Staff", value: stats.totalStaff, sub: "Total staff members", accent: "#7C4DD1" },
+        { icon: BookOpen, label: "Courses", value: stats.totalCourses, sub: "Total courses", accent: "#F59E0B" },
       ]
     }
     
@@ -477,15 +490,16 @@ export default function ProfilePage() {
   const getSecondaryStats = () => {
     if (userRole === 'admin' && dashboardStats) {
       return [
-        { icon: UserCheck, label: "Active Users", value: stats.activeUsers, sub: "Active", accent: "#3b82f6" },
-        { icon: TrendingUp, label: "New Users", value: stats.newUsers, sub: "Last 30 Days", accent: "#f97316" },
-        { icon: BookOpen, label: "New Courses", value: stats.newCourses, sub: "Last 30 Days", accent: "#8b5cf6" },
+        { icon: UserCheck, label: "Active Users", value: stats.activeUsers, sub: `of ${stats.totalUsers} registered`, accent: "#7C4DD1", of: stats.totalUsers || 0 },
+        { icon: TrendingUp, label: "New Users", value: stats.newUsers, sub: "added in the last 30 days", accent: "#F97316", of: stats.totalUsers || 0 },
+        { icon: BookOpen, label: "New Courses", value: stats.newCourses, sub: "added in the last 30 days", accent: "#7C4DD1", of: stats.totalCourses || 0 },
       ]
     }
     return []
   }
 
-  const secondaryStats = getSecondaryStats()
+  const secondaryStats: { icon: any; label: string; value: number; sub: string; accent: string; of: number }[] =
+    getSecondaryStats().map((s) => ({ ...s, value: Number(s.value ?? 0), of: Number(s.of ?? 0) }))
 
   const tabs = [
     { id: "personal", label: "Personal", icon: User },
@@ -496,257 +510,394 @@ export default function ProfilePage() {
     ...((userRole === 'staff' || userRole === 'admin') ? [{ id: "teaching", label: userRole === 'admin' ? "Manage" : "Teaching", icon: BookOpen }] : [])
   ]
 
+  // ── Right-rail: recent account activity ───────────────────────────────────
+  // Built from what the user record actually carries — the profile's own
+  // timestamps plus the newest notifications — rather than an invented feed.
+  const activityFeed = [
+    { icon: UserCheck, tone: '#7C4DD1', label: 'Profile updated', at: userData.updatedAt },
+    { icon: Calendar, tone: '#F97316', label: 'Account created', at: userData.createdAt },
+    ...(userData.notifications || [])
+      .slice()
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 2)
+      .map((n: any) => ({ icon: Bell, tone: '#22C55E', label: n.title || 'Notification', at: n.createdAt })),
+  ].filter((a) => a.at)
+
+  // Quick actions go only to destinations that exist. Anything that would need
+  // a screen this app doesn't have yet (change password, privacy) is left out
+  // rather than rendered as a dead tile.
+  const quickActions = [
+    { icon: Edit, label: 'Edit', sub: 'Profile', tone: '#F97316', onClick: () => setEditOpen(true) },
+    { icon: Bell, label: 'View', sub: 'Notifications', tone: '#7C4DD1', onClick: () => router.push('/lms/pages/notifications') },
+    { icon: FileText, label: 'My', sub: 'Notes', tone: '#22C55E', onClick: () => setActiveTab('notes') },
+    { icon: Activity, label: 'Full', sub: 'Activity', tone: '#3B82F6', onClick: () => setActiveTab('activity') },
+  ]
+
   const content = (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(150deg, #fff7ed 0%, #ffffff 50%, #fff7ed 100%)' }}>
-      <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
-        <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full opacity-20" style={{ background: 'radial-gradient(circle, #fb923c, #f97316)' }} />
-        <div className="absolute bottom-0 -left-32 w-64 h-64 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, #fbbf24, #f59e0b)' }} />
-        <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'radial-gradient(circle, #f97316 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
-      </div>
+    <div className="min-h-screen bg-[#F5F6FA] dark:bg-gray-950">
+      <div className="mx-auto max-w-[1320px] px-3 sm:px-4 lg:px-6 py-3 sm:py-4 space-y-3">
 
-      <div className="max-w-5xl mx-auto px-3 sm:px-5 lg:px-6 py-5">
-
-        <div className="flex items-center justify-between mb-5">
-          <nav className="flex items-center gap-1.5 text-xs">
-            <button onClick={navigateToDashboard} className="flex items-center gap-1 text-orange-400 hover:text-orange-600 font-semibold transition-colors">
-              <Home className="h-3.5 w-3.5" /> Dashboard
+        {/* ── Breadcrumb + page actions ───────────────────────────────────── */}
+        <div className="flex items-center justify-between gap-3">
+          <nav className="flex items-center gap-1.5 text-xs min-w-0">
+            <span className="grid h-6 w-6 place-items-center rounded-md bg-orange-100 text-orange-500 dark:bg-orange-950/40">
+              <Home className="h-3 w-3" />
+            </span>
+            <button onClick={navigateToDashboard} className="font-semibold text-gray-500 hover:text-orange-600 transition-colors dark:text-gray-400">
+              Dashboard
             </button>
-            <ChevronRight className="h-3.5 w-3.5 text-orange-300" />
-            <span className="text-orange-500 font-bold">Profile</span>
+            <ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-700" />
+            <span className="font-bold text-orange-500 truncate">Profile</span>
           </nav>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 bg-white hover:bg-orange-50 text-orange-600 text-xs font-bold transition-all shadow-sm group dark:bg-gray-900 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950/30">
-            <Edit className="h-3.5 w-3.5 group-hover:rotate-12 transition-transform" /> Edit
-          </button>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => setEditOpen(true)}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-bold text-white shadow-sm shadow-orange-500/25 hover:brightness-105 transition-[filter]"
+              style={{ background: 'linear-gradient(135deg,#F97316,#FB8C3C)' }}
+            >
+              <Edit className="h-3.5 w-3.5" /> Edit Profile
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-orange-600 hover:border-orange-200 transition-colors dark:bg-gray-900 dark:border-gray-800"
+                  aria-label="More profile actions"
+                >
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                  <Edit className="h-3.5 w-3.5" /> Edit profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={navigateToDashboard}>
+                  <Home className="h-3.5 w-3.5" /> Go to dashboard
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push('/lms/pages/notifications')}>
+                  <Bell className="h-3.5 w-3.5" /> Notifications
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setActiveTab('activity')}>
+                  <Activity className="h-3.5 w-3.5" /> Recent activity
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
+        {/* ── Hero card: identity, headline stats, trend strip ────────────── */}
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="relative rounded-2xl overflow-hidden mb-4 shadow-lg shadow-orange-100 dark:shadow-orange-950/20 border border-orange-100 dark:border-orange-900/20 bg-white dark:bg-gray-900/80"
+          transition={{ duration: 0.35 }}
+          className="relative overflow-hidden rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 shadow-[0_2px_12px_-6px_rgba(16,24,40,0.10)] dark:bg-gray-900 dark:border-gray-800"
         >
-          <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #f97316, #fbbf24, #f97316)' }} />
-          <div className="absolute top-0 right-0 w-56 h-56 rounded-full blur-3xl opacity-25 pointer-events-none" style={{ background: 'radial-gradient(circle, #fb923c, transparent)' }} />
+          {/* Decorative orbit + wash, matching the reference. Purely visual, so
+              it is aria-hidden and never intercepts a click. */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-[42%] hidden lg:block" aria-hidden>
+            <div
+              className="absolute -right-20 -top-20 h-[320px] w-[320px] rounded-full opacity-70"
+              style={{ background: 'radial-gradient(circle at 30% 30%, rgba(251,146,60,0.14), rgba(139,92,246,0.10) 45%, transparent 70%)' }}
+            />
+            <svg viewBox="0 0 420 300" className="absolute right-4 top-2 h-[180px] w-[280px]">
+              <g fill="none" stroke="currentColor" className="text-gray-200 dark:text-gray-800">
+                <circle cx="250" cy="140" r="38" />
+                <circle cx="250" cy="140" r="72" />
+                <circle cx="250" cy="140" r="108" />
+              </g>
+              <circle cx="168" cy="42" r="15" fill="#8B5CF6" />
+              <circle cx="352" cy="88" r="10" fill="#C4B5FD" />
+              <circle cx="120" cy="150" r="7" fill="#FDBA74" />
+              <circle cx="330" cy="168" r="8" fill="#A78BFA" />
+              <circle cx="292" cy="196" r="9" fill="#8B5CF6" />
+              <circle cx="392" cy="26" r="5" fill="#FB923C" />
+            </svg>
+          </div>
 
-          <div className="p-5 md:p-6 relative">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-
-              <div className="relative flex-shrink-0">
-                <div className="h-20 w-20 rounded-xl shadow-md shadow-orange-200 dark:shadow-orange-900/30 overflow-hidden" style={{ background: 'linear-gradient(135deg, #f97316, #fbbf24)', padding: 2 }}>
-                  <div className="h-full w-full rounded-[10px] bg-white dark:bg-gray-900 flex items-center justify-center overflow-hidden">
-                    {userData.profile && userData.profile !== "default" ? (
-                      <Image src={userData.profile} alt={userData.firstName} width={76} height={76} className="object-cover rounded-[10px]" />
+          <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5 text-center sm:text-left">
+            {/* Avatar with gradient ring + presence dot */}
+            <div className="relative flex-shrink-0">
+              <div
+                className="h-20 w-20 sm:h-24 sm:w-24 rounded-full p-[3px] shadow-md shadow-orange-500/20"
+                style={{ background: 'linear-gradient(135deg,#C4B5FD,#FDBA74 55%,#F97316)' }}
+              >
+                <div className="h-full w-full rounded-full bg-white p-[2px] dark:bg-gray-900">
+                  <div className="h-full w-full overflow-hidden rounded-full bg-gradient-to-br from-orange-200 to-orange-400 grid place-items-center">
+                    {userData.profile && userData.profile !== 'default' ? (
+                      <Image src={userData.profile} alt={userData.firstName} width={112} height={112} className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-3xl font-black text-orange-500">{userData.firstName[0].toUpperCase()}</span>
+                      <span className="text-2xl sm:text-3xl font-black text-white">
+                        {userData.firstName?.[0]?.toUpperCase()}{userData.lastName?.[0]?.toUpperCase()}
+                      </span>
                     )}
                   </div>
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-emerald-500 border-2 border-white dark:border-gray-900" />
               </div>
-
-              <div className="flex-1 min-w-0">
-                <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight leading-tight">
-                  {userData.firstName} <span style={{ color: '#f97316' }}>{userData.lastName}</span>
-                </h1>
-                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold border", statusCls(userData.status))}>
-                    ● {userData.status.charAt(0).toUpperCase() + userData.status.slice(1)}
-                  </span>
-                  <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold text-white bg-gradient-to-r", roleBadge)}>
-                    {roleName}
-                  </span>
-                  {(userRole === 'staff' || userRole === 'admin') && (
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800">
-                      {userRole === 'admin' 
-                        ? originalRoleName.charAt(0).toUpperCase() + originalRoleName.slice(1)
-                        : userData.role?.renameRole || userData.role?.originalRole || originalRoleName}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 flex items-center gap-1.5 flex-wrap">
-                  <Mail className="h-3 w-3" />{userData.email}
-                  {userData.phone && <><span className="text-gray-300 dark:text-gray-700">·</span><Phone className="h-3 w-3" />{userData.phone}</>}
-                </p>
-              </div>
+              <span
+                className={cn(
+                  'absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white dark:border-gray-900',
+                  userData.status?.toLowerCase() === 'active' ? 'bg-emerald-500' : 'bg-gray-400'
+                )}
+                title={userData.status}
+              />
             </div>
 
-            <div className="grid grid-cols-4 gap-3 mt-5">
-              {statCards.map((s, i) => {
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <h1 className="text-lg sm:text-xl font-black tracking-tight text-gray-900 dark:text-white truncate">
+                  {userData.firstName} {userData.lastName}
+                </h1>
+                {userData.status?.toLowerCase() === 'active' && (
+                  <BadgeCheck className="h-4 w-4 flex-shrink-0 text-orange-500" fill="currentColor" stroke="white" />
+                )}
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
+                <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold', statusPill(userData.status))}>
+                  <span className={cn('h-1.5 w-1.5 rounded-full', userData.status?.toLowerCase() === 'active' ? 'bg-emerald-500' : 'bg-gray-400')} />
+                  {userData.status.charAt(0).toUpperCase() + userData.status.slice(1)}
+                </span>
+                <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-bold text-violet-600 dark:bg-violet-950/40 dark:text-violet-300">
+                  {roleName}
+                </span>
+                {(userRole === 'staff' || userRole === 'admin') && (
+                  <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-[11px] font-bold text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">
+                    {userRole === 'admin'
+                      ? originalRoleName.charAt(0).toUpperCase() + originalRoleName.slice(1)
+                      : userData.role?.renameRole || userData.role?.originalRole || originalRoleName}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center justify-center sm:justify-start gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <span className="inline-flex items-center gap-1.5 min-w-0">
+                  <Mail className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                  <span className="truncate">{userData.email}</span>
+                </span>
+                {userData.phone && (
+                  <>
+                    <span className="hidden sm:inline h-3.5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden />
+                    <span className="inline-flex items-center gap-1.5">
+                      <Phone className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                      {userData.phone}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Headline stats */}
+          <div className="relative mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {statCards.map((s, i) => {
+              const Icon = s.icon
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.08 + i * 0.05 }}
+                  className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white/70 p-3 backdrop-blur-sm transition-shadow hover:shadow-[0_4px_14px_-8px_rgba(16,24,40,0.18)] dark:bg-gray-900/60 dark:border-gray-800"
+                >
+                  <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full" style={{ background: `${s.accent}1F` }}>
+                    <Icon className="h-4 w-4" style={{ color: s.accent }} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-lg font-black leading-none text-gray-900 dark:text-white">{s.value}</p>
+                    <p className="mt-0.5 text-xs font-bold truncate" style={{ color: s.accent }}>{s.label}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{s.sub}</p>
+                  </div>
+                </motion.div>
+              )
+            })}
+          </div>
+
+          {/* Trend strip — admin only. Every figure below is a real count; the
+              chip is that count as a share of the matching total, which is the
+              only comparison this data supports (no prior-period series). */}
+          {secondaryStats.length > 0 && (
+            <div className="relative mt-2.5 grid grid-cols-1 lg:grid-cols-3 rounded-xl border border-gray-100 bg-white/70 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 dark:bg-gray-900/60 dark:border-gray-800 dark:divide-gray-800">
+              {secondaryStats.map((s, i) => {
                 const Icon = s.icon
+                const pct = s.of > 0 ? Math.round((Number(s.value) / s.of) * 100) : 0
                 return (
-                  <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.08 + i * 0.06 }}
-                    className="relative rounded-xl p-3 border border-orange-100 dark:border-orange-900/20 bg-orange-50/60 dark:bg-orange-950/10 hover:border-orange-300 dark:hover:border-orange-800 hover:shadow-md transition-all group cursor-default">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="p-1.5 rounded-lg" style={{ background: `${s.accent}18` }}>
-                        <Icon className="h-3.5 w-3.5" style={{ color: s.accent }} />
+                  <div key={i} className="flex items-center gap-3 p-3">
+                    <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full" style={{ background: `${s.accent}1F` }}>
+                      <Icon className="h-4 w-4" style={{ color: s.accent }} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">{s.label}</p>
+                      <div className="flex items-baseline gap-2">
+                        <p className="text-lg font-black text-gray-900 dark:text-white">{s.value}</p>
+                        <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-600">
+                          <TrendingUp className="h-2.5 w-2.5" />{pct}%
+                        </span>
                       </div>
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">{s.sub}</span>
+                      <p className="text-[10px] text-gray-400 truncate">{s.sub}</p>
+                      <div className="mt-1 h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, pct)}%` }}
+                          transition={{ duration: 0.8, delay: 0.2 + i * 0.1, ease: 'easeOut' }}
+                          className="h-full rounded-full"
+                          style={{ background: s.accent }}
+                        />
+                      </div>
                     </div>
-                    <p className="text-xl font-black text-gray-900 dark:text-white leading-none">{s.value}</p>
-                    <p className="text-[11px] font-semibold mt-0.5" style={{ color: s.accent }}>{s.label}</p>
-                  </motion.div>
+                  </div>
                 )
               })}
             </div>
+          )}
+        </motion.section>
 
-            {secondaryStats.length > 0 && (
-              <div className="grid grid-cols-3 gap-3 mt-3">
-                {secondaryStats.map((s, i) => {
-                  const Icon = s.icon
-                  return (
-                    <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.08 + (i + statCards.length) * 0.06 }}
-                      className="relative rounded-xl p-3 border border-orange-100 dark:border-orange-900/20 bg-orange-50/40 dark:bg-orange-950/10 hover:border-orange-300 dark:hover:border-orange-800 hover:shadow-md transition-all group cursor-default">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="p-1.5 rounded-lg" style={{ background: `${s.accent}18` }}>
-                          <Icon className="h-3.5 w-3.5" style={{ color: s.accent }} />
-                        </div>
-                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">{s.sub}</span>
-                      </div>
-                      <p className="text-xl font-black text-gray-900 dark:text-white leading-none">{s.value}</p>
-                      <p className="text-[11px] font-semibold mt-0.5" style={{ color: s.accent }}>{s.label}</p>
-                    </motion.div>
-                  )
-                })}
-              </div>
-            )}
+        {/* ── Tabs ────────────────────────────────────────────────────────── */}
+        <div className="rounded-xl border border-gray-100 bg-white px-1.5 shadow-[0_2px_8px_-6px_rgba(16,24,40,0.10)] dark:bg-gray-900 dark:border-gray-800">
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {tabs.map((tab) => {
+              const Icon = tab.icon
+              const active = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'relative flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2.5 text-xs font-bold transition-colors duration-150',
+                    active ? 'text-orange-500' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {tab.label}
+                  {tab.badge !== undefined && tab.badge > 0 && (
+                    <span className={cn(
+                      'rounded-full px-1.5 py-0.5 text-[10px] font-black',
+                      active ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                    )}>
+                      {tab.badge}
+                    </span>
+                  )}
+                  {active && (
+                    <motion.span
+                      layoutId="profileTabUnderline"
+                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-orange-500"
+                    />
+                  )}
+                </button>
+              )
+            })}
           </div>
-        </motion.div>
-
-        <div className="flex items-center gap-1 mb-4 p-1 rounded-xl bg-white dark:bg-gray-900/80 border border-orange-100 dark:border-orange-900/20 shadow-sm overflow-x-auto">
-          {tabs.map(tab => {
-            const Icon = tab.icon
-            const active = activeTab === tab.id
-            return (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap flex-shrink-0",
-                  active ? "text-white shadow-md shadow-orange-200 dark:shadow-orange-900/30" : "text-gray-500 dark:text-gray-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20"
-                )}
-                style={active ? { background: 'linear-gradient(135deg, #f97316, #fb923c)' } : {}}>
-                <Icon className="h-3.5 w-3.5" />
-                {tab.label}
-                {tab.badge !== undefined && tab.badge > 0 && (
-                  <span className={cn("px-1.5 py-0.5 text-[10px] rounded-full font-black",
-                    active ? "bg-white/25 text-white" : "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400")}>
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            )
-          })}
         </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div key={activeTab}
-            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2 }}
-            className="rounded-2xl border border-orange-100 dark:border-orange-900/20 bg-white dark:bg-gray-900/80 shadow-lg shadow-orange-50 dark:shadow-orange-950/10 overflow-hidden">
-            <div className="h-0.5" style={{ background: 'linear-gradient(90deg, #f97316, #fbbf24, #fb923c)' }} />
-            <div className="p-5 md:p-6">
+        {/* ── Body: tab panel + right rail ────────────────────────────────── */}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_312px] gap-3 items-start">
 
-              {activeTab === "personal" && (
-                <div>
-                  <TabHeader icon={User} title="Personal Information" color="#f97316" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+              className="min-w-0 space-y-3"
+            >
+
+              {activeTab === 'personal' && (
+                <Panel icon={User} title="Personal Information" color="#F97316">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {[
-                      { icon: User, label: "Full Name", value: `${userData.firstName} ${userData.lastName}` },
-                      { icon: Mail, label: "Email", value: userData.email },
-                      { icon: Phone, label: "Phone", value: userData.phone },
-                      { icon: Users, label: "Gender", value: userData.gender },
-                      { icon: Calendar, label: "Created", value: fmt(userData.createdAt) },
-                      { icon: Clock, label: "Updated", value: fmt(userData.updatedAt) },
-                      { icon: User, label: "Created By", value: userData.createdBy },
-                    ].map((item, idx) => <CompactRow key={idx} idx={idx} {...item} />)}
+                      { icon: User, label: 'Full Name', value: `${userData.firstName} ${userData.lastName}`, tone: '#7C4DD1' },
+                      { icon: Mail, label: 'Email', value: userData.email, tone: '#7C4DD1' },
+                      { icon: Phone, label: 'Phone', value: userData.phone, tone: '#F97316' },
+                      { icon: Users, label: 'Gender', value: userData.gender, tone: '#F97316' },
+                      { icon: Calendar, label: 'Created', value: fmt(userData.createdAt), tone: '#7C4DD1' },
+                      { icon: Clock, label: 'Updated', value: fmt(userData.updatedAt), tone: '#7C4DD1' },
+                      { icon: User, label: 'Created By', value: userData.createdBy, tone: '#F97316' },
+                    ].map((item, idx) => <FieldTile key={idx} idx={idx} {...item} />)}
                   </div>
-                </div>
+                </Panel>
               )}
 
-              {activeTab === "academic" && (
-                <div>
-                  <TabHeader 
+              {activeTab === 'academic' && (
+                <>
+                  <Panel
                     icon={userRole === 'admin' ? School : userRole === 'student' ? GraduationCap : Briefcase}
-                    title={userRole === 'admin' ? "Institution Details" : userRole === 'student' ? "Academic Details" : "Professional Details"}
-                    color="#f97316" 
-                  />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-                    {[
-                      { icon: GraduationCap, label: "Degree", value: userData.degree },
-                      { icon: Building, label: "Department", value: userData.department },
-                      ...(userRole === 'student' ? [
-                        { icon: Calendar, label: "Year", value: userData.year },
-                        { icon: BookOpen, label: "Semester", value: userData.semester },
-                        { icon: Calendar, label: "Batch", value: userData.batch },
-                        { icon: Activity, label: "Courses", value: String(stats.totalCourses) },
-                      ] : userRole === 'staff' ? [
-                        { icon: Briefcase, label: "Staff ID", value: userData._id.substring(0,12)+"…" },
-                        { icon: Shield, label: "Permissions", value: `${stats.totalPermissions} Active` },
-                        { icon: BookOpen, label: "Courses", value: String(stats.totalCourses) },
-                        { icon: FileText, label: "Assignments", value: String(stats.totalAssignments) },
-                      ] : userRole === 'admin' && dashboardStats ? [
-                        { icon: School, label: "Institution ID", value: dashboardStats.institution },
-                        { icon: Users, label: "Total Users", value: String(dashboardStats.users.total) },
-                        { icon: GraduationCap, label: "Students", value: String(dashboardStats.users.students) },
-                        { icon: Briefcase, label: "Staff", value: String(dashboardStats.users.staff) },
-                        { icon: BookOpen, label: "Total Courses", value: String(dashboardStats.courses.total) },
-                        { icon: UserCheck, label: "Active Users", value: String(dashboardStats.recentActivities.activeUsers) },
-                      ] : [
-                        { icon: Briefcase, label: "Role", value: originalRoleName },
-                        { icon: Building, label: "Department", value: userData.department },
-                        { icon: BookOpen, label: "Courses", value: String(stats.totalCourses) },
-                        { icon: FileText, label: "Assignments", value: String(stats.totalAssignments) },
-                      ])
-                    ].map((item, idx) => <CompactRow key={idx} idx={idx} {...item} />)}
-                  </div>
+                    title={userRole === 'admin' ? 'Institution Details' : userRole === 'student' ? 'Academic Details' : 'Professional Details'}
+                    color="#F97316"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {[
+                        { icon: GraduationCap, label: 'Degree', value: userData.degree, tone: '#7C4DD1' },
+                        { icon: Building, label: 'Department', value: userData.department, tone: '#7C4DD1' },
+                        ...(userRole === 'student' ? [
+                          { icon: Calendar, label: 'Year', value: userData.year, tone: '#F97316' },
+                          { icon: BookOpen, label: 'Semester', value: userData.semester, tone: '#F97316' },
+                          { icon: Calendar, label: 'Batch', value: userData.batch, tone: '#7C4DD1' },
+                          { icon: Activity, label: 'Courses', value: String(stats.totalCourses), tone: '#22C55E' },
+                        ] : userRole === 'staff' ? [
+                          { icon: Briefcase, label: 'Staff ID', value: userData._id.substring(0, 12) + '…', tone: '#F97316' },
+                          { icon: Shield, label: 'Permissions', value: `${stats.totalPermissions} Active`, tone: '#7C4DD1' },
+                          { icon: BookOpen, label: 'Courses', value: String(stats.totalCourses), tone: '#22C55E' },
+                          { icon: FileText, label: 'Assignments', value: String(stats.totalAssignments), tone: '#F97316' },
+                        ] : userRole === 'admin' && dashboardStats ? [
+                          { icon: School, label: 'Institution ID', value: dashboardStats.institution, tone: '#7C4DD1' },
+                          { icon: Users, label: 'Total Users', value: String(dashboardStats.users.total), tone: '#F97316' },
+                          { icon: GraduationCap, label: 'Students', value: String(dashboardStats.users.students), tone: '#22C55E' },
+                          { icon: Briefcase, label: 'Staff', value: String(dashboardStats.users.staff), tone: '#7C4DD1' },
+                          { icon: BookOpen, label: 'Total Courses', value: String(dashboardStats.courses.total), tone: '#F97316' },
+                          { icon: UserCheck, label: 'Active Users', value: String(dashboardStats.recentActivities.activeUsers), tone: '#22C55E' },
+                        ] : [
+                          { icon: Briefcase, label: 'Role', value: originalRoleName, tone: '#F97316' },
+                          { icon: Building, label: 'Department', value: userData.department, tone: '#7C4DD1' },
+                          { icon: BookOpen, label: 'Courses', value: String(stats.totalCourses), tone: '#22C55E' },
+                          { icon: FileText, label: 'Assignments', value: String(stats.totalAssignments), tone: '#F97316' },
+                        ])
+                      ].map((item, idx) => <FieldTile key={idx} idx={idx} {...item} />)}
+                    </div>
+                  </Panel>
 
                   {userRole === 'student' && userData.courses?.length > 0 && (
-                    <div className="mt-6">
-                      <TabHeader icon={TrendingUp} title="Course Progress" color="#fb923c" />
-                      <div className="space-y-2.5 mt-3">
+                    <Panel icon={TrendingUp} title="Course Progress" color="#7C4DD1">
+                      <div className="space-y-2">
                         {userData.courses.map((course, i) => {
                           const p = calcProgress(course)
                           return (
                             <motion.div key={i} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
                               transition={{ delay: i * 0.06 }}
-                              className="p-3.5 rounded-xl border border-orange-100 dark:border-orange-900/20 bg-orange-50/40 dark:bg-orange-950/10 hover:shadow-sm transition-all">
-                              <div className="flex justify-between items-center mb-2">
-                                <p className="text-sm font-bold text-gray-900 dark:text-white">{course.courseId?.name || `Course ${i+1}`}</p>
-                                <span className="text-xs font-black" style={{ color: p >= 90 ? '#22c55e' : '#f97316' }}>{p}%</span>
+                              className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-800/40">
+                              <div className="mb-2 flex items-center justify-between">
+                                <p className="text-sm font-bold text-gray-900 dark:text-white">{course.courseId?.name || `Course ${i + 1}`}</p>
+                                <span className="text-xs font-black" style={{ color: p >= 90 ? '#22C55E' : '#F97316' }}>{p}%</span>
                               </div>
-                              <div className="w-full h-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-full overflow-hidden">
+                              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                                 <motion.div initial={{ width: 0 }} animate={{ width: `${p}%` }}
-                                  transition={{ duration: 1, delay: i * 0.08, ease: "easeOut" }}
-                                  className="h-1.5 rounded-full"
-                                  style={{ background: p >= 90 ? 'linear-gradient(90deg,#22c55e,#4ade80)' : 'linear-gradient(90deg,#f97316,#fbbf24)' }} />
+                                  transition={{ duration: 1, delay: i * 0.08, ease: 'easeOut' }}
+                                  className="h-full rounded-full"
+                                  style={{ background: p >= 90 ? 'linear-gradient(90deg,#22C55E,#4ADE80)' : 'linear-gradient(90deg,#F97316,#FBBF24)' }} />
                               </div>
-                              <div className="flex justify-between text-[11px] text-gray-400 mt-1.5">
+                              <div className="mt-2 flex justify-between text-[11px] text-gray-400">
                                 <span>Last: {course.lastAccessed ? fmt(course.lastAccessed) : 'Never'}</span>
-                                <span className={p >= 90 ? "text-emerald-500" : "text-orange-500"}>
-                                  {p >= 90 ? '✓ Done' : 'Active'}
-                                </span>
+                                <span className={p >= 90 ? 'text-emerald-500' : 'text-orange-500'}>{p >= 90 ? '✓ Done' : 'Active'}</span>
                               </div>
                             </motion.div>
                           )
                         })}
                       </div>
-                    </div>
+                    </Panel>
                   )}
 
                   {(userRole === 'staff' || userRole === 'admin') && userData.courses?.length > 0 && (
-                    <div className="mt-6">
-                      <TabHeader icon={BookOpen} title={userRole === 'admin' ? "Course Summary" : "Teaching Summary"} color="#fb923c" />
-                      <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                    <Panel icon={BookOpen} title={userRole === 'admin' ? 'Course Summary' : 'Teaching Summary'} color="#7C4DD1">
+                      <div className="grid gap-2 sm:grid-cols-2">
                         {userData.courses.map((course, i) => {
                           const asgns = course.answers?.We_Do?.assignments || []
                           const totalQ = asgns.reduce((s: number, a: any) => s + (a.questions?.length || 0), 0)
                           return (
                             <motion.div key={i} initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
                               transition={{ delay: i * 0.06 }}
-                              className="p-3.5 rounded-xl border border-orange-100 dark:border-orange-900/20 bg-orange-50/40 dark:bg-orange-950/10">
-                              <div className="flex justify-between items-start mb-1">
-                                <p className="text-sm font-bold text-gray-900 dark:text-white">{course.courseId?.name || `Course ${i+1}`}</p>
-                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 font-bold">
+                              className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-800/40">
+                              <div className="mb-1 flex items-start justify-between gap-2">
+                                <p className="text-sm font-bold text-gray-900 dark:text-white">{course.courseId?.name || `Course ${i + 1}`}</p>
+                                <span className="flex-shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">
                                   {asgns.length} tasks
                                 </span>
                               </div>
@@ -755,43 +906,46 @@ export default function ProfilePage() {
                           )
                         })}
                       </div>
-                    </div>
+                    </Panel>
                   )}
-                </div>
+                </>
               )}
 
-              {activeTab === "notes" && (
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <TabHeader icon={FileText} title="My Notes" color="#f97316" noMargin />
-                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 font-bold">
-                      {stats.totalNotes} • {userData.notes?.filter(n => n.isPinned).length || 0} pinned
+              {activeTab === 'notes' && (
+                <Panel
+                  icon={FileText}
+                  title="My Notes"
+                  color="#F97316"
+                  action={
+                    <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">
+                      {stats.totalNotes} • {userData.notes?.filter((n) => n.isPinned).length || 0} pinned
                     </span>
-                  </div>
+                  }
+                >
                   {userData.notes?.length > 0 ? (
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       {userData.notes.map((note, i) => (
                         <motion.div key={i} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
                           transition={{ delay: i * 0.04 }} whileHover={{ y: -3 }}
                           className={cn(
-                            "p-4 rounded-xl border cursor-pointer transition-all duration-200",
+                            'cursor-pointer rounded-xl border p-3 transition-all duration-200',
                             note.isPinned
-                              ? "border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20"
-                              : "border-orange-100 dark:border-orange-900/20 bg-white dark:bg-gray-900/50 hover:border-orange-300 dark:hover:border-orange-800"
+                              ? 'border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 dark:border-amber-900/40 dark:from-amber-950/20 dark:to-orange-950/20'
+                              : 'border-gray-100 bg-gray-50/70 hover:border-orange-200 dark:border-gray-800 dark:bg-gray-800/40'
                           )}>
-                          <div className="flex justify-between items-start mb-2">
-                            <h4 className="font-bold text-gray-900 dark:text-white text-sm flex items-center gap-1.5">
-                              {note.isPinned && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
+                          <div className="mb-2 flex items-start justify-between gap-2">
+                            <h4 className="flex items-center gap-1.5 text-sm font-bold text-gray-900 dark:text-white">
+                              {note.isPinned && <Star className="h-3 w-3 fill-amber-500 text-amber-500" />}
                               {note.title}
                             </h4>
-                            <span className="text-[10px] text-gray-400">{fmt(note.lastEdited)}</span>
+                            <span className="flex-shrink-0 text-[10px] text-gray-400">{fmt(note.lastEdited)}</span>
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2"
+                          <div className="mb-2 line-clamp-2 text-xs text-gray-500 dark:text-gray-400"
                             dangerouslySetInnerHTML={{ __html: note.content }} />
                           {note.tags?.length > 0 && (
                             <div className="flex flex-wrap gap-1">
-                              {note.tags.slice(0,3).map((tag: string, ti: number) => (
-                                <span key={ti} className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-md text-[10px] font-semibold">#{tag}</span>
+                              {note.tags.slice(0, 3).map((tag: string, ti: number) => (
+                                <span key={ti} className="rounded-md bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">#{tag}</span>
                               ))}
                             </div>
                           )}
@@ -799,104 +953,95 @@ export default function ProfilePage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-10">
-                      <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center">
-                        <FileText className="h-7 w-7 text-orange-300 dark:text-orange-700" />
-                      </div>
-                      <p className="text-gray-400 text-sm">No notes yet!</p>
-                    </div>
+                    <EmptyBlock icon={FileText} text="No notes yet!" />
                   )}
-                </div>
+                </Panel>
               )}
 
-              {activeTab === "activity" && (
-                <div>
-                  <TabHeader icon={Activity} title="Recent Activity" color="#f97316" />
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-                    {[
-                      { icon: Bell, label: "Total", value: stats.totalNotifications, accent: "#f97316" },
-                      { icon: Bell, label: "Unread", value: stats.unread || 0, accent: "#ef4444" },
-                      { icon: CheckCircle, label: "Read", value: (stats.totalNotifications || 0) - (stats.unread || 0), accent: "#22c55e" },
-                      { icon: Shield, label: "Role", value: roleName, accent: "#fb923c" },
-                    ].map((item, idx) => (
-                      <div key={idx} className="p-3.5 rounded-xl border border-orange-100 dark:border-orange-900/20 bg-orange-50/40 dark:bg-orange-950/10">
-                        <div className="p-1.5 rounded-lg inline-flex mb-2" style={{ background: `${item.accent}15` }}>
-                          <item.icon className="h-3.5 w-3.5" style={{ color: item.accent }} />
+              {activeTab === 'activity' && (
+                <>
+                  <Panel icon={Activity} title="Recent Activity" color="#F97316">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {[
+                        { icon: Bell, label: 'Total', value: stats.totalNotifications, accent: '#F97316' },
+                        { icon: Bell, label: 'Unread', value: stats.unread || 0, accent: '#EF4444' },
+                        { icon: CheckCircle, label: 'Read', value: (stats.totalNotifications || 0) - (stats.unread || 0), accent: '#22C55E' },
+                        { icon: Shield, label: 'Role', value: roleName, accent: '#7C4DD1' },
+                      ].map((item, idx) => (
+                        <div key={idx} className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-800/40">
+                          <span className="mb-1.5 inline-grid h-8 w-8 place-items-center rounded-full" style={{ background: `${item.accent}1F` }}>
+                            <item.icon className="h-4 w-4" style={{ color: item.accent }} />
+                          </span>
+                          <p className="text-lg font-black leading-none text-gray-900 dark:text-white">{item.value}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-gray-400">{item.label}</p>
                         </div>
-                        <p className="text-lg font-black text-gray-900 dark:text-white leading-none">{item.value}</p>
-                        <p className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 mt-0.5">{item.label}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </Panel>
 
                   {userData.notifications?.length > 0 && (
-                    <div className="mt-5">
-                      <TabHeader icon={Bell} title="Notifications" color="#fb923c" />
-                      <div className="space-y-2 mt-3 max-h-80 overflow-y-auto pr-1 custom-scroll">
-                        {userData.notifications.slice(0,10).map((n, i) => (
+                    <Panel icon={Bell} title="Notifications" color="#7C4DD1">
+                      <div className="custom-scroll max-h-96 space-y-2 overflow-y-auto pr-1">
+                        {userData.notifications.slice(0, 10).map((n, i) => (
                           <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: i * 0.03 }}
                             className={cn(
-                              "p-3.5 rounded-xl border transition-all hover:shadow-sm",
+                              'rounded-xl border p-3 transition-all',
                               n.isRead
-                                ? "border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/50"
-                                : "border-orange-200 dark:border-orange-900/30 bg-orange-50/60 dark:bg-orange-950/10"
+                                ? 'border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900/50'
+                                : 'border-orange-200 bg-orange-50/60 dark:border-orange-900/40 dark:bg-orange-950/10'
                             )}>
-                            <div className="flex justify-between items-start gap-3">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                  <h5 className="font-bold text-xs text-gray-900 dark:text-white">{n.title}</h5>
-                                  {!n.isRead && <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse" />}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="mb-0.5 flex items-center gap-1.5">
+                                  <h5 className="text-xs font-bold text-gray-900 dark:text-white">{n.title}</h5>
+                                  {!n.isRead && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />}
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400">{n.message}</p>
                               </div>
-                              <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0",
-                                n.type === 'success' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-                                n.type === 'warning' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                                "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400")}>
+                              <span className={cn('flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
+                                n.type === 'success' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                  : n.type === 'warning' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                    : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400')}>
                                 {n.type || 'info'}
                               </span>
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1.5">{fmt(n.createdAt)}</p>
+                            <p className="mt-1.5 text-[10px] text-gray-400">{fmt(n.createdAt)}</p>
                           </motion.div>
                         ))}
                       </div>
-                    </div>
+                    </Panel>
                   )}
-                </div>
+                </>
               )}
 
-              {activeTab === "teaching" && (userRole === 'staff' || userRole === 'admin') && (
-                <div>
-                  <TabHeader icon={BookOpen} title={userRole === 'admin' ? "System Management" : "Teaching Materials"} color="#f97316" />
-
+              {activeTab === 'teaching' && (userRole === 'staff' || userRole === 'admin') && (
+                <>
                   {userData.permissions?.length > 0 && (
-                    <div className="mt-4">
-                      <p className="text-[11px] font-black uppercase tracking-widest text-orange-400 dark:text-orange-600 mb-3">Permissions</p>
-                      <div className="grid sm:grid-cols-2 gap-2.5">
-                        {userData.permissions.slice(0,6).map((p, i) => (
+                    <Panel icon={Shield} title="Permissions" color="#F97316">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {userData.permissions.slice(0, 6).map((p, i) => (
                           <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: i * 0.04 }}
-                            className="flex items-center gap-3 p-3 rounded-xl border border-orange-100 dark:border-orange-900/20 bg-orange-50/40 dark:bg-orange-950/10 hover:shadow-sm transition-all">
-                            <div className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex-shrink-0">
+                            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-2.5 dark:border-gray-800 dark:bg-gray-800/40">
+                            <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-orange-100 dark:bg-orange-950/40">
                               <Shield className="h-3.5 w-3.5 text-orange-500" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-bold text-gray-900 dark:text-white">{p.permissionName}</p>
+                              <p className="truncate text-[11px] text-gray-400">{p.description}</p>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-gray-900 dark:text-white truncate">{p.permissionName}</p>
-                              <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{p.description}</p>
-                            </div>
-                            {p.isActive && <CheckCircle className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />}
+                            {p.isActive && <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />}
                           </motion.div>
                         ))}
                       </div>
-                    </div>
+                    </Panel>
                   )}
 
                   {userData.courses?.length > 0 && (
-                    <div className="mt-5">
-                      <p className="text-[11px] font-black uppercase tracking-widest text-orange-400 dark:text-orange-600 mb-3">Course Assignments</p>
+                    <Panel icon={BookOpen} title="Course Assignments" color="#7C4DD1">
                       <div className="space-y-3">
-                        {userData.courses.slice(0,5).map((course, i) => {
+                        {userData.courses.slice(0, 5).map((course, i) => {
                           const asgns = course.answers?.We_Do?.assignments || []
                           const totalQ = asgns.reduce((s: number, a: any) => s + (a.questions?.length || 0), 0)
                           const submitted = asgns.filter((a: any) => a.questions?.some((q: any) => q.status === 'submitted')).length
@@ -904,21 +1049,21 @@ export default function ProfilePage() {
                           return (
                             <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                               transition={{ delay: i * 0.06 }}
-                              className="rounded-xl border border-orange-100 dark:border-orange-900/20 overflow-hidden hover:shadow-md transition-all">
-                              <div className="flex items-center justify-between px-4 py-3 border-b border-orange-100 dark:border-orange-900/20 bg-orange-50/60 dark:bg-orange-950/10">
-                                <h5 className="text-sm font-bold text-gray-900 dark:text-white">{course.courseId?.name || `Course ${i+1}`}</h5>
+                              className="overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800">
+                              <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/70 px-4 py-3 dark:border-gray-800 dark:bg-gray-800/40">
+                                <h5 className="text-sm font-bold text-gray-900 dark:text-white">{course.courseId?.name || `Course ${i + 1}`}</h5>
                                 <span className="text-[11px] text-gray-400">Updated {fmt(course.updatedAt)}</span>
                               </div>
-                              <div className="px-4 py-3 grid grid-cols-4 gap-3">
+                              <div className="grid grid-cols-4 gap-3 px-4 py-3">
                                 {[
-                                  { label: "Tasks", value: asgns.length, color: "#f97316" },
-                                  { label: "Questions", value: totalQ, color: "#f59e0b" },
-                                  { label: "Submitted", value: submitted, color: "#22c55e" },
-                                  { label: "Done", value: `${comp}%`, color: "#fb923c" },
+                                  { label: 'Tasks', value: asgns.length, color: '#F97316' },
+                                  { label: 'Questions', value: totalQ, color: '#F59E0B' },
+                                  { label: 'Submitted', value: submitted, color: '#22C55E' },
+                                  { label: 'Done', value: `${comp}%`, color: '#7C4DD1' },
                                 ].map((s, si) => (
                                   <div key={si}>
-                                    <p className="text-[10px] text-gray-400 dark:text-gray-500">{s.label}</p>
-                                    <p className="text-base font-black mt-0.5" style={{ color: s.color }}>{s.value}</p>
+                                    <p className="text-[10px] text-gray-400">{s.label}</p>
+                                    <p className="mt-0.5 text-base font-black" style={{ color: s.color }}>{s.value}</p>
                                   </div>
                                 ))}
                               </div>
@@ -926,19 +1071,117 @@ export default function ProfilePage() {
                           )
                         })}
                       </div>
-                    </div>
+                    </Panel>
                   )}
-                </div>
+
+                  {!userData.permissions?.length && !userData.courses?.length && (
+                    <Panel icon={BookOpen} title={userRole === 'admin' ? 'System Management' : 'Teaching Materials'} color="#F97316">
+                      <EmptyBlock icon={BookOpen} text="Nothing assigned yet." />
+                    </Panel>
+                  )}
+                </>
               )}
 
+            </motion.div>
+          </AnimatePresence>
+
+          {/* ── Right rail ─────────────────────────────────────────────────── */}
+          <aside className="space-y-3 xl:sticky xl:top-3">
+            <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-[0_2px_8px_-6px_rgba(16,24,40,0.10)] dark:bg-gray-900 dark:border-gray-800">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-7 w-7 place-items-center rounded-md bg-orange-50 dark:bg-orange-950/40">
+                    <Activity className="h-3.5 w-3.5 text-orange-500" />
+                  </span>
+                  <h3 className="text-sm font-black text-gray-900 dark:text-white">Activity Summary</h3>
+                </div>
+                <button
+                  onClick={() => setActiveTab('activity')}
+                  className="rounded-md bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-600 transition-colors hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300"
+                >
+                  View All
+                </button>
+              </div>
+
+              {activityFeed.length > 0 ? (
+                <div className="space-y-2.5">
+                  {activityFeed.map((a, i) => {
+                    const Icon = a.icon
+                    return (
+                      <div key={i} className="flex items-center gap-2.5">
+                        <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full" style={{ background: `${a.tone}1F` }}>
+                          <Icon className="h-3.5 w-3.5" style={{ color: a.tone }} />
+                        </span>
+                        <p className="min-w-0 flex-1 truncate text-xs font-bold text-gray-900 dark:text-white">{a.label}</p>
+                        <p className="flex-shrink-0 text-[10px] text-gray-400">
+                          {fmt(a.at)} <span className="text-gray-300 dark:text-gray-700">·</span> {fmtTime(a.at)}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <EmptyBlock icon={Activity} text="No activity recorded yet." />
+              )}
             </div>
-          </motion.div>
-        </AnimatePresence>
+
+            <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-[0_2px_8px_-6px_rgba(16,24,40,0.10)] dark:bg-gray-900 dark:border-gray-800">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="grid h-7 w-7 place-items-center rounded-md bg-orange-50 dark:bg-orange-950/40">
+                  <Zap className="h-3.5 w-3.5 text-orange-500" />
+                </span>
+                <h3 className="text-sm font-black text-gray-900 dark:text-white">Quick Actions</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2">
+                {quickActions.map((a, i) => {
+                  const Icon = a.icon
+                  return (
+                    <button
+                      key={i}
+                      onClick={a.onClick}
+                      className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 bg-white p-3 text-center transition-all hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-[0_6px_14px_-10px_rgba(249,115,22,0.55)] dark:border-gray-800 dark:bg-gray-900"
+                    >
+                      <span className="grid h-8 w-8 place-items-center rounded-lg" style={{ background: `${a.tone}1F` }}>
+                        <Icon className="h-4 w-4" style={{ color: a.tone }} />
+                      </span>
+                      <span className="text-[11px] font-bold leading-tight text-gray-700 dark:text-gray-300">
+                        {a.label}<br />{a.sub}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </aside>
+        </div>
       </div>
 
+      {/* Self-service editor — photo and password only. Everything else on this
+          page is owned by User Management. */}
+      <EditProfileModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        user={userData}
+        onUpdated={(patch) => {
+          // Reflect the new photo immediately, and persist it to the same
+          // localStorage record the whole app reads its identity from —
+          // otherwise the sidebar avatar would stay stale until re-login.
+          setUserData((prev) => {
+            if (!prev) return prev
+            const merged = {
+              ...prev,
+              ...(patch.profile ? { profile: patch.profile } : {}),
+              ...(patch.updatedAt ? { updatedAt: patch.updatedAt } : {}),
+            }
+            try { localStorage.setItem(USER_DATA_KEY, JSON.stringify(merged)) } catch { /* quota / private mode */ }
+            return merged
+          })
+        }}
+      />
+
       <style jsx global>{`
-        .custom-scroll::-webkit-scrollbar { width: 4px; }
-        .custom-scroll::-webkit-scrollbar-track { background: #fff7ed; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar { width: 5px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f3f4f6; border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #fed7aa; border-radius: 4px; }
         .dark .custom-scroll::-webkit-scrollbar-track { background: #1c1917; }
         .dark .custom-scroll::-webkit-scrollbar-thumb { background: #7c2d12; }
@@ -949,33 +1192,56 @@ export default function ProfilePage() {
   return <Layout>{content}</Layout>
 }
 
-function TabHeader({ icon: Icon, title, color, noMargin }: { icon: any; title: string; color: string; noMargin?: boolean }) {
+// ─── Presentational pieces ────────────────────────────────────────────────────
+
+/** A content card: tinted icon tile, title, a rule that fades out, and an
+ *  optional right-aligned action. Every tab panel is built from these so the
+ *  page reads as one surface rather than five different ones. */
+function Panel({
+  icon: Icon, title, color, action, children,
+}: { icon: any; title: string; color: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="p-1.5 rounded-lg" style={{ background: `${color}15` }}>
-        <Icon className="h-4 w-4" style={{ color }} />
+    <section className="rounded-xl border border-gray-100 bg-white p-4 shadow-[0_2px_8px_-6px_rgba(16,24,40,0.10)] dark:bg-gray-900 dark:border-gray-800">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-md" style={{ background: `${color}1F` }}>
+          <Icon className="h-3.5 w-3.5" style={{ color }} />
+        </span>
+        <h3 className="text-sm font-black text-gray-900 dark:text-white whitespace-nowrap">{title}</h3>
+        <span className="h-px flex-1" style={{ background: `linear-gradient(90deg, ${color}45, transparent)` }} />
+        {action}
       </div>
-      <h3 className="text-base font-black text-gray-900 dark:text-white">{title}</h3>
-      <div className="flex-1 h-px" style={{ background: `linear-gradient(90deg, ${color}35, transparent)` }} />
-    </div>
+      {children}
+    </section>
   )
 }
 
-function CompactRow({ idx, icon: Icon, label, value }: { idx: number; icon: any; label: string; value: string }) {
+/** One labelled value inside a panel. */
+function FieldTile({ idx, icon: Icon, label, value, tone = '#F97316' }: { idx: number; icon: any; label: string; value: string; tone?: string }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: idx * 0.04 }}
-      className="flex items-center gap-3 p-3 rounded-xl border border-orange-100 dark:border-orange-900/20 bg-orange-50/40 dark:bg-orange-950/10 hover:border-orange-200 dark:hover:border-orange-800 hover:shadow-sm transition-all group"
+      transition={{ delay: idx * 0.035 }}
+      className="flex items-center gap-2.5 rounded-xl border border-gray-100 bg-gray-50/80 p-2.5 transition-colors hover:border-orange-200 dark:border-gray-800 dark:bg-gray-800/40"
     >
-      <div className="p-2 rounded-lg bg-white dark:bg-gray-900 border border-orange-100 dark:border-orange-900/20 shadow-sm group-hover:scale-110 transition-transform flex-shrink-0">
-        <Icon className="h-3.5 w-3.5 text-orange-500" />
-      </div>
+      <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md" style={{ background: `${tone}1F` }}>
+        <Icon className="h-3.5 w-3.5" style={{ color: tone }} />
+      </span>
       <div className="min-w-0">
-        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-gray-500">{label}</p>
-        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate mt-0.5">{value || '—'}</p>
+        <p className="text-[10px] font-semibold text-gray-400">{label}</p>
+        <p className="mt-0.5 truncate text-[13px] font-bold text-gray-900 dark:text-white">{value || '—'}</p>
       </div>
     </motion.div>
+  )
+}
+
+function EmptyBlock({ icon: Icon, text }: { icon: any; text: string }) {
+  return (
+    <div className="py-8 text-center">
+      <span className="mx-auto mb-2.5 grid h-11 w-11 place-items-center rounded-xl bg-orange-50 dark:bg-orange-950/20">
+        <Icon className="h-5 w-5 text-orange-300" />
+      </span>
+      <p className="text-xs text-gray-400">{text}</p>
+    </div>
   )
 }

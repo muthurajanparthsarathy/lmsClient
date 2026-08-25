@@ -1781,7 +1781,15 @@ const handleComplete = useCallback(async () => {
         if (newId) setLocalExerciseId(newId);
       }
 
-      toast.success(isEditing ? 'Exercise updated successfully!' : 'Exercise created successfully!');
+      // THE single save confirmation for this flow. It lives here, not in the
+      // parents' onSave, because this is the component that performed the
+      // write and it is the only place all three consumers share — the Others
+      // question form has no toast of its own. `id` keeps a double-invoke from
+      // stacking two copies of the same message.
+      toast.success(
+        isEditing ? 'Assessment updated successfully!' : 'Assessment created successfully!',
+        { id: 'assessment-save-ok' },
+      );
       setIsLocked(true);
       setCompletedSteps(new Set(allTitles));
       setSavedSteps(new Set(allTitles));

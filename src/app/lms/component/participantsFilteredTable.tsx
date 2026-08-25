@@ -389,6 +389,17 @@ export default function FilteredTable({
 
   const isAllRolesSelected = availableRoles.length > 0 && selectedRoles.length === availableRoles.length
 
+  // Trigger label for the Roles multi-select. The trigger holds a static value
+  // ("multiple") with no matching SelectItem, so SelectValue/placeholder would
+  // render blank — derive the text from the checked roles instead.
+  const rolesTriggerLabel = useMemo(() => {
+    if (selectedRoles.length === 0 || isAllRolesSelected) return 'All Roles'
+    const names = availableRoles
+      .filter(role => selectedRoles.includes(role._id))
+      .map(role => role.renameRole)
+    return names.length <= 2 ? names.join(', ') : `${names.length} roles selected`
+  }, [selectedRoles, availableRoles, isAllRolesSelected])
+
   const handleSelectAllUsers = () => {
     if (onSelectAll) {
       if (localSelectedUserIds.length === filteredUsers.length) {
@@ -709,7 +720,7 @@ export default function FilteredTable({
                   onClick={() => setShowFilters(false)}
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0"
+                  className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -739,7 +750,7 @@ export default function FilteredTable({
                   onValueChange={() => {}}
                 >
                   <SelectTrigger className="text-sm h-9 cursor-pointer w-full rounded-control border-hairline-strong">
-                    <SelectValue placeholder="All Roles" />
+                    <span className="truncate">{rolesTriggerLabel}</span>
                   </SelectTrigger>
                   <SelectContent className="text-xs cursor-pointer">
                     <div className="p-2 max-h-60 overflow-y-auto">
@@ -748,9 +759,12 @@ export default function FilteredTable({
                         className="flex items-center gap-2 p-2 hover:bg-row-hover rounded cursor-pointer"
                         onClick={handleSelectAllRoles}
                       >
+                        {/* The row owns the click; the box only mirrors state,
+                            otherwise a direct hit toggles twice and looks dead. */}
                         <Checkbox
                           checked={isAllRolesSelected}
-                          onCheckedChange={handleSelectAllRoles}
+                          className="pointer-events-none"
+                          tabIndex={-1}
                         />
                         <span className="font-medium">All Roles</span>
                       </div>
@@ -766,7 +780,8 @@ export default function FilteredTable({
                         >
                           <Checkbox
                             checked={selectedRoles.includes(role._id)}
-                            onCheckedChange={() => handleRoleToggle(role._id)}
+                            className="pointer-events-none"
+                            tabIndex={-1}
                           />
                           <span>{role.renameRole}</span>
                         </div>

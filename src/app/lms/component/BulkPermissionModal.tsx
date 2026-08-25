@@ -300,12 +300,29 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
     mutation.mutate(selectedUsers.map(userId => ({ userId, permissions })))
   }
 
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+
   const canSave = selectedUsers.length > 0 && Object.keys(selection).length > 0
   const isReady = canSave
 
+  // Closing with users or permissions ticked would throw the whole assignment
+  // away, so the X and Cancel confirm first. The backdrop cannot close it at all.
+  const hasWork = selectedUsers.length > 0 || Object.keys(selection).length > 0
+  const requestClose = () => {
+    if (mutation.isPending) return
+    if (hasWork) { setConfirmDiscard(true); return }
+    onClose()
+  }
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-[96vw] w-[1200px] max-h-[92vh] p-0 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl bg-gray-50 dark:bg-gray-950 gap-0">
+    <Dialog open={isOpen} onOpenChange={(o) => { if (!o) requestClose() }}>
+      <DialogContent
+        showCloseButton={false}
+        // The backdrop cannot dismiss this: a whole permission assignment is
+        // far too much work to lose to a stray click.
+        onInteractOutside={(e) => e.preventDefault()}
+        className="max-w-[96vw] w-[1200px] max-h-[92vh] p-0 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl bg-gray-50 dark:bg-gray-950 gap-0"
+      >
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-3.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
@@ -318,19 +335,33 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
               <DialogDescription className="text-xs text-gray-400 mt-0.5">Assign permissions to multiple users at once</DialogDescription>
             </div>
           </div>
-          {/* Stats */}
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${selectedUsers.length > 0 ? "bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-300" : "bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700"}`}>
-              <Users className="w-3 h-3" />{selectedUsers.length} users
+          {/* Stats + close. The counts used to run under the dialog's own close
+              button; that button now lives in this row behind a divider, so the
+              chips always have their own space — and they spell the words out
+              rather than abbreviating to "perms" / "fns". */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border whitespace-nowrap ${selectedUsers.length > 0 ? "bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/40 dark:border-orange-800 dark:text-orange-300" : "bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700"}`}>
+              <Users className="w-3 h-3" />{selectedUsers.length} user{selectedUsers.length === 1 ? "" : "s"}
             </span>
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${selectedPermCount > 0 ? "bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/40 dark:border-violet-800 dark:text-violet-300" : "bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700"}`}>
-              <ShieldCheck className="w-3 h-3" />{selectedPermCount} perms
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border whitespace-nowrap ${selectedPermCount > 0 ? "bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/40 dark:border-violet-800 dark:text-violet-300" : "bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-800 dark:border-gray-700"}`}>
+              <ShieldCheck className="w-3 h-3" />{selectedPermCount} permission{selectedPermCount === 1 ? "" : "s"}
             </span>
             {totalFuncs > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
-                <Zap className="w-3 h-3" />{totalFuncs} fns
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border whitespace-nowrap bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
+                <Zap className="w-3 h-3" />{totalFuncs} function{totalFuncs === 1 ? "" : "s"}
               </span>
             )}
+            <span className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" aria-hidden />
+            <button
+              type="button"
+              onClick={requestClose}
+              disabled={mutation.isPending}
+              title="Close"
+              className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-red-500 text-white transition-colors duration-150 hover:bg-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <X className="w-4 h-4" strokeWidth={3} />
+              <span className="sr-only">Close</span>
+            </button>
           </div>
         </div>
 
@@ -553,7 +584,7 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
               <RotateCcw className="w-3 h-3" /> Reset
             </button>
             <button
-              onClick={onClose}
+              onClick={requestClose}
               disabled={mutation.isPending}
               className="px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 transition-colors"
             >
@@ -572,6 +603,34 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
           </div>
         </div>
       </DialogContent>
+
+      {/* Discard confirmation - only when users or permissions are ticked */}
+      <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <DialogContent showCloseButton={false} className="sm:max-w-[440px]">
+          <DialogTitle>Discard this assignment?</DialogTitle>
+          <DialogDescription>
+            {selectedUsers.length} user{selectedUsers.length === 1 ? "" : "s"} and{" "}
+            {selectedPermCount} permission{selectedPermCount === 1 ? "" : "s"} are selected
+            but not assigned yet. Closing now clears them.
+          </DialogDescription>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={() => setConfirmDiscard(false)}
+              className="px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              onClick={() => { setConfirmDiscard(false); setSelectedUsers([]); setSelection({}); onClose() }}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+            >
+              Discard &amp; close
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

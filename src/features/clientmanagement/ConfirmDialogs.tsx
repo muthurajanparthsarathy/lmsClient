@@ -68,43 +68,6 @@ export function DeleteConfirmModal({
 }
 
 // ─── Discard-changes confirmation ─────────────────────────────────────────────
-
-export function DiscardChangesDialog({
-    open,
-    onConfirm,
-    onCancel,
-}: {
-    open: boolean
-    onConfirm: () => void
-    onCancel: () => void
-}) {
-    return (
-        <Modal
-            open={open}
-            onClose={onCancel}
-            size="sm"
-            hideClose
-            footer={
-                <div className="flex flex-1 items-center justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={onCancel}>
-                        Keep editing
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={onConfirm}>
-                        <Trash2 className="size-3.5" />
-                        Discard
-                    </Button>
-                </div>
-            }
-        >
-            <div className="flex flex-col items-center text-center px-1 pt-2 pb-1">
-                <div className="w-11 h-11 rounded-full bg-warn-50 border border-warn-500/20 flex items-center justify-center mb-4">
-                    <AlertTriangle size={20} className="text-warn-500" />
-                </div>
-                <h3 className="text-md font-semibold text-heading mb-1">Discard changes?</h3>
-                <p className="text-sm text-subtle leading-relaxed">
-                    You have unsaved changes. If you leave now, they&apos;ll be lost.
-                </p>
-            </div>
-        </Modal>
-    )
-}
+// Promoted to the shared UI kit — the exercise wizard needs the same dialog, and
+// two copies would drift. Re-exported here so this module's surface is unchanged.
+export { DiscardChangesDialog } from '@/app/lms/shared/ui/DiscardChangesDialog'

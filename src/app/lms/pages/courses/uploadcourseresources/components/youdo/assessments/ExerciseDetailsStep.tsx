@@ -1187,6 +1187,12 @@ export const ExerciseDetailsStep = forwardRef<ExerciseDetailsStepRef, ExerciseDe
 
         <div style={{ borderTop: `1px solid ${D.border}` }} />
         
+        {/* Difficulty · Duration · Total Marks — one row.
+            Section-based mode captures duration and marks PER SECTION further
+            up, so those two cells are absent there and Difficulty takes the
+            row on its own rather than sitting in a 3-column grid with two
+            holes in it. */}
+        <div className={isSectionBased ? undefined : "grid grid-cols-1 sm:grid-cols-3 gap-4 items-start"}>
         {/* Difficulty Level */}
         <div>
           <div className="flex items-center gap-1 mb-1.5">
@@ -1219,11 +1225,11 @@ export const ExerciseDetailsStep = forwardRef<ExerciseDetailsStepRef, ExerciseDe
           </select>
         </div>
         
-        {/* Duration and Marks Section - Hide when section-based is enabled */}
+        {/* Duration and Marks — the other two cells of the row above. Hidden
+            when section-based, where both are per-section. */}
         {!isSectionBased && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-4 items-start">
-              <div>
+          <>
+            <div>
                 <SectionLabel required info="Total time allowed in minutes">
                   Duration (min)
                 </SectionLabel>
@@ -1356,21 +1362,23 @@ export const ExerciseDetailsStep = forwardRef<ExerciseDetailsStepRef, ExerciseDe
                 </div>
               )}
             </div>
-          </div>
-          
-          {isCombined && !isSectionBased && (
-            <div className="flex justify-end">
-              <div className="text-right">
-                <p className="text-xs font-semibold" style={{ color: D.textSub }}>
-                  Total Marks: {formData.totalMarks}
-                </p>
-                <p className="text-[10px]" style={{ color: D.textMuted }}>
-                  Auto-calculated from MCQ + Programming marks
-                </p>
-              </div>
+          </>
+        )}
+        </div>{/* ── close the Difficulty · Duration · Marks row ── */}
+
+        {/* Combined marks roll-up — a caption for the row above, so it sits
+            under the whole row rather than inside the marks cell. */}
+        {isCombined && !isSectionBased && (
+          <div className="flex justify-end">
+            <div className="text-right">
+              <p className="text-xs font-semibold" style={{ color: D.textSub }}>
+                Total Marks: {formData.totalMarks}
+              </p>
+              <p className="text-[10px]" style={{ color: D.textMuted }}>
+                Auto-calculated from MCQ + Programming marks
+              </p>
             </div>
-          )}
-        </div>
+          </div>
         )}
 
         </div>{/* ── close Section 3: Exercise Setup ── */}

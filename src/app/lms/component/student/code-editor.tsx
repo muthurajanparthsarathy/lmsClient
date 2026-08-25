@@ -2448,11 +2448,14 @@ function solve() {
 
             // REMOVED: addTerminalLog('system', `Executing ${selectedLanguage} code...`);
 
+            // The Piston endpoint is now our server proxy (see
+            // pistonClient.ts) — attach auth so the proxy accepts the call.
+            const _pistonHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+            const _tok = typeof window !== 'undefined' ? window.localStorage.getItem('smartcliff_token') : null;
+            if (_tok) _pistonHeaders.Authorization = `Bearer ${_tok}`;
             const response = await fetch(PISTON_API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: _pistonHeaders,
                 body: JSON.stringify(requestBody)
             });
 
@@ -2975,13 +2978,16 @@ function solve() {
             let submitBreakdown: any = null;
 
             if (method === 'testcase') {
-                const { passed, total, score, cases } = await verifyTestCasesAndScore();
-                submitScore = score;
-                submitStatus = (total > 0 && passed === total) ? 'solved' : 'submitted';
-                // Empty test-case list → total === 0; still record the fact so Review
-                // shows "0/0 (no test cases configured)" instead of no breakdown.
-                // `cases` carries per-case pass/fail so Review can show WHICH failed.
-                submitBreakdown = { method: 'testcase', testcase: { passed, total, cases } };
+                // Server-side judge (Phase 1 P0). The submit endpoint re-runs
+                // the code against the trainer's authoritative testCases and
+                // stamps score + breakdown itself. verifyTestCasesAndScore
+                // (the old client-side loop) is dead — the response payload
+                // carries evaluationBreakdown, which is logged after axios
+                // returns.
+                addTerminalLog('system', '🧪 Running test cases on server judge…');
+                submitScore = 0;
+                submitStatus = 'submitted';
+                submitBreakdown = null;
             } else if (method === 'ai') {
                 addTerminalLog('system', '🤖 Running AI evaluation…');
                 const liveQ: any = (exercise as any)?.questions?.[currentProblemIndex] ?? currentQuestion;
@@ -3057,6 +3063,31 @@ function solve() {
                 isLastQuestion,  // ← true only for last question
                 submitBreakdown,
             );
+
+            // When the server judged this submission (method === 'testcase'),
+            // paint the per-case ✓/✗ lines from the response — the client
+            // no longer runs the test-case loop itself.
+            const srvBreakdown = (submitResponse as any)?.data?.evaluationBreakdown;
+            const srvScore = (submitResponse as any)?.data?.score;
+            const srvStatus = (submitResponse as any)?.data?.status;
+            if (srvBreakdown?.method === 'testcase' && srvBreakdown.testcase) {
+                const tc = srvBreakdown.testcase;
+                const cases: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> = tc.cases || [];
+                const maxMarks = getCurrentQuestionMaxMarks();
+                for (const c of cases) {
+                    const label = c.hidden ? `Hidden test #${c.index + 1}` : `Test #${c.index + 1}`;
+                    if (c.passed) addTerminalLog('success', `✓ ${label} passed`);
+                    // Trainer's input/expected stay hidden on hidden cases;
+                    // student's own output is safe (and useful for debugging
+                    // format mismatches).
+                    else if (c.hidden) addTerminalLog('error', `✗ ${label} failed — got: ${c.actualOutput || '(no output)'}`);
+                    else addTerminalLog('error', `✗ ${label} failed — expected: ${c.expectedOutput} | got: ${c.actualOutput || '(no output)'}`);
+                }
+                addTerminalLog(
+                    tc.passed === tc.total ? 'success' : 'info',
+                    `🏁 Passed ${tc.passed}/${tc.total} — Score: ${srvScore}/${maxMarks}${srvStatus === 'solved' ? ' ✓ SOLVED' : ''}`,
+                );
+            }
 
             if (submitResponse && submitResponse.success) {
                 setSolvedQuestions(prev => {
