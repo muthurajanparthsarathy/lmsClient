@@ -240,8 +240,8 @@ const buildPrompt = (
   mode: 'initial' | 'additional' | 'regenerate',
 ): string => {
   const safeCount = Math.max(1, Math.min(count, 10));
-  const tcCount = Math.max(2, Math.min(settings.numTestCases, 6));
-  const hintCount = Math.max(0, Math.min(settings.numHints, 5));
+  const tcCount = Math.max(2, Math.min(settings.numTestCases, 50));
+  const hintCount = Math.max(0, Math.min(settings.numHints, 10));
   const typeLabel = mode === 'additional' ? 'ADDITIONAL ' : mode === 'regenerate' ? 'NEW ' : '';
   const explNote = settings.includeExplanations
     ? 'Include a brief explanation field on each test case / hint where it fits.'
@@ -972,11 +972,19 @@ const GenerateProgFamilyAI: React.FC<Props> = ({
                 <label style={{ fontFamily: 'var(--pf-font)', fontSize: 11.5, fontWeight: 700, color: 'var(--pf-text-main)' }}>How Many per Difficulty</label>
                 <span style={{ fontFamily: 'var(--pf-font)', fontSize: 11, fontWeight: 700, color: 'var(--pf-orange)', background: 'var(--pf-orange-50)', padding: '2px 8px', borderRadius: 8 }}>Total: {totalPerDiff}</span>
               </div>
-              {(['easy', 'medium', 'hard'] as const).map(d => {
+              {/* Only difficulties the exercise actually configured. A level
+                  with no quota isn't "temporarily unavailable" — it is not
+                  part of this exercise at all, so a disabled slider just adds
+                  noise and invites the teacher to wonder what unlocks it. */}
+              {(['easy', 'medium', 'hard'] as const)
+                .filter(d => (perDifficultyQuotas![d] || 0) > 0)
+                .map(d => {
                 const cfg = DIFF_CFG[d];
                 const cap = perDifficultyQuotas![d] || 0;
                 const val = perDiffCounts[d];
-                const disabled = cap === 0 || customMode;
+                // cap > 0 is guaranteed by the filter, so only custom mode
+                // (counts come from the topic list) can disable a slider now.
+                const disabled = customMode;
                 return (
                   <div key={d} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1000,9 +1008,16 @@ const GenerateProgFamilyAI: React.FC<Props> = ({
                   </div>
                 );
               })}
-              <p style={{ fontFamily: 'var(--pf-font)', fontSize: 10.5, color: 'var(--pf-text-muted)' }}>
-                Slots remaining per difficulty. Drag each slider up to its cap; you can generate any mix in one shot.
-              </p>
+              {(levelQuotaTotal ?? 0) === 0 && (
+                <p style={{ fontFamily: 'var(--pf-font)', fontSize: 10.5, color: 'var(--pf-text-muted)' }}>
+                  Every difficulty in this exercise is already filled — there are no AI slots left to generate into.
+                </p>
+              )}
+              {(levelQuotaTotal ?? 0) > 0 && (
+                <p style={{ fontFamily: 'var(--pf-font)', fontSize: 10.5, color: 'var(--pf-text-muted)' }}>
+                  Slots remaining per difficulty. Drag each slider up to its cap; you can generate any mix in one shot.
+                </p>
+              )}
               {customMode && (
                 <p style={{ fontFamily: 'var(--pf-font)', fontSize: 10.5, color: 'var(--pf-info)', fontWeight: 600 }}>
                   Sliders disabled — count comes from your custom topic list.
@@ -1064,10 +1079,10 @@ const GenerateProgFamilyAI: React.FC<Props> = ({
                 <label style={{ fontFamily: 'var(--pf-font)', fontSize: 11.5, fontWeight: 700, color: 'var(--pf-text-main)' }}>Test Cases</label>
                 <span style={{ fontFamily: 'var(--pf-font)', fontSize: 11, fontWeight: 700, color: 'var(--pf-orange)', background: 'var(--pf-orange-50)', padding: '2px 8px', borderRadius: 8 }}>{settings.numTestCases}</span>
               </div>
-              <input type="range" min="2" max="6" value={settings.numTestCases}
+              <input type="range" min="2" max="50" value={settings.numTestCases}
                 onChange={e => setSettings(prev => ({ ...prev, numTestCases: parseInt(e.target.value) }))} className="pf-range" />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--pf-font)', fontSize: 9.5, color: 'var(--pf-text-hint)' }}>
-                <span>2</span><span>4</span><span>6</span>
+                <span>2</span><span>25</span><span>50</span>
               </div>
             </div>
           )}
@@ -1078,10 +1093,10 @@ const GenerateProgFamilyAI: React.FC<Props> = ({
               <label style={{ fontFamily: 'var(--pf-font)', fontSize: 11.5, fontWeight: 700, color: 'var(--pf-text-main)' }}>Hints</label>
               <span style={{ fontFamily: 'var(--pf-font)', fontSize: 11, fontWeight: 700, color: 'var(--pf-orange)', background: 'var(--pf-orange-50)', padding: '2px 8px', borderRadius: 8 }}>{settings.numHints}</span>
             </div>
-            <input type="range" min="0" max="5" value={settings.numHints}
+            <input type="range" min="0" max="10" value={settings.numHints}
               onChange={e => setSettings(prev => ({ ...prev, numHints: parseInt(e.target.value) }))} className="pf-range" />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--pf-font)', fontSize: 9.5, color: 'var(--pf-text-hint)' }}>
-              <span>0</span><span>2</span><span>5</span>
+              <span>0</span><span>5</span><span>10</span>
             </div>
           </div>
 

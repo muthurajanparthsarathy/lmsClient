@@ -1,7 +1,7 @@
 import { ExercisePayload } from '@/app/lms/component/ExerciseSettings';
 import axios from 'axios';
 
-const BASE_URL = 'https://lmsserver-yeve.onrender.com';
+const BASE_URL = 'http://localhost:5533';
 
 export type EntityType = 'modules' | 'submodules' | 'topics' | 'subtopics';
 
@@ -986,12 +986,31 @@ getYouDoExercises: async (
     entityType: EntityType,
     entityId: string,
     section: 'I_Do' | 'We_Do' | 'You_Do' = 'We_Do',
-    subcategory?: string
+    subcategory?: string,
+    // Question-Bank-style optional pagination. Passing `page` switches the
+    // endpoint into paginated mode: the server applies the list's filters +
+    // newest-first sort and returns ONE slice plus pager totals under
+    // `data.pagination`. Without `page` the response is the original full
+    // exercises[] array, unchanged — every existing caller keeps working.
+    opts?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      exerciseType?: string;
+      status?: string;
+    }
   ): Promise<ExerciseResponse> => {
     try {
       const params = new URLSearchParams();
       params.append('section', section);
       if (subcategory) params.append('subcategory', subcategory);
+      if (opts?.page !== undefined) {
+        params.append('page', String(opts.page));
+        if (opts.limit !== undefined) params.append('limit', String(opts.limit));
+        if (opts.search) params.append('search', opts.search);
+        if (opts.exerciseType) params.append('exerciseType', opts.exerciseType);
+        if (opts.status) params.append('status', opts.status);
+      }
 
       const entityPath = getEntityPath(entityType);
       const url = `${BASE_URL}/exercise/get/${entityPath}/${entityId}?${params.toString()}`;

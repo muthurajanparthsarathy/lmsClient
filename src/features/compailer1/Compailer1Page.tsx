@@ -597,7 +597,7 @@ export default function CodeCompiler() {
         ".cm-focused": { outline: "none" },
         ".cm-editor": {
           height: "100%",
-          minHeight: "100vh",
+          minHeight: "calc(100vh * var(--ui-scale-inv, 1))",
         },
         ".cm-content": {
           padding: "16px",
@@ -1047,7 +1047,7 @@ export default function CodeCompiler() {
     setSaveStatus({ type: null, message: "" })
 
     try {
-      const response = await fetch("https://lmsserver-yeve.onrender.com/save/compiler", {
+      const response = await fetch("http://localhost:5533/save/compiler", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${getToken() || ""}`,
@@ -1087,7 +1087,7 @@ export default function CodeCompiler() {
     }
 
     try {
-      const response = await fetch(`https://lmsserver-yeve.onrender.com/get/compiler/${userId}/${courseId}`, {
+      const response = await fetch(`http://localhost:5533/get/compiler/${userId}/${courseId}`, {
         headers: {
           Authorization: `Bearer ${getToken() || ""}`,
           "Content-Type": "application/json",

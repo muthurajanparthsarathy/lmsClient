@@ -19,21 +19,34 @@ interface StudentRowProps {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 /**
- * Collapse the raw fields into the three-value status we render.
+ * Row status (Recovery & Resume expansion).
  *
- * Rules (per product feedback):
- *   - `submitted`   → has submitted their attempt.
- *   - `started`     → currently in the test live (active session). We use
- *                     ONLY `inProgress` here — `completed > 0` no longer
- *                     promotes a row to "started" because a student who
- *                     answered some questions earlier and walked away is
- *                     not actively attending.
- *   - `not-started` → everything else (truly never started, OR previously
- *                     started but no live session).
+ *   • `terminated`   — server ended the attempt without an explicit submit
+ *                      (timer expiry OR a security violation). Distinct from
+ *                      `submitted` so trainers can spot enforcement.
+ *   • `submitted`    — student pressed Submit (terminal, clean end).
+ *   • `disconnected` — has an active attempt but the live socket is down
+ *                      (browser closed / crashed / lost Wi-Fi). Attempt is
+ *                      NOT lost — the recovery system will resume it.
+ *   • `started`      — live session, actively in the attempt.
+ *   • `not-started`  — truly never began.
+ *
+ * Rules:
+ *   1. `attemptStatus === 'terminated'` → terminated (regardless of anything else).
+ *   2. `attemptStatus === 'submitted'` OR `submitted` → submitted.
+ *   3. `attemptStatus === 'active'` AND NOT online → disconnected.
+ *   4. Live session (`inProgress`) OR any persisted answer → started.
+ *   5. Fallback → not-started.
  */
 export function deriveTestStatus(s: StudentProgress): TestStatus {
-  if (s.submitted) return "submitted";
+  if (s.attemptStatus === "terminated") return "terminated";
+  if (s.submitted || s.attemptStatus === "submitted") return "submitted";
+  // Awaiting approval takes precedence over disconnected — trainer should
+  // spot pending requests first.
+  if (s.resumeState === "awaiting_approval") return "awaiting-approval";
+  if (s.attemptStatus === "active" && s.isOnline === false) return "disconnected";
   if (s.inProgress) return "started";
+  if ((s.completed || 0) > 0) return "started";
   return "not-started";
 }
 
@@ -53,9 +66,12 @@ export function formatDuration(totalSeconds: number): string {
 // a busy dashboard). White text on a saturated background, plus a small dot to
 // reinforce the colour cue for users with mild colour-vision differences.
 const STATUS_BADGE: Record<TestStatus, { label: string; cls: string; dot: string }> = {
-  "not-started":  { label: "Not Started", cls: "bg-slate-500  text-white", dot: "bg-white/80" },
-  "started":      { label: "Started",     cls: "bg-amber-500  text-white", dot: "bg-white" },
-  "submitted":    { label: "Submitted",   cls: "bg-emerald-600 text-white", dot: "bg-white" },
+  "not-started":       { label: "Not Started",       cls: "bg-slate-500   text-white",   dot: "bg-white/80" },
+  "started":           { label: "In Progress",       cls: "bg-amber-500   text-white",   dot: "bg-white"    },
+  "disconnected":      { label: "Disconnected",      cls: "bg-orange-500  text-white",   dot: "bg-white"    },
+  "awaiting-approval": { label: "Awaiting Approval", cls: "bg-yellow-500  text-white",   dot: "bg-white"    },
+  "submitted":         { label: "Submitted",         cls: "bg-emerald-600 text-white",   dot: "bg-white"    },
+  "terminated":        { label: "Terminated",        cls: "bg-red-600     text-white",   dot: "bg-white"    },
 };
 
 // ─── Row ────────────────────────────────────────────────────────────────────
@@ -83,22 +99,28 @@ function StudentRowBase({ student, index, onSendMessage, onCheckAnswers }: Stude
   const statusBadge = STATUS_BADGE[status];
 
   return (
-    <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-      <td className="px-4 py-3 text-[13px] text-gray-700 font-mono truncate max-w-[120px]" title={displayId}>
+    // Borderless row: no bottom hairline, no divider — rows separate only
+    // via hover-tint, matching the borderless listing style the user asked
+    // for. Typography aligned to the app's shared listing:
+    //   • Name → text-sm font-medium text-gray-900 (heading)
+    //   • Meta (email, id, duration) → text-sm text-gray-500 (subtle)
+    // Same 14px baseline as Client Management + User Management rows.
+    <tr className="hover:bg-gray-50 transition-colors">
+      <td className="px-4 py-3 text-sm text-gray-500 font-mono truncate max-w-[120px]" title={displayId}>
         {displayId}
       </td>
-      <td className="px-4 py-3 text-[13px] font-medium text-gray-900">{s.studentName}</td>
-      <td className="px-4 py-3 text-[13px] text-gray-500">{s.email}</td>
-      <td className="px-4 py-3 text-[13px] text-center">
+      <td className="px-4 py-3 text-sm font-medium text-gray-900">{s.studentName}</td>
+      <td className="px-4 py-3 text-sm text-gray-500">{s.email}</td>
+      <td className="px-4 py-3 text-sm text-center">
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap shadow-sm ${statusBadge.cls}`}
+          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap ${statusBadge.cls}`}
         >
           <span className={`inline-block w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
           {statusBadge.label}
         </span>
       </td>
-      <td className="px-4 py-3 text-[13px] text-center text-gray-700">{durationText}</td>
-      <td className="px-4 py-3 text-[13px]">
+      <td className="px-4 py-3 text-sm text-center text-gray-500">{durationText}</td>
+      <td className="px-4 py-3 text-sm">
         <div className="flex items-center justify-center gap-2">
           {hasAnswerInDb && (
             <button
@@ -141,7 +163,12 @@ function areEqual(prev: StudentRowProps, next: StudentRowProps) {
     a.completed === b.completed &&
     a.inProgress === b.inProgress &&
     a.submitted === b.submitted &&
-    a.durationSeconds === b.durationSeconds
+    a.durationSeconds === b.durationSeconds &&
+    // Recovery & Resume — repaint the badge when lifecycle / presence /
+    // resume-permission state changes on the wire.
+    a.attemptStatus === b.attemptStatus &&
+    a.isOnline === b.isOnline &&
+    a.resumeState === b.resumeState
   );
 }
 

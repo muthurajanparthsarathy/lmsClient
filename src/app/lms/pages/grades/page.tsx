@@ -22,6 +22,7 @@ import {
 import { courseStructuresSummaryQuery } from '@/apiServices/createCourseStucture';
 import DashboardLayout from '../../component/layout';
 import { StaffLayout } from '../../component/stafflayout/staff-layout';
+import { StudentLayout } from '../../component/student/student-layout';
 
 const defaultCategories = ["All", "Web Development", "Data Science", "Mobile Development", "Design", "Cloud Computing", "Marketing", "Security"];
 
@@ -1247,11 +1248,23 @@ export default function GradePage() {
         );
     }
 
-    // Conditionally wrap with appropriate layout based on user role
+    // Conditionally wrap with appropriate layout based on user role.
+    //
+    // Students MUST land in StudentLayout, same as every other student route
+    // (courses, notifications, profile, feedback, calendar all branch this
+    // way). Before this, a student reaching Grades from the dashboard's
+    // "My Grades" button fell through to StaffLayout and got the staff rail —
+    // a different set of entries under different labels, none of it driven by
+    // the student's own permissions, so the sidebar appeared to change
+    // identity from one page to the next.
     if (userRole === 'admin' || userRole === 'ldhead' || userRole === 'subhead' || userRole === 'programcoordinator') {
         return <DashboardLayout>{pageContent}</DashboardLayout>;
-    } else {
-        // All other roles (programcoordinator, faculty, etc.) get StaffLayout
-        return <StaffLayout>{pageContent}</StaffLayout>;
     }
+
+    if (userRole === 'student' || isStudent) {
+        return <StudentLayout>{pageContent}</StudentLayout>;
+    }
+
+    // All other roles (faculty, staff, etc.) get StaffLayout
+    return <StaffLayout>{pageContent}</StaffLayout>;
 }

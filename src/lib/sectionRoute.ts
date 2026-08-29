@@ -19,8 +19,10 @@ import { usePathname } from "next/navigation";
  * the section it started in.
  *
  * Only screens that EXIST under both prefixes may be linked this way. Live
- * Dashboard and Live Screens, for example, live under `courses` only, so they
- * stay absolute.
+ * Screens still lives under `courses` only and must stay absolute; Live
+ * Dashboard is now mounted under BOTH prefixes (see
+ * `app/lms/pages/coursestructure/liveDashboard/page.tsx`) so it may be
+ * linked through sectionHref like the other shared screens.
  */
 export const SECTION_COURSES = "/lms/pages/courses";
 export const SECTION_COURSE_STRUCTURE = "/lms/pages/coursestructure";
@@ -31,6 +33,14 @@ export const SHARED_SECTION_SCREENS = [
   "reviewSubmission",
   "manageUsers",
   "manageUsers/reports",
+  "liveDashboard",
+  // Grades detail is now mounted under BOTH prefixes as well, so the per-
+  // course Grade drill (opened from CourseActionsMenu on the coursestructure
+  // list, or from the We_Do / You_Do exercise dropdowns inside a course) can
+  // stay inside whichever section the trainer arrived from. The route is
+  // `grades/[id]`; sectionHref concatenates the id, so callers pass
+  // `sectionHref("grades")` + `/${courseId}`.
+  "grades",
 ] as const;
 
 export const sectionBaseFor = (pathname: string | null | undefined): string =>

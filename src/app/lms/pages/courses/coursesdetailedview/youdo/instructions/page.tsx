@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 
 const FONT = "'Poppins','Poppins','Segoe UI','Roboto',system-ui,-apple-system,BlinkMacSystemFont,sans-serif";
-const API_BASE = "https://lmsserver-yeve.onrender.com";
+const API_BASE = "http://localhost:5533";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function formatDuration(minutes?: number): string {
@@ -388,14 +388,14 @@ function InstructionsContent() {
   // ── load / error ──────────────────────────────────────────────────────────
   if (loading && !exercise) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, background: "#ffffff" }}>
+      <div style={{ minHeight: "calc(100vh * var(--ui-scale-inv, 1))", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, background: "#ffffff" }}>
         <Loader2 className="animate-spin" size={28} style={{ color: "#64748b" }} />
       </div>
     );
   }
   if (error || !exercise) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, background: "#ffffff" }}>
+      <div style={{ minHeight: "calc(100vh * var(--ui-scale-inv, 1))", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, background: "#ffffff" }}>
         <div style={{ textAlign: "center", color: "#64748b", padding: 24 }}>
           <AlertCircle size={32} style={{ color: "#ef4444", margin: "0 auto 12px" }} />
           <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{error || "Assessment not found"}</div>
@@ -409,7 +409,7 @@ function InstructionsContent() {
   const moduleColors = ["#3b82f6", "#22c55e", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4"];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#ffffff", fontFamily: FONT, padding: "26px 18px 40px" }}>
+    <div style={{ minHeight: "calc(100vh * var(--ui-scale-inv, 1))", background: "#ffffff", fontFamily: FONT, padding: "26px 18px 40px" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
         /* Dark, visible scrollbar on this route. */
@@ -725,7 +725,7 @@ function Strip({ icon, label, value }: { icon: React.ReactNode; label: string; v
 export default function YouDoInstructionsPage() {
   return (
     <Suspense fallback={
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, background: "#ffffff" }}>
+      <div style={{ minHeight: "calc(100vh * var(--ui-scale-inv, 1))", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, background: "#ffffff" }}>
         <Loader2 className="animate-spin" size={28} style={{ color: "#64748b" }} />
       </div>
     }>

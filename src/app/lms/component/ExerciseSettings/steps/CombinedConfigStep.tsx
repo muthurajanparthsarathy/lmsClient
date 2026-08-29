@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, List, Terminal } from 'lucide-react';
+import { List, Terminal } from 'lucide-react';
 import { D } from '../shared/tokens';
 
 // Tabbed wrapper for the Combined exercise type. The actual MCQ / Programming
@@ -13,6 +13,31 @@ interface CombinedConfigStepProps {
   programmingContent: React.ReactNode;
 }
 
+const segBtnStyle = (active: boolean): React.CSSProperties => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 27,
+  padding: '0 12px',
+  borderRadius: 5,
+  border: 'none',
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  transition: 'background 0.15s, color 0.15s',
+  background: active ? '#fff' : 'transparent',
+  color: active ? D.orangeDark : D.textMuted,
+  boxShadow: active ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
+});
+
+const errorDotStyle: React.CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: 999,
+  background: D.red,
+  flexShrink: 0,
+};
+
 export const CombinedConfigStep: React.FC<CombinedConfigStepProps> = ({
   combinedConfigTab,
   setCombinedConfigTab,
@@ -25,46 +50,37 @@ export const CombinedConfigStep: React.FC<CombinedConfigStepProps> = ({
 
   return (
     <div>
-      {/* Tab header */}
-      <div className="flex items-center gap-0 px-10 pt-3 pb-0 border-b" style={{ borderColor: D.border }}>
-        <button
-          type="button"
-          onClick={() => setCombinedConfigTab('mcq')}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all border-b-2 -mb-px"
-          style={{
-            borderBottomColor: combinedConfigTab === 'mcq' ? D.orange : 'transparent',
-            color: combinedConfigTab === 'mcq' ? D.orange : D.textMuted,
-            background: 'transparent',
-          }}
-        >
-          <List size={11} />
-          MCQ Config
-          {mcqHasError && (
-            <span className="ml-1 w-3.5 h-3.5 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: D.red, color: '#fff' }}>
-              <AlertCircle size={8} strokeWidth={3} />
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setCombinedConfigTab('programming')}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all border-b-2 -mb-px"
-          style={{
-            borderBottomColor: combinedConfigTab === 'programming' ? D.orange : 'transparent',
-            color: combinedConfigTab === 'programming' ? D.orange : D.textMuted,
-            background: 'transparent',
-          }}
-        >
-          <Terminal size={11} />
-          Programming Config
-          {progHasError && (
-            <span className="ml-1 w-3.5 h-3.5 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: D.red, color: '#fff' }}>
-              <AlertCircle size={8} strokeWidth={3} />
-            </span>
-          )}
-        </button>
+      {/* Tab header — spec segmented control */}
+      <div style={{ padding: '14px 22px 0' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          padding: 3, borderRadius: 8,
+          background: D.surface2,
+          border: `1px solid ${D.border2}`,
+        }}>
+          <button
+            type="button"
+            onClick={() => setCombinedConfigTab('mcq')}
+            aria-pressed={combinedConfigTab === 'mcq'}
+            style={segBtnStyle(combinedConfigTab === 'mcq')}
+          >
+            <List size={11} />
+            MCQ Config
+            {mcqHasError && <span style={errorDotStyle} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCombinedConfigTab('programming')}
+            aria-pressed={combinedConfigTab === 'programming'}
+            style={segBtnStyle(combinedConfigTab === 'programming')}
+          >
+            <Terminal size={11} />
+            Programming Config
+            {progHasError && <span style={errorDotStyle} />}
+          </button>
+        </div>
       </div>
-      {/* Tab content (children provide their own px-10) */}
+      {/* Tab content (children provide their own horizontal padding) */}
       <div>
         {combinedConfigTab === 'mcq' ? mcqContent : programmingContent}
       </div>

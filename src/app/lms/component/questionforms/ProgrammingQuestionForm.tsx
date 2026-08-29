@@ -18,7 +18,14 @@ import QuestionBankSelector from './mcq/QuestionBankSelector';
 import GenerateProgFamilyAI from './GenerateProgFamilyAI';
 import DocQuestionPicker from './DocQuestionPicker';
 import { parseProgrammingFile } from '@/app/lms/component/questionforms/parseQuestionsTxt';
+import { CodeSetupSection, isStringSolutionEmpty } from './CodeSetupSection';
 import { toast } from 'react-toastify';
+// Execution playground shares the SAME auth-gated Piston proxy the student
+// multi-file editor uses, so results here match what students see on Submit.
+// The endpoint enforces auth + per-user rate limits and uses the same runtime
+// pins as the server codeJudge.
+import { runOnPiston, type RunResult } from '@/lib/pistonClient';
+import { normalizeLanguage, type SupportedLanguage } from '@/lib/codeLanguages';
 // ─── FONT INJECTION ───────────────────────────────────────────────────────────
 const injectFonts = (() => {
   let injected = false;
@@ -401,6 +408,19 @@ interface TC {
   isHidden: boolean;
   isSample: boolean;
   description: string;
+  // Function-mode structured inputs: { paramName: valueLiteral }. Coexists with
+  // input/expectedOutput so a question can flip between modes without data loss
+  // and legacy full-program TCs still work when read back.
+  functionInputs?: Record<string, string>;
+}
+
+// Function-contract parameter (name + language-agnostic data type)
+interface FunctionParam { id: string; name: string; type: string; }
+
+interface FunctionContract {
+  functionName: string;
+  returnType: string;
+  params: FunctionParam[];
 }
 
 interface FlowQuestion {
@@ -435,6 +455,19 @@ interface FlowQuestion {
   // get the URL in an iframe instead of the question+compiler workspace.
   isLinkQuestion?: boolean;
   questionLink?: string;
+  // Code Setup — Starter is shown to students when an attempt begins.
+  // Solution is the reference solution used for validation; never leaks to the learner UI.
+  starterCode?: string;
+  solutionCode?: string;
+  codeSetupLanguage?: string;
+  // ── Execution Setup ────────────────────────────────────────────────────
+  // Absent on legacy questions → dbQuestionToFlow defaults executionType to
+  // 'fullProgram' so existing stdin/stdout test cases keep working.
+  executionType?: 'function' | 'fullProgram';
+  functionContract?: FunctionContract;
+  // Blank editor / auto-generated skeleton / teacher-provided custom starter.
+  // Absent → 'blank' for fullProgram and 'generated' for function (see hydration).
+  startingExperience?: 'blank' | 'generated' | 'custom';
 }
 
 type Diff = 'easy' | 'medium' | 'hard';
@@ -570,6 +603,135 @@ const mkTC = (i: number): TC => ({
   description: `Test Case ${i + 1}`,
 });
 
+// ─── Execution Setup — helpers ─────────────────────────────────────────────
+// Language-aware type catalogue. The label used in the UI matches the language
+// idiom (Python "integer[]" vs Java "int[]"). Serialized as-is; the wrapper
+// builders below map it to real syntax when they emit the driver.
+const EXEC_DATA_TYPES: Record<string, string[]> = {
+  Python:     ['integer', 'decimal', 'boolean', 'string', 'integer[]', 'decimal[]', 'string[]', 'custom'],
+  JavaScript: ['integer', 'decimal', 'boolean', 'string', 'integer[]', 'decimal[]', 'string[]', 'custom'],
+  Java:       ['int', 'double', 'boolean', 'String', 'int[]', 'double[]', 'String[]', 'custom'],
+  'C++':      ['int', 'double', 'bool', 'string', 'vector<int>', 'vector<double>', 'vector<string>', 'custom'],
+  C:          ['int', 'double', '_Bool', 'char*', 'int*', 'double*', 'char**', 'custom'],
+};
+// Case/alias-tolerant language canonicaliser. Existing exercises store their
+// selected language as lowercase 'python' / 'javascript' etc., while the UI
+// selector uses the capitalised label ('Python') — everywhere execution-setup
+// helpers compare against a language, they MUST route through this first, or
+// they silently return empty strings (blank signature, blank starter).
+const normalizeExecLang = (lang: string): string => {
+  const s = (lang || '').toString().trim().toLowerCase();
+  if (s === 'python' || s === 'py' || s === 'python3') return 'Python';
+  if (s === 'javascript' || s === 'js' || s === 'node' || s === 'nodejs' || s === 'typescript' || s === 'ts') return 'JavaScript';
+  if (s === 'java') return 'Java';
+  if (s === 'c++' || s === 'cpp' || s === 'cplusplus') return 'C++';
+  if (s === 'c') return 'C';
+  return lang || 'Python';
+};
+const execDataTypesFor = (lang: string): string[] => EXEC_DATA_TYPES[normalizeExecLang(lang)] || EXEC_DATA_TYPES.Python;
+
+const mkFunctionContract = (): FunctionContract => ({
+  functionName: '',
+  returnType: 'integer',
+  params: [],
+});
+
+const mkFunctionParam = (i: number = 0): FunctionParam => ({
+  id: `fp-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`,
+  name: `p${i + 1}`,
+  type: 'integer',
+});
+
+// Language-aware signature (single line) shown as a preview inside the contract.
+function execSignatureFor(lang: string, contract: FunctionContract): string {
+  const L = normalizeExecLang(lang);
+  const fname = contract.functionName || 'solve';
+  const params = contract.params.map(p => ({ name: p.name || '?', type: p.type || 'string' }));
+  if (L === 'Python')     return `def ${fname}(${params.map(p => `${p.name}: ${p.type}`).join(', ')}) -> ${contract.returnType}:`;
+  if (L === 'JavaScript') return `function ${fname}(${params.map(p => `/* ${p.type} */ ${p.name}`).join(', ')}) /* -> ${contract.returnType} */ {`;
+  if (L === 'Java')       return `public ${jType(contract.returnType)} ${fname}(${params.map(p => `${jType(p.type)} ${p.name}`).join(', ')}) {`;
+  if (L === 'C++')        return `${cppType(contract.returnType)} ${fname}(${params.map(p => `${cppType(p.type)} ${p.name}`).join(', ')}) {`;
+  if (L === 'C')          return `${cType(contract.returnType)} ${fname}(${params.map(p => `${cType(p.type)} ${p.name}`).join(', ')}) {`;
+  return `def ${fname}(${params.map(p => `${p.name}: ${p.type}`).join(', ')}) -> ${contract.returnType}:`;
+}
+function jType(t: string): string { return ({ integer:'int', decimal:'double', boolean:'boolean', string:'String', 'integer[]':'int[]', 'decimal[]':'double[]', 'string[]':'String[]', custom:'Object' } as any)[t] || t; }
+function cppType(t: string): string { return ({ integer:'int', decimal:'double', boolean:'bool', string:'std::string', 'integer[]':'std::vector<int>', 'decimal[]':'std::vector<double>', 'string[]':'std::vector<std::string>', custom:'auto' } as any)[t] || t; }
+function cType(t: string): string { return ({ integer:'int', decimal:'double', boolean:'int', string:'char*', 'integer[]':'int*', 'decimal[]':'double*', 'string[]':'char**' } as any)[t] || t; }
+
+// Auto-generated starter skeleton (Generated Starter mode). Always safe —
+// students see this as the initial editor content; it's never used to grade.
+function execGeneratedStarter(lang: string, contract: FunctionContract): string {
+  const L = normalizeExecLang(lang);
+  const sig = execSignatureFor(L, contract);
+  if (L === 'Python')     return `${sig}\n    # Write your code here\n    pass`;
+  if (L === 'JavaScript') return `${sig}\n  // Write your code here\n}`;
+  if (L === 'Java')       return `class Solution {\n    ${sig}\n        // Write your code here\n        return ${jDefault(contract.returnType)};\n    }\n}`;
+  if (L === 'C++')        return `${sig}\n    // Write your code here\n    return ${cppDefault(contract.returnType)};\n}`;
+  if (L === 'C')          return `${sig}\n    /* Write your code here */\n    return ${cDefault(contract.returnType)};\n}`;
+  // Fallback: Python-style skeleton so the editor never renders empty.
+  return `${sig}\n    # Write your code here\n    pass`;
+}
+function jDefault(t: string): string { return ({ integer:'0', decimal:'0.0', boolean:'false', string:'""', 'integer[]':'new int[0]', 'decimal[]':'new double[0]', 'string[]':'new String[0]' } as any)[t] || 'null'; }
+function cppDefault(t: string): string { return ({ integer:'0', decimal:'0.0', boolean:'false', string:'""', 'integer[]':'{}', 'decimal[]':'{}', 'string[]':'{}' } as any)[t] || '{}'; }
+function cDefault(t: string): string { return ({ integer:'0', decimal:'0.0', boolean:'0', string:'""' } as any)[t] || '0'; }
+
+// Conceptual driver preview shown to the teacher. String, not executed —
+// mirrors the real wrapper the run flow prepends to the submission.
+function execDriverPreview(lang: string, contract: FunctionContract): string {
+  const L = normalizeExecLang(lang);
+  const fname = contract.functionName || 'solve';
+  const argNames = contract.params.map(p => p.name || 'x');
+  if (L === 'Python')
+    return `# hidden driver — auto-generated at run time\nimport json, sys\n_tc = json.loads(sys.stdin.read())\n_ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')})\nprint(json.dumps(_ret))`;
+  if (L === 'JavaScript')
+    return `// hidden driver — auto-generated at run time\nconst _tc = JSON.parse(require('fs').readFileSync(0, 'utf8'));\nconst _ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')});\nconsole.log(JSON.stringify(_ret));`;
+  if (L === 'Java')
+    return `// hidden driver — auto-generated at run time\n// Reads {"p1":..,"p2":..} from stdin, calls new Solution().${fname}(...)\n// and prints the returned value.`;
+  if (L === 'C++')
+    return `// hidden driver — auto-generated at run time\n// Reads {"p1":..,"p2":..} from stdin, calls ${fname}(...)\n// and prints the returned value.`;
+  if (L === 'C')
+    return `/* hidden driver — auto-generated at run time */\n/* Reads {"p1":..,"p2":..} from stdin, calls ${fname}(...) and prints the return */`;
+  return `# hidden driver — auto-generated at run time\n# Reads a JSON test case from stdin, calls ${fname}(...) and prints the return.`;
+}
+
+// The REAL wrapper prepended to the student's submission when running function
+// mode. Only Python + JavaScript are fully wrapped — Java/C++/C fall back to
+// a compile-warning payload because a generic wrapper requires full JSON→type
+// deserialization the teacher can't customise here. The Run modal surfaces
+// this limitation clearly.
+function execBuildFunctionRunPayload(lang: string, contract: FunctionContract, solution: string): { source: string; supported: boolean } {
+  const L = normalizeExecLang(lang);
+  const fname = contract.functionName || 'solve';
+  const argNames = contract.params.map(p => p.name || 'x');
+  if (L === 'Python') {
+    const src = `${solution}\n\nif __name__ == "__main__":\n    import json, sys\n    _tc = json.loads(sys.stdin.read())\n    _ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')})\n    print(json.dumps(_ret))\n`;
+    return { source: src, supported: true };
+  }
+  if (L === 'JavaScript') {
+    const src = `${solution}\n\n(function(){\n  const _tc = JSON.parse(require('fs').readFileSync(0, 'utf8'));\n  const _ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')});\n  console.log(JSON.stringify(_ret));\n})();\n`;
+    return { source: src, supported: true };
+  }
+  return { source: solution, supported: false };
+}
+
+// Best-effort coerce of a teacher-authored literal into a real JS value so it
+// can be shipped to Piston as JSON. Accepts JSON, then numbers, then booleans,
+// then bare arrays with number literals, else returns the trimmed string.
+function coerceTcInput(raw: string): any {
+  const s = (raw ?? '').trim();
+  if (s === '') return '';
+  try { return JSON.parse(s); } catch {}
+  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+  if (/^-?\d*\.\d+$/.test(s)) return parseFloat(s);
+  if (s === 'true' || s === 'false') return s === 'true';
+  return s;
+}
+function tcInputsToPayload(tc: TC, params: FunctionParam[]): Record<string, any> {
+  const out: Record<string, any> = {};
+  params.forEach(p => { out[p.name] = coerceTcInput((tc.functionInputs || {})[p.name] || ''); });
+  return out;
+}
+
 const dbQuestionToFlow = (q: any): FlowQuestion => {
   // Normalize description into clean ProgContentBlock[] array
   const normalizeDescription = (desc: any): ProgContentBlock[] => {
@@ -623,6 +785,29 @@ const dbQuestionToFlow = (q: any): FlowQuestion => {
     isPreExisting: true,
     isLinkQuestion: q.isLinkQuestion === true,
     questionLink: q.questionLink || '',
+    starterCode: typeof q.starterCode === 'string' ? q.starterCode : '',
+    solutionCode: typeof q.solutionCode === 'string' ? q.solutionCode : '',
+    codeSetupLanguage: typeof q.codeSetupLanguage === 'string' ? q.codeSetupLanguage : undefined,
+    // ── Execution setup — backward-compat: legacy questions default to fullProgram ──
+    executionType: (q.executionType === 'function' || q.executionType === 'fullProgram')
+      ? q.executionType
+      : 'fullProgram',
+    functionContract: q.functionContract && typeof q.functionContract === 'object'
+      ? {
+          functionName: typeof q.functionContract.functionName === 'string' ? q.functionContract.functionName : '',
+          returnType: typeof q.functionContract.returnType === 'string' ? q.functionContract.returnType : 'integer',
+          params: Array.isArray(q.functionContract.params)
+            ? q.functionContract.params.map((p: any, i: number) => ({
+                id: p?.id || `fp-${Date.now()}-${i}-${Math.random().toString(36).slice(2,5)}`,
+                name: typeof p?.name === 'string' ? p.name : `p${i+1}`,
+                type: typeof p?.type === 'string' ? p.type : 'integer',
+              }))
+            : [],
+        }
+      : mkFunctionContract(),
+    startingExperience: (q.startingExperience === 'blank' || q.startingExperience === 'generated' || q.startingExperience === 'custom')
+      ? q.startingExperience
+      : (q.executionType === 'function' ? 'generated' : 'blank'),
   };
 };
 
@@ -696,7 +881,7 @@ const ProgImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
+      const res = await fetch('http://localhost:5533/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -3122,6 +3307,723 @@ const TitleEditor: React.FC<{
   );
 };
 // ═══════════════════════════════════════════════════════════════════════════════
+// EXECUTION SETUP — subsection component (Function vs Full Program, contract,
+// starter experience, driver preview). Author-side UI only; the payload it
+// mutates is owned by the parent form.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const EXEC_CARD_STYLE: React.CSSProperties = {
+  background: 'var(--lms-bg-white, #FFFFFF)',
+  border: '1px solid var(--lms-border, #E2E8F0)',
+  borderRadius: 12,
+  padding: '14px 16px',
+};
+const EXEC_OPT_CARD_ON: React.CSSProperties = {
+  border: '1.5px solid #E76F51',
+  background: '#FFF5F1',
+  boxShadow: '0 0 0 3px rgba(231,111,81,0.10)',
+};
+const EXEC_OPT_CARD_OFF: React.CSSProperties = {
+  border: '1.5px solid var(--lms-border, #E2E8F0)',
+  background: 'var(--lms-bg-white, #FFFFFF)',
+};
+
+const ExecutionSetupSection: React.FC<{
+  executionType: 'function' | 'fullProgram';
+  setExecutionType: (v: 'function' | 'fullProgram') => void;
+  functionContract: FunctionContract;
+  setFunctionContract: (v: FunctionContract) => void;
+  startingExperience: 'blank' | 'generated' | 'custom';
+  setStartingExperience: (v: 'blank' | 'generated' | 'custom') => void;
+  language: string;
+  showDriverPreview: boolean;
+  setShowDriverPreview: (v: boolean) => void;
+  disabled?: boolean;
+  functionNameError?: string;
+}> = ({
+  executionType, setExecutionType,
+  functionContract, setFunctionContract,
+  startingExperience, setStartingExperience,
+  language, showDriverPreview, setShowDriverPreview,
+  disabled, functionNameError,
+}) => {
+  const isFn = executionType === 'function';
+  const types = execDataTypesFor(language);
+
+  // Professional segmented control — white active pill on grey track, subtle
+  // shadow to lift the active option. No decorative icons or badges; the label
+  // does the work. Pattern matches modern segmented controls (Linear / Vercel).
+  const segBtn = (key: 'function' | 'fullProgram', label: string) => {
+    const on = executionType === key;
+    return (
+      <button
+        type="button"
+        onClick={() => { if (!disabled) setExecutionType(key); }}
+        disabled={disabled}
+        style={{
+          padding: '6px 18px', borderRadius: 6, border: 'none',
+          background: on ? '#FFFFFF' : 'transparent',
+          color: on ? '#0F172A' : '#64748B',
+          fontWeight: on ? 600 : 500, fontSize: 13, fontFamily: 'var(--lms-font)',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
+          opacity: disabled ? 0.6 : 1,
+          boxShadow: on ? '0 1px 2px rgba(15,23,42,0.08), 0 0 0 1px rgba(15,23,42,0.04)' : 'none',
+          letterSpacing: 0.1,
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  // Clickable starting-experience tile — radio-style indicator on the left
+  // gives an unmistakable "pick one" affordance, hover surface lifts to grey
+  // so it reads as a control, not a label.
+  const expTile = (
+    v: 'blank' | 'generated' | 'custom', label: string, recommended?: boolean,
+  ) => {
+    const on = startingExperience === v;
+    return (
+      <button
+        type="button"
+        onClick={() => { if (!disabled) setStartingExperience(v); }}
+        disabled={disabled}
+        onMouseEnter={e => { if (!disabled && !on) e.currentTarget.style.background = '#F8FAFC'; }}
+        onMouseLeave={e => { if (!disabled && !on) e.currentTarget.style.background = '#FFFFFF'; }}
+        style={{
+          padding: '10px 12px', borderRadius: 8, textAlign: 'left',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          border: on ? '1.5px solid #E76F51' : '1.5px solid #E2E8F0',
+          background: on ? '#FFF5F1' : '#FFFFFF',
+          boxShadow: on ? '0 0 0 3px rgba(231,111,81,0.10)' : '0 1px 2px rgba(15,23,42,0.04)',
+          transition: 'background 0.15s, border-color 0.15s, box-shadow 0.15s',
+          fontFamily: 'var(--lms-font)',
+          opacity: disabled ? 0.6 : 1,
+          display: 'flex', alignItems: 'center', gap: 10,
+          fontWeight: 600, fontSize: 13, color: on ? '#C55236' : '#0F172A',
+          minHeight: 40,
+        }}
+      >
+        {/* Radio-style indicator */}
+        <span style={{
+          flexShrink: 0,
+          width: 16, height: 16, borderRadius: '50%',
+          border: on ? '5px solid #E76F51' : '1.5px solid #CBD5E1',
+          background: '#FFFFFF',
+          transition: 'border 0.15s',
+        }} />
+        <span style={{ flex: 1 }}>{label}</span>
+        {recommended && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+            background: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0', letterSpacing: 0.2,
+            flexShrink: 0,
+          }}>Recommended</span>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <label
+            className="lms-section-label"
+            style={{ margin: 0, fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 700, letterSpacing: 0.35, color: '#0F172A', textTransform: 'uppercase' }}
+          >
+            Execution Setup <span style={{ color: '#DC2626' }}>*</span>
+          </label>
+          <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#64748B', fontFamily: 'var(--lms-font)' }}>
+            Choose how student submissions are executed and evaluated.
+          </p>
+        </div>
+      </div>
+
+      {/* Segmented switch — Function / Full Program */}
+      <div style={{
+        display: 'inline-flex', padding: 3, borderRadius: 8,
+        background: '#F1F5F9', alignSelf: 'flex-start', gap: 1,
+      }}>
+        {segBtn('function', 'Function')}
+        {segBtn('fullProgram', 'Full Program')}
+      </div>
+
+      {/* Function Contract */}
+      {isFn && (
+        <div style={EXEC_CARD_STYLE}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: '#0F172A', fontFamily: 'var(--lms-font)' }}>Function Contract</div>
+            <span style={{
+              fontFamily: 'ui-monospace,monospace', fontSize: 11, color: '#64748B',
+              padding: '2px 8px', borderRadius: 6, background: '#F1F5F9',
+            }}>{normalizeExecLang(language)}</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 10 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                Function Name <span style={{ color: '#DC2626' }}>*</span>
+              </label>
+              <input
+                className={`lms-input${functionNameError ? ' err' : ''}`}
+                value={functionContract.functionName}
+                onChange={e => setFunctionContract({ ...functionContract, functionName: e.target.value })}
+                placeholder="e.g. findMax"
+                disabled={disabled}
+              />
+              {functionNameError && (
+                <div style={{ fontSize: 11, color: '#DC2626', marginTop: 2 }}>{functionNameError}</div>
+              )}
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                Return Type <span style={{ color: '#DC2626' }}>*</span>
+              </label>
+              <select
+                className="lms-input"
+                value={functionContract.returnType}
+                onChange={e => setFunctionContract({ ...functionContract, returnType: e.target.value })}
+                disabled={disabled}
+              >
+                {types.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5 }}>Parameters</div>
+              <button
+                type="button"
+                className="lms-btn lms-btn-ghost-orange"
+                style={{ padding: '4px 10px', fontSize: 11 }}
+                onClick={() => setFunctionContract({
+                  ...functionContract,
+                  params: [...functionContract.params, mkFunctionParam(functionContract.params.length)],
+                })}
+                disabled={disabled}
+              >
+                + Add Parameter
+              </button>
+            </div>
+            {functionContract.params.length === 0 ? (
+              <div style={{
+                background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: 8, padding: '10px 12px',
+                fontSize: 12, color: '#475569',
+              }}>
+                Zero parameters is allowed. The driver will call the function with no arguments.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {functionContract.params.map((p, i) => (
+                  <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '1fr 180px auto auto auto', gap: 6, alignItems: 'center' }}>
+                    <input
+                      className="lms-input"
+                      value={p.name}
+                      onChange={e => {
+                        const next = [...functionContract.params];
+                        next[i] = { ...p, name: e.target.value };
+                        setFunctionContract({ ...functionContract, params: next });
+                      }}
+                      placeholder="name"
+                      disabled={disabled}
+                    />
+                    <select
+                      className="lms-input"
+                      value={p.type}
+                      onChange={e => {
+                        const next = [...functionContract.params];
+                        next[i] = { ...p, type: e.target.value };
+                        setFunctionContract({ ...functionContract, params: next });
+                      }}
+                      disabled={disabled}
+                    >
+                      {types.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button
+                      type="button" className="lms-icon-btn"
+                      style={{ background: '#F8FAFC' }}
+                      title="Move up" disabled={disabled || i === 0}
+                      onClick={() => {
+                        const next = [...functionContract.params];
+                        [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                        setFunctionContract({ ...functionContract, params: next });
+                      }}
+                    >↑</button>
+                    <button
+                      type="button" className="lms-icon-btn"
+                      style={{ background: '#F8FAFC' }}
+                      title="Move down" disabled={disabled || i === functionContract.params.length - 1}
+                      onClick={() => {
+                        const next = [...functionContract.params];
+                        [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                        setFunctionContract({ ...functionContract, params: next });
+                      }}
+                    >↓</button>
+                    <button
+                      type="button" className="lms-icon-btn lms-icon-btn-red"
+                      title="Remove parameter" disabled={disabled}
+                      onClick={() => setFunctionContract({
+                        ...functionContract,
+                        params: functionContract.params.filter((_, idx) => idx !== i),
+                      })}
+                    ><Trash2 size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Generated Function Signature</div>
+            <pre style={{
+              margin: 0, background: '#F1F5F9', padding: '10px 12px', borderRadius: 6,
+              fontFamily: 'ui-monospace,monospace', fontSize: 12, overflowX: 'auto',
+            }}>{execSignatureFor(language, functionContract)}</pre>
+          </div>
+        </div>
+      )}
+
+      {/* Student Starting Experience — bare tiles, no outer box or header */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isFn ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
+        gap: 8,
+      }}>
+        {expTile('blank', 'Blank Editor')}
+        {isFn && expTile('generated', 'Generated Starter', true)}
+        {expTile('custom', 'Custom Starter')}
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXECUTION PLAYGROUND MODALS — Run Test Cases, Try Function, Custom Input
+// All call the same Piston endpoint the existing Mock modal uses. They live
+// separately so the author's playground doesn't disturb the mock preview UI.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Resolve the form's language string (from exercise.programmingSettings.selectedLanguages)
+// to the canonical SupportedLanguage the shared Piston client expects.
+// Falls back to python so the run flow can still fire something sensible for
+// unknown labels — same fallback the multi-file editor uses.
+function resolveSupportedLang(lang: string): SupportedLanguage {
+  return normalizeLanguage(lang) || 'python';
+}
+
+// Wrapper around the shared runOnPiston client. Runs the wrapped source as a
+// SINGLE-file project (the auto-driver from execBuildFunctionRunPayload has
+// already been prepended for function mode) with the test case's stdin.
+async function runOne(lang: string, source: string, stdin: string, signal?: AbortSignal): Promise<RunResult> {
+  const L = resolveSupportedLang(lang);
+  return await runOnPiston({
+    language: L,
+    files: [{ path: `main.${L === 'python' ? 'py' : L === 'javascript' ? 'js' : L === 'typescript' ? 'ts' : L === 'java' ? 'Main.java' : L === 'cpp' ? 'cpp' : L === 'c' ? 'c' : 'go'}`, content: source, isEntryPoint: true }],
+    stdin,
+    signal,
+  });
+}
+
+// Categorise a shared RunResult into an outcome bucket we display in the
+// results table. Compile stderr precedes runtime stderr; any non-zero exit
+// with stderr = runtime error; SIGTERM/SIGKILL = timeout.
+type RunOutcome = 'pass' | 'fail' | 'compileErr' | 'runtimeErr' | 'timeout';
+interface RunOutcomeRow {
+  outcome: RunOutcome;
+  actual: string;
+  raw: string;
+  stderr: string;
+  exit: number | null;
+  signal: string | null;
+  runtimeMs?: number;
+}
+function classifyRun(res: RunResult, expected: string, elapsedMs?: number): RunOutcomeRow {
+  const compileErr = (res.compileError || '').trim();
+  const stderr = (res.stderr || '').trim();
+  const stdout = (res.stdout ?? res.output ?? '').toString();
+  const exit = res.code;
+  const signal = res.signal;
+  if (compileErr) return { outcome: 'compileErr', actual: '', raw: stdout, stderr: compileErr, exit, signal, runtimeMs: elapsedMs };
+  if (signal === 'SIGTERM' || signal === 'SIGKILL') return { outcome: 'timeout', actual: stdout.trim(), raw: stdout, stderr, exit, signal, runtimeMs: elapsedMs };
+  if (stderr && (exit == null || exit !== 0)) return { outcome: 'runtimeErr', actual: stdout.trim(), raw: stdout, stderr, exit, signal, runtimeMs: elapsedMs };
+  const actual = stdout.trim();
+  const expTrim = (expected ?? '').toString().trim();
+  return { outcome: actual === expTrim ? 'pass' : 'fail', actual, raw: stdout, stderr, exit, signal, runtimeMs: elapsedMs };
+}
+
+// Function-mode wrapper: prepends a hidden driver that reads a JSON test case
+// from stdin, calls the configured function, and prints the return value. The
+// student's own solutionCode is untouched.
+function buildFunctionRunSource(lang: string, contract: FunctionContract, solution: string): { source: string; supported: boolean } {
+  return execBuildFunctionRunPayload(lang, contract, solution);
+}
+// Full-program: the solution is run as-is; stdin is fed from the test case.
+function buildFullProgramRunSource(_lang: string, _contract: FunctionContract, solution: string): { source: string; supported: boolean } {
+  return { source: solution, supported: true };
+}
+
+// Compare the actual return (Piston stdout) to the expected literal. In
+// function mode both sides are JSON-serialisable so we compare structurally
+// when possible; falls back to a trimmed-string compare otherwise.
+function compareFunctionReturn(actualStdout: string, expected: string): boolean {
+  const a = (actualStdout ?? '').toString().trim();
+  const b = (expected ?? '').toString().trim();
+  if (a === b) return true;
+  try {
+    const av = JSON.parse(a);
+    const bv = JSON.parse(b);
+    return JSON.stringify(av) === JSON.stringify(bv);
+  } catch { /* fall through */ }
+  return false;
+}
+
+// ─── RUN TEST CASES MODAL ─────────────────────────────────────────────────
+const RunTestCasesModal: React.FC<{
+  language: string;
+  executionType: 'function' | 'fullProgram';
+  functionContract: FunctionContract;
+  solutionCode: string;
+  testCases: TC[];
+  onClose: () => void;
+}> = ({ language, executionType, functionContract, solutionCode, testCases, onClose }) => {
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<Array<{ tc: TC; result: RunOutcomeRow | null; error?: string }>>([]);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
+  const isFn = executionType === 'function';
+  const buildSource = isFn ? buildFunctionRunSource : buildFullProgramRunSource;
+
+  const run = async () => {
+    if (!solutionCode.trim()) {
+      // Represent as compile error per spec (empty submission).
+      setResults(testCases.map(tc => ({ tc, result: { outcome: 'compileErr', actual: '', raw: '', stderr: 'Solution Code is empty.', exit: null, signal: null } as RunOutcomeRow })));
+      return;
+    }
+    setRunning(true);
+    setResults([]);
+    // Serial to keep within the ~20-parallel Piston budget noted in memory.
+    const built = buildSource(language, functionContract, solutionCode);
+    if (!built.supported) {
+      // Function-mode driver only ships for Python + JavaScript today; others
+      // are flagged in the UI so the teacher knows to fall back to Full Program.
+      setResults(testCases.map(tc => ({ tc, result: null, error: `Function-mode driver for ${language} is not yet supported. Switch to Full Program mode for this language, or use Python / JavaScript.` })));
+      setRunning(false);
+      return;
+    }
+    const collected: Array<{ tc: TC; result: RunOutcomeRow | null; error?: string }> = [];
+    for (const tc of testCases) {
+      const stdin = isFn
+        ? JSON.stringify(tcInputsToPayload(tc, functionContract.params))
+        : (tc.input || '');
+      const t0 = performance.now();
+      try {
+        const res = await runOne(language, built.source, stdin);
+        const elapsed = res.time != null ? res.time : (performance.now() - t0);
+        // For function mode we still need a smarter compare (JSON-aware).
+        if (isFn) {
+          const classified = classifyRun(res, tc.expectedOutput || '', elapsed);
+          if (classified.outcome === 'fail' || classified.outcome === 'pass') {
+            const ok = compareFunctionReturn(classified.raw, tc.expectedOutput || '');
+            classified.outcome = ok ? 'pass' : 'fail';
+            classified.actual = (classified.raw || '').trim();
+          }
+          collected.push({ tc, result: classified });
+        } else {
+          collected.push({ tc, result: classifyRun(res, tc.expectedOutput || '', elapsed) });
+        }
+      } catch (err: any) {
+        collected.push({ tc, result: null, error: err?.message || 'Network error' });
+      }
+      setResults([...collected]);
+    }
+    setRunning(false);
+  };
+
+  useEffect(() => { run(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const passed = results.filter(r => r.result?.outcome === 'pass').length;
+  const failed = results.length - passed;
+
+  return (
+    <div className="lms-modal-backdrop">
+      <div style={{
+        background: '#FFFFFF', borderRadius: 14, width: 'min(960px, 96vw)', maxHeight: '88vh',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.22)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E2E8F0' }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>Run Test Cases — Results</div>
+          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
+        </div>
+        <div style={{ padding: '14px 18px', overflowY: 'auto', flex: 1 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            <span className="lms-badge" style={{ background: '#F1F5F9', color: '#334155', borderColor: '#E2E8F0' }}>Total: {testCases.length}</span>
+            <span className="lms-badge lms-badge-green">Passed: {passed}</span>
+            <span className="lms-badge" style={{ background: '#FEF2F2', color: '#DC2626', borderColor: '#FECACA' }}>Failed: {failed}</span>
+            {running && <span className="lms-badge" style={{ background: '#FFF7ED', color: '#C2410C', borderColor: '#FED7AA' }}>Running…</span>}
+          </div>
+          <div style={{ padding: '8px 12px', background: '#ECFEFF', border: '1px solid #A5F3FC', borderRadius: 8, color: '#0E7490', fontSize: 12, marginBottom: 10 }}>
+            {isFn
+              ? `The hidden driver was invoked with each test case and called ${functionContract.functionName || 'the configured function'}(...).`
+              : 'Stored Input was sent to stdin; program stdout was compared to Expected Output.'}
+          </div>
+          {results.map((row, i) => {
+            const r = row.result;
+            const outcome = r?.outcome;
+            const bar = outcome === 'pass' ? '#16A34A'
+              : outcome === 'compileErr' ? '#D97706'
+              : outcome === 'runtimeErr' ? '#D97706'
+              : outcome === 'timeout' ? '#D97706'
+              : outcome === 'fail' ? '#DC2626'
+              : '#94A3B8';
+            const label = outcome === 'pass' ? 'Passed'
+              : outcome === 'fail' ? 'Failed'
+              : outcome === 'compileErr' ? 'Compilation Error'
+              : outcome === 'runtimeErr' ? 'Runtime Error'
+              : outcome === 'timeout' ? 'Timed Out'
+              : row.error ? 'Error' : '—';
+            const open = expandedIdx === i;
+            return (
+              <div key={row.tc.id || i} style={{
+                border: '1px solid #E2E8F0', borderLeft: `3px solid ${bar}`,
+                borderRadius: 8, marginBottom: 8, overflow: 'hidden',
+              }}>
+                <div
+                  onClick={() => setExpandedIdx(open ? null : i)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}
+                >
+                  <span className="lms-badge" style={{
+                    background: outcome === 'pass' ? '#F0FDF4' : outcome === 'fail' ? '#FEF2F2' : '#FFFBEB',
+                    color: bar,
+                    borderColor: outcome === 'pass' ? '#BBF7D0' : outcome === 'fail' ? '#FECACA' : '#FDE68A',
+                  }}>{label}</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0F172A' }}>
+                    Test Case {i + 1}{row.tc.isSample ? ' · Sample' : ''}{row.tc.isHidden ? ' · Hidden' : ''}
+                  </span>
+                  <div style={{ flex: 1 }} />
+                  {r?.runtimeMs != null && (
+                    <span style={{ fontSize: 11, color: '#64748B' }}>runtime {Math.round(r.runtimeMs)}ms{r.exit != null ? ` · exit ${r.exit}` : ''}</span>
+                  )}
+                </div>
+                {open && (
+                  <div style={{ padding: '10px 14px', borderTop: '1px solid #E2E8F0', background: '#FCFCFD' }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>Input</div>
+                    <pre style={preStyle}>{isFn
+                      ? JSON.stringify(tcInputsToPayload(row.tc, functionContract.params), null, 2)
+                      : (row.tc.input || '(empty)')}</pre>
+                    <div style={{ ...labelStyle, marginTop: 8 }}>Expected</div>
+                    <pre style={preStyle}>{row.tc.expectedOutput || '(empty)'}</pre>
+                    <div style={{ ...labelStyle, marginTop: 8 }}>Actual</div>
+                    <pre style={preStyle}>{r?.actual || r?.raw || (row.error ? row.error : '(empty)')}</pre>
+                    {r?.stderr && (
+                      <>
+                        <div style={{ ...labelStyle, marginTop: 8, color: '#DC2626' }}>Stderr</div>
+                        <pre style={{ ...preStyle, background: '#FFF7F7', color: '#B91C1C' }}>{r.stderr}</pre>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
+          <button className="lms-btn lms-btn-orange" onClick={() => { setResults([]); run(); }} disabled={running}>
+            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Run Again
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const preStyle: React.CSSProperties = {
+  margin: '3px 0 0', background: '#F8FAFC', padding: '8px 10px', borderRadius: 6,
+  fontFamily: 'ui-monospace,monospace', fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+};
+const labelStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 };
+
+// ─── TRY FUNCTION MODAL ──────────────────────────────────────────────────
+const TryFunctionModal: React.FC<{
+  language: string;
+  functionContract: FunctionContract;
+  solutionCode: string;
+  onClose: () => void;
+}> = ({ language, functionContract, solutionCode, onClose }) => {
+  const [inputs, setInputs] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {};
+    functionContract.params.forEach(p => { seed[p.name] = ''; });
+    return seed;
+  });
+  const [running, setRunning] = useState(false);
+  const [output, setOutput] = useState<{ ok: boolean; text: string; stderr?: string } | null>(null);
+
+  const callExpr = `${functionContract.functionName || 'solve'}(${functionContract.params.map(p => JSON.stringify(coerceTcInput(inputs[p.name] || ''))).join(', ')})`;
+
+  const call = async () => {
+    if (!solutionCode.trim()) { setOutput({ ok: false, text: 'Solution Code is empty.' }); return; }
+    const built = execBuildFunctionRunPayload(language, functionContract, solutionCode);
+    if (!built.supported) { setOutput({ ok: false, text: `Function-mode driver for ${language} is not yet supported.` }); return; }
+    const payload: Record<string, any> = {};
+    functionContract.params.forEach(p => { payload[p.name] = coerceTcInput(inputs[p.name] || ''); });
+    setRunning(true);
+    try {
+      const res = await runOne(language, built.source, JSON.stringify(payload));
+      const compileErr = (res.compileError || '').trim();
+      const stderr = (res.stderr || '').trim();
+      const stdout = ((res.stdout ?? res.output) || '').toString().trim();
+      if (compileErr) setOutput({ ok: false, text: compileErr });
+      else if (stderr && (res.code ?? 0) !== 0) setOutput({ ok: false, text: stdout || '', stderr });
+      else setOutput({ ok: true, text: stdout || '(no output)' });
+    } catch (err: any) {
+      setOutput({ ok: false, text: err?.message || 'Network error' });
+    } finally { setRunning(false); }
+  };
+
+  return (
+    <div className="lms-modal-backdrop">
+      <div style={{
+        background: '#FFFFFF', borderRadius: 14, width: 'min(720px, 94vw)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.22)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E2E8F0' }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>Try Function</div>
+          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
+        </div>
+        <div style={{ padding: '14px 18px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {functionContract.params.length === 0 && (
+              <div style={{ fontSize: 12, color: '#64748B' }}>Function has no parameters — press Call Function to invoke it.</div>
+            )}
+            {functionContract.params.map(p => (
+              <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: 8, alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: '#0F172A' }}>{p.name}</div>
+                  <div style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11, color: '#64748B' }}>{p.type}</div>
+                </div>
+                <input
+                  className="lms-input"
+                  value={inputs[p.name] || ''}
+                  onChange={e => setInputs({ ...inputs, [p.name]: e.target.value })}
+                  placeholder={`value for ${p.name}`}
+                  style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12 }}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 10, padding: '8px 12px', background: '#F8FAFC', border: '1px dashed #E2E8F0', borderRadius: 8, fontSize: 12, color: '#475569' }}>
+            Call expression: <code style={{ fontFamily: 'ui-monospace,monospace' }}>{callExpr}</code>
+          </div>
+          <div style={{ marginTop: 10, minHeight: 96, background: '#0F172A', color: '#E2E8F0', fontFamily: 'ui-monospace,monospace', fontSize: 12.5, padding: '10px 14px', borderRadius: 8, whiteSpace: 'pre-wrap' }}>
+            {output == null && <span style={{ color: '#94A3B8' }}>Enter parameter values and press Call Function.</span>}
+            {output && (
+              <>
+                <div style={{ color: '#93C5FD' }}>{`$ ${callExpr}`}</div>
+                <div style={{ color: output.ok ? '#E2E8F0' : '#FCA5A5' }}>{output.ok ? `=> ${output.text}` : output.text}</div>
+                {output.stderr && <div style={{ color: '#FCA5A5' }}>{output.stderr}</div>}
+              </>
+            )}
+          </div>
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
+          <button className="lms-btn lms-btn-orange" onClick={call} disabled={running}>
+            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Call Function
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── CUSTOM INPUT MODAL (Full Program) ───────────────────────────────────
+const CustomInputModal: React.FC<{
+  language: string;
+  solutionCode: string;
+  onClose: () => void;
+}> = ({ language, solutionCode, onClose }) => {
+  const [stdin, setStdin] = useState('');
+  const [running, setRunning] = useState(false);
+  const [lines, setLines] = useState<Array<{ kind: 'sys' | 'out' | 'err' | 'in'; text: string }>>([{ kind: 'sys', text: 'Ready. Press Run to execute the Solution against your input.' }]);
+
+  const run = async () => {
+    if (!solutionCode.trim()) { setLines([{ kind: 'err', text: 'CompilationError: Solution Code is empty.' }]); return; }
+    setRunning(true);
+    setLines([{ kind: 'sys', text: '▶ Running program…' }]);
+    try {
+      const res = await runOne(language, solutionCode, stdin);
+      const compileErr = (res.compileError || '').trim();
+      const stderr = (res.stderr || '').trim();
+      const stdout = ((res.stdout ?? res.output) || '').toString();
+      const exit = res.code ?? 0;
+      const next: Array<{ kind: 'sys' | 'out' | 'err' | 'in'; text: string }> = [];
+      if (compileErr) next.push({ kind: 'err', text: compileErr });
+      if (stdout) next.push(...stdout.split('\n').map(l => ({ kind: 'out' as const, text: l })));
+      if (stderr) next.push(...stderr.split('\n').map(l => ({ kind: 'err' as const, text: l })));
+      if (!compileErr) next.push({ kind: 'sys', text: `✓ Process finished (exit ${exit})` });
+      setLines(next);
+    } catch (err: any) {
+      setLines([{ kind: 'err', text: err?.message || 'Network error' }]);
+    } finally { setRunning(false); }
+  };
+
+  return (
+    <div className="lms-modal-backdrop">
+      <div style={{
+        background: '#FFFFFF', borderRadius: 14, width: 'min(900px, 96vw)', maxHeight: '88vh',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.22)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E2E8F0' }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>Custom Input — Terminal</div>
+          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '14px 18px', overflowY: 'auto' }}>
+          <div>
+            <div style={labelStyle}>stdin</div>
+            <textarea
+              className="lms-textarea mono"
+              style={{ minHeight: 200, marginTop: 4 }}
+              value={stdin}
+              onChange={e => setStdin(e.target.value)}
+              placeholder={'Type stdin. Multiline is fine.\ne.g.\n5\n1 8 3 6 2'}
+            />
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button className="lms-btn lms-btn-orange" onClick={run} disabled={running}>
+                {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Run
+              </button>
+              <button className="lms-cancel-btn" onClick={() => setLines([])}>Clear</button>
+              <button className="lms-btn" style={{ background: '#FEF2F2', color: '#DC2626', borderColor: '#FECACA' }} onClick={() => setRunning(false)}>Stop</button>
+            </div>
+          </div>
+          <div>
+            <div style={labelStyle}>stdout</div>
+            <div style={{
+              background: '#0F172A', color: '#E2E8F0', fontFamily: 'ui-monospace,monospace',
+              fontSize: 12.5, padding: '10px 14px', borderRadius: 8, minHeight: 200, maxHeight: 320,
+              overflowY: 'auto', whiteSpace: 'pre-wrap',
+            }}>
+              {lines.map((l, i) => (
+                <div key={i} style={{
+                  color: l.kind === 'err' ? '#FCA5A5'
+                    : l.kind === 'in' ? '#FDBA74'
+                    : l.kind === 'sys' ? '#94A3B8' : '#E2E8F0',
+                }}>{l.text}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -3525,6 +4427,25 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
   // in an iframe instead of the question+compiler workspace.
   const [isLinkQuestion, setIsLinkQuestion] = useState(false);
   const [questionLink, setQuestionLink] = useState('');
+  // Code Setup — starter shown to students, solution used for validation.
+  const [starterCode, setStarterCode] = useState('');
+  const [solutionCode, setSolutionCode] = useState('');
+  const [codeSetupLanguage, setCodeSetupLanguage] = useState<string>(() => {
+    const langs: string[] = (exerciseData as any)?.fullExerciseData?.programmingSettings?.selectedLanguages || [];
+    return langs[0] || 'Python';
+  });
+
+  // ─── Execution Setup state (author-side, per-question) ─────────────────
+  // Backward-compat default is 'fullProgram' so existing stdin/stdout test
+  // cases keep grading the same way with no author action required.
+  const [executionType, setExecutionType] = useState<'function' | 'fullProgram'>('fullProgram');
+  const [functionContract, setFunctionContract] = useState<FunctionContract>(mkFunctionContract());
+  const [startingExperience, setStartingExperience] = useState<'blank' | 'generated' | 'custom'>('blank');
+  const [showDriverPreview, setShowDriverPreview] = useState<boolean>(false);
+  // Modal flags for the execution playground surfaces
+  const [showRunTestsModal, setShowRunTestsModal] = useState<boolean>(false);
+  const [showTryFunctionModal, setShowTryFunctionModal] = useState<boolean>(false);
+  const [showCustomInputModal, setShowCustomInputModal] = useState<boolean>(false);
 
   const [showPreview, setShowPreview] = useState(false);
   const [showMockModal, setShowMockModal] = useState(false);
@@ -3645,6 +4566,7 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
   const scoreSectionRef = useRef<HTMLDivElement>(null);
   const titleSectionRef = useRef<HTMLDivElement>(null);
   const descSectionRef = useRef<HTMLDivElement>(null);
+  const codeSetupSectionRef = useRef<HTMLDivElement>(null);
   const constraintsSectionRef = useRef<HTMLDivElement>(null);
   const testcasesSectionRef = useRef<HTMLDivElement>(null);
   const stickyToolbarRef = useRef<HTMLDivElement>(null);
@@ -3657,6 +4579,7 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
     const order: { key: string; ref: React.RefObject<HTMLDivElement | null> }[] = [
       { key: 'title', ref: titleSectionRef },
       { key: 'description', ref: descSectionRef },
+      { key: 'solutionCode', ref: codeSetupSectionRef },
       { key: 'constraints', ref: constraintsSectionRef },
       { key: 'testcases', ref: testcasesSectionRef },
     ];
@@ -3854,6 +4777,8 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
           isHidden: tc.isHidden || false,
           isSample: tc.isSample ?? i === 0,
           description: tc.explanation || `Test Case ${i + 1}`,
+          functionInputs: (tc.functionInputs && typeof tc.functionInputs === 'object')
+            ? { ...tc.functionInputs } : undefined,
         }))
         : [mkTC(0)]
     );
@@ -3867,6 +4792,37 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
     );
     setIsLinkQuestion(q.isLinkQuestion === true);
     setQuestionLink(q.questionLink || '');
+    // Code Setup — starter/solution/lang round-trip cleanly.
+    setStarterCode(typeof (q as any).starterCode === 'string' ? (q as any).starterCode : '');
+    setSolutionCode(typeof (q as any).solutionCode === 'string' ? (q as any).solutionCode : '');
+    if (typeof (q as any).codeSetupLanguage === 'string' && (q as any).codeSetupLanguage) {
+      setCodeSetupLanguage((q as any).codeSetupLanguage);
+    }
+    // ── Execution setup — hydrate w/ backward-compat defaults ──────────────
+    const et = ((q as any).executionType === 'function' || (q as any).executionType === 'fullProgram')
+      ? (q as any).executionType
+      : 'fullProgram';
+    setExecutionType(et);
+    const rawFc = (q as any).functionContract;
+    setFunctionContract(
+      rawFc && typeof rawFc === 'object'
+        ? {
+            functionName: typeof rawFc.functionName === 'string' ? rawFc.functionName : '',
+            returnType: typeof rawFc.returnType === 'string' ? rawFc.returnType : 'integer',
+            params: Array.isArray(rawFc.params) ? rawFc.params.map((p: any, i: number) => ({
+              id: p?.id || `fp-${Date.now()}-${i}-${Math.random().toString(36).slice(2,5)}`,
+              name: typeof p?.name === 'string' ? p.name : `p${i+1}`,
+              type: typeof p?.type === 'string' ? p.type : 'integer',
+            })) : [],
+          }
+        : mkFunctionContract()
+    );
+    const rawSe = (q as any).startingExperience;
+    setStartingExperience(
+      (rawSe === 'blank' || rawSe === 'generated' || rawSe === 'custom')
+        ? rawSe
+        : (et === 'function' ? 'generated' : 'blank')
+    );
     setErrs({});
     setTouched(new Set());
     setIsEditMode(!!(getServerId(q)));
@@ -3878,6 +4834,11 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
     setTL(2000); setML(256); setTcs([mkTC(0)]); setErrs({}); setTouched(new Set()); setIsEditMode(false);
     setAiTestCasesCount(null);
     setIsLinkQuestion(false); setQuestionLink('');
+    setStarterCode(''); setSolutionCode('');
+    // Execution setup back to defaults (fullProgram + blank editor)
+    setExecutionType('fullProgram');
+    setFunctionContract(mkFunctionContract());
+    setStartingExperience('blank');
   };
 
   const snapshotForm = (overrides?: Partial<FlowQuestion>): FlowQuestion => {
@@ -3907,6 +4868,7 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
         points: 1,
         explanation: tc.description || `Test Case ${i + 1}`,
         sequence: i,
+        ...(tc.functionInputs ? { functionInputs: tc.functionInputs } : {}),
       })),
       constraints: constraints.filter(c => c.trim()),
       hints: allHints,
@@ -3921,6 +4883,12 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
       aiTestCasesCount,
       isLinkQuestion,
       questionLink: questionLink.trim(),
+      starterCode,
+      solutionCode,
+      codeSetupLanguage,
+      executionType,
+      functionContract,
+      startingExperience,
       ...overrides,
     };
   };
@@ -3976,8 +4944,9 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
         points: 1,
         explanation: tc.description || `Test Case ${i + 1}`,
         sequence: i,
+        ...(tc.functionInputs ? { functionInputs: tc.functionInputs } : {}),
       })),
-      solutions: { startedCode: '', functionName: 'main', language: 'python' },
+      solutions: { startedCode: '', functionName: functionContract.functionName || 'main', language: (codeSetupLanguage || 'python').toLowerCase() },
       timeLimit,
       memoryLimit: memLimit,
       isActive: true,
@@ -3991,6 +4960,33 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
       isLinkQuestion,
       questionLink: questionLink.trim(),
       ...(isLinkQuestion && !safeTitle ? { title: questionLink.trim() } : {}),
+      // Code Setup — starterCode goes to the student attempt UI on load;
+      // solutionCode is author-only and MUST be filtered on the student-facing
+      // pedagogy response by the server layer.
+      // In Blank Editor mode we send an empty starter regardless of what the
+      // teacher previously typed — otherwise a stale Custom Starter would leak
+      // through and pre-fill the student editor.
+      // In Generated Starter mode we materialise the skeleton at save time so
+      // the student attempt UI can render it without knowing about the
+      // contract; the client-side render can still recompute it live for
+      // preview parity.
+      starterCode: isLinkQuestion
+        ? ''
+        : (startingExperience === 'blank'
+            ? ''
+            : startingExperience === 'generated'
+              ? execGeneratedStarter(codeSetupLanguage || 'Python', functionContract)
+              : (starterCode || '')),
+      solutionCode: isLinkQuestion ? '' : (solutionCode || ''),
+      codeSetupLanguage: isLinkQuestion ? undefined : (codeSetupLanguage || undefined),
+      // ── Execution setup — persist alongside legacy fields ──────────────
+      // The server should whitelist these on the programming-question schemas
+      // so they round-trip through /addQuestion and /updateQuestion; until it
+      // does, they will be silently dropped (matches the memory note on the
+      // step-scoped payload whitelist gotcha).
+      executionType: isLinkQuestion ? undefined : executionType,
+      functionContract: isLinkQuestion ? undefined : functionContract,
+      startingExperience: isLinkQuestion ? undefined : startingExperience,
     };
   };
   const handleEditClick = () => setIsEditMode(true);
@@ -4046,7 +5042,7 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
     }
 
     // ── 5. Create a new empty question for difficulty d ──
-    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: '', solutionCode: '' };
     const newFlow = [...flowAfterDbLoad, newQ];
     flowQuestionsRef.current = newFlow; setFlowQuestions(newFlow);
     const newIdx = newFlow.length - 1; currentIndexRef.current = newIdx; setCurrentIndex(newIdx); setCurrentDiff(d);
@@ -4121,6 +5117,8 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
           isSaved: false,
           isDirty: false,
           isPreExisting: false,
+          starterCode: '',
+          solutionCode: '',
         };
         newFlow.push(emptyQ);
         newIndex = 0;
@@ -4166,6 +5164,11 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
     setTL(2000);
     setML(256);
     setTcs([mkTC(0)]);
+    setStarterCode('');
+    setSolutionCode('');
+    setExecutionType('fullProgram');
+    setFunctionContract(mkFunctionContract());
+    setStartingExperience('blank');
     setErrs({});
     setTouched(new Set());
     setIsEditMode(false);
@@ -4357,6 +5360,28 @@ const handleBankSelectedQuestions = useCallback((selected: any[], sourceTag?: st
       hints: hintsList,
       timeLimit: q.timeLimit || 2000,
       memoryLimit: q.memoryLimit || 256,
+      starterCode: typeof q.starterCode === 'string' ? q.starterCode : '',
+      solutionCode: typeof q.solutionCode === 'string' ? q.solutionCode : '',
+      codeSetupLanguage: typeof q.codeSetupLanguage === 'string' ? q.codeSetupLanguage : undefined,
+      // ── Execution setup — pass through with backward-compat defaults ──
+      executionType: (q.executionType === 'function' || q.executionType === 'fullProgram')
+        ? q.executionType : 'fullProgram',
+      functionContract: q.functionContract && typeof q.functionContract === 'object'
+        ? {
+            functionName: typeof q.functionContract.functionName === 'string' ? q.functionContract.functionName : '',
+            returnType: typeof q.functionContract.returnType === 'string' ? q.functionContract.returnType : 'integer',
+            params: Array.isArray(q.functionContract.params)
+              ? q.functionContract.params.map((p: any, i: number) => ({
+                  id: p?.id || `fp-${Date.now()}-${i}-${Math.random().toString(36).slice(2,5)}`,
+                  name: typeof p?.name === 'string' ? p.name : `p${i+1}`,
+                  type: typeof p?.type === 'string' ? p.type : 'integer',
+                }))
+              : [],
+          }
+        : mkFunctionContract(),
+      startingExperience: (q.startingExperience === 'blank' || q.startingExperience === 'generated' || q.startingExperience === 'custom')
+        ? q.startingExperience
+        : (q.executionType === 'function' ? 'generated' : 'blank'),
     };
   };
 
@@ -4412,6 +5437,12 @@ const handleBankSelectedQuestions = useCallback((selected: any[], sourceTag?: st
       isSaved: false,
       isDirty: false,
       isPreExisting: false,
+      starterCode: (base as any).starterCode || '',
+      solutionCode: (base as any).solutionCode || '',
+      codeSetupLanguage: (base as any).codeSetupLanguage,
+      executionType: (base as any).executionType || 'fullProgram',
+      functionContract: (base as any).functionContract || mkFunctionContract(),
+      startingExperience: (base as any).startingExperience || 'blank',
     };
     return newQ;
   });
@@ -4724,6 +5755,14 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
   const reopenSourceModalForBlankSlot = () => {
     if (isEditing) return;
 
+    // The teacher explicitly dismissed the picker for THIS slot. The re-pop
+    // rule below ("its modal IS the flow") is meant to stop someone drifting
+    // into a dead editor by accident — it is not meant to trap them: without
+    // this check an explicit close re-opens instantly and the modal cannot be
+    // escaped at all. The flag is cleared on every slot / difficulty change,
+    // so the guidance returns the moment they move on.
+    if (autoReopenSuppressedRef.current) return;
+
     // Manual can still take a question in this very cell — the blank editor is
     // the correct landing, no modal on top of it.
     if (manualHasRoomHere()) return;
@@ -4788,6 +5827,10 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
   const advanceAfterSave = (savedId: string | undefined, savedLocalId?: string) => {
     const flow = flowQuestionsRef.current;
     const idx  = currentIndexRef.current;
+
+    // Moving to a different slot ends the dismissal: the teacher opted out of
+    // the picker for the slot they were ON, not for the rest of the exercise.
+    autoReopenSuppressedRef.current = false;
 
     // Handle Previous → Return-to-original-position case
     if (returnIndexRef.current !== null) {
@@ -5007,8 +6050,17 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
     if (!titleText && !titleBlocks.some(b => b.type === 'image' || b.type === 'code')) e.title = 'Title is required';
     const descText = descBlocks.filter(b => b.type === 'text').map(b => (b as any).value).join(' ').trim();
     if (!descText && !descBlocks.some(b => b.type === 'image' || b.type === 'code')) e.description = 'Description is required';
+    if (isStringSolutionEmpty(solutionCode)) e.solutionCode = 'Solution code is required';
     if (!constraints.some(c => c.trim())) e.constraints = 'At least one constraint is required';
-    if (!tcs.some(tc => tc.input.trim() && tc.expectedOutput.trim())) e.testcases = 'At least one test case with input & output is required';
+    if (executionType === 'function') {
+      if (!functionContract.functionName.trim()) e.functionName = 'Function name is required';
+      // Function-mode test cases must supply an expected return; parameter
+      // input fields are allowed to be empty (represents the default value).
+      const hasValidFnTc = tcs.some(tc => (tc.expectedOutput || '').toString().trim() || Object.values(tc.functionInputs || {}).some(v => (v || '').toString().trim()));
+      if (!hasValidFnTc) e.testcases = 'At least one function test case with an expected return is required';
+    } else {
+      if (!tcs.some(tc => tc.input.trim() && tc.expectedOutput.trim())) e.testcases = 'At least one test case with input & output is required';
+    }
     const currentQ = flowQuestions[currentIndex]; const dbQsForDiff = getDbQuestionsForDiff(currentDiff);
     if (!isGeneral && isScoreEditable(currentDiff)) {
       const sType = getScoringType(currentDiff);
@@ -5707,7 +6759,19 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                   width: '100%',
                   appearance: 'none'
                 }}>
-                {getConfiguredDiffs().map(d => {
+                {/* Every difficulty is listed so the teacher can see the shape
+                    of the exercise at a glance. Levels this exercise did not
+                    configure stay in the list but are DISABLED and say so —
+                    silently omitting them made it look like the dropdown was
+                    broken ("where did Medium go?"). */}
+                {(['easy', 'medium', 'hard'] as Diff[]).map(d => {
+                  if (!getConfiguredDiffs().includes(d)) {
+                    return (
+                      <option key={d} value={d} disabled>
+                        {d.charAt(0).toUpperCase() + d.slice(1)} — not configured
+                      </option>
+                    );
+                  }
                   const quota = getQuotaForDiff(d);
                   const rem = getRemainingSlots(d);
                   const used = quota - rem;
@@ -5729,6 +6793,25 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
             <span style={{ fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 600, color: remainingSlots > 0 ? s.text : 'var(--lms-success)' }}>
               {remainingSlots > 0 ? `${remainingSlots} question${remainingSlots !== 1 ? 's' : ''} remaining` : '✓ All Questions filled'}
             </span>
+            {/* Name the greyed-out levels explicitly — a disabled <option> is
+                easy to miss, and the reason it is disabled lives on the
+                exercise's Question Configuration, not on this screen. */}
+            {(() => {
+              const configured = getConfiguredDiffs();
+              const missing = (['easy', 'medium', 'hard'] as Diff[]).filter(d => !configured.includes(d));
+              if (!missing.length || configured.length === 0) return null;
+              return (
+                <span style={{
+                  fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 600,
+                  color: 'var(--lms-text-muted)', background: 'var(--lms-bg-surface2)',
+                  border: '1px solid var(--lms-border)', borderRadius: 8,
+                  padding: '3px 9px', flexShrink: 0,
+                }}
+                  title="Set question counts for these levels in the exercise's Question Configuration to enable them.">
+                  {missing.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(' & ')} not configured
+                </span>
+              );
+            })()}
             {/* {totalSlots > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 280 }}>
                 <div style={{ flex: 1, height: 6, background: 'var(--lms-bg-surface2)', borderRadius: 3, overflow: 'hidden' }}>
@@ -6113,6 +7196,56 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               </div>
             </div>
 
+            {/* ── Execution Setup (Function vs Full Program + starter experience) ── */}
+            <ExecutionSetupSection
+              executionType={executionType}
+              setExecutionType={setExecutionType}
+              functionContract={functionContract}
+              setFunctionContract={setFunctionContract}
+              startingExperience={startingExperience}
+              setStartingExperience={setStartingExperience}
+              language={codeSetupLanguage}
+              showDriverPreview={showDriverPreview}
+              setShowDriverPreview={setShowDriverPreview}
+              disabled={isFormDisabled}
+              functionNameError={touched.has('functionName') ? errs.functionName : undefined}
+            />
+
+            {/* ── Code Setup ── */}
+            <div ref={codeSetupSectionRef}>
+              <CodeSetupSection
+                variant="programming"
+                starterCode={starterCode}
+                onStarterChange={setStarterCode}
+                solutionCode={solutionCode}
+                onSolutionChange={v => {
+                  setSolutionCode(v);
+                  if (errs.solutionCode && v.trim()) setErrs(p => { const n = { ...p }; delete n.solutionCode; return n; });
+                }}
+                disabled={isFormDisabled}
+                languages={(exerciseData as any)?.fullExerciseData?.programmingSettings?.selectedLanguages}
+                language={codeSetupLanguage}
+                onLanguageChange={setCodeSetupLanguage}
+                solutionError={touched.has('solutionCode') ? errs.solutionCode : undefined}
+                onSolutionBlur={() => setTouched(p => new Set(p).add('solutionCode'))}
+                startingExperience={startingExperience}
+                generatedStarter={execGeneratedStarter(codeSetupLanguage || 'Python', functionContract)}
+                customStarterWarning={
+                  (executionType === 'function' && startingExperience === 'custom' && starterCode && functionContract.functionName &&
+                    !starterCode.includes(functionContract.functionName))
+                    ? (
+                      <div style={{
+                        margin: '6px 10px 10px', padding: '8px 10px', background: '#FFFBEB',
+                        border: '1px solid #FDE68A', borderRadius: 8, color: '#92400E', fontSize: 11.5,
+                      }}>
+                        Custom starter does not contain the configured function name &ldquo;{functionContract.functionName}&rdquo;. Students may not know where to write their solution.
+                      </div>
+                    )
+                    : null
+                }
+              />
+            </div>
+
             {/* ── Constraints ── */}
             <div ref={constraintsSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -6146,24 +7279,71 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               </div>
             </div>
 
-            {/* ── Test Cases ── */}
+            {/* ── Test Cases (branch on Execution Setup mode) ── */}
             <div ref={testcasesSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <label className="lms-section-label" style={{ margin: 0 }}>
-                    Test Cases <span style={{ color: 'var(--lms-text-muted)' }}>*</span>
-                  </label>
-                  {errs.testcases && touched.has('testcases') && (
-                    <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)' }}>— {errs.testcases}</span>
-                  )}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <label className="lms-section-label" style={{ margin: 0 }}>
+                      Test Cases <span style={{ color: 'var(--lms-text-muted)' }}>*</span>
+                    </label>
+                    {errs.testcases && touched.has('testcases') && (
+                      <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)' }}>— {errs.testcases}</span>
+                    )}
+                  </div>
+                  <p style={{ fontFamily: 'var(--lms-font)', fontSize: 10.5, color: 'var(--lms-text-muted)' }}>Test Case 1 is the sample and cannot be deleted. Add hidden cases for grading.</p>
                 </div>
-                <p style={{ fontFamily: 'var(--lms-font)', fontSize: 10.5, color: 'var(--lms-text-muted)' }}>Test Case 1 is the sample. Add hidden cases for grading.</p>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {executionType === 'function' ? (
+                    <button
+                      type="button"
+                      className="lms-btn lms-btn-ghost-orange"
+                      style={{ padding: '5px 12px', fontSize: 11 }}
+                      disabled={isFormDisabled}
+                      onClick={() => setShowTryFunctionModal(true)}
+                    ><Play size={11} /> Try Function</button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="lms-btn lms-btn-ghost-orange"
+                      style={{ padding: '5px 12px', fontSize: 11 }}
+                      disabled={isFormDisabled}
+                      onClick={() => setShowCustomInputModal(true)}
+                    ><Play size={11} /> Custom Input</button>
+                  )}
+                  <button
+                    type="button"
+                    className="lms-btn lms-btn-orange"
+                    style={{ padding: '5px 12px', fontSize: 11 }}
+                    disabled={isFormDisabled}
+                    onClick={() => {
+                      // Cheap pre-flight — surface obvious problems without a round trip.
+                      if (isStringSolutionEmpty(solutionCode)) {
+                        setErrs(p => ({ ...p, solutionCode: 'Solution code is required to run tests' }));
+                        setTouched(p => new Set(p).add('solutionCode'));
+                        setValidationToast(['Solution Code is empty']);
+                        setTimeout(() => setValidationToast([]), 3000);
+                        return;
+                      }
+                      setShowRunTestsModal(true);
+                    }}
+                  ><Play size={11} /> Run Test Cases</button>
+                </div>
               </div>
+
+              <div style={{
+                padding: '8px 12px', background: '#ECFEFF', border: '1px solid #A5F3FC',
+                borderRadius: 8, color: '#0E7490', fontSize: 12, lineHeight: 1.5,
+              }}>
+                {executionType === 'function'
+                  ? `Your platform creates a hidden driver, loads the student submission, calls ${functionContract.functionName || 'the configured function'} with each test case, and compares the returned value.`
+                  : 'Stored Input is sent to stdin automatically. Program stdout is compared with Expected Output.'}
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {tcs.map((tc, i) => (
-                  <div key={tc.id}
-                    style={{ border: '1.5px solid var(--lms-border)', borderRadius: 'var(--lms-radius-md)', padding: 12, background: i === 0 ? 'var(--lms-bg-white)' : 'var(--lms-bg-surface)', transition: 'all 0.15s' }}
-                    className="group">
+                {tcs.map((tc, i) => {
+                  const rowStyle: React.CSSProperties = { border: '1.5px solid var(--lms-border)', borderRadius: 'var(--lms-radius-md)', padding: 12, background: i === 0 ? 'var(--lms-bg-white)' : 'var(--lms-bg-surface)', transition: 'all 0.15s' };
+                  const headerRow = (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: i === 0 ? 'var(--lms-orange-100)' : 'var(--lms-bg-surface2)', color: i === 0 ? '#c85a30' : 'var(--lms-text-sec)' }}>
@@ -6189,24 +7369,85 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                         )}
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div>
-                        <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Input (Click Enter to give multiple inputs)</label>
-                        <TA value={tc.input} onChange={v => updTC(tc.id, 'input', v)} placeholder="stdin…" rows={3} mono disabled={isFormDisabled} />
+                  );
+                  if (executionType === 'function') {
+                    // Structured inputs per parameter + expected return value.
+                    const fnInputs = tc.functionInputs || {};
+                    return (
+                      <div key={tc.id} style={rowStyle} className="group">
+                        {headerRow}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {functionContract.params.length === 0 && (
+                            <div style={{ fontSize: 11.5, color: 'var(--lms-text-muted)' }}>
+                              This function has no parameters. Enter only the expected return below.
+                            </div>
+                          )}
+                          {functionContract.params.map(p => (
+                            <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: 8, alignItems: 'center' }}>
+                              <div>
+                                <div style={{ fontWeight: 700, fontSize: 12, color: '#0F172A' }}>{p.name}</div>
+                                <div style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11, color: '#64748B' }}>{p.type}</div>
+                              </div>
+                              <input
+                                className="lms-input mono"
+                                value={fnInputs[p.name] || ''}
+                                placeholder={`value for ${p.name}`}
+                                disabled={isFormDisabled}
+                                onChange={e => {
+                                  const nextInputs = { ...(fnInputs || {}), [p.name]: e.target.value };
+                                  setTcs(prev => prev.map(x => x.id === tc.id ? { ...x, functionInputs: nextInputs } : x));
+                                }}
+                                style={{ fontSize: 12 }}
+                              />
+                            </div>
+                          ))}
+                          <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: 8, alignItems: 'center' }}>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 12, color: '#0F172A' }}>Expected Return</div>
+                              <div style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11, color: '#64748B' }}>{functionContract.returnType}</div>
+                            </div>
+                            <input
+                              className="lms-input mono"
+                              value={tc.expectedOutput}
+                              placeholder="expected return value (JSON-encoded)"
+                              disabled={isFormDisabled}
+                              onChange={e => updTC(tc.id, 'expectedOutput', e.target.value)}
+                              style={{ fontSize: 12 }}
+                            />
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 8 }}>
+                          <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Explanation <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+                          <input value={tc.description} onChange={e => updTC(tc.id, 'description', e.target.value)}
+                            placeholder="Briefly explain what this test case verifies…"
+                            disabled={isFormDisabled} className="lms-input" style={{ fontSize: 12 }} />
+                        </div>
                       </div>
-                      <div>
-                        <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Expected Output</label>
-                        <TA value={tc.expectedOutput} onChange={v => updTC(tc.id, 'expectedOutput', v)} placeholder="expected stdout…" rows={3} mono disabled={isFormDisabled} />
+                    );
+                  }
+                  // Full-program mode — original stdin / stdout inputs.
+                  return (
+                    <div key={tc.id} style={rowStyle} className="group">
+                      {headerRow}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Input (Click Enter to give multiple inputs)</label>
+                          <TA value={tc.input} onChange={v => updTC(tc.id, 'input', v)} placeholder="stdin…" rows={3} mono disabled={isFormDisabled} />
+                        </div>
+                        <div>
+                          <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Expected Output</label>
+                          <TA value={tc.expectedOutput} onChange={v => updTC(tc.id, 'expectedOutput', v)} placeholder="expected stdout…" rows={3} mono disabled={isFormDisabled} />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Explanation <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+                        <input value={tc.description} onChange={e => updTC(tc.id, 'description', e.target.value)}
+                          placeholder="Briefly explain what this test case verifies…"
+                          disabled={isFormDisabled} className="lms-input" style={{ fontSize: 12 }} />
                       </div>
                     </div>
-                    <div style={{ marginTop: 8 }}>
-                      <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Explanation <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
-                      <input value={tc.description} onChange={e => updTC(tc.id, 'description', e.target.value)}
-                        placeholder="Briefly explain what this test case verifies…"
-                        disabled={isFormDisabled} className="lms-input" style={{ fontSize: 12 }} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={addTC} disabled={isFormDisabled}
@@ -7318,6 +8559,33 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
         </div>
       )}
 
+      {/* ── Execution playground modals — Run / Try / Custom Input ── */}
+      {showRunTestsModal && (
+        <RunTestCasesModal
+          language={codeSetupLanguage || 'Python'}
+          executionType={executionType}
+          functionContract={functionContract}
+          solutionCode={solutionCode}
+          testCases={tcs}
+          onClose={() => setShowRunTestsModal(false)}
+        />
+      )}
+      {showTryFunctionModal && executionType === 'function' && (
+        <TryFunctionModal
+          language={codeSetupLanguage || 'Python'}
+          functionContract={functionContract}
+          solutionCode={solutionCode}
+          onClose={() => setShowTryFunctionModal(false)}
+        />
+      )}
+      {showCustomInputModal && executionType === 'fullProgram' && (
+        <CustomInputModal
+          language={codeSetupLanguage || 'Python'}
+          solutionCode={solutionCode}
+          onClose={() => setShowCustomInputModal(false)}
+        />
+      )}
+
       {/* Clear Confirm Dialog */}
       {showClearConfirm && (
         <div className="lms-modal-backdrop">
@@ -7498,7 +8766,24 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
     ) {
       onClose();
       return; // form is tearing down — no re-route on top of it
-    } else if (autoOpenSource === 'ai' && sourceModalAutoOpenedRef.current) {
+    }
+    // Dismissed with nothing generated. The teacher is backing out of the
+    // whole "add a question" step, not just this one source — so close the
+    // editor too and let the HOST show its Add Question chooser. Landing on a
+    // blank editor they never asked for is the thing being fixed here.
+    //
+    // The one exception is unsaved work: tearing the form down would discard
+    // it (the bug the narrow branch above was written for), so in that case
+    // the editor stays and the in-place source menu opens instead.
+    if (!sourceModalAddedRef.current) {
+      autoReopenSuppressedRef.current = true;
+      if (!hasUnsavedFormChanges) {
+        onClose();
+        return; // form is tearing down — no re-route on top of it
+      }
+      setShowAddDropdown(true);
+    }
+    if (autoOpenSource === 'ai' && sourceModalAutoOpenedRef.current) {
       // Keep the form on screen and stop re-popping. Reset the pending source
       // to scratch-manual so anything the teacher types now is stamped as a
       // manual question (mkPayload reads pendingSourceRef.current at 3878) —

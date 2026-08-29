@@ -1,7 +1,10 @@
 "use client";
 
 import React from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { MoreVertical, ChevronDown, MessageSquare, ClipboardCheck, BarChart3, ShieldCheck, ShieldX } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import type { StudentProgress } from "../types/liveDashboard.types";
 import { deriveTestStatus } from "./StudentRow";
 import type { QuestionBreakdownRow } from "../utils/computeStudentMarks";
@@ -9,43 +12,45 @@ import type { QuestionBreakdownRow } from "../utils/computeStudentMarks";
 interface ReportRowProps {
   student: StudentProgress;
   index: number;
-  /** When true, the leading chevron column is rendered and the row can be
-   *  expanded inline. When false the chevron column is absent entirely — the
-   *  row matches the column layout `REPORT_HEADERS_BASE` defines. */
-  isDetailedReport: boolean;
-  /** Whether this row's inline detail panel is currently open. Controlled
-   *  from the parent so only one row is expanded at a time (accordion). */
+  /** Whether this row's inline detail panel is currently open. Controlled by
+   *  the parent so only one row is expanded at a time (accordion). */
   isExpanded: boolean;
-  /** Called with this student's id when the chevron is clicked. */
+  /** Toggle the per-question breakdown for this student. */
   onToggleExpand: (studentId: string) => void;
-  /** Per-question breakdown for THIS student. Passed only when expanded —
-   *  `null` while it's still being computed, `undefined` for collapsed rows
-   *  so memoized siblings stay stable. */
+  /** Wire the kebab's "Send Message" item. */
+  onSendMessage: (studentId: string) => void;
+  /** Wire the kebab's "Check Answer" item (only shown when submittable). */
+  onCheckAnswers: (studentId: string) => void;
+  /** Trainer approves the student's pending resume request. Only rendered
+   *  when the row is in 'awaiting-approval' state. */
+  onApproveResume?: (studentId: string) => void;
+  /** Trainer rejects the student's pending resume request. Only rendered
+   *  when the row is in 'awaiting-approval' state. */
+  onRejectResume?: (studentId: string) => void;
+  /** Per-question breakdown for THIS student. `null` while it's being
+   *  computed, `undefined` for collapsed rows so memoization stays stable. */
   breakdown: QuestionBreakdownRow[] | null | undefined;
-  /** Total column count for the detail panel's colSpan. The parent owns the
-   *  header layout so it's the source of truth. */
+  /** Total column count for the detail panel's colSpan. */
   columnCount: number;
 }
 
 // High-contrast, solid-colour badges — mirrors StudentRow so the list and
-// report views read identically. White text on a saturated background plus a
-// small dot so the three states stay distinct even on dense rows.
+// report views read identically.
 const STATUS_BADGE = {
-  "not-started":  { label: "Not Started",  cls: "bg-slate-500   text-white", dot: "bg-white/80" },
-  "started":      { label: "Started",      cls: "bg-amber-500   text-white", dot: "bg-white"    },
-  "submitted":    { label: "Submitted",    cls: "bg-emerald-600 text-white", dot: "bg-white"    },
+  "not-started":       { label: "Not Started",       cls: "bg-slate-500   text-white", dot: "bg-white/80" },
+  "started":           { label: "In Progress",       cls: "bg-amber-500   text-white", dot: "bg-white"    },
+  "disconnected":      { label: "Disconnected",      cls: "bg-orange-500  text-white", dot: "bg-white"    },
+  "awaiting-approval": { label: "Awaiting Approval", cls: "bg-yellow-500  text-white", dot: "bg-white"    },
+  "submitted":         { label: "Completed",         cls: "bg-emerald-600 text-white", dot: "bg-white"    },
+  "terminated":        { label: "Terminated",        cls: "bg-red-600     text-white", dot: "bg-white"    },
 } as const;
 
-// ─── Per-question status badge (used inside the expand panel) ──────────────
-// Note: there's no "In Progress" at the per-question level. "In Progress" is
-// a TEST-level concept (the student is currently attending). At the question
-// level, once the test is submitted, a skipped question is "Not Answered";
-// while the test is still live, it's "Pending".
+// Per-question status badge (used inside the expand panel).
 const QUESTION_STATUS_META = {
-  evaluated:    { label: "Evaluated",   cls: "bg-emerald-50 text-emerald-700" },
-  submitted:    { label: "Submitted",   cls: "bg-green-50   text-green-700"   },
-  not_answered: { label: "Not Answered", cls: "bg-rose-50   text-rose-600"    },
-  pending:      { label: "Pending",     cls: "bg-gray-100   text-gray-500"    },
+  evaluated:    { label: "Evaluated",    cls: "bg-emerald-50 text-emerald-700" },
+  submitted:    { label: "Submitted",    cls: "bg-green-50   text-green-700"   },
+  not_answered: { label: "Not Answered", cls: "bg-rose-50    text-rose-600"    },
+  pending:      { label: "Pending",      cls: "bg-gray-100   text-gray-500"    },
 } as const;
 
 const formatTimeTaken = (secs: number): string => {
@@ -70,136 +75,189 @@ const formatSubmittedAt = (iso: string | null): string => {
 };
 
 function ReportRowBase({
-  student, index, isDetailedReport, isExpanded, onToggleExpand, breakdown, columnCount,
+  student, index, isExpanded, onToggleExpand, onSendMessage, onCheckAnswers,
+  onApproveResume, onRejectResume,
+  breakdown, columnCount,
 }: ReportRowProps) {
   const s = student;
   const status = deriveTestStatus(s);
+
+  // ── Questions (Completed / Total + Remaining) ─────────────────────────────
   const total = s.totalQuestions ?? 0;
   const completed = s.completed ?? 0;
-  const nonCompleted = Math.max(0, total - completed);
+  const remaining = Math.max(0, total - completed);
 
-  // ── Marks columns ──────────────────────────────────────────────────────────
-  // We deliberately do NOT gate Scored Marks behind `status !== "not-started"`.
-  // The dashboard's Test Status is a *live session* signal: a student who
-  // answered questions earlier (auto-graded by the code-editor / MCQ) but
-  // isn't currently in the room AND hasn't pressed Submit shows "Not Started"
-  // — but their stored, scored answers should still surface on the report.
-  // `hasScoredMarks` (set by `computeStudentMarks` only when at least one
-  // submission exists for this assessment) is the real "do we have data" gate.
+  // ── Marks (Scored / Total) — see the previous version's note on why the
+  // `hasScoredMarks` gate is the real "do we have data" check, not test status.
   const hasTotalMarks = typeof s.totalMarks === "number" && s.totalMarks > 0;
   const hasScoredMarks = typeof s.scoredMarks === "number";
-  const totalMarksText = hasTotalMarks ? String(s.totalMarks) : "—";
-  const scoredMarksText = hasScoredMarks ? String(s.scoredMarks) : "—";
+  const canShowMarks = hasTotalMarks && hasScoredMarks;
+  const marksText = canShowMarks ? `${s.scoredMarks} / ${s.totalMarks}` : "—";
 
-  // ── Percentage (Reports view only — list view doesn't render this row) ────
-  // Computed whenever we have both a positive max and a non-null scored
-  // value. Rounded to one decimal so 13/50 reads "26%" not "26.0000%".
-  const canShowPct = hasTotalMarks && hasScoredMarks;
-  const pctValue = canShowPct
+  // ── Percentage — Scored / Total × 100, rounded to one decimal ─────────────
+  const pctValue = canShowMarks
     ? ((s.scoredMarks as number) / (s.totalMarks as number)) * 100
     : null;
   const percentageText = pctValue == null ? "—" : `${Math.round(pctValue * 10) / 10}%`;
-  // Color-code so the eye picks scoring brackets out at a glance —
-  // mirrors the per-question Scored Mark coloring rules:
-  //   green ≥ 80, amber ≥ 50, rose < 50, gray for "—".
   const percentageCls = pctValue == null
     ? "text-gray-400"
     : pctValue >= 80 ? "text-green-600"
     : pctValue >= 50 ? "text-amber-600"
     : "text-rose-600";
 
-  // ── Scale (performance band) ───────────────────────────────────────────────
-  // Precomputed in the dashboard marks pipeline from the exercise's Grade
-  // Settings bands (e.g. 50% → "Average"). "—" when there's no band/percentage.
+  // ── Scale (performance band) — precomputed by the marks pipeline ─────────
   const scaleText = s.scaleLabel || "—";
 
   const statusBadge = STATUS_BADGE[status];
 
+  // "Check Answer" is only meaningful when the student has data to review —
+  // same gate StudentRow uses.
+  const hasAnswerInDb = (s.completed || 0) > 0 || !!s.submitted;
+
   // ── Main row ──────────────────────────────────────────────────────────────
+  // Expanded-state tint switched from indigo → neutral gray so the row match
+  // es the We-Do list palette and nothing on the page reads as "blue".
   const mainRow = (
     <tr
-      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-        isExpanded ? "bg-indigo-50/30" : ""
+      className={`hover:bg-gray-50 transition-colors ${
+        isExpanded ? "bg-gray-50" : ""
       }`}
     >
-      {/* S. No. cell removed — name + email already identify the row. */}
-      <td className="px-4 py-3 text-[13px] font-medium text-gray-900">{s.studentName}</td>
-      <td className="px-4 py-3 text-[13px] text-gray-500">{s.email}</td>
-      <td className="px-4 py-3 text-[13px] text-center text-gray-700">{total}</td>
-      <td className="px-4 py-3 text-[13px] text-center font-semibold text-green-600">{completed}</td>
-      <td className="px-4 py-3 text-[13px] text-center font-semibold text-amber-600">{nonCompleted}</td>
-      <td className="px-4 py-3 text-[13px] text-center">
+      {/* "#" row-index — 1-based ordinal, matches the We-Do list. */}
+      <td className="px-4 py-3 text-center align-top text-xs text-gray-500 tabular-nums w-12">
+        {index + 1}
+      </td>
+
+      {/* Student — name (primary) + email (muted) stacked, one column */}
+      <td className="px-4 py-3 align-top">
+        <div className="text-sm font-medium text-gray-900 leading-tight">{s.studentName || "—"}</div>
+        <div className="text-xs text-gray-500 mt-0.5">{s.email || "—"}</div>
+      </td>
+
+      {/* Questions — "X / Y" primary, "N Remaining" muted */}
+      <td className="px-4 py-3 text-center align-top">
+        <div className="text-sm font-semibold text-gray-900 tabular-nums">
+          {total > 0 ? `${completed} / ${total}` : "—"}
+        </div>
+        {total > 0 && (
+          <div className="text-xs text-gray-500 mt-0.5">
+            {remaining} Remaining
+          </div>
+        )}
+      </td>
+
+      {/* Test Status */}
+      <td className="px-4 py-3 text-center align-top">
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap shadow-sm ${statusBadge.cls}`}
+          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap ${statusBadge.cls}`}
         >
           <span className={`inline-block w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
           {statusBadge.label}
         </span>
       </td>
-      <td className="px-4 py-3 text-[13px] text-center text-gray-700">{totalMarksText}</td>
-      <td
-        className={`px-4 py-3 text-[13px] text-center font-semibold ${
-          scoredMarksText === "—" ? "text-gray-400" : "text-green-600"
-        }`}
-      >
-        {scoredMarksText}
+
+      {/* Marks — "X / Y" */}
+      <td className="px-4 py-3 text-center align-top">
+        <span
+          className={`text-sm font-semibold tabular-nums ${
+            marksText === "—" ? "text-gray-400" : "text-gray-900"
+          }`}
+        >
+          {marksText}
+        </span>
       </td>
-      {/* Percentage — Reports view only. Color reflects the bracket
-          (>=80 green, >=50 amber, <50 rose, "—" gray) so callers can spot
-          struggling students at a glance. */}
-      <td className={`px-4 py-3 text-[13px] text-center font-semibold ${percentageCls}`}>
-        {percentageText}
+
+      {/* Percentage — bracket-coloured for a glanceable scan */}
+      <td className="px-4 py-3 text-center align-top">
+        <span className={`text-sm font-semibold tabular-nums ${percentageCls}`}>
+          {percentageText}
+        </span>
       </td>
-      {/* Scale — the configured performance band for this percentage
-          (e.g. 50% → "Average"). Rendered as a subtle pill; gray "—" when
-          there's no percentage to map. */}
-      <td className="px-4 py-3 text-[13px] text-center">
+
+      {/* Scale — subtle gray pill (was indigo — matched the removed blue palette) */}
+      <td className="px-4 py-3 text-center align-top">
         {scaleText === "—" ? (
           <span className="text-gray-400">—</span>
         ) : (
-          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-semibold bg-indigo-50 text-indigo-700 whitespace-nowrap">
+          <span className="inline-flex items-center rounded-md px-2.5 py-0.5 text-[12px] font-semibold bg-gray-100 text-gray-700 whitespace-nowrap">
             {scaleText}
           </span>
         )}
       </td>
-      {/* Trailing expand affordance — only when the Detailed Report toggle
-          is on. Blue link-style label ("View detailed report") with the
-          chevron icon LEFT of the text. The whole row is the click target
-          so users don't have to aim at the icon. */}
-      {isDetailedReport && (
-        <td className="px-3 py-3 text-center whitespace-nowrap">
-          <button
-            type="button"
-            onClick={() => onToggleExpand(s.id)}
-            aria-label={isExpanded ? "Hide detailed report" : "View detailed report"}
-            aria-expanded={isExpanded}
-            className="inline-flex items-center gap-1.5 px-1 py-1 rounded-md text-[12.5px] font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
-          >
-            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <span>View detailed report</span>
-          </button>
-        </td>
-      )}
+
+      {/* Trailing kebab — Send Message / Check Answer (when submittable) /
+          View Detailed Report. Uses the shared shadcn DropdownMenu so the
+          menu chrome matches the rest of the app. */}
+      <td className="px-3 py-3 text-center align-top w-10">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Actions for ${s.studentName || "student"}`}
+              className="inline-flex size-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            >
+              <MoreVertical size={14} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            {/* Approve / Reject a student's pending Resume request. Only
+                shown when the row is in `awaiting-approval` state. Sits at
+                the top of the menu so the trainer sees it first. */}
+            {status === "awaiting-approval" && (
+              <>
+                {onApproveResume && (
+                  <DropdownMenuItem onClick={() => onApproveResume(s.id)} className="cursor-pointer">
+                    <ShieldCheck className="h-4 w-4" style={{ color: "#16a34a" }} />
+                    Approve Resume
+                  </DropdownMenuItem>
+                )}
+                {onRejectResume && (
+                  <DropdownMenuItem onClick={() => onRejectResume(s.id)} className="cursor-pointer">
+                    <ShieldX className="h-4 w-4" style={{ color: "#dc2626" }} />
+                    Reject Resume
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+              </>
+            )}
+            <DropdownMenuItem onClick={() => onSendMessage(s.id)} className="cursor-pointer">
+              <MessageSquare className="h-4 w-4" style={{ color: "#4f46e5" }} />
+              Send Message
+            </DropdownMenuItem>
+            {hasAnswerInDb && (
+              <DropdownMenuItem onClick={() => onCheckAnswers(s.id)} className="cursor-pointer">
+                <ClipboardCheck className="h-4 w-4" style={{ color: "#059669" }} />
+                Check Answer
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => onToggleExpand(s.id)} className="cursor-pointer">
+              <BarChart3 className="h-4 w-4" style={{ color: "#3b82f6" }} />
+              {isExpanded ? "Hide Detailed Report" : "View Detailed Report"}
+              {isExpanded && <ChevronDown size={13} className="ml-auto text-gray-400" />}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </td>
     </tr>
   );
 
-  // ── Expanded detail panel ─────────────────────────────────────────────────
-  // Renders as a SECOND <tr> that spans the full table width. Wraps the
-  // per-question breakdown in a card-styled inner table — visual hierarchy
-  // matching the reference screenshot (a nested table inside a tinted box).
+  // ── Expanded per-question detail panel ─────────────────────────────────────
+  // Same panel that used to appear behind the header-level "Detailed" toggle,
+  // now driven by the kebab's "View Detailed Report" item.
   let detailRow: React.ReactNode = null;
-  if (isDetailedReport && isExpanded) {
+  if (isExpanded) {
     detailRow = (
-      <tr className="bg-indigo-50/20">
+      // Expanded panel palette dropped from indigo → neutral gray to match
+      // the We-Do list style, so nothing on this page reads as blue.
+      <tr className="bg-gray-50/50">
         <td colSpan={columnCount} className="px-4 py-3">
-          <div className="border border-indigo-100 rounded-lg bg-white overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-50/60 border-b border-indigo-100 text-[12.5px] font-semibold text-indigo-700">
+          <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-[12.5px] font-semibold text-gray-700">
               Question-by-Question Details
-              <span className="text-[11.5px] font-normal text-indigo-500/80">
+              <span className="text-[11.5px] font-normal text-gray-500">
                 · {s.studentName}
               </span>
             </div>
-            {/* Loading / empty / data states for the breakdown */}
             {breakdown === null ? (
               <div className="px-4 py-6 text-center text-[12px] text-gray-400">
                 Loading per-question details…
@@ -230,26 +288,17 @@ function ReportRowBase({
                         <tr key={q.questionId} className="border-b border-gray-50 last:border-b-0">
                           <td className="px-3 py-2 text-gray-500">{q.questionNo}</td>
                           <td className="px-3 py-2 text-gray-800">
-                            {/* Long titles are common — clamp with a tooltip
-                                fallback so the row height stays calm. */}
                             <span className="block max-w-[360px] truncate" title={q.title}>{q.title}</span>
                           </td>
                           <td className="px-3 py-2 text-center text-gray-600 uppercase tracking-wide text-[11.5px]">
                             {q.type}
                           </td>
                           <td className="px-3 py-2 text-center">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${meta.cls}`}>
+                            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${meta.cls}`}>
                               {meta.label}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-center text-gray-700">{q.totalMark}</td>
-                          {/* Color coding:
-                              - gray "—" for a question with no submission yet (pending while
-                                test is live; not_answered if test is done — both render as "—"
-                                because there's no meaningful score to display)
-                              - green for full marks
-                              - rose for zero out of non-zero max
-                              - amber for partial credit. */}
                           <td className={`px-3 py-2 text-center font-semibold ${
                             q.status === "pending" || q.status === "not_answered"
                               ? "text-gray-400"
@@ -290,12 +339,13 @@ function ReportRowBase({
 
 function areEqual(prev: ReportRowProps, next: ReportRowProps) {
   if (prev.index !== next.index) return false;
-  if (prev.isDetailedReport !== next.isDetailedReport) return false;
   if (prev.isExpanded !== next.isExpanded) return false;
   if (prev.onToggleExpand !== next.onToggleExpand) return false;
+  if (prev.onSendMessage !== next.onSendMessage) return false;
+  if (prev.onCheckAnswers !== next.onCheckAnswers) return false;
+  if (prev.onApproveResume !== next.onApproveResume) return false;
+  if (prev.onRejectResume !== next.onRejectResume) return false;
   if (prev.columnCount !== next.columnCount) return false;
-  // Breakdown identity matters only when expanded. Collapsed rows never
-  // render it, so its reference identity is irrelevant to them.
   if (prev.isExpanded && prev.breakdown !== next.breakdown) return false;
   const a = prev.student;
   const b = next.student;
@@ -309,7 +359,13 @@ function areEqual(prev: ReportRowProps, next: ReportRowProps) {
     a.submitted === b.submitted &&
     a.totalMarks === b.totalMarks &&
     a.scoredMarks === b.scoredMarks &&
-    a.scaleLabel === b.scaleLabel
+    a.scaleLabel === b.scaleLabel &&
+    // Recovery & Resume — the row must repaint when any of these flips so
+    // the Awaiting-Approval badge and the Approve / Reject kebab items
+    // appear as soon as the socket lands the state change.
+    a.attemptStatus === b.attemptStatus &&
+    a.isOnline === b.isOnline &&
+    a.resumeState === b.resumeState
   );
 }
 

@@ -44,14 +44,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getActiveBatchId, reconcileBatch, setActiveBatchId, withBatchUrl } from "@/apiServices/resourceBatch";
 import { BatchScopeBar } from "./components/ResourceBatchStrip";
 import {
-  courseDataApi, entityApi,
-  type CourseStructureData, type Module, type SubModule,
-  type Topic, type SubTopic, updateFileSettingsInComponent,
+  courseDataApi, entityApi, updateFileSettingsInComponent,
 } from "@/apiServices/coursesData";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import SmartCliffRingLoader from "@/components/SmartCliffRingLoader";
 import axios from "axios";
 import { showErrorToast, showSuccessToast } from "@/components/ui/toastUtils";
-import SmartCliffRingLoader from "@/components/SmartCliffRingLoader";
 import { studentRouteForCurrentCourse } from "../../../component/useAccountMenu";
 import PDFViewer from "../../../component/pdfView";
 import VideoViewer from "../../../component/videosViewer";
@@ -61,7 +59,22 @@ import { updateURL } from "@/apiServices/urlParams";
 import { StaffLayout } from "@/app/lms/component/stafflayout/staff-layout";
 
 import { CourseSidebar } from "./components/Coursesidebar";
+import { transformToCourseNodes } from "./components/courseTree";
 import { CourseContent } from "./components/Coursecontent";
+// Warm-prefetch plumbing: the exact query keys + fetchers the We Do / You Do
+// section components read on mount, so a first node visit can load their
+// lists IN PARALLEL with the node content, behind ONE ring loader.
+import {
+  getEntityType as toExerciseEntityType,
+  problemSolvingPageKey,
+  fetchProblemSolvingPage,
+  getLastProblemSolvingPageSize,
+} from "@/app/lms/component/ProblemSolving";
+import {
+  testYourSkillsQueryKey,
+  fetchTestYourSkillsQuestions,
+} from "./components/youdo/TestYourSkills";
+import { youDoExercisesQuery } from "@/apiServices/hooks/useYouDoExercises";
 import { NotionResourceModal } from "./components/Notionresourcemodal";
 import { FileUploadModal, type UploadOptions } from "./components/FileUploadModal";
 import {
@@ -103,37 +116,15 @@ const T = {
   pageBg: '#f8fafc',       // clean light canvas
   cardShadow: '0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.03)',
 };
+
+const COURSE_LIGHT_STALE_MS = 5 * 60 * 1000;
+const COURSE_LIGHT_GC_MS = 30 * 60 * 1000;
+const NODE_PEDAGOGY_STALE_MS = 3 * 60 * 1000;
+const NODE_PEDAGOGY_GC_MS = 20 * 60 * 1000;
+
 // ─── Transform Helpers ─────────────────────────────────────────────────────────
-function transformToCourseNodes(courseData: CourseStructureData): CourseNode[] {
-  return [{
-    id: courseData._id, name: courseData.courseName, type: "course", level: 0,
-    originalData: courseData,
-    children: courseData.modules.map((module: Module) => ({
-      id: module._id, name: module.title, type: "module" as const, level: 1,
-      originalData: module,
-      children: [
-        ...module.topics.map((topic: Topic) => ({
-          id: topic._id, name: topic.title, type: "topic" as const, level: 2,
-          originalData: topic,
-          children: topic.subTopics.map((st: SubTopic) => ({
-            id: st._id, name: st.title, type: "subtopic" as const, level: 3, originalData: st,
-          })),
-        })),
-        ...module.subModules.map((sm: SubModule) => ({
-          id: sm._id, name: sm.title, type: "submodule" as const, level: 2,
-          originalData: sm,
-          children: sm.topics.map((topic: Topic) => ({
-            id: topic._id, name: topic.title, type: "topic" as const, level: 3,
-            originalData: topic,
-            children: topic.subTopics.map((st: SubTopic) => ({
-              id: st._id, name: st.title, type: "subtopic" as const, level: 4, originalData: st,
-            })),
-          })),
-        })),
-      ],
-    })),
-  }];
-}
+// transformToCourseNodes now lives in ./components/courseTree so the Grades
+// detail screen can build the same SYLLABUS rail from one implementation.
 
 const toBackendTab = (tab: "I_Do" | "We_Do" | "You_Do" | null): "I_Do" | "We_Do" | "You_Do" => {
   if (tab === "We_Do") return "We_Do";
@@ -160,6 +151,105 @@ const OrangeToggle = ({ checked, onChange }: { checked: boolean; onChange: (v: b
       />
     </div>
   </label>
+);
+
+const CourseWorkspaceLoader = ({
+  courseName,
+  message = "Preparing course workspace",
+}: {
+  courseName?: string;
+  message?: string;
+}) => (
+  <div
+    className="uc-loader-wrap"
+    role="status"
+    aria-live="polite"
+    aria-label={message}
+    style={{
+      height: "100%",
+      width: "100%",
+      display: "grid",
+      gridTemplateRows: "auto 1fr",
+      background: T.bg,
+      overflow: "hidden",
+    }}
+  >
+    <div
+      style={{
+        height: 58,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 14,
+        padding: "0 22px",
+        borderBottom: `1px solid ${T.border}`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+        <span className="uc-loader-mark">
+          <BookOpen size={17} />
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.textMain, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {courseName || "Loading course"}
+          </div>
+          <div style={{ fontSize: 11.5, color: T.textMuted, marginTop: 2 }}>{message}</div>
+        </div>
+      </div>
+      <div className="uc-loader-progress" aria-hidden><span /></div>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateRows: "50px 1fr", minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 22px", borderBottom: `1px solid ${T.borderSoft}` }}>
+        {["I Do", "We Do", "You Do"].map((label, i) => (
+          <span
+            key={label}
+            className="uc-loader-pill"
+            style={{ width: i === 1 ? 82 : 70, opacity: i === 1 ? 1 : 0.72 }}
+          />
+        ))}
+        <span style={{ marginLeft: "auto" }} className="uc-loader-chip" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: 18, padding: 22, minHeight: 0 }}>
+        <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
+          <div className="uc-loader-hero">
+            <div className="uc-loader-line w-40" />
+            <div className="uc-loader-line w-70" />
+            <div className="uc-loader-line w-55" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="uc-loader-card">
+                <div className="uc-loader-icon" />
+                <div className="uc-loader-line w-70" />
+                <div className="uc-loader-line w-45" />
+              </div>
+            ))}
+          </div>
+          <div className="uc-loader-table">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="uc-loader-row">
+                <div className="uc-loader-icon small" />
+                <div className="uc-loader-line w-55" />
+                <div className="uc-loader-line w-20" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="uc-loader-side">
+          <div className="uc-loader-line w-45" />
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="uc-loader-row compact">
+              <div className="uc-loader-icon small" />
+              <div className="uc-loader-line w-70" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
 );
 
 // ─── Breadcrumb Icon map ───────────────────────────────────────────────────────
@@ -692,9 +782,13 @@ export default function DynamicLMSCoordinator() {
   // every subsequent request by the API layer and is part of the course query
   // key, so switching batches refetches instead of serving the previous
   // batch's cached pedagogy.
-  const { data: batchCtxResponse } = useQuery({
+  const { data: batchCtxResponse, isFetched: isBatchContextSettled } = useQuery({
     ...courseDataApi.getResourceBatchContext(courseId || ""),
     enabled: !!courseId,
+    staleTime: COURSE_LIGHT_STALE_MS,
+    gcTime: COURSE_LIGHT_GC_MS,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const resourceBatchCtx = batchCtxResponse?.data ?? null;
   const [activeBatchId, setActiveBatchIdState] = useState<string>("");
@@ -746,7 +840,14 @@ export default function DynamicLMSCoordinator() {
   // defined and never called; the light tree carries the same node ids anyway.
   // The heavy ["course", id] entry is deliberately left alone — reviewSubmission
   // and other pages still rely on it.
-  const { data: courseStructureResponse } = useQuery(courseDataApi.getLight(courseId || ""));
+  const { data: courseStructureResponse, isFetching: isCourseStructureFetching } = useQuery({
+    ...courseDataApi.getLight(courseId || ""),
+    enabled: !!courseId && isBatchContextSettled,
+    staleTime: COURSE_LIGHT_STALE_MS,
+    gcTime: COURSE_LIGHT_GC_MS,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
   // ── Scope Poppins to this page's entire DOM subtree (including portaled
   //    modals/dropdowns rendered under document.body). The injected rule uses
@@ -979,6 +1080,11 @@ export default function DynamicLMSCoordinator() {
   const [referenceDisplayName, setReferenceDisplayName] = useState("Reference Material");
   // Add these state variables with your other state declarations
   const [isContentLoading, setIsContentLoading] = useState(false);
+  // First full load of a node: the id whose content AND active-section list
+  // are still being warmed. While set, the central pane keeps the ONE ring
+  // loader up, so the page opens once — with its data — instead of
+  // loader → page → second section loader.
+  const [nodeWarmupId, setNodeWarmupId] = useState<string | null>(null);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Safety timeout — if a content fetch stalls (server down, network hang,
@@ -1588,8 +1694,8 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
       const spec = courseDataApi.getNodePedagogy(type, node.id);
       const res = await queryClient.fetchQuery({
         ...spec,
-        staleTime: opts?.fresh ? 0 : 60 * 1000,
-        gcTime: 10 * 60 * 1000,
+        staleTime: opts?.fresh ? 0 : NODE_PEDAGOGY_STALE_MS,
+        gcTime: NODE_PEDAGOGY_GC_MS,
       });
       return res?.data ?? null;
     },
@@ -1601,8 +1707,8 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
       const spec = courseDataApi.getLight(courseId || "");
       return queryClient.fetchQuery({
         ...spec,
-        staleTime: opts?.fresh ? 0 : 60 * 1000,
-        gcTime: 10 * 60 * 1000,
+        staleTime: opts?.fresh ? 0 : COURSE_LIGHT_STALE_MS,
+        gcTime: COURSE_LIGHT_GC_MS,
       });
     },
     [courseId, queryClient],
@@ -3738,10 +3844,62 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
   }, [activeTab, subcategories]);
 
   useEffect(() => { setBreadcrumbs(generateBreadcrumbs(selectedNode)); }, [selectedNode, courseData, generateBreadcrumbs]);
+  // Warm the ACTIVE section's list while the node's own content loads. Both
+  // requests run in parallel behind the pane's single ring loader
+  // (nodeWarmupId); when they settle, the section components mount onto a
+  // warm React Query cache and paint their data (or empty state) instantly —
+  // no second "Loading Assignment… / Loading Assessment…" pass.
+  const prefetchActiveSectionList = useCallback(async (node: CourseNode) => {
+    try {
+      if (!activeTab || !activeSubcategory) return;
+      const entityType = toExerciseEntityType(node.type);
+      if (activeTab === "You_Do" && activeSubcategory === "assesment") {
+        await queryClient.prefetchQuery(youDoExercisesQuery({
+          entityType,
+          entityId: node.id,
+          tabType: "You_Do",
+          subcategory: activeSubcategory,
+          batchId: activeBatchId,
+        }));
+      } else if (activeTab === "You_Do" && activeSubcategory === "test_your_skills") {
+        await queryClient.prefetchQuery({
+          queryKey: testYourSkillsQueryKey(node.type, node.id),
+          queryFn: () => fetchTestYourSkillsQuestions(node.type, node.id),
+          staleTime: 30 * 1000,
+        });
+      } else if (activeTab === "We_Do" || (activeTab === "You_Do" && activeSubcategory === "self_work")) {
+        // Warm page 1 of the server-paginated list, at the page size the
+        // component will mount with (module-scope memory) and no filters —
+        // exactly the key its first render computes, so it's a cache hit.
+        const pageArgs = {
+          page: 1,
+          limit: getLastProblemSolvingPageSize(),
+          search: '',
+          exerciseType: '',
+          status: '',
+        };
+        const pageData = await fetchProblemSolvingPage(node.type, node.id, activeTab, activeSubcategory, pageArgs);
+        queryClient.setQueryData(
+          problemSolvingPageKey(
+            { nodeType: node.type, nodeId: node.id, activeTab, subcategory: activeSubcategory, courseId },
+            pageArgs,
+          ),
+          pageData,
+        );
+      }
+    } catch { /* section falls back to its own loader — never block the pane */ }
+  }, [activeTab, activeSubcategory, activeBatchId, courseId, queryClient]);
+
   useEffect(() => {
     if (selectedNode && !isRestoringFromAnalytics && !contentData[selectedNode.id]) {
-      fetchAndRefresh(selectedNode);
+      const warmId = selectedNode.id;
+      setNodeWarmupId(warmId);
+      Promise.allSettled([
+        fetchAndRefresh(selectedNode),
+        prefetchActiveSectionList(selectedNode),
+      ]).finally(() => setNodeWarmupId(prev => (prev === warmId ? null : prev)));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode?.id]); // Only depends on node ID, not the whole object
   useEffect(() => {
     if (!courseData.length) return;
@@ -4011,6 +4169,116 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
         .dark .ql-picker-options { background-color: #1f2937; border-color: #374151; }
         @keyframes animateIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
         .animate-in { animation: animateIn 0.3s ease-out; }
+        @keyframes ucLoaderSweep { 0% { transform: translateX(-45%); } 100% { transform: translateX(185%); } }
+        @keyframes ucLoaderPulse { 0%, 100% { opacity: .56; } 50% { opacity: 1; } }
+        @keyframes ucLoaderBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+        .uc-loader-mark {
+          width: 34px;
+          height: 34px;
+          border-radius: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          color: #fff;
+          background: linear-gradient(135deg, ${T.orange}, ${T.orangeDark});
+          box-shadow: 0 8px 18px ${T.orangeGlow};
+          animation: ucLoaderBreathe 1.7s ease-in-out infinite;
+        }
+        .uc-loader-progress {
+          position: relative;
+          width: min(220px, 34vw);
+          height: 8px;
+          border-radius: 999px;
+          overflow: hidden;
+          background: #F1F5F9;
+        }
+        .uc-loader-progress span {
+          position: absolute;
+          inset: 0;
+          width: 48%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, rgba(232,100,12,0), ${T.orange}, rgba(232,100,12,0));
+          animation: ucLoaderSweep 1.15s ease-in-out infinite;
+        }
+        .uc-loader-pill,
+        .uc-loader-chip,
+        .uc-loader-line,
+        .uc-loader-icon,
+        .uc-loader-card,
+        .uc-loader-hero,
+        .uc-loader-table,
+        .uc-loader-side {
+          background: linear-gradient(90deg, #F4F6F8 0%, #EEF1F5 45%, #F8FAFC 75%, #F4F6F8 100%);
+          background-size: 220% 100%;
+          animation: ucLoaderPulse 1.4s ease-in-out infinite;
+        }
+        .uc-loader-pill { height: 30px; border-radius: 999px; }
+        .uc-loader-chip { width: 150px; height: 32px; border-radius: 10px; }
+        .uc-loader-line { height: 10px; border-radius: 999px; }
+        .uc-loader-line.w-20 { width: 20%; }
+        .uc-loader-line.w-40 { width: 40%; }
+        .uc-loader-line.w-45 { width: 45%; }
+        .uc-loader-line.w-55 { width: 55%; }
+        .uc-loader-line.w-70 { width: 70%; }
+        .uc-loader-icon { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
+        .uc-loader-icon.small { width: 28px; height: 28px; border-radius: 8px; }
+        .uc-loader-hero,
+        .uc-loader-card,
+        .uc-loader-table,
+        .uc-loader-side {
+          border: 1px solid ${T.border};
+          background-color: #fff;
+          border-radius: 16px;
+        }
+        .uc-loader-hero {
+          min-height: 142px;
+          padding: 22px;
+          display: grid;
+          align-content: center;
+          gap: 13px;
+        }
+        .uc-loader-card {
+          min-height: 118px;
+          padding: 16px;
+          display: grid;
+          align-content: center;
+          gap: 12px;
+        }
+        .uc-loader-table {
+          padding: 10px 14px;
+          display: grid;
+          gap: 4px;
+        }
+        .uc-loader-side {
+          padding: 16px;
+          display: grid;
+          align-content: start;
+          gap: 12px;
+        }
+        .uc-loader-row {
+          min-height: 46px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          border-bottom: 1px solid ${T.borderSoft};
+        }
+        .uc-loader-row:last-child { border-bottom: 0; }
+        .uc-loader-row.compact { min-height: 38px; }
+        @media (prefers-reduced-motion: reduce) {
+          .uc-loader-progress span,
+          .uc-loader-mark,
+          .uc-loader-pill,
+          .uc-loader-chip,
+          .uc-loader-line,
+          .uc-loader-icon,
+          .uc-loader-card,
+          .uc-loader-hero,
+          .uc-loader-table,
+          .uc-loader-side {
+            animation: none !important;
+          }
+        }
       `}</style>
 
       {/* Shared trainer shell (admin-style navbar); this workspace page puts
@@ -4078,13 +4346,23 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
                     I Do / We Do / You Do tab row (CourseContent's tabBarRight),
                     not a row of its own. ─────────────────────────────────── */}
               <div className="flex-1 overflow-hidden" style={{ marginTop: 0, paddingTop: 0 }}>
-                {/* Hold the main SmartCliff loader across the ENTIRE central
+                {/* Hold the course workspace skeleton across the ENTIRE central
                     pane until course data has loaded AND a node is picked.
                     Rendering CourseContent earlier flashes a broken layout —
                     tab row, empty subcategories, its own "no node" tiles —
                     instead of a single clean loading state. Once the flag
-                    below flips true, everything shows together in one paint. */}
-                {(!courseData.length || !selectedNode) ? (
+                    below flips true, everything shows together in one paint.
+
+                    The remaining clauses cover a FIRST visit to a node:
+                    `nodeWarmupId` holds the loader until the node's content
+                    AND the active section's list (warmed in parallel — see
+                    prefetchActiveSectionList) have BOTH settled, so the page
+                    opens once with its data instead of loader → page →
+                    second section loader. The isContentLoading clause keeps
+                    the same guarantee for batch switches, which reset the
+                    content caches outside the warmup path. A node already in
+                    `contentData` skips both — revisits paint instantly. */}
+                {(!courseData.length || !selectedNode || nodeWarmupId === selectedNode.id || (isContentLoading && !contentData[selectedNode.id])) ? (
                   <div className="flex items-center justify-center h-full w-full" style={{ background: T.bg }}>
                     <SmartCliffRingLoader title="Loading" subtitle="Just a moment..." entrance={false} />
                   </div>

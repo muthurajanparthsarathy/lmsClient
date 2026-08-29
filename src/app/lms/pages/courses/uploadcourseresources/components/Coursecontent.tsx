@@ -1749,7 +1749,13 @@ const renderFileRow = (file: UploadedFile, isPage: boolean = false, extraRowStyl
               style={{
                 fontSize: 12.5, fontWeight: 600, color: T.textMain,
                 letterSpacing: "-0.005em", lineHeight: 1.3,
-                ...(isUrl ? { cursor: "pointer", textDecoration: "underline", textUnderlineOffset: "3px" } : {}),
+                // The name opens the file on every non-page row (see the
+                // onClick below), so it shows the hand cursor on all of them.
+                // Only URL rows used to get it, which left a top-level PDF or
+                // PPT looking unclickable even though the very same file
+                // nested inside a folder/group did show the hand.
+                ...(isPage ? {} : { cursor: "pointer" }),
+                ...(isUrl ? { textDecoration: "underline", textUnderlineOffset: "3px" } : {}),
               }}
               onClick={e => {
                 if (!isPage) {

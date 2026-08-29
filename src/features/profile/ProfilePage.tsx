@@ -1,7 +1,7 @@
 "use client"
 
 import { Loading } from "@/components/loading-ui/loading"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import {
   User, Mail, Phone, Calendar, BookOpen,
@@ -29,6 +29,27 @@ import DashboardLayout from "@/app/lms/component/layout"
 import { useProfileUserStatsQuery } from "@/queries/profileStats"
 import { courseStructuresSummaryQuery } from "@/apiServices/createCourseStucture"
 import EditProfileModal from "./EditProfileModal"
+
+// The Performance tab is the student dashboard's OWN metrics engine, re-read
+// on this page — not a second implementation of the same numbers. Everything
+// it renders comes out of buildDashboard(), so Profile → Performance and the
+// dashboard can never drift apart or disagree about a percentage.
+import { useCurrentUserQuery } from "@/queries/auth"
+import {
+  useStudentAnalyticsQuery,
+  useMyAttendanceQuery,
+  useMyLearningTimeQuery,
+  attendanceWindow,
+  getUserSpecificAnalytics,
+} from "@/queries/studentDashboard"
+import {
+  buildDashboard,
+  idStr,
+  shortDuration,
+  type DashboardModel,
+  type StageStats,
+  type CourseModel,
+} from "@/app/lms/pages/studentdashboard/_lib/metrics"
 
 interface UserData {
   _id: string; email: string; firstName: string; lastName: string;
@@ -234,6 +255,47 @@ export default function ProfilePage() {
     enabled: isAdminRole && !!userData?.institution,
   })
 
+  // ── Student performance ───────────────────────────────────────────────────
+  // Same four reads the student dashboard makes, in the same order, off the
+  // same cache keys — so opening Profile after the dashboard costs nothing and
+  // the two surfaces always show identical figures.
+  //
+  // Gated on the role the way the admin block above is: every one of these
+  // queries is `enabled: !!userId`, so passing null for staff/admin keeps them
+  // from ever firing. The hooks themselves stay unconditional, which is what
+  // the rules of hooks require — only their inputs change.
+  const isStudentRole = userRole === 'student'
+  const { data: meUser, isLoading: meLoading } = useCurrentUserQuery()
+  const perfStudentId = isStudentRole ? idStr((meUser as any)?.user?._id) : ''
+
+  const { data: perfAnalytics, isLoading: perfAnalyticsLoading } =
+    useStudentAnalyticsQuery(perfStudentId || null)
+
+  const perfCourses = useMemo(
+    () => (perfAnalytics && perfStudentId
+      ? getUserSpecificAnalytics(perfAnalytics, perfStudentId)?.userCourses || []
+      : []),
+    [perfAnalytics, perfStudentId],
+  )
+
+  // Stable for the life of the page — recomputing per render would mint a new
+  // query key every time.
+  const perfWindow = useMemo(() => attendanceWindow(), [])
+  const perfCourseIds = useMemo(() => perfCourses.map((c: any) => idStr(c?._id)), [perfCourses])
+  const { records: perfAttendance } = useMyAttendanceQuery(perfCourseIds, perfStudentId || null, perfWindow)
+  const { data: perfLearningTime = null } = useMyLearningTimeQuery(perfStudentId || null)
+
+  const performance: DashboardModel | null = useMemo(
+    () => (isStudentRole && meUser
+      ? buildDashboard(meUser, perfCourses, perfAttendance, perfLearningTime)
+      : null),
+    [isStudentRole, meUser, perfCourses, perfAttendance, perfLearningTime],
+  )
+
+  // Attendance and study time fill in after; only the analytics read gates the
+  // panel, exactly as on the dashboard.
+  const perfLoading = isStudentRole && (meLoading || (!!perfStudentId && perfAnalyticsLoading))
+
   const dashboardStats: DashboardStats | null = (() => {
     if (!isAdminRole || !usersQuery.data || !coursesQuery.data) return null
     // The user figures are counted in Mongo now (`?stats=1`) instead of by
@@ -316,16 +378,29 @@ export default function ProfilePage() {
 
   const getStats = () => {
     if (userRole === 'student') {
-      const completed = userData?.courses?.filter(c => calcProgress(c) >= 90).length || 0
-      const active = userData?.courses?.filter(c => { 
-        const p = calcProgress(c); 
-        return p > 0 && p < 90 
-      }).length || 0
-      const overall = userData?.courses?.length
-        ? Math.round(userData.courses.reduce((s, c) => s + calcProgress(c), 0) / userData.courses.length) 
-        : 0
+      // The dashboard's model is the source of truth for anything progress-
+      // shaped. `calcProgress` below only ever looked at We Do assignments on
+      // the cached user record, so a learner who had opened resources and sat
+      // assessments still read 0% here while the dashboard read 15% — the two
+      // surfaces contradicted each other on the same screen. It stays as the
+      // fallback for the moment before analytics resolve, and the completed
+      // threshold follows the dashboard's rule (100) rather than 90.
+      const completed = performance
+        ? performance.completed
+        : userData?.courses?.filter(c => calcProgress(c) >= 90).length || 0
+      const active = performance
+        ? performance.inProgress
+        : userData?.courses?.filter(c => {
+            const p = calcProgress(c)
+            return p > 0 && p < 90
+          }).length || 0
+      const overall = performance
+        ? performance.overallProgress
+        : userData?.courses?.length
+          ? Math.round(userData.courses.reduce((s, c) => s + calcProgress(c), 0) / userData.courses.length)
+          : 0
       return { 
-        totalCourses: userData?.courses?.length || 0, 
+        totalCourses: performance ? performance.activeCourses : (userData?.courses?.length || 0),
         completed, 
         active, 
         overall,
@@ -505,6 +580,9 @@ export default function ProfilePage() {
     { id: "personal", label: "Personal", icon: User },
     { id: "academic", label: userRole === 'admin' ? "Institution" : userRole === 'student' ? "Academic" : "Professional", 
       icon: userRole === 'admin' ? School : userRole === 'student' ? GraduationCap : Briefcase },
+    // Students only: their own overall performance, read from the dashboard's
+    // metrics. Staff and admin have no learner record to summarise here.
+    ...(isStudentRole ? [{ id: "performance", label: "Performance", icon: TrendingUp }] : []),
     { id: "notes", label: "Notes", icon: FileText, badge: stats.totalNotes },
     { id: "activity", label: "Activity", icon: Activity },
     ...((userRole === 'staff' || userRole === 'admin') ? [{ id: "teaching", label: userRole === 'admin' ? "Manage" : "Teaching", icon: BookOpen }] : [])
@@ -855,36 +933,6 @@ export default function ProfilePage() {
                     </div>
                   </Panel>
 
-                  {userRole === 'student' && userData.courses?.length > 0 && (
-                    <Panel icon={TrendingUp} title="Course Progress" color="#7C4DD1">
-                      <div className="space-y-2">
-                        {userData.courses.map((course, i) => {
-                          const p = calcProgress(course)
-                          return (
-                            <motion.div key={i} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: i * 0.06 }}
-                              className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-800/40">
-                              <div className="mb-2 flex items-center justify-between">
-                                <p className="text-sm font-bold text-gray-900 dark:text-white">{course.courseId?.name || `Course ${i + 1}`}</p>
-                                <span className="text-xs font-black" style={{ color: p >= 90 ? '#22C55E' : '#F97316' }}>{p}%</span>
-                              </div>
-                              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                                <motion.div initial={{ width: 0 }} animate={{ width: `${p}%` }}
-                                  transition={{ duration: 1, delay: i * 0.08, ease: 'easeOut' }}
-                                  className="h-full rounded-full"
-                                  style={{ background: p >= 90 ? 'linear-gradient(90deg,#22C55E,#4ADE80)' : 'linear-gradient(90deg,#F97316,#FBBF24)' }} />
-                              </div>
-                              <div className="mt-2 flex justify-between text-[11px] text-gray-400">
-                                <span>Last: {course.lastAccessed ? fmt(course.lastAccessed) : 'Never'}</span>
-                                <span className={p >= 90 ? 'text-emerald-500' : 'text-orange-500'}>{p >= 90 ? '✓ Done' : 'Active'}</span>
-                              </div>
-                            </motion.div>
-                          )
-                        })}
-                      </div>
-                    </Panel>
-                  )}
-
                   {(userRole === 'staff' || userRole === 'admin') && userData.courses?.length > 0 && (
                     <Panel icon={BookOpen} title={userRole === 'admin' ? 'Course Summary' : 'Teaching Summary'} color="#7C4DD1">
                       <div className="grid gap-2 sm:grid-cols-2">
@@ -1011,6 +1059,165 @@ export default function ProfilePage() {
                         ))}
                       </div>
                     </Panel>
+                  )}
+                </>
+              )}
+
+              {activeTab === 'performance' && isStudentRole && (
+                <>
+                  {perfLoading && (
+                    <Panel icon={TrendingUp} title="Overall Performance" color="#F97316">
+                      <div className="py-10 flex justify-center"><Loading size="size-8" /></div>
+                    </Panel>
+                  )}
+
+                  {!perfLoading && (!performance || performance.courses.length === 0) && (
+                    <Panel icon={TrendingUp} title="Overall Performance" color="#F97316">
+                      <EmptyBlock icon={TrendingUp} text="No enrolled courses yet — your performance appears here once you start learning." />
+                    </Panel>
+                  )}
+
+                  {!perfLoading && performance && performance.courses.length > 0 && (
+                    <>
+                      {/* ── Headline: the four numbers the dashboard leads with ── */}
+                      <Panel
+                        icon={TrendingUp}
+                        title="Overall Performance"
+                        color="#F97316"
+                        action={
+                          <button
+                            onClick={() => router.push('/lms/pages/studentdashboard')}
+                            className="text-[11px] font-bold text-orange-500 hover:underline"
+                          >
+                            Open dashboard
+                          </button>
+                        }
+                      >
+                        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                          <MetricTile
+                            idx={0} icon={TrendingUp} tone="#F97316" label="Overall Progress"
+                            value={`${performance.overallProgress}%`}
+                            sub={`${performance.activeCourses} active · ${performance.completed} completed`}
+                            pct={performance.overallProgress}
+                          />
+                          <MetricTile
+                            idx={1} icon={Award} tone="#7C4DD1" label="Grade"
+                            value={performance.scorePct === null ? '—' : performance.grade.letter}
+                            sub={performance.scorePct === null ? 'Nothing graded yet' : `${performance.scorePct}% · ${performance.grade.caption}`}
+                            pct={performance.scorePct}
+                          />
+                          <MetricTile
+                            idx={2} icon={CheckCircle} tone="#22C55E" label="Attendance"
+                            value={performance.attendance.pct === null ? '—' : `${performance.attendance.pct}%`}
+                            sub={performance.attendance.hasData
+                              ? `${performance.attendance.present} present of ${performance.attendance.totalDays} days`
+                              : 'Not marked yet'}
+                            pct={performance.attendance.pct}
+                          />
+                          <MetricTile
+                            idx={3} icon={Clock} tone="#3B82F6" label="Study Time"
+                            value={performance.time.tracked ? shortDuration(performance.time.totalSeconds) : '—'}
+                            sub={performance.time.tracked
+                              ? `${shortDuration(performance.time.exerciseSeconds)} on exercises`
+                              : 'No measured sessions yet'}
+                            pct={null}
+                          />
+                        </div>
+                      </Panel>
+
+                      {/* ── Stage breakdown: the Learn → Practice → Assess pipeline ── */}
+                      <Panel icon={Zap} title="Learning Journey" color="#7C4DD1">
+                        <div className="space-y-3">
+                          <StageRow
+                            idx={0} title="I Do · Learning Resources" tone="#7C4DD1"
+                            hasContent={performance.totals.learn.hasContent}
+                            pct={performance.totals.learn.completionPct}
+                            meterLabel="opened"
+                            cells={[
+                              { label: 'Resources', value: `${performance.totals.learn.opened}/${performance.totals.learn.total}`, sub: 'opened' },
+                              { label: 'Checkpoints', value: `${performance.totals.learn.mcqCompleted}/${performance.totals.learn.mcqDocs}`, sub: 'completed' },
+                              { label: 'Content', value: `${Math.round(performance.totals.learn.completedMinutes)}/${performance.totals.learn.contentMinutes}`, sub: 'minutes' },
+                              { label: 'Done', value: `${performance.totals.learn.completionPct}%`, sub: 'of resources' },
+                            ]}
+                          />
+                          <StageRow
+                            idx={1} title="We Do · Assignments" tone="#22C55E"
+                            hasContent={performance.totals.practice.hasContent}
+                            pct={performance.totals.practice.completionPct}
+                            meterLabel="started"
+                            cells={stageCells(performance.totals.practice)}
+                          />
+                          <StageRow
+                            idx={2} title="You Do · Assessments" tone="#F97316"
+                            hasContent={performance.totals.assess.hasContent}
+                            pct={performance.totals.assess.completionPct}
+                            meterLabel="started"
+                            cells={stageCells(performance.totals.assess)}
+                          />
+                        </div>
+                      </Panel>
+
+                      {/* ── Per course: where the blended figure above comes from ── */}
+                      <Panel icon={BookOpen} title="Course Progress" color="#22C55E">
+                        <div className="space-y-2">
+                          {performance.courses.map((c, i) => (
+                            <CourseProgressRow key={c.id || i} idx={i} course={c} />
+                          ))}
+                        </div>
+                      </Panel>
+
+                      {/* ── Momentum ── */}
+                      <Panel icon={Flame} title="Momentum" color="#22C55E">
+                        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                          <MetricTile
+                            idx={0} icon={Flame} tone="#F97316" label="Current Streak"
+                            value={`${performance.momentum.streak}`}
+                            sub={performance.momentum.streak === 1 ? 'day in a row' : 'days in a row'}
+                            pct={null}
+                          />
+                          <MetricTile
+                            idx={1} icon={Activity} tone="#3B82F6" label="Active Days"
+                            value={`${performance.momentum.activeDays30}`} sub="in the last 30 days" pct={null}
+                          />
+                          <MetricTile
+                            idx={2} icon={CheckCircle} tone="#22C55E" label="Solved This Month"
+                            value={`${performance.solvedThisMonth}`}
+                            sub={performance.monthDeltaPct === null
+                              ? 'no earlier baseline'
+                              : `${performance.monthDeltaPct >= 0 ? '+' : ''}${performance.monthDeltaPct}% vs previous 30d`}
+                            pct={null}
+                          />
+                          <MetricTile
+                            idx={3} icon={Calendar} tone="#7C4DD1" label="Due This Week"
+                            value={`${performance.pendingThisWeek}`} sub="pending deadlines" pct={null}
+                          />
+                        </div>
+                      </Panel>
+
+                      {/* ── Insights: the dashboard's own read of these numbers ── */}
+                      {performance.insights.length > 0 && (
+                        <Panel icon={Star} title="Insights" color="#3B82F6">
+                          <div className="space-y-2">
+                            {performance.insights.map((ins, i) => {
+                              const tone = ins.tone === 'good' ? '#22C55E' : ins.tone === 'warn' ? '#F97316' : '#3B82F6'
+                              return (
+                                <motion.div
+                                  key={i}
+                                  initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: i * 0.04 }}
+                                  className="flex items-start gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-2.5 dark:border-gray-800 dark:bg-gray-800/40"
+                                >
+                                  <span className="mt-0.5 grid h-6 w-6 flex-shrink-0 place-items-center rounded-full" style={{ background: `${tone}1F` }}>
+                                    <Star className="h-3 w-3" style={{ color: tone }} />
+                                  </span>
+                                  <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-300">{ins.text}</p>
+                                </motion.div>
+                              )
+                            })}
+                          </div>
+                        </Panel>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -1230,6 +1437,205 @@ function FieldTile({ idx, icon: Icon, label, value, tone = '#F97316' }: { idx: n
       <div className="min-w-0">
         <p className="text-[10px] font-semibold text-gray-400">{label}</p>
         <p className="mt-0.5 truncate text-[13px] font-bold text-gray-900 dark:text-white">{value || '—'}</p>
+      </div>
+    </motion.div>
+  )
+}
+
+/** The four cells every graded stage (We Do / You Do) reports. Shared so the
+ *  two rows can never fall out of step with each other. */
+function stageCells(s: StageStats) {
+  return [
+    { label: 'Exercises', value: `${s.submitted}/${s.assigned}`, sub: 'submitted' },
+    { label: 'Questions', value: `${s.questionsSolved}/${s.questionsTotal}`, sub: 'solved' },
+    { label: 'Attempted', value: `${s.questionsAttempted}/${s.questionsTotal}`, sub: 'questions tried' },
+    {
+      label: 'Score',
+      value: s.scorePct === null ? '—' : `${s.scorePct}%`,
+      sub: s.scorePct === null ? 'not graded yet' : `${s.scoreObtained}/${s.scoreMax} marks`,
+    },
+  ]
+}
+
+/** A headline number with its own meter. `pct` null → no meter (the metric has
+ *  no 0-100 scale, or nothing has been recorded to place it on one yet). */
+function MetricTile({
+  idx, icon: Icon, label, value, sub, tone, pct,
+}: { idx: number; icon: any; label: string; value: string; sub: string; tone: string; pct: number | null }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: idx * 0.05 }}
+      className="rounded-xl border border-gray-100 bg-gray-50/80 p-3 transition-colors hover:border-orange-200 dark:border-gray-800 dark:bg-gray-800/40"
+    >
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg" style={{ background: `${tone}1F` }}>
+          <Icon className="h-4 w-4" style={{ color: tone }} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+          <p className="text-xl font-black leading-tight text-gray-900 dark:text-white">{value}</p>
+        </div>
+      </div>
+      <p className="mt-1.5 truncate text-[11px] text-gray-400">{sub}</p>
+      {pct !== null && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200/70 dark:bg-gray-700/60">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+            transition={{ delay: idx * 0.05 + 0.15, duration: 0.5 }}
+            className="h-full rounded-full"
+            style={{ background: tone }}
+          />
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+/** One stage of the Learn → Practice → Assess pipeline: a titled header with
+ *  its completion meter, over a four-cell figure strip. Mirrors the course-row
+ *  treatment in the Teaching tab so the page keeps one vocabulary. */
+function StageRow({
+  idx, title, tone, hasContent, pct, meterLabel, cells,
+}: {
+  idx: number; title: string; tone: string; hasContent: boolean; pct: number
+  /** What the header meter is a percentage OF — without it "20%" next to an
+   *  "Exercises 3/15" cell reads as though it were the question figure. */
+  meterLabel: string
+  cells: { label: string; value: string; sub: string }[]
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: idx * 0.06 }}
+      className="overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800"
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/70 px-4 py-3 dark:border-gray-800 dark:bg-gray-800/40">
+        <h5 className="min-w-0 truncate text-sm font-bold text-gray-900 dark:text-white">{title}</h5>
+        {hasContent ? (
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <span className="h-1.5 w-20 overflow-hidden rounded-full bg-gray-200/70 dark:bg-gray-700/60">
+              <motion.span
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+                transition={{ delay: idx * 0.06 + 0.15, duration: 0.5 }}
+                className="block h-full rounded-full"
+                style={{ background: tone }}
+              />
+            </span>
+            <span className="text-[11px] font-bold" style={{ color: tone }}>{pct}%</span>
+            <span className="text-[11px] text-gray-400">{meterLabel}</span>
+          </div>
+        ) : (
+          <span className="flex-shrink-0 text-[11px] text-gray-400">Nothing configured</span>
+        )}
+      </div>
+      {hasContent && (
+        <div className="grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-4">
+          {cells.map((c, ci) => (
+            <div key={ci}>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
+              <p className="mt-0.5 text-base font-black leading-tight text-gray-900 dark:text-white">{c.value}</p>
+              <p className="text-[10px] text-gray-400">{c.sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+/** One course in the Academic tab's Course Progress list.
+ *
+ *  Driven by the dashboard's CourseModel, not by the cached user record. The
+ *  old version read `course.answers.We_Do.assignments` straight off
+ *  localStorage and scored it 60% attempted / 40% solved — which meant a
+ *  learner who had opened resources and sat assessments but had no We Do
+ *  submission read 0%, and the course title fell back to "Course 1" because
+ *  the cached row carries only an id. Both numbers now come from the same
+ *  blend the dashboard shows, so Profile and Dashboard agree.
+ */
+function CourseProgressRow({ idx, course }: { idx: number; course: CourseModel }) {
+  const p = Math.max(0, Math.min(100, Math.round(course.progress)))
+  const done = p >= 100
+  const started = p > 0 || course.hasActivity
+  const status = done ? 'Completed' : started ? 'In progress' : 'Not started'
+  const statusCls = done ? 'text-emerald-500' : started ? 'text-orange-500' : 'text-gray-400'
+
+  // Only the stages this course actually configured. A course with no You Do
+  // content should show two meters, not a third one stuck at 0%.
+  const stages = [
+    { label: 'I Do', on: course.learn.hasContent, pct: course.learn.completionPct, detail: `${course.learn.opened}/${course.learn.total}`, tone: '#7C4DD1' },
+    { label: 'We Do', on: course.practice.hasContent, pct: course.practice.completionPct, detail: `${course.practice.started}/${course.practice.assigned}`, tone: '#22C55E' },
+    { label: 'You Do', on: course.assess.hasContent, pct: course.assess.completionPct, detail: `${course.assess.started}/${course.assess.assigned}`, tone: '#F97316' },
+  ].filter((s) => s.on)
+
+  const lastSeen = course.lastAccessed
+    ? course.lastAccessed.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    : 'Never'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: idx * 0.06 }}
+      className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-800/40"
+    >
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{course.name}</p>
+          {(course.code || course.level) && (
+            <p className="mt-0.5 truncate text-[11px] text-gray-400">
+              {[course.code, course.level].filter(Boolean).join(' · ')}
+            </p>
+          )}
+        </div>
+        <span className="flex-shrink-0 text-xs font-black" style={{ color: done ? '#22C55E' : '#F97316' }}>{p}%</span>
+      </div>
+
+      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${p}%` }}
+          transition={{ duration: 1, delay: idx * 0.08, ease: 'easeOut' }}
+          className="h-full rounded-full"
+          style={{ background: done ? 'linear-gradient(90deg,#22C55E,#4ADE80)' : 'linear-gradient(90deg,#F97316,#FBBF24)' }}
+        />
+      </div>
+
+      {/* Where the blended number above actually comes from. */}
+      {stages.length > 0 && (
+        <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
+          {stages.map((s) => (
+            <div key={s.label} className="rounded-lg border border-gray-100 bg-white px-2.5 py-1.5 dark:border-gray-800 dark:bg-gray-900/60">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{s.label}</span>
+                <span className="text-[11px] font-bold" style={{ color: s.tone }}>{s.pct}%</span>
+              </div>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-gray-200/70 dark:bg-gray-700/60">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.max(0, Math.min(100, s.pct))}%` }}
+                  transition={{ duration: 0.6, delay: idx * 0.08 + 0.2 }}
+                  className="h-full rounded-full"
+                  style={{ background: s.tone }}
+                />
+              </div>
+              <p className="mt-1 text-[10px] text-gray-400">{s.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-gray-400">
+        <span className="truncate">Last: {lastSeen}</span>
+        <span className="flex-shrink-0">
+          {course.scorePct !== null && <span className="mr-2 text-gray-500 dark:text-gray-300">Score {course.scorePct}%</span>}
+          <span className={statusCls}>{status}</span>
+        </span>
       </div>
     </motion.div>
   )

@@ -44,6 +44,22 @@ export default function CourseStructurePage() {
     const queryClient = useQueryClient()
     const [stage, setStage] = useState<Stage>({ name: 'list' })
 
+    // Which page of the client list to come back to.
+    //
+    // MappingList is unmounted while a mapping is open (the stages swap under
+    // one AnimatePresence), so it cannot remember this itself — every
+    // "Manage → Back to clients" used to drop the user back on page 1 however
+    // far into the list they had drilled. This component stays mounted for the
+    // whole visit, so it can hand the page back.
+    //
+    // Scoped to the visit ON PURPOSE. A reload, or arriving from another page,
+    // remounts this component and starts at 1 — which is what a refresh is
+    // expected to do. Keeping it in the URL or at module scope would survive
+    // both, and the stale number could not even be trusted on a cold load:
+    // pageSize is fitted to the viewport AFTER first paint, so the restored
+    // page could land out of range and get clamped to something arbitrary.
+    const [listPage, setListPage] = useState(1)
+
     // Deep-link: arriving with ?openMappingId=<id> (e.g. from the User Enrolment
     // breadcrumb) opens that mapping's hierarchy directly instead of the client
     // list. It used to look the id up in the full mapping list this page held;
@@ -59,11 +75,21 @@ export default function CourseStructurePage() {
     const { data: deepLinkMapping } = useServiceMapping(
         wantsDeepLink ? (openMappingId as string) : undefined
     )
-    // A ref so the deep-link effect only opens each id ONCE. Without it, the
-    // Back button needs two clicks: setStage('list') runs, but router.replace
-    // hasn't cleared ?openMappingId from the URL yet, so on the next render
-    // the effect sees wantsDeepLink=true again and re-opens the hierarchy.
-    // Resetting the ref inside onBack lets a genuine re-visit still work.
+    // The id whose hierarchy is already open, so the effect below opens each
+    // one ONCE.
+    //
+    // Without it, Back needs two clicks: setStage('list') commits before
+    // router.replace has cleared ?openMappingId, so for one render the effect
+    // sees wantsDeepLink=true and re-opens the hierarchy it was just asked to
+    // leave — the URL goes clean while the screen stays on the mapping.
+    //
+    // It must be armed on BOTH ways in. The effect sets it for a genuine
+    // deep-link; onOpen sets it when the user clicks Manage, which is the case
+    // that was missing. On that path the effect never runs (stage is already
+    // 'hierarchy', so the query is disabled and deepLinkMapping stays
+    // undefined), so the ref stayed null and the guard was inert — which is
+    // why Back misbehaved only after clicking Manage, and only when the detail
+    // query could resolve inside that one-render window.
     const openedDeepLinkRef = useRef<string | null>(null)
     useEffect(() => {
         if (!wantsDeepLink || !deepLinkMapping) return
@@ -111,7 +137,7 @@ export default function CourseStructurePage() {
     // separates "set up" from "structured": a course with a setup but no modules
     // has nothing for the Program Calendar to schedule.
     const courseStatusFor = useMemo(() => {
-        const byKey = new Map<string, { id: string; moduleCount: number; participantCount: number; courseCode: string; hasModuleHours: boolean }>()
+        const byKey = new Map<string, { id: string; moduleCount: number; participantCount: number; exerciseCount: number; courseCode: string; hasModuleHours: boolean; hasProgramCalendar: boolean }>()
         courseRecords.forEach((c) => {
             const name = String(c.courseName || '').trim().toLowerCase()
             const client = String(c.clientId || '').trim()
@@ -127,10 +153,12 @@ export default function CourseStructurePage() {
                 // auto-enrolled students can be scheduled before its structure
                 // is built.
                 participantCount: Number(c.participantCount) || 0,
+                exerciseCount: Number(c.exerciseCount) || 0,
                 courseCode: String(c.courseCode || ''),
                 // Program Calendar's gate: the server sets this only when the
                 // course has ≥1 module AND pedagogy hours to plan from.
                 hasModuleHours: Boolean(c.hasModuleHours),
+                hasProgramCalendar: Boolean(c.hasProgramCalendar),
             }
             if (recordMappingId && recordPath) {
                 byKey.set(`${client}::${recordMappingId}::${recordPath}::${name}`, entry)
@@ -212,8 +240,13 @@ export default function CourseStructurePage() {
                             // Self-fetching: the list owns its own search,
                             // filters, sort and page, and those ARE the request
                             // now, so the query lives with the state that
-                            // decides it rather than being threaded down.
+                            // decides it rather than being threaded down. The
+                            // page is the one exception — it is handed in and
+                            // reported back, because it has to outlive this
+                            // component being unmounted (see listPage above).
                             <MappingList
+                                initialPage={listPage}
+                                onPageChange={setListPage}
                                 // The stage lives in React state, so without the
                                 // URL carrying it, leaving for another page (an
                                 // Actions destination) and coming Back reloads
@@ -223,6 +256,11 @@ export default function CourseStructurePage() {
                                 // ?openMappingId makes Back land where they left:
                                 // the deep-link effect above reopens it.
                                 onOpen={(mapping) => {
+                                    // Arms the guard above: this id is now open,
+                                    // so the deep-link effect must not re-open it
+                                    // during the render where Back has cleared the
+                                    // stage but not yet the URL.
+                                    openedDeepLinkRef.current = mapping._id
                                     setStage({ name: 'hierarchy', mapping })
                                     router.replace(`/lms/pages/coursestructure?openMappingId=${mapping._id}`)
                                 }}

@@ -1,5 +1,7 @@
 "use client";
 import { getToken } from "@/lib/session";
+import { useAttemptSession } from "./YouDo/assessment/useAttemptSession";
+import ConnectionStatusBanner from "./YouDo/assessment/ConnectionStatusBanner";
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
@@ -553,7 +555,7 @@ const FileUploadAnswerArea: React.FC<{
       const token = getToken() || localStorage.getItem('token') || '';
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-file', {
+      const res = await fetch('http://localhost:5533/upload/question-file', {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
       });
       const json = await res.json();
@@ -699,6 +701,21 @@ const OthersExam: React.FC<OthersExamProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, StudentAnswer>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Recovery & Resume — idempotent /start on mount, offline queue for the
+  // final-submit loop. `enabled` false when we don't have the routing
+  // info yet — the hook waits for it via its own useEffect deps.
+  const attemptSession = useAttemptSession({
+    exerciseId: ((exercise as any)?._id) || "",
+    courseId: courseId || "",
+    nodeId: nodeId || "",
+    nodeType: nodeType || "topics",
+    subcategory: subcategory || "",
+    category: "You_Do",
+    totalQuestions: Array.isArray((exercise as any)?.questions) ? (exercise as any).questions.length : undefined,
+    durationMinutesHint: (exercise as any)?.exerciseInformation?.totalDuration || (exercise as any)?.totalDuration || undefined,
+    enabled: !!((exercise as any)?._id) && !!courseId,
+  });
 
   // Resizable split panel
   const [leftPct, setLeftPct] = useState(40);
@@ -871,7 +888,14 @@ const OthersExam: React.FC<OthersExamProps> = ({
           fd.append('code', '');
           fd.append('othersFiles', JSON.stringify(ans.files || []));
         }
-        await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+        // Enqueue via recovery hook for offline safety, then direct write.
+        if (attemptSession.attempt) {
+          const body: Record<string, any> = {};
+          fd.forEach((v, k) => { (body as any)[k] = v; });
+          try { await attemptSession.saveAnswer({ questionId: body.questionId, body }); }
+          catch { /* fall through */ }
+        }
+        await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
         });
       }
@@ -894,11 +918,20 @@ const OthersExam: React.FC<OthersExamProps> = ({
         fd.append('score', '0');
         fd.append('status', 'submitted');
         fd.append('isTestSubmission', 'true');
-        await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+        // Enqueue via recovery hook for offline safety, then direct write.
+        if (attemptSession.attempt) {
+          const body: Record<string, any> = {};
+          fd.forEach((v, k) => { (body as any)[k] = v; });
+          try { await attemptSession.saveAnswer({ questionId: body.questionId, body }); }
+          catch { /* fall through */ }
+        }
+        await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
         });
       }
 
+      // Recovery hook: mark attempt terminal.
+      try { await attemptSession.submit({ submitType: opts?.auto ? "AUTO" : "USER" }); } catch {}
       setSubmitted(true);
       // Hand the toast to the list page so it shows reliably after the redirect.
       try {
@@ -917,7 +950,7 @@ const OthersExam: React.FC<OthersExamProps> = ({
 
   if (submitted) {
     return (
-      <div className="oe-root" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb' }}>
+      <div className="oe-root" style={{ minHeight: 'calc(100vh * var(--ui-scale-inv, 1))', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb' }}>
         <div style={{ textAlign: 'center', padding: 40 }}>
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
             <CheckCircle2 style={{ width: 32, height: 32, color: '#16a34a' }} />
@@ -949,7 +982,9 @@ const OthersExam: React.FC<OthersExamProps> = ({
   const dc = diffColors[diff];
 
   return (
-    <div className="oe-root" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+    <div className="oe-root" style={{ height: 'calc(100vh * var(--ui-scale-inv, 1))', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
+      {/* Recovery banner */}
+      <ConnectionStatusBanner netStatus={attemptSession.netStatus} queueCount={attemptSession.queueCount} />
 
       {/* ── FIXED TOP BAR ── */}
 

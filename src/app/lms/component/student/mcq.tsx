@@ -546,7 +546,7 @@ const SubmitDialog = ({ unansweredCount,flaggedCount,unansweredIndices,flaggedIn
 };
 
 const CompletionScreen = ({ onClose, timeUp }:{ onClose:()=>void; timeUp?:boolean }) => (
-  <div style={{ minHeight:'100vh',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
+  <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
     <div style={{ textAlign:'center',maxWidth:360 }}>
       <div style={{ width:80,height:80,borderRadius:24,margin:'0 auto 24px',background:timeUp?T.redLight:T.orangeLight,display:'flex',alignItems:'center',justifyContent:'center' }}>
         {timeUp?<Timer size={36} style={{ color:T.red }} />:<CheckCircle size={36} style={{ color:T.orange }} />}
@@ -559,7 +559,7 @@ const CompletionScreen = ({ onClose, timeUp }:{ onClose:()=>void; timeUp?:boolea
 );
 
 const LoadingScreen = () => (
-  <div style={{ minHeight:'100vh',background:T.pageBg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16 }}>
+  <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))',background:T.pageBg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16 }}>
     <div style={{ width:44,height:44,borderRadius:'50%',border:`3px solid ${T.border}`,borderTopColor:T.orange,animation:'spin 0.7s linear infinite' }} />
     <p style={{ fontSize:14,color:T.textMuted,fontFamily:'inherit' }}>Loading assessment…</p>
     <style>{`@keyframes spin{to{transform:rotate(360deg);}}`}</style>
@@ -774,7 +774,7 @@ const MCQ = ({ exercise:propExercise, courseId='', courseName='Course', nodeId='
       fd.append('language', 'text');
       fd.append('isTestSubmission', 'true');
 
-      await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+      await fetch('http://localhost:5533/courses/answers/submit', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: fd,
@@ -791,7 +791,7 @@ const MCQ = ({ exercise:propExercise, courseId='', courseName='Course', nodeId='
         const finalId=urlExerciseId||propExercise?._id;
         if(!finalId){ toast.error('Exercise ID is required'); setLoading(false); return; }
         const token=getToken()||localStorage.getItem('token')||'';
-        const res=await fetch(`https://lmsserver-yeve.onrender.com/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
+        const res=await fetch(`http://localhost:5533/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const data=await res.json();
         if(data.message?.[0]?.key==='success'&&data.data?.exercise){
@@ -873,7 +873,7 @@ const MCQ = ({ exercise:propExercise, courseId='', courseName='Course', nodeId='
       const fCId=urlCourseId||courseId; const fCat=urlCategory||category; const fSub=urlSubcategory||subcategory;
       if(!fCId||!exerciseData._id) return;
       const marks=exerciseData.questionConfiguration?.mcqQuestionConfiguration?.marksPerQuestion||q.mcqQuestionScore||10;
-      const sub=async(fd:FormData)=>{ await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); };
+      const sub=async(fd:FormData)=>{ await fetch('http://localhost:5533/courses/answers/submit',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); };
       const base=(nt:string,lang:string)=>{ const fd=new FormData(); fd.append('courseId',fCId); fd.append('exerciseId',exerciseData._id); fd.append('questionId',q._id); fd.append('category',fCat); fd.append('subcategory',fSub); fd.append('nodeId',nodeId||''); fd.append('nodeName',exerciseData.exerciseInformation?.exerciseName||'MCQ Assessment'); fd.append('nodeType',nt); fd.append('language',lang); return fd; };
       switch(q.mcqQuestionType){
         case 'multiple_choice': if(selectedRadioOption){ const opt=q.mcqQuestionOptions.find(o=>o._id===selectedRadioOption); if(opt){ const ic=opt.isCorrect===true; const fd=base('mcq','text'); fd.append('code',opt.text); fd.append('score',(ic?marks:0).toString()); fd.append('status',ic?'solved':'attempted'); await sub(fd); } } break;
@@ -947,9 +947,9 @@ const MCQ = ({ exercise:propExercise, courseId='', courseName='Course', nodeId='
   const flaggedForSidebar=new Set(Array.from(flaggedQuestions).map(gi=>questions[gi]?._id).filter(id=>id&&filteredQuestions.some(q=>q._id===id)).map(id=>filteredQuestions.findIndex(q=>q._id===id)).filter(i=>i!==-1));
 
   if(loading) return <LoadingScreen />;
-  if(quizCompleted) return <div style={{ minHeight:'100vh', background:T.pageBg }}><ToastContainer position="top-right" /></div>;
+  if(quizCompleted) return <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))', background:T.pageBg }}><ToastContainer position="top-right" /></div>;
   if(!quizStarted||filteredQuestions.length===0) return (
-    <div style={{ minHeight:'100vh',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
+    <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
       <div style={{ textAlign:'center',maxWidth:320 }}>
         <AlertCircle size={40} style={{ color:T.amber,marginBottom:16 }} />
         <h2 style={{ fontSize:20,fontWeight:800,color:T.textMain,marginBottom:8 }}>{selectedDifficulty?`No ${selectedDifficulty} questions`:'No Questions Found'}</h2>

@@ -42,7 +42,12 @@ import type { Query } from "@tanstack/react-query";
 /** Bump this string whenever query shapes / factories change in a way that
  *  would break a persisted cache from the previous version. The persister
  *  will discard any cache whose buster doesn't match. */
-export const QUERY_CACHE_BUSTER = "2026-08-17-v8";
+// v9: "grades" added to NON_PERSISTED_KEYS. That filter only decides what is
+// WRITTEN from now on — every browser still holds a persisted blob containing
+// the old grades entries, including the string-concatenated overallScore the
+// server used to emit ("555005550" where the sum is 30). Bumping the buster is
+// what actually discards it.
+export const QUERY_CACHE_BUSTER = "2026-08-27-v9";
 
 /** Max age for a persisted entry. After this we re-fetch on next read.
  *  24h is a sane middle ground — long enough to make repeat-reloads feel
@@ -106,6 +111,18 @@ const NON_PERSISTED_KEYS = new Set<string>([
   // Every feedback form with its embedded studentResponses[] — student names
   // and free-text comments. Same rule as the roster: never localStorage.
   "feedback",
+  // The Grades drill (exercises → students → questions). Two reasons, either
+  // one sufficient:
+  //   • PII — the students payload is names, emails and per-student scores,
+  //     the same shape as courseRoster and feedback above.
+  //   • Freshness — marks change the moment anyone grades or a student
+  //     submits, and the global query defaults are staleTime 5 min with
+  //     `refetchOnMount: false`, so a PERSISTED entry can keep painting the
+  //     old marks for the persister's full 24 h maxAge. A grading screen is
+  //     the last place that should show yesterday's numbers.
+  // Still cached in memory for the hook's gcTime — it just doesn't outlive
+  // the tab.
+  "grades",
 ]);
 
 /** Hard ceiling on a single re-admitted entry (see `isReadmittedEntry`). A

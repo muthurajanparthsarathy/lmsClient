@@ -11,7 +11,7 @@ export function injectTryItButtons(html: string): string {
       '<title>Try it Yourself<\/title>',
       '<style>',
       '*{margin:0;padding:0;box-sizing:border-box}',
-      'body{height:100vh;font-family:"Segoe UI",sans-serif;background:#1e1e1e;overflow:hidden;display:flex;flex-direction:column}',
+      'body{height:calc(100vh * var(--ui-scale-inv, 1));font-family:"Segoe UI",sans-serif;background:#1e1e1e;overflow:hidden;display:flex;flex-direction:column}',
       '.toolbar{display:flex;align-items:center;gap:12px;padding:0 20px;background:#252526;border-bottom:2px solid #1a1a1a;height:52px;flex-shrink:0}',
       '.toolbar span{font-size:14px;font-weight:700;color:#fff}',
       '.run-btn{display:flex;align-items:center;gap:8px;padding:8px 24px;background:#04AA6D;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;margin-left:auto}',

@@ -47,6 +47,13 @@ interface AddQuestionFormProps {
    * picker) instead of a blank editor. Forwarded to ProgrammingQuestionForm.
    */
   autoOpenSource?: 'manual' | 'ai' | 'bank' | 'thirdParty';
+  /**
+   * Difficulty already chosen by the caller (the host now asks "which level?"
+   * BEFORE "which source?"). Seeds `lockedDiff`, which makes the internal
+   * difficulty popup skip itself — the teacher is not asked the same question
+   * twice. Omit it and the popup behaves exactly as before.
+   */
+  initialDifficulty?: 'easy' | 'medium' | 'hard';
 }
 
 // ─── Difficulty styles ─────────────────────────────────────────────────────────
@@ -111,6 +118,7 @@ const AddQuestionForm: React.FC<AddQuestionFormProps> = ({
   sectionData,
   approval, approvalContext, onQueryResolved,
   autoOpenSource,
+  initialDifficulty,
 }) => {
   // ── State ──────────────────────────────────────────────────────────────────
   const [selectedType, setSelectedType] = useState<'mcq' | 'programming' | null>(null);
@@ -119,7 +127,7 @@ const AddQuestionForm: React.FC<AddQuestionFormProps> = ({
 
   // Difficulty popup (level / selectionLevel only — NOT general)
   const [showDiffPopup, setShowDiffPopup] = useState(false);
-  const [lockedDiff, setLockedDiff] = useState<'easy' | 'medium' | 'hard' | null>(null);
+  const [lockedDiff, setLockedDiff] = useState<'easy' | 'medium' | 'hard' | null>(initialDifficulty ?? null);
 const [diffRefreshTrigger, setDiffRefreshTrigger] = useState(0);
 
   // Combined limits
@@ -533,14 +541,43 @@ const getDiffOptions = useCallback(() => {
     : currentProgCfg?.selectionLevelCounts;
   
   const progQs = (currentFullEx?.questions || []).filter((q: any) => q.questionType === 'programming');
-  
+
+  // ── Manual (scratch) slice of the distribution matrix ────────────────────
+  // A level can have open slots overall and STILL be closed to hand-authoring,
+  // because the distribution assigned those slots to AI / Other Platform. This
+  // popup is the "From Scratch" entry point, so it must respect that column —
+  // otherwise it offers a level the editor will then refuse to save into.
+  // Mirrors ProgrammingQuestionForm's getSourceRemaining, minus the staged /
+  // in-session bookkeeping (nothing is staged before the editor opens).
+  const customDist: any = currentFullEx?.customDistribution;
+  const usesCustomDist = (() => {
+    if ((currentFullEx?.questionSource || null) !== 'custom' || !customDist) return false;
+    const t = (['easy', 'medium', 'hard'] as const).reduce((s, r) =>
+      s + (customDist[r]?.scratch || 0) + (customDist[r]?.ai || 0) + (customDist[r]?.thirdParty || 0), 0);
+    return t > 0;
+  })();
+  const isScratchTag = (tag: any) => (tag ?? '').toString().startsWith('scratch');
+
   return (['easy', 'medium', 'hard'] as const)
     .filter(d => (currentCounts?.[d] || 0) > 0)
     .map(d => {
       const total = currentCounts?.[d] || 0;
       const created = progQs.filter((q: any) => q.difficulty === d).length;
       const remaining = Math.max(0, total - created);
-      return { level: d, remaining, total, canAdd: remaining > 0 };
+
+      if (!usesCustomDist) {
+        return { level: d, remaining, total, canAdd: remaining > 0, manualQuota: null as number | null };
+      }
+      const manualQuota = customDist?.[d]?.scratch || 0;
+      const manualUsed = progQs.filter((q: any) => q.difficulty === d && isScratchTag(q.source)).length;
+      const manualRemaining = Math.max(0, Math.min(remaining, manualQuota - manualUsed));
+      return {
+        level: d,
+        remaining: manualRemaining,
+        total: manualQuota,
+        canAdd: manualRemaining > 0,
+        manualQuota,
+      };
     });
 }, [localExerciseData, exerciseData, diffRefreshTrigger]); // Add diffRefreshTrigger as dependency
 
@@ -769,14 +806,21 @@ const DiffPopup = () => {
           {opts.length === 0 && (
             <p className="text-sm text-center text-gray-400 py-4">No difficulty levels configured.</p>
           )}
-          {opts.map(({ level, remaining, total, canAdd }) => {
+          {opts.map(({ level, remaining, total, canAdd, manualQuota }) => {
             const s = DStyle[level];
+            // Two different reasons a level can be closed, and they need
+            // different words: the quota is spent, vs the distribution never
+            // gave Manual any slots here in the first place.
+            const notConfiguredForManual = manualQuota === 0;
             return (
               <button
                 key={level}
                 type="button"
                 disabled={!canAdd}
                 onClick={() => { setLockedDiff(level); setShowDiffPopup(false); }}
+                title={notConfiguredForManual
+                  ? `Manual authoring is not configured for ${level}. In Exercise Settings → Add Questions, give ${level} at least one question in the Manual column.`
+                  : undefined}
                 className={`w-full flex items-center justify-between p-3.5 rounded-xl border-2 transition-all group
                   ${!canAdd
                     ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-55'
@@ -789,12 +833,16 @@ const DiffPopup = () => {
                   <div className="text-left">
                     <div className={`text-sm font-bold capitalize ${!canAdd ? 'text-gray-400' : s.text}`}>{level}</div>
                     <div className="text-[10px] text-gray-500 mt-0.5">
-                      {!canAdd ? '✓ All slots filled' : `${remaining} of ${total} questions remaining`}
+                      {notConfiguredForManual
+                        ? 'Manual authoring not configured for this level'
+                        : !canAdd ? '✓ All slots filled' : `${remaining} of ${total} questions remaining`}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!canAdd
+                  {notConfiguredForManual
+                    ? <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-400 rounded-full">Not configured</span>
+                    : !canAdd
                     ? <span className="text-[10px] px-2 py-0.5 bg-gray-100 text-gray-400 rounded-full flex items-center gap-1"><Check size={8} /> Done</span>
                     : <>
                         <span className={`text-[10px] px-2.5 py-1 rounded-full font-semibold ${s.badge}`}>{remaining} left</span>

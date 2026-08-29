@@ -631,7 +631,7 @@ const MCQQuestion: React.FC<MCQQuestionProps> = ({
   };
 
   if (!isClient) {
-    return <div style={{ minHeight: '100vh', background: T.pageBg }} />;
+    return <div style={{ minHeight: 'calc(100vh * var(--ui-scale-inv, 1))', background: T.pageBg }} />;
   }
 
   return (

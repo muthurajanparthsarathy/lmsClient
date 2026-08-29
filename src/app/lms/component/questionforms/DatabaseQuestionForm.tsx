@@ -13,6 +13,7 @@ import { parseDatabaseFile } from '@/app/lms/component/questionforms/parseQuesti
 import { toast } from 'react-toastify';
 import QuestionBankSelector from './mcq/QuestionBankSelector';
 import GenerateProgFamilyAI from './GenerateProgFamilyAI';
+import { CodeSetupSection, isStringSolutionEmpty } from './CodeSetupSection';
 
 // ─── FONT INJECTION ────────────────────────────────────────────────────────────
 const injectFonts = (() => {
@@ -319,6 +320,9 @@ interface DBQuestion {
   isSaved: boolean;
   isDirty?: boolean;
   isPreExisting?: boolean;
+  // Code Setup — SQL: single-language string starter/solution.
+  starterCode?: string;
+  solutionCode?: string;
 }
 
 type ProgContentBlock =
@@ -397,6 +401,8 @@ const dbQuestionToFlow = (q: any): DBQuestion => ({
   isSaved: true,
   isDirty: false,
   isPreExisting: true,
+  starterCode: typeof q.starterCode === 'string' ? q.starterCode : '',
+  solutionCode: typeof q.solutionCode === 'string' ? q.solutionCode : '',
 });
 
 // ─── SQL Result Table ──────────────────────────────────────────────────────────
@@ -444,7 +450,7 @@ const ImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
+      const res = await fetch('http://localhost:5533/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -1672,6 +1678,8 @@ const DatabaseQuestionForm: React.FC<DatabaseQuestionFormProps> = ({
   const [constraints, setConstraints] = useState<string[]>(['']);
   const [hint, setHint] = useState('');
   const [extraHints, setExtraHints] = useState<HintItem[]>([]);
+  const [starterCode, setStarterCode] = useState('');
+  const [solutionCode, setSolutionCode] = useState('');
   const [sampleQuery, setSampleQuery] = useState('');
   const [descBlocks, setDescBlocks] = useState<ProgContentBlock[]>([mkProgTextBlock()]);
   const [sampleResultBlocks, setSampleResultBlocks] = useState<ProgContentBlock[]>([mkProgTextBlock()]);
@@ -1701,6 +1709,7 @@ const DatabaseQuestionForm: React.FC<DatabaseQuestionFormProps> = ({
   const stickyToolbarRef = useRef<HTMLDivElement>(null);
   const titleSectionRef = useRef<HTMLDivElement>(null);
   const descSectionRef = useRef<HTMLDivElement>(null);
+  const codeSetupSectionRef = useRef<HTMLDivElement>(null);
   const constraintsSectionRef = useRef<HTMLDivElement>(null);
   const sampleQuerySectionRef = useRef<HTMLDivElement>(null);
   const sampleResultSectionRef = useRef<HTMLDivElement>(null);
@@ -1867,6 +1876,7 @@ const DatabaseQuestionForm: React.FC<DatabaseQuestionFormProps> = ({
         score: isGeneral ? generalMPQ : (isScoreEditable(lockedDifficulty || 'medium') ? 0 : getFixedScore(lockedDifficulty || 'medium')),
         sampleQuery: '', sampleResult: [mkProgTextBlock()], constraints: [], hints: [],
         questionType: 'database', isSaved: false, isDirty: false, isPreExisting: false,
+        starterCode: '', solutionCode: '',
       };
       convertedQuestions.push(emptyQ);
       startIdx = 0;
@@ -1974,6 +1984,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
     setScore(q.score || 0);
     setDifficulty(q.difficulty || currentDiff);
     setCurrentDiff(q.difficulty || currentDiff);
+    setStarterCode(typeof (q as any).starterCode === 'string' ? (q as any).starterCode : '');
+    setSolutionCode(typeof (q as any).solutionCode === 'string' ? (q as any).solutionCode : '');
     setErrs({});
     setTouched(new Set());
     setIsEditMode(!!(q._id));
@@ -2033,17 +2045,20 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
       constraints: constraints.filter(c => c.trim()),
       hints: allHints,
       questionType: 'database',
+      starterCode: starterCode || '',
+      solutionCode: solutionCode || '',
       isSaved: !!serverId || existing?.isSaved || false,
       isDirty: !!serverId,
       isPreExisting: !!serverId || existing?.isPreExisting || false,
     };
-  }, [title, descBlocks, currentDiff, score, sampleQuery, sampleResultBlocks, constraints, hint, extraHints, isGeneral, generalMPQ, isScoreEditable, getFixedScore, getServerId]);
+  }, [title, descBlocks, currentDiff, score, sampleQuery, sampleResultBlocks, constraints, hint, extraHints, isGeneral, generalMPQ, isScoreEditable, getFixedScore, getServerId, starterCode, solutionCode]);
 
   const validate = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!title.trim()) e.title = 'Title is required';
     const descText = descBlocks.filter(b => b.type === 'text').map(b => (b as any).value).join(' ').trim();
     if (!descText && !descBlocks.some(b => b.type === 'image' || b.type === 'code')) e.description = 'Description is required';
+    if (isStringSolutionEmpty(solutionCode)) e.solutionCode = 'Solution code is required';
     if (!sampleQuery.trim()) e.sampleQuery = 'Sample query is required';
     const srText = sampleResultBlocks.filter(b => b.type === 'text').map(b => (b as any).value).join(' ').trim();
     if (!srText && !sampleResultBlocks.some(b => b.type === 'image')) e.sampleResult = 'Expected result is required';
@@ -2064,11 +2079,11 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
       e.score = 'Score must be greater than 0';
     }
     return e;
-  }, [title, descBlocks, sampleQuery, sampleResultBlocks, isGeneral, isScoreEditable, currentDiff, totalMarksForDiff, getServerId, dbQuestions, currentIndex, isEditing, score, getDbQuestionsForDiff, usedMarks, getFixedScore]);
+  }, [title, descBlocks, sampleQuery, sampleResultBlocks, isGeneral, isScoreEditable, currentDiff, totalMarksForDiff, getServerId, dbQuestions, currentIndex, isEditing, score, getDbQuestionsForDiff, usedMarks, getFixedScore, solutionCode]);
 
   useEffect(() => {
     if (touched.size > 0) setErrs(validate());
-  }, [title, descBlocks, sampleQuery, sampleResultBlocks, score, constraints, touched, validate]);
+  }, [title, descBlocks, sampleQuery, sampleResultBlocks, score, constraints, touched, validate, solutionCode]);
 
   const touch = (field: string) => setTouched(prev => new Set(prev).add(field));
 
@@ -2076,6 +2091,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
     const order: { key: string; ref: React.RefObject<HTMLDivElement | null> }[] = [
       { key: 'title', ref: titleSectionRef },
       { key: 'description', ref: descSectionRef },
+      { key: 'solutionCode', ref: codeSetupSectionRef },
       { key: 'sampleQuery', ref: sampleQuerySectionRef },
       { key: 'sampleResult', ref: sampleResultSectionRef },
       { key: 'constraints', ref: constraintsSectionRef },
@@ -2135,6 +2151,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
     setConstraints(['']);
     setHint('');
     setExtraHints([]);
+    setStarterCode('');
+    setSolutionCode('');
     const defaultScore = isGeneral ? generalMPQ : (isScoreEditable(currentDiff) ? 0 : getFixedScore(currentDiff));
     setScore(defaultScore);
     setErrs({});
@@ -2263,6 +2281,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
           __localId: mkLocalId(), title: '', description: [mkProgTextBlock()],
           difficulty: currentDiff, score: generalMPQ, sampleQuery: '', sampleResult: [mkProgTextBlock()],
           constraints: [], hints: [], questionType: 'database', isSaved: false, isDirty: false, isPreExisting: false,
+          starterCode: '', solutionCode: '',
         };
         const newFlow = [...flow, newQ];
         dbQuestionsRef.current = newFlow; setDbQuestions(newFlow);
@@ -2270,6 +2289,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
         setTitle(''); if (titleRef.current) titleRef.current.innerHTML = '';
         setDescBlocks([mkProgTextBlock()]); setSampleQuery(''); setSampleResultBlocks([mkProgTextBlock()]);
         setConstraints(['']); setHint(''); setExtraHints([]); setScore(generalMPQ);
+        setStarterCode(''); setSolutionCode('');
       } else {
         setSaveOk(true);
         setTimeout(() => setSaveOk(false), 2500);
@@ -2281,6 +2301,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
           __localId: mkLocalId(), title: '', description: [mkProgTextBlock()],
           difficulty: currentDiff, score: defaultScore, sampleQuery: '', sampleResult: [mkProgTextBlock()],
           constraints: [], hints: [], questionType: 'database', isSaved: false, isDirty: false, isPreExisting: false,
+          starterCode: '', solutionCode: '',
         };
         const newFlow = [...flow, newQ];
         dbQuestionsRef.current = newFlow; setDbQuestions(newFlow);
@@ -2288,6 +2309,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
         setTitle(''); if (titleRef.current) titleRef.current.innerHTML = '';
         setDescBlocks([mkProgTextBlock()]); setSampleQuery(''); setSampleResultBlocks([mkProgTextBlock()]);
         setConstraints(['']); setHint(''); setExtraHints([]); setScore(defaultScore);
+        setStarterCode(''); setSolutionCode('');
       } else {
         setSaveOk(true);
         setTimeout(() => setSaveOk(false), 2500);
@@ -2337,6 +2359,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
       __localId: mkLocalId(), title: '', description: [mkProgTextBlock()],
       difficulty: currentDiff, score: defaultScore, sampleQuery: '', sampleResult: [mkProgTextBlock()],
       constraints: [], hints: [], questionType: 'database', isSaved: false, isDirty: false, isPreExisting: false,
+      starterCode: '', solutionCode: '',
     };
     const newFlow = [...flow, newQ];
     dbQuestionsRef.current = newFlow; setDbQuestions(newFlow);
@@ -2366,6 +2389,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
         hints: [],
         questionType: 'database',
         isSaved: false, isDirty: false, isPreExisting: false,
+        starterCode: typeof q.starterCode === 'string' ? q.starterCode : '',
+        solutionCode: typeof q.solutionCode === 'string' ? q.solutionCode : '',
       };
     });
     const newFlow = [...flow, ...mapped];
@@ -2754,6 +2779,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
                       __localId: mkLocalId(), title: '', description: [mkProgTextBlock()],
                       difficulty: d, score: defaultScore, sampleQuery: '', sampleResult: [mkProgTextBlock()],
                       constraints: [], hints: [], questionType: 'database', isSaved: false, isDirty: false, isPreExisting: false,
+                      starterCode: '', solutionCode: '',
                     };
                     const finalFlow = [...newFlow, newQ];
                     dbQuestionsRef.current = finalFlow;
@@ -2770,6 +2796,8 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
                     setHint('');
                     setExtraHints([]);
                     setScore(defaultScore);
+                    setStarterCode('');
+                    setSolutionCode('');
                   }
                 }}
                 style={{
@@ -2883,6 +2911,23 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
               <div onBlur={() => touch('description')}>
                 <DescriptionEditor blocks={descBlocks} onChange={blocks => { setDescBlocks(blocks); if (errs.description) setErrs(p => { const n = { ...p }; delete n.description; return n; }); }} hasError={!!(errs.description && touched.has('description'))} placeholder="Describe the database problem clearly. Include table schemas, sample data, and expected query results." />
               </div>
+            </div>
+
+            {/* Code Setup — SQL */}
+            <div ref={codeSetupSectionRef}>
+              <CodeSetupSection
+                variant="sql"
+                starterCode={starterCode}
+                onStarterChange={setStarterCode}
+                solutionCode={solutionCode}
+                onSolutionChange={v => {
+                  setSolutionCode(v);
+                  if (errs.solutionCode && v.trim()) setErrs(p => { const n = { ...p }; delete n.solutionCode; return n; });
+                }}
+                languageLabel="SQL"
+                solutionError={touched.has('solutionCode') ? errs.solutionCode : undefined}
+                onSolutionBlur={() => touch('solutionCode')}
+              />
             </div>
 
             {/* Sample Query */}

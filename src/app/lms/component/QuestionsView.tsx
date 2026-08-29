@@ -96,7 +96,7 @@ interface QuestionsProps {
   breadcrumbs?: any[];
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
 const stripHtml = (html: string) => (html || '').replace(/<[^>]*>/g, '');
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -136,6 +136,36 @@ const Questions: React.FC<QuestionsProps> = ({
   const [questionToDelete, setQuestionToDelete]             = useState<Question | null>(null);
   const [deletingQuestion, setDeletingQuestion]             = useState(false);
   const [showAddOption, setShowAddOption]                   = useState(false);
+
+  /**
+   * Dismissing a source surface (the authoring form, the Question Bank picker,
+   * the AI generator, the document importer) returns to the "Add Question"
+   * chooser rather than dropping the trainer on the bare question list.
+   *
+   * The chooser is the step they came FROM, and re-picking a source is the
+   * usual next action — landing on the list forced them to hunt for the Add
+   * button again. Only DISMISS paths call this; a successful save falls
+   * through to the list as before.
+   *
+   * Quick-add mode is excluded: there the whole view tears itself down after
+   * a save (see the `quickAddMode` branch in handleQuestionSaved), so popping
+   * a chooser on the way out would fight that teardown.
+   */
+  const backToAddOptions = useCallback(() => {
+    if (quickAddMode) return;
+    setAddFlowDiff(null);   // reopen at the difficulty step
+    setShowAddOption(true);
+  }, [quickAddMode]);
+
+  /**
+   * Difficulty chosen in the Add Question flow, BEFORE a source is picked.
+   * null = the chooser is still on its "which level?" step.
+   *
+   * The order is deliberate: which sources are legal depends on the level (the
+   * distribution matrix is per-level), so asking for the source first meant
+   * offering options that the next screen would then refuse.
+   */
+  const [addFlowDiff, setAddFlowDiff] = useState<'easy' | 'medium' | 'hard' | null>(null);
   const [previewQuestion, setPreviewQuestion]               = useState<Question | null>(null);
 
   const [showDuplicateConfirmation, setShowDuplicateConfirmation] = useState(false);
@@ -957,6 +987,45 @@ const sourceRemaining: Record<SrcKey, number> = (() => {
   if ((exercise.exerciseType || '').toLowerCase() === 'other') return othersSlice();
   return UNCAPPED;
 })();
+// ── Per-LEVEL, per-source remaining ──────────────────────────────────────────
+// `sourceRemaining` above is a total across all three levels, which cannot
+// answer "can I hand-author an EASY question?". The Add Question flow now asks
+// for the difficulty first, so it needs the individual cell of the
+// distribution matrix: rows = difficulty, columns = source.
+//
+// Returns null when the exercise has no level-based custom distribution — the
+// caller then falls back to the whole-exercise totals, exactly as before.
+type LevelKey = 'easy' | 'medium' | 'hard';
+const levelSourceRemaining = (level: LevelKey): Record<SrcKey, number> | null => {
+  const srcDoc: any = (fullExData ?? exercise) as any;
+  const dist: any = srcDoc.questionSource === 'custom' ? srcDoc.customDistribution : null;
+  if (!dist) return null;
+  const distTotal = (['easy', 'medium', 'hard'] as const).reduce((s, r) =>
+    s + (dist[r]?.scratch || 0) + (dist[r]?.ai || 0) + (dist[r]?.thirdParty || 0), 0);
+  if (distTotal <= 0) return null;
+
+  const srcOf = (q: any): SrcKey | 'unknown' => {
+    const t = ((q as any).source ?? '').toString();
+    if (t === 'ai') return 'ai';
+    if (t.startsWith('thirdParty')) return 'thirdParty';
+    if (t.startsWith('scratch')) return 'scratch';
+    return 'unknown';
+  };
+  const diffOf = (q: any) => {
+    const d = (q?.difficulty || '').toString().toLowerCase();
+    return d === 'easy' || d === 'hard' ? d : 'medium';
+  };
+  const atLevel = (questions || []).filter(
+    (q: any) => q.isActive !== false && diffOf(q) === level,
+  );
+  const used = (k: SrcKey) => atLevel.filter((q: any) => srcOf(q) === k).length;
+  return {
+    scratch: Math.max(0, (dist[level]?.scratch || 0) - used('scratch')),
+    ai: Math.max(0, (dist[level]?.ai || 0) - used('ai')),
+    thirdParty: Math.max(0, (dist[level]?.thirdParty || 0) - used('thirdParty')),
+  };
+};
+
 const srcQuotaFull = {
   scratch: sourceRemaining.scratch <= 0,
   ai: sourceRemaining.ai <= 0,
@@ -1248,6 +1317,45 @@ const addBtnDisabled = isAddingQuestions || (() => {
   };
 
   const AddQuestionOptions = () => {
+    // ── Level-first data ────────────────────────────────────────────────────
+    // The levels this exercise actually configured, each with the slots still
+    // open across ALL sources. Empty for general-strategy exercises, which
+    // skips the level step entirely and preserves the old single-step flow.
+    const levelFirstDiffs = (() => {
+      const cfg: any = (fullExData ?? exercise) as any;
+      const pc = cfg?.questionConfiguration?.programmingQuestionConfiguration;
+      const t = pc?.questionConfigType;
+      if (t !== 'levelBased' && t !== 'selectionLevel') return [];
+      const counts = t === 'levelBased' ? pc?.levelBasedCounts : pc?.selectionLevelCounts;
+      const diffOf = (q: any) => {
+        const d = (q?.difficulty || '').toString().toLowerCase();
+        return d === 'easy' || d === 'hard' ? d : 'medium';
+      };
+      return (['easy', 'medium', 'hard'] as const)
+        .filter(d => (counts?.[d] || 0) > 0)
+        .map(level => {
+          const quota = counts?.[level] || 0;
+          const used = (questions || []).filter(
+            (q: any) => q.isActive !== false && diffOf(q) === level,
+          ).length;
+          const rem = Math.max(0, quota - used);
+          return { level, rem, open: rem > 0 };
+        });
+    })();
+
+    // Per-source remaining for the chosen level. Null when this exercise has
+    // no custom distribution — the source rows then use the whole-exercise
+    // totals they always used.
+    const lvlSrc = addFlowDiff ? levelSourceRemaining(addFlowDiff) : null;
+
+    // Is this source legal for the level the teacher picked? With no custom
+    // distribution (or no level chosen yet) every source stays available and
+    // the whole-exercise totals decide, exactly as before.
+    const okFor = (k: SrcKey) => !lvlSrc || lvlSrc[k] > 0;
+    // "Quota full" must also be read per level once one is chosen — the
+    // exercise-wide total can be spent while THIS level still has room.
+    const fullFor = (k: SrcKey) => (lvlSrc ? lvlSrc[k] <= 0 : srcQuotaFull[k]);
+
     // Header context label: "Assignment"/"Assessment" (spelling drift included)
     // derived from the subcategory; anything else gets its prettified name.
     const subcatNoun = /assess?ments?/i.test(subcategory || '') ? 'Assessment'
@@ -1314,19 +1422,66 @@ const addBtnDisabled = isAddingQuestions || (() => {
             </div>
           </div>
 
-          {/* Choices — filtered by exercise's questionSource (Manual / AI / Other Platform / Custom) */}
+          {/* ── STEP 1 · WHICH LEVEL? ──────────────────────────────────────
+              Shown only when the exercise has a level-based distribution, so
+              general-strategy exercises keep their single-step flow. Which
+              sources are legal depends on the level, so this must come first. */}
+          {levelFirstDiffs.length > 0 && addFlowDiff === null && (
+            <div className="p-3 space-y-1.5">
+              <p className="text-[10.5px] px-0.5" style={{ color: '#8b8b9e' }}>
+                Pick the difficulty first — the ways you can add a question depend on it.
+              </p>
+              {levelFirstDiffs.map(({ level, rem, open }) => (
+                <button key={level} disabled={!open}
+                  onClick={() => { if (open) setAddFlowDiff(level); }}
+                  className="group w-full text-left rounded-lg px-3 py-2 transition-all flex items-center gap-2.5"
+                  style={{
+                    border: '1px solid #e4e4ed', background: open ? '#fff' : '#fafafa',
+                    cursor: open ? 'pointer' : 'not-allowed', opacity: open ? 1 : 0.6,
+                  }}
+                  onMouseEnter={e => { if (open) { e.currentTarget.style.borderColor = '#F27757'; e.currentTarget.style.background = 'rgba(242,119,87,0.03)'; } }}
+                  onMouseLeave={e => { if (open) { e.currentTarget.style.borderColor = '#e4e4ed'; e.currentTarget.style.background = '#fff'; } }}>
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ background: open ? ({ easy: '#0F9D58', medium: '#F0A415', hard: '#E0503C' } as any)[level] : '#d1d5db' }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold capitalize" style={{ color: open ? '#1a1a2e' : '#9ca3af' }}>{level}</div>
+                    <div className="text-[10px] truncate" style={{ color: open ? '#8b8b9e' : '#d97706' }}>
+                      {open
+                        ? `${rem} slot${rem === 1 ? '' : 's'} still open`
+                        : 'All slots filled for this level'}
+                    </div>
+                  </div>
+                  {open && <ChevronRight size={13} className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all" style={{ color: '#F27757' }} />}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── STEP 2 · WHICH SOURCE? ───────────────────────────────────── */}
+          {(levelFirstDiffs.length === 0 || addFlowDiff !== null) && (
           <div className="p-3 space-y-1.5">
+            {addFlowDiff && (
+              <div className="flex items-center justify-between gap-2 px-0.5 pb-0.5">
+                <span className="text-[10.5px]" style={{ color: '#8b8b9e' }}>
+                  Adding an <span className="font-semibold capitalize" style={{ color: '#1a1a2e' }}>{addFlowDiff}</span> question
+                </span>
+                <button onClick={() => setAddFlowDiff(null)}
+                  className="text-[10.5px] font-semibold" style={{ color: '#F27757', cursor: 'pointer' }}>
+                  Change level
+                </button>
+              </div>
+            )}
             {/* Safety net: if source filtering hides every button, tell the
                 teacher instead of showing an empty popup. Click handler above
                 also short-circuits this path before opening the popup, so
                 this only shows on the rare re-open route (e.g. "Back" from
                 Question Bank picker after settings changed). */}
             {(() => {
-              const showScratch = allowedSources.manual;
-              const showBank = bankViaScratch && (isPureMCQ || isPureProg || isCombined);
-              const showAI = allowedSources.ai && (isPureMCQ || isCombined || isPureProg);
-              const showOther = allowedSources.thirdParty && (isPureMCQ || isPureProg || isCombined);
-              const showDoc = allowedSources.upload && (isPureMCQ || docProgEligible);
+              const showScratch = allowedSources.manual && okFor('scratch');
+              const showBank = bankViaScratch && (isPureMCQ || isPureProg || isCombined) && okFor('scratch');
+              const showAI = allowedSources.ai && (isPureMCQ || isCombined || isPureProg) && okFor('ai');
+              const showOther = allowedSources.thirdParty && (isPureMCQ || isPureProg || isCombined) && okFor('thirdParty');
+              const showDoc = allowedSources.upload && (isPureMCQ || docProgEligible) && okFor('scratch');
               const noneVisible = !showScratch && !showBank && !showAI && !showOther && !showDoc;
               if (!noneVisible) return null;
               return (
@@ -1340,7 +1495,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
             })()}
             {/* Create New From Scratch — hidden when questionSource forbids manual;
                 disabled (visible) when the Manual quota slice is exhausted. */}
-            {allowedSources.manual && (() => { const full = srcQuotaFull.scratch; return (
+            {allowedSources.manual && okFor('scratch') && (() => { const full = fullFor('scratch'); return (
               <Row
                 full={full}
                 onClick={() => { setNextFormAutoOpen('manual'); setShowAddOption(false); setShowAddQuestion(true); }}
@@ -1355,7 +1510,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
 
             {/* Question Bank — scratch's second entry point; hidden when scratch is forbidden;
                 disabled (visible) when the Manual quota slice is exhausted. */}
-            {bankViaScratch && (isPureMCQ || isPureProg || exercise.exerciseType !== 'mcq') && (() => { const full = srcQuotaFull.scratch; return (
+            {bankViaScratch && (isPureMCQ || isPureProg || exercise.exerciseType !== 'mcq') && okFor('scratch') && (() => { const full = fullFor('scratch'); return (
               <Row
                 full={full}
                 onClick={() => { setBankSourceTag('scratch-bank'); setQbankFromMCQOpts(true); setShowAddOption(false); setShowQuestionBank(true); }}
@@ -1371,7 +1526,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
             {/* Other Platform — same bank picker, but imports are stamped
                 thirdParty and capped by the Other Platform quota slice.
                 Disabled (visible) when that slice is exhausted. */}
-            {allowedSources.thirdParty && (isPureMCQ || isPureProg || isCombined) && (() => { const full = srcQuotaFull.thirdParty; return (
+            {allowedSources.thirdParty && (isPureMCQ || isPureProg || isCombined) && okFor('thirdParty') && (() => { const full = fullFor('thirdParty'); return (
               <Row
                 full={full}
                 onClick={() => { qbHasContentRef.current = false; setBankSourceTag('thirdParty'); setQbankFromMCQOpts(true); setShowAddOption(false); setShowQuestionBank(true); }}
@@ -1388,7 +1543,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
                 Programming routes through the form's AI generator (autoOpenSource)
                 instead of the MCQ AI modal. Disabled (visible) when the AI
                 quota slice is exhausted. */}
-            {allowedSources.ai && (isPureMCQ || isCombined || isPureProg) && (() => { const full = srcQuotaFull.ai; return (
+            {allowedSources.ai && (isPureMCQ || isCombined || isPureProg) && okFor('ai') && (() => { const full = fullFor('ai'); return (
               <Row
                 full={full}
                 onClick={() => {
@@ -1418,7 +1573,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
             {/* Add via Document — hidden when questionSource forbids upload.
                 Counts against the Manual quota slice (imports are stamped
                 'scratch-manual'), so it shares the scratch full-state. */}
-            {allowedSources.upload && (isPureMCQ || docProgEligible) && (() => { const full = srcQuotaFull.scratch; return (
+            {allowedSources.upload && (isPureMCQ || docProgEligible) && okFor('scratch') && (() => { const full = fullFor('scratch'); return (
               <Row
                 full={full}
                 onClick={openDocFlow}
@@ -1431,6 +1586,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
               />
             ); })()}
           </div>
+          )}
 
           <div className="px-3 pb-3">
             <button onClick={() => setShowAddOption(false)}
@@ -2130,6 +2286,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
         return;
       }
       setShowQuestionBank(false); setQbankFromMCQOpts(false);
+      backToAddOptions();
     }}
     onBack={qbankFromMCQOpts ? () => {
       // Back is an explicit "change source" — allowed even when empty.
@@ -2195,6 +2352,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
               return;
             }
             setShowGenerateAI(false);
+            backToAddOptions();
           }}
           onSave={(aiQuestions) => {
             // Content produced — the follow-up onClose (fired by the modal
@@ -2277,6 +2435,8 @@ const addBtnDisabled = isAddingQuestions || (() => {
             exerciseType: exercise.exerciseType, programmingSettings: exercise.programmingSettings, subcategoryLabel: subcategory,
           }}
           breadcrumbs={breadcrumbs} tabType={tabType}
+          // Level already chosen in the Add Question chooser — don't ask twice.
+          initialDifficulty={addFlowDiff ?? undefined}
           onClose={() => {
             // Close the form SYNCHRONOUSLY so X / Cancel feel instant. Previously
             // this awaited Promise.all([fetchQuestions, refreshFullExData]) BEFORE
@@ -2288,6 +2448,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
             // the promises land; the tiny stale window is invisible in practice.
             setShowAddQuestion(false);
             setBankReviewQuestions([]);
+            backToAddOptions();
             // Reset the auto-open flag so a subsequent Add Question click
             // starts from a clean 'manual' state instead of inheriting the
             // last-used source. Without this, `routeAddQuestion` still
@@ -2384,7 +2545,7 @@ const addBtnDisabled = isAddingQuestions || (() => {
     tabType={tabType}
     breadcrumbs={breadcrumbs}
     sliceRemaining={sourceRemaining ? sourceRemaining.scratch : undefined}
-    onClose={() => setShowDocumentUpload(false)}
+    onClose={() => { setShowDocumentUpload(false); backToAddOptions(); }}
     onInserted={async (count) => {
       await fetchQuestions();
       toast.success(`${count} question${count !== 1 ? 's' : ''} added via document`);

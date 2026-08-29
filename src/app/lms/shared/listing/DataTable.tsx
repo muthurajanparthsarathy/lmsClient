@@ -52,7 +52,7 @@ export function DataTable<T>({
     onEmptyAction,
     minWidth = 720,
     fixedLayout = false,
-    maxHeight = 'calc(100vh - 360px)',
+    maxHeight = 'calc(100vh * var(--ui-scale-inv, 1) - 360px)',
     fillHeight = false,
     loading,
     emptyState,

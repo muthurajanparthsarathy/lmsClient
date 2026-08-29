@@ -587,7 +587,7 @@ export const LDX_CSS = `
   --radius-tile:16px; --radius-chip:12px; --radius-control:12px;
   --shadow-xs:0 1px 2px rgba(16,24,40,.04);
   --shadow-sm:0 1px 2px rgba(16,24,40,.05),0 8px 20px -14px rgba(16,24,40,.08);
-  display:flex; min-height:100vh; background:var(--page); color:var(--ink);
+  display:flex; min-height:calc(100vh * var(--ui-scale-inv, 1)); background:var(--page); color:var(--ink);
   font-family:Poppins,"Segoe UI",system-ui,-apple-system,sans-serif; letter-spacing:-0.002em;
 }
 .ldx *{box-sizing:border-box;}
@@ -597,7 +597,7 @@ export const LDX_CSS = `
 /* Full viewport height (not content height): the footer identity row reaches
    the BOTTOM-LEFT corner via margin-top:auto only because the rail actually
    spans the whole viewport. */
-.ldx-side{flex:0 0 252px; background:transparent; padding:14px 14px 12px; display:flex; flex-direction:column; gap:1px; position:sticky; top:0; align-self:flex-start; height:100vh; overflow-y:auto;}
+.ldx-side{flex:0 0 252px; background:transparent; padding:14px 14px 12px; display:flex; flex-direction:column; gap:1px; position:sticky; top:0; align-self:flex-start; height:calc(100vh * var(--ui-scale-inv, 1)); overflow-y:auto;}
 /* Brand card — product identity; who is signed in stays in the footer card. */
 .ldx-brand{display:flex; align-items:center; gap:10px; padding:9px 11px; margin-bottom:10px; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-xs);}
 .ldx-brand-logo{flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:linear-gradient(145deg,#FB8C3C,var(--accent)); color:#fff; display:grid; place-items:center; font-size:15px; font-weight:800; letter-spacing:-.02em;}
@@ -679,7 +679,7 @@ export const LDX_CSS = `
 /* Gray rail, white workspace: the main column stays on the rail's gray and
    the actual workspace is a rounded white panel inset by a gutter on its top,
    right and bottom edges — the gray flows from the sidebar around it. */
-.ldx-main{flex:1; min-width:0; height:100vh; overflow:hidden; display:flex; flex-direction:column; padding:14px 14px 14px 0;}
+.ldx-main{flex:1; min-width:0; height:calc(100vh * var(--ui-scale-inv, 1)); overflow:hidden; display:flex; flex-direction:column; padding:14px 14px 14px 0;}
 .ldx-panel{position:relative; flex:1 1 auto; min-height:0; display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow-xs); overflow:hidden;}
 /* The bell now lives inside a relative wrapper INSIDE the scroll flow so it
    scrolls up with content on analytical views. The absolute positioning

@@ -135,6 +135,24 @@ interface ExerciseSettingsProps {
   hierarchyData: HierarchyData; nodeId: string; nodeName: string; nodeType: string;
   subcategory: string; onSave: (exerciseData: ExercisePayload) => void; onClose: () => void;
   isEditing?: boolean; tabType?: 'I_Do' | 'We_Do' | 'You_Do'; initialData?: any; exercise_Id?: string;
+  /**
+   * `initialData` carries a TEMPLATE / COMMAND seed rather than a saved
+   * exercise. Set by CreateExerciseLauncher so the hydration effects below
+   * (which already know how to map a document into formData) run for a NEW
+   * exercise too.
+   *
+   * Deliberately separate from `isEditing`: that flag also locks the Exercise
+   * Type dropdown, locks Config Strategy, makes `exercise_Id` the save target,
+   * and skips the past-date rule — none of which apply to a fresh exercise.
+   * A seeded exercise is still a CREATE in every respect.
+   */
+  isSeeded?: boolean;
+  /**
+   * Where this exercise came from — e.g. "Programming Assessment" or
+   * "Copied from Java Week 3". Rendered as a pill in the app bar.
+   * PURELY PRESENTATIONAL: it never enters formData or any payload.
+   */
+  seedLabel?: string;
   configuredLanguages?: { coreProgram?: string[]; frontend?: string[]; database?: string[] };
   /** When true (opened from ProgrammingQuestionForm), the Config Strategy dropdown is locked */
   lockConfigStrategy?: boolean;
@@ -169,6 +187,29 @@ interface ValidationErrors {
 
 }
 
+// Which validationErrors keys belong to which step. Drives the rail's
+// "N issue(s)" line, the section header's issue pill and the Fix-before-
+// continuing banner — all three read the SAME map, so a step can never claim
+// to be clean in one place and faulty in another. Mirrors the field lists
+// validateCurrentStep already pushes into touchedFields.
+const STEP_ERROR_FIELDS: Record<string, string[]> = {
+  'Exercise Details': [
+    'exerciseType', 'selectedModule', 'selectedLanguages', 'exerciseName',
+    'exerciseLevel', 'totalDuration', 'totalMarks', 'totalMarksMCQ', 'totalMarksProgramming',
+  ],
+  'Question Configuration': [
+    'mcqGeneralQuestionCount', 'mcqMarksPerQuestion', 'mcqTotalMarks',
+    'programmingGeneralQuestionCount', 'programmingMarksPerQuestion', 'programmingLevelCounts',
+    'programmingLevelCounts_Easy', 'programmingLevelCounts_Medium', 'programmingLevelCounts_Hard',
+    'programmingTotalMarks', 'programmingLevelScoring',
+    'othersGeneralQuestionCount', 'othersMarksPerQuestion', 'othersLevelCounts',
+    'othersLevelCounts_Easy', 'othersLevelCounts_Medium', 'othersLevelCounts_Hard',
+    'othersTotalMarks', 'othersLevelScoring',
+  ],
+  'Schedule': ['startDate', 'endDate', 'gracePeriod', 'cutOffDate', 'remindGradeBy'],
+  'Grade Settings': ['mcqGradeToPass', 'programmingGrade', 'programmingGradeToPass', 'gradeBands'],
+}
+
 
 // All UI primitives & helpers now live in ./ExerciseSettings/shared/*
 
@@ -195,13 +236,78 @@ const THIRD_PARTY_PROVIDERS: ThirdPartyProvider[] = [
 ];
 
 // =============================================================================
+// SPEC STYLE PRIMITIVES (demo design system) — styling constants only.
+// Cards, pills, notes and the difficulty-matrix palette used by the STEP 2
+// configuration renderers (MCQ / Programming / Others). Values come from
+// scratchpad/demo-design-spec.md; D.* tokens are preferred where one fits.
+// =============================================================================
+const SPEC_CARD: React.CSSProperties = { background: '#fff', border: `1px solid ${D.border2}`, borderRadius: 11 };
+const SPEC_CARD_H: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', background: D.surface, borderBottom: `1px solid ${D.border}`, borderRadius: '11px 11px 0 0' };
+const SPEC_CARD_T: React.CSSProperties = { fontSize: 11.2, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: D.textSub };
+const SPEC_CARD_B: React.CSSProperties = { padding: 13, fontSize: 13 };
+const specPill = (bg: string, line: string, text: string): React.CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 5, height: 23, padding: '0 9px',
+  borderRadius: 999, fontSize: 10.8, fontWeight: 600, whiteSpace: 'nowrap',
+  background: bg, border: `1px solid ${line}`, color: text,
+});
+const SPEC_PILL = {
+  green:  specPill('#ECFDF3', '#C7EBD5', '#046C4E'),
+  amber:  specPill('#FFFAEB', '#F5DFA8', '#B54708'),
+  red:    specPill('#FEF3F2', '#FBD3CE', '#D92D20'),
+  blue:   specPill('#EFF6FF', '#CFE0FB', '#175CD3'),
+  grey:   specPill('#F4F4F5', '#E7E5E4', '#57606E'),
+};
+const specNote = (bg: string, line: string, text: string): React.CSSProperties => ({
+  display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 8,
+  fontSize: 11.4, lineHeight: 1.5, background: bg, border: `1px solid ${line}`, color: text,
+});
+const SPEC_NOTE = {
+  info: specNote('#EFF6FF', '#CFE0FB', '#1B4DA8'),
+  ok:   specNote('#ECFDF3', '#C7EBD5', '#046C4E'),
+  warn: specNote('#FFFAEB', '#F5DFA8', '#B54708'),
+  bad:  specNote('#FEF3F2', '#FBD3CE', '#912018'),
+};
+// Spec field label: 11px/600 #4B5563, 5px below-gap
+const SPEC_LABEL: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 600, color: '#4B5563', marginBottom: 5 };
+// Difficulty-matrix palette (level column tints / 7×7 dots / level text)
+const SPEC_LEVEL_TINT = { easy: '#F7FDF9', medium: '#FFFCF5', hard: '#FFFAF9' } as const;
+const SPEC_LEVEL_DOT  = { easy: '#0F9D58', medium: '#F0A415', hard: '#E0503C' } as const;
+const SPEC_LEVEL_TEXT = { easy: '#046C4E', medium: '#B54708', hard: '#B42318' } as const;
+const SPEC_DOT: React.CSSProperties = { width: 7, height: 7, borderRadius: '50%', flexShrink: 0, display: 'inline-block' };
+// Matrix container: 110px row-label column + 3 level columns, radius 10
+const SPEC_MATRIX: React.CSSProperties = { display: 'grid', gridTemplateColumns: '110px repeat(3, minmax(0,1fr))', border: `1px solid ${D.border2}`, borderRadius: 10, overflow: 'hidden', background: '#fff' };
+const SPEC_MATRIX_CELL: React.CSSProperties = { padding: '7px 9px' };
+const SPEC_MATRIX_HCELL: React.CSSProperties = { ...SPEC_MATRIX_CELL, fontSize: 10.6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#57606E', background: '#FCFBFA' };
+const SPEC_MATRIX_RLABEL: React.CSSProperties = { ...SPEC_MATRIX_CELL, fontSize: 11.5, fontWeight: 600, color: '#57606E', display: 'flex', alignItems: 'center', borderTop: `1px solid ${D.border}` };
+// Spec select (small input variant + right chevron), used for matrix Score Type cells
+const SPEC_SELECT: React.CSSProperties = {
+  width: '100%', height: 30, borderRadius: 8, border: `1px solid ${D.border2}`, background: '#fff',
+  color: D.textMain, fontSize: 12, padding: '0 28px 0 11px', outline: 'none',
+  appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+};
+// Spec toggle switch (35×20, green on) — the Programming attempt-limit switch
+const specSwitchTrack = (on: boolean): React.CSSProperties => ({
+  position: 'relative', width: 35, height: 20, borderRadius: 999, border: 'none', padding: 0,
+  cursor: 'pointer', flexShrink: 0, background: on ? '#0F9D58' : '#DEDAD5', transition: 'background .16s',
+});
+const specSwitchKnob = (on: boolean): React.CSSProperties => ({
+  position: 'absolute', top: 2, left: 2, width: 16, height: 16, borderRadius: '50%', background: '#fff',
+  boxShadow: '0 1px 3px rgba(0,0,0,.25)', transform: on ? 'translateX(15px)' : 'none', transition: 'transform .16s',
+});
+
+// =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 const ExerciseSettings: React.FC<ExerciseSettingsProps> = ({
   hierarchyData, nodeId, nodeName, nodeType, subcategory, onSave, onClose,
   isEditing = false, tabType = 'We_Do', initialData, exercise_Id, configuredLanguages,
-  lockConfigStrategy = false, onOpenQuestionAuthor,
+  lockConfigStrategy = false, onOpenQuestionAuthor, isSeeded = false, seedLabel,
 }) => {
+  // Editing OR seeded — both mean "there is a document to hydrate formData
+  // from". Everything else about `isEditing` stays exactly as it was.
+  const shouldHydrate = isEditing || isSeeded;
   // Lock Config Strategy if:
   // 1. Opened from ProgrammingQuestionForm (lockConfigStrategy prop), OR
   // 2. Editing AND 'Question Configuration' step was already saved (config already committed)
@@ -499,9 +605,9 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
     }
   }, [formData.exerciseType, questionSource, customSources]);
 
-  // ── Populate formData when editing ─────────────────────────────────────────
+  // ── Populate formData when editing, or from a template/command seed ────────
   useEffect(() => {
-    if (!isEditing || !initialData) return;
+    if (!shouldHydrate || !initialData) return;
     const ex = initialData as any;
     const info = ex.exerciseInformation ?? {};
     const progSettings = ex.programmingSettings ?? {};
@@ -675,12 +781,12 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditing, initialData]);
+  }, [shouldHydrate, initialData]);
 
   // In ExerciseSettings component, replace the schedule initialization part (around line 580-620)
 
   useEffect(() => {
-    if (!isEditing || !initialData) return;
+    if (!shouldHydrate || !initialData) return;
     const ex = initialData as any;
     const info = ex.exerciseInformation ?? {};
     const progSettings = ex.programmingSettings ?? {};
@@ -890,7 +996,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
         thirdParty: ex.customDistributionMcq.thirdParty ?? 0,
       });
     }
-  }, [isEditing, initialData]);
+  }, [shouldHydrate, initialData]);
 
   // Find this useEffect (around line 850-920) that seeds completedSteps
   useEffect(() => {
@@ -1063,8 +1169,8 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
   ], []);
 
   const levelScoringOptions = useMemo(() => [
-    { value: 'level_specific', label: 'Level-specific marks' },
-    { value: 'question_specific', label: 'Question-specific marks' },
+    { value: 'level_specific', label: 'Same Marks' },
+    { value: 'question_specific', label: 'Individual' },
   ], []);
 
   // ── Steps ──────────────────────────────────────────────────────────────────
@@ -2390,7 +2496,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
 
       // FIXED: declare these BEFORE the if/else so both branches can access them
       const entityPath = getEntityType(nodeType);
-      const BASE_URL = 'https://lmsserver-yeve.onrender.com';
+      const BASE_URL = 'http://localhost:5533';
       const token = getToken();
 
       if (!token) throw new Error('No authentication token found. Please log in again.');
@@ -2695,7 +2801,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
 
       // FIXED: declare before if/else
       const entityPath = getEntityType(nodeType);
-      const BASE_URL = 'https://lmsserver-yeve.onrender.com';
+      const BASE_URL = 'http://localhost:5533';
       const token = getToken();
 
       if (!token) throw new Error('No authentication token found. Please log in again.');
@@ -3170,34 +3276,35 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
     const isMatch = isEqual ? isApproximatelyEqual(allocated, totalToUse) : true;
     const mcqRemainingMarks = Math.max(0, totalToUse - (isEqual ? allocated : 0));
     return (
-      <div className="px-10 pt-4 pb-6">
-        {/* MCQ header + marks summary inline */}
-        <div className="mb-3 flex items-center justify-between gap-2">
-          {isCombined ? (
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: D.blue + '20', color: D.blue }}><List size={13} /></div>
-              <h3 className="text-xs font-bold" style={{ color: D.textMain, fontFamily: FONT }}>
-                MCQ Configuration
-              </h3>
-            </div>
-          ) : <div />}
-          {formData.isGraded !== false && (
-            <div className="flex items-center gap-1.5 flex-shrink-0" style={{ fontFamily: FONT }}>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: D.blue + '12', color: D.blue }}>
-                Total Marks : &nbsp;<strong>{totalToUse}</strong>
-              </span>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: D.emerald + '12', color: D.emerald }}>
-                Used Marks : &nbsp;<strong>{isEqual ? formatDecimal(allocated) : '—'}</strong>
-              </span>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: (isEqual && mcqRemainingMarks === 0 ? D.emerald : D.red) + '12', color: isEqual && mcqRemainingMarks === 0 ? D.emerald : D.red }}>
-                Remaining Marks : &nbsp;<strong>{isEqual ? formatDecimal(mcqRemainingMarks) : '—'}</strong>
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="space-y-2.5">
+      <div className="es-step" style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {/* MCQ heading — Combined tabs only */}
+        {isCombined && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 22, height: 22, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EFF6FF', color: D.blue, flexShrink: 0 }}><List size={13} /></div>
+            <h3 style={{ fontSize: 12.6, fontWeight: 700, color: D.textMain }}>MCQ Configuration</h3>
+          </div>
+        )}
+
+        {/* ── QUESTIONS & SCORING ── */}
+        <div style={SPEC_CARD}>
+          <div className="es-card-h" style={SPEC_CARD_H}>
+            <span style={SPEC_CARD_T}>Questions &amp; Scoring</span>
+            {formData.isGraded !== false && (
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                <span className="es-pill" style={SPEC_PILL.blue}>
+                  Total <strong>{totalToUse}</strong>
+                </span>
+                <span className="es-pill" style={isEqual && allocated > 0 ? SPEC_PILL.green : SPEC_PILL.grey}>
+                  Used <strong>{isEqual ? formatDecimal(allocated) : '—'}</strong>
+                </span>
+                <span className="es-pill" style={!isEqual ? SPEC_PILL.grey : (mcqRemainingMarks === 0 ? SPEC_PILL.green : (mcqRemainingMarks > 0 ? SPEC_PILL.amber : SPEC_PILL.red))}>
+                  Remaining <strong>{isEqual ? formatDecimal(mcqRemainingMarks) : '—'}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* Scoring Type — hidden when Non-Graded */}
-        {/* Scoring Type — hidden when Non-Graded */}
           {formData.isGraded !== false && (() => {
             const isMCQScoringLocked = savedSteps.has('Question Configuration');
             return (
@@ -3205,7 +3312,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                 <div className="flex items-center gap-2 mb-1">
                   <SectionLabel required info="Equal Distribution splits marks evenly across all questions; Question Specific lets you set marks per question individually">Scoring Type</SectionLabel>
                   {isMCQScoringLocked && (
-                    <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a' }}>
+                    <span style={{ ...SPEC_PILL.amber, marginBottom: 5 }}>
                       Locked
                     </span>
                   )}
@@ -3219,7 +3326,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                     setFormData(prev => ({ ...prev, mcqConfig: { ...prev.mcqConfig, scoreSettings: { ...prev.mcqConfig.scoreSettings, scoreType: v as any, equalDistribution: v === 'equalDistribution' && prev.mcqConfig.generalQuestionCount > 0 ? tot / prev.mcqConfig.generalQuestionCount : 0, totalMarks: tot } } }));
                   }}
                 />
-                <p className="mt-1 text-[11px]" style={{ color: D.textMuted }}>
+                <p style={{ marginTop: 5, fontSize: 11.4, color: D.textMuted }}>
                   {isEqual ? 'All questions will have equal marks, auto-calculated from total.' : 'Set individual marks per question when creating them.'}
                 </p>
               </div>
@@ -3227,8 +3334,8 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
           })()}
 
           {/* Total Questions — always visible; Marks Per Question only when graded */}
-          <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-            <div className={`grid gap-3 mt-3 ${formData.isGraded !== false && isEqual ? 'grid-cols-2' : 'grid-cols-1 max-w-[200px]'}`}>
+          <div>
+            <div className={`grid ${formData.isGraded !== false && isEqual ? 'grid-cols-2' : 'grid-cols-1 max-w-[200px]'}`} style={{ gap: 12 }}>
            <div>
                 <SectionLabel className="mb-4" required info="Total number of MCQ question">Total Questions</SectionLabel>
                 <ONumberInput value={formData.mcqConfig.generalQuestionCount}
@@ -3244,13 +3351,12 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
               {formData.isGraded !== false && isEqual && (
                 <div>
                   <SectionLabel info="Auto-calculated">Marks Per Question</SectionLabel>
-                  <div className="relative">
-                    <input type="text" value={formatDecimal(formData.mcqConfig.scoreSettings.equalDistribution)} disabled readOnly
-                      className="w-full px-3 py-2 text-sm rounded-lg border" style={{ borderColor: D.border, background: D.surface, color: D.textMuted, fontFamily: FONT }} />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold" style={{ color: D.orange }}>Auto</span>
+                  <div style={{ height: 34, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>{formatDecimal(formData.mcqConfig.scoreSettings.equalDistribution)}</span>
+                    <span style={{ fontSize: 10.8, fontWeight: 600, color: D.textHint }}>auto</span>
                   </div>
                   {formData.mcqConfig.generalQuestionCount > 0 && formData.mcqConfig.scoreSettings.equalDistribution > 0 && (
-                    <p className="mt-1 text-[11px]" style={{ color: D.textMuted }}>{totalToUse} ÷ {formData.mcqConfig.generalQuestionCount} = <strong style={{ color: D.textSub }}>{formatDecimal(formData.mcqConfig.scoreSettings.equalDistribution)}</strong></p>
+                    <p style={{ marginTop: 4, fontSize: 11.4, color: D.textMuted }}>{totalToUse} ÷ {formData.mcqConfig.generalQuestionCount} = <strong style={{ color: D.textSub }}>{formatDecimal(formData.mcqConfig.scoreSettings.equalDistribution)}</strong></p>
                   )}
                 </div>
               )}
@@ -3259,27 +3365,36 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
 
           {/* Question Specific Mode info — graded only */}
           {formData.isGraded !== false && !isEqual && (
-            <div className="p-2.5 rounded-lg" style={{ background: D.blue + '08', border: `1px solid ${D.blue}20` }}>
-              <p className="text-xs font-semibold mb-1" style={{ color: D.blue }}>Question Specific Mode</p>
-              <p className="text-[11px]" style={{ color: D.textMuted }}>
-                Assign individual marks per question when creating them. Sum must equal <strong>{totalToUse}</strong>.
-                Question count is not tracked in this mode.
-              </p>
+            <div className="es-note" style={SPEC_NOTE.info}>
+              <Info size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <div style={{ fontWeight: 700 }}>Question Specific Mode</div>
+                <div>
+                  Assign individual marks per question when creating them. Sum must equal <strong>{totalToUse}</strong>.
+                  Question count is not tracked in this mode.
+                </div>
+              </div>
             </div>
           )}
 
           {formData.isGraded !== false && validationErrors.totalMarks && touchedFields.has('totalMarks') && !isCombined && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#fff2f2', border: `1px solid ${D.red}25` }}>
-              <AlertCircle size={13} style={{ color: D.red }} /><p className="text-xs" style={{ color: D.red }}>{validationErrors.totalMarks}</p>
+            <div className="es-note" style={SPEC_NOTE.bad}>
+              <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 2 }} /><span>{validationErrors.totalMarks}</span>
             </div>
           )}
+          </div>
+        </div>
 
-          {/* Attempt Limit */}
-          <div className="pt-2 border-t" style={{ borderColor: D.border }}>
+        {/* ── ATTEMPTS ── */}
+        <div style={SPEC_CARD}>
+          <div className="es-card-h" style={SPEC_CARD_H}>
+            <span style={SPEC_CARD_T}>Attempts</span>
+          </div>
+          <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <OToggle enabled={formData.mcqConfig.attemptLimitEnabled} onChange={v => setFormData(prev => ({ ...prev, mcqConfig: { ...prev.mcqConfig, attemptLimitEnabled: v, submissionAttempts: v ? prev.mcqConfig.submissionAttempts : 1 } }))} label="Attempt Limit" description="Restrict the number of submission attempts" inline />
-            <div className="mt-2">
+            <div>
               <SectionLabel info="Maximum number of times a student can submit their MCQ answers (1–10)">Attempts Allowed</SectionLabel>
-              <div className="w-28">
+              <div style={{ width: 112 }}>
                 <ONumberInput
                   value={formData.mcqConfig.attemptLimitEnabled ? formData.mcqConfig.submissionAttempts : 1}
                   onChange={v => setFormData(prev => ({ ...prev, mcqConfig: { ...prev.mcqConfig, submissionAttempts: Math.max(1, Math.min(10, v)) } }))}
@@ -3348,8 +3463,8 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                   <select value={scoring?.type || 'level_specific'} onChange={e => updateOthersLevelScoringConfig(level, { type: e.target.value as any, ...(e.target.value === 'level_specific' ? { marksPerQuestion: 2, totalMarks: undefined } : { totalMarks: 10, marksPerQuestion: undefined }) })}
                     className="w-full px-2 py-1 text-[11px] rounded-md border font-semibold outline-none"
                     style={{ borderColor: D.border2, background: '#fff', color: D.textMain, fontFamily: FONT }}>
-                    <option value="level_specific">Level-specific</option>
-                    <option value="question_specific">Question-specific</option>
+                    <option value="level_specific">Same Marks</option>
+                    <option value="question_specific">Individual</option>
                   </select>
                 </div>
                 <div>
@@ -3379,31 +3494,44 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
     const activeScoringLevels = (['easy', 'medium', 'hard'] as const).filter(l => scoringCounts[l] > 0);
 
     return (
-      <div className="px-10 pt-4 pb-6">
-        {/* Header — sticky */}
-        <div className="sticky top-0 z-10 mb-4 flex items-center justify-between py-2" style={{ background: '#fff' }}>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: D.surface2, color: D.textMain }}>
-              <FolderOpen size={13} />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold" style={{ color: '#000000', fontFamily: FONT }}>Others Configuration</h3>
-              <p className="text-[10px]" style={{ color: D.textSub }}>File upload, Notion, and custom tasks</p>
-            </div>
+      <div className="es-step" style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {/* Heading */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: D.surface2, color: D.textSub, flexShrink: 0 }}>
+            <FolderOpen size={13} />
+          </div>
+          <div>
+            <h3 style={{ fontSize: 12.6, fontWeight: 700, color: D.textMain }}>Others Configuration</h3>
+            <p style={{ fontSize: 11, color: D.textMuted }}>File upload, Notion, and custom tasks</p>
           </div>
         </div>
 
-
-        <div className="space-y-0">
-          {/* Config Strategy + Difficulty Counts — side by side */}
-          <div className="pb-2.5 border-b" style={{ borderColor: D.border }}>
+        {/* ── QUESTIONS & SCORING ── */}
+        <div style={SPEC_CARD}>
+          <div className="es-card-h" style={SPEC_CARD_H}>
+            <span style={SPEC_CARD_T}>Questions &amp; Scoring</span>
+            {formData.othersConfig.questionConfigType !== 'general' && formData.isGraded !== false && (
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                <span className="es-pill" style={SPEC_PILL.blue}>
+                  Total <strong>{totalToUse}</strong>
+                </span>
+                <span className="es-pill" style={progUsedMarks > 0 ? SPEC_PILL.green : SPEC_PILL.grey}>
+                  Used <strong>{formatDecimal(progUsedMarks)}</strong>
+                </span>
+                <span className="es-pill" style={progRemainingMarks === 0 ? SPEC_PILL.green : (progRemainingMarks > 0 ? SPEC_PILL.amber : SPEC_PILL.red)}>
+                  Remaining <strong>{formatDecimal(progRemainingMarks)}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
             {formData.othersConfig.questionConfigType === 'general' ? (
               /* ── GENERAL: 3 columns — Config Strategy | Total Questions | Marks/Q ── */
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 90px', gap: '12px', alignItems: 'start' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 110px', gap: 12, alignItems: 'start' }}>
                 {/* Col 1: Config Strategy */}
                 <div>
-                  <div className="flex items-center gap-1 mb-1.5">
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 5 }}>
+                    <span style={{ ...SPEC_LABEL, marginBottom: 0 }}>
                       Config Strategy <span style={{ color: D.orange }}>*</span>
                     </span>
                     <InfoTooltip content="General: fixed question count; Level Based: questions by difficulty (Easy/Medium/Hard); Selection Level: pick up to 2 difficulty levels" side="right" />
@@ -3426,9 +3554,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                 </div>
                 {/* Col 2: Total Questions */}
                 <div>
-                  <div className="mb-1.5">
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>Total Questions <span style={{ color: D.orange }}>*</span></span>
-                  </div>
+                  <span style={SPEC_LABEL}>Total Questions <span style={{ color: D.orange }}>*</span></span>
                   <ONumberInput value={formData.othersConfig.generalQuestionCount}
                     onChange={v => {
                       if (v > 0) setValidationErrors(prev => { const e = { ...prev }; delete e.othersGeneralQuestionCount; return e; });
@@ -3447,25 +3573,22 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                     onBlur={() => markTouched('othersGeneralQuestionCount')} min={0} placeholder="e.g. 5"
                     error={validationErrors.othersGeneralQuestionCount} touched={touchedFields.has('othersGeneralQuestionCount')} />
                 </div>
-                {/* Col 3: Marks/Q */}
+                {/* Col 3: Marks/Q — derived value, rendered as text */}
                 <div>
-                  <div className="mb-1.5">
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>Marks/Q</span>
-                  </div>
-                  <div className="relative">
-                    <input type="text" value={formData.othersConfig.scoreSettings.equalDistribution > 0 ? formatDecimal(formData.othersConfig.scoreSettings.equalDistribution) : '0'} disabled readOnly
-                      className="w-full px-3 py-2 text-sm rounded-lg border text-center" style={{ borderColor: D.border, background: D.surface, color: D.textMuted, fontFamily: FONT }} />
-                    <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] font-bold" style={{ color: D.orange }}>Auto</span>
+                  <span style={SPEC_LABEL}>Marks/Q</span>
+                  <div style={{ height: 34, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>{formData.othersConfig.scoreSettings.equalDistribution > 0 ? formatDecimal(formData.othersConfig.scoreSettings.equalDistribution) : '0'}</span>
+                    <span style={{ fontSize: 10.8, fontWeight: 600, color: D.textHint }}>auto</span>
                   </div>
                 </div>
               </div>
             ) : (
               /* ── LEVEL BASED / SELECTION LEVEL ── */
-              <div className="space-y-3">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {/* Config Strategy — standalone row */}
-                <div style={{ maxWidth: '45%' }}>
-                  <div className="flex items-center gap-1 mb-1.5">
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>
+                <div style={{ maxWidth: 340 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 5 }}>
+                    <span style={{ ...SPEC_LABEL, marginBottom: 0 }}>
                       Config Strategy <span style={{ color: D.orange }}>*</span>
                     </span>
                     <InfoTooltip content="General: fixed question count; Level Based: questions by difficulty (Easy/Medium/Hard); Selection Level: pick up to 2 difficulty levels" side="right" />
@@ -3495,10 +3618,10 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                   const target = (formData.othersConfig as any).patternTotal || 0;
                   const balanced = target > 0 && sum === target;
                   return (
-                    <div className="mt-3 flex items-center gap-3">
-                      <div className="flex items-center gap-1.5">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Hash size={12} style={{ color: D.textMuted }} />
-                        <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>
+                        <span style={{ ...SPEC_LABEL, marginBottom: 0 }}>
                           Total Questions <span style={{ color: D.orange }}>*</span>
                         </span>
                         <InfoTooltip content="Total pattern size. Easy + Medium + Hard must equal this." side="right" />
@@ -3517,71 +3640,56 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                           }}
                         />
                       </div>
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: (balanced ? D.emerald : (target > 0 ? D.red : D.textMuted)) + '15', color: balanced ? D.emerald : (target > 0 ? D.red : D.textMuted) }}>
-                        E + M + H = <strong>{sum}</strong>{target > 0 ? <> / {target}</> : null}
+                      <span className="es-pill" style={balanced ? SPEC_PILL.green : SPEC_PILL.amber}>
+                        {balanced ? '✓' : '⚠'} E + M + H = <strong>{sum}</strong>{target > 0 ? <> / {target}</> : null}
                       </span>
                     </div>
                   );
                 })()}
-                {/* Unified Questions + Scoring grid — full width */}
-                <div className="flex items-center justify-between mt-8 mb-4">
-                  <div className="flex items-center gap-1.5">
-                    <Calculator size={12} style={{ color: D.textMuted }} />
-                    <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>Questions and Scoring Configuration</span>
-                    {othersLevelMismatch && (
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-md" style={{ background: D.red + '10', border: `1px solid ${D.red}30` }}>
-                        <AlertCircle size={10} style={{ color: D.red, flexShrink: 0 }} />
-                        <span className="text-[10px] font-semibold" style={{ color: D.red }}>{othersLevelMismatch}</span>
-                      </div>
-                    )}
+                {/* Level mismatch — bad note (marks pills live in the card header) */}
+                {othersLevelMismatch && (
+                  <div className="es-note" style={SPEC_NOTE.bad}>
+                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span>{othersLevelMismatch}</span>
                   </div>
-                  {formData.isGraded !== false && (
-                    <div className="flex items-center gap-1.5" style={{ fontFamily: FONT }}>
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: D.blue + '15', color: D.blue }}>
-                        Total Marks : &nbsp;<strong>{totalToUse}</strong>
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: D.emerald + '15', color: D.emerald }}>
-                        Used Marks : &nbsp;<strong>{formatDecimal(progUsedMarks)}</strong>
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: (progRemainingMarks === 0 ? D.emerald : D.red) + '15', color: progRemainingMarks === 0 ? D.emerald : D.red }}>
-                        Left Marks : &nbsp;<strong>{formatDecimal(progRemainingMarks)}</strong>
-                      </span>
-                    </div>
-                  )}
-                </div>
+                )}
 
                 {(() => {
                   const isSelLevel = formData.othersConfig.questionConfigType === 'selectionLevel';
-                  const gridCols = '70px 1fr 1fr 1fr';
-                  const rowStyle = { display: 'grid', gridTemplateColumns: gridCols, gap: '6px', marginBottom: '4px', alignItems: 'center' } as const;
+                  const bodyCell = (level: 'easy' | 'medium' | 'hard'): React.CSSProperties => ({ ...SPEC_MATRIX_CELL, background: SPEC_LEVEL_TINT[level], borderTop: `1px solid ${D.border}` });
                   return (
                     <div>
-                      {/* Header row */}
-                      <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '6px', marginBottom: '4px', alignItems: 'end' }}>
-                        <div />
+                      {/* Difficulty matrix — 110px row-label column + 3 tinted level columns */}
+                      <div style={SPEC_MATRIX}>
+                        {/* Header row */}
+                        <div style={SPEC_MATRIX_HCELL} />
                         {(['easy', 'medium', 'hard'] as const).map(level => {
                           if (isSelLevel) {
                             const checked = (formData.othersConfig.selectionLevelCounts?.[level] ?? 0) > 0;
                             return (
-                              <div key={level}>
-                                <label className="flex items-center gap-1 cursor-pointer">
+                              <div key={level} style={{ ...SPEC_MATRIX_HCELL, background: SPEC_LEVEL_TINT[level] }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                                   <input type="checkbox" checked={checked} onChange={e => {
                                     const nc = { ...formData.othersConfig.selectionLevelCounts, [level]: e.target.checked ? 1 : 0 };
                                     const active = (['easy', 'medium', 'hard'] as const).filter(l => nc[l] > 0).length;
                                     if (active > 2) setFormData(prev => ({ ...prev, othersConfig: { ...prev.othersConfig, questionConfigType: 'levelBased', levelBasedCounts: { easy: nc.easy > 0 ? nc.easy : 1, medium: nc.medium > 0 ? nc.medium : 1, hard: nc.hard > 0 ? nc.hard : 1 }, selectionLevelCounts: { easy: 0, medium: 0, hard: 0 } } }));
                                     else setFormData(prev => ({ ...prev, othersConfig: { ...prev.othersConfig, selectionLevelCounts: nc } }));
-                                  }} className="w-3 h-3 rounded" style={{ accentColor: levelColors[level] }} />
-                                  <span className="text-[10px] font-bold capitalize" style={{ color: levelColors[level] }}>{level}</span>
+                                  }} style={{ width: 13, height: 13, accentColor: SPEC_LEVEL_DOT[level] }} />
+                                  <span style={{ ...SPEC_DOT, background: SPEC_LEVEL_DOT[level] }} />
+                                  <span style={{ color: SPEC_LEVEL_TEXT[level] }}>{level}</span>
                                 </label>
                               </div>
                             );
                           }
-                          return <div key={level} className="text-[10px] font-bold capitalize" style={{ color: levelColors[level] }}>{level}</div>;
+                          return (
+                            <div key={level} style={{ ...SPEC_MATRIX_HCELL, background: SPEC_LEVEL_TINT[level], display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ ...SPEC_DOT, background: SPEC_LEVEL_DOT[level] }} />
+                              <span style={{ color: SPEC_LEVEL_TEXT[level] }}>{level}</span>
+                            </div>
+                          );
                         })}
-                      </div>
-                      {/* Row 1: Questions */}
-                      <div style={rowStyle}>
-                        <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Questions</div>
+                        {/* Row 1: Questions */}
+                        <div style={SPEC_MATRIX_RLABEL}>Questions</div>
                         {(['easy', 'medium', 'hard'] as const).map(level => {
                           const checked = isSelLevel ? (formData.othersConfig.selectionLevelCounts?.[level] ?? 0) > 0 : true;
                           const ek = `othersLevelCounts_${level.charAt(0).toUpperCase() + level.slice(1)}`;
@@ -3592,7 +3700,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                             ? (v: number) => setFormData(prev => ({ ...prev, othersConfig: { ...prev.othersConfig, selectionLevelCounts: { ...prev.othersConfig.selectionLevelCounts, [level]: v } } }))
                             : (v: number) => { setFormData(prev => ({ ...prev, othersConfig: { ...prev.othersConfig, levelBasedCounts: { ...prev.othersConfig.levelBasedCounts, [level]: v } } })); if (v > 0) setValidationErrors(prev => { const e = { ...prev }; delete e[ek]; return e; }); setTouchedFields(prev => { const n = new Set(prev); n.delete('scoring_others_easy'); n.delete('scoring_others_medium'); n.delete('scoring_others_hard'); return n; }); };
                           return (
-                            <div key={level}>
+                            <div key={level} style={bodyCell(level)}>
                               <ONumberInput value={val} onChange={handleChange}
                                 onBlur={isSelLevel ? undefined : () => markTouched('othersLevelCounts')}
                                 disabled={isSelLevel && !checked} min={0}
@@ -3602,107 +3710,119 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                             </div>
                           );
                         })}
-                      </div>
-                      {!isSelLevel && validationErrors.othersLevelCounts && touchedFields.has('othersLevelCounts') && (
-                        <p className="text-[10px] mb-1" style={{ color: D.red }}>{validationErrors.othersLevelCounts}</p>
-                      )}
-                      {formData.isGraded !== false && (<>
-                      {/* Row 2: Score Type */}
-                      <div style={rowStyle}>
-                        <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Score Type</div>
+                        {formData.isGraded !== false && (<>
+                        {/* Row 2: Marking */}
+                        <div style={SPEC_MATRIX_RLABEL}>Mark Distribution</div>
                         {(['easy', 'medium', 'hard'] as const).map(level => {
                           const count = scoringCounts[level];
                           const scoring = ls[level];
                           const hasError = touchedFields.has(`scoring_others_${level}`) && !!scoringErrors[level];
                           return (
-                            <div key={level} style={{ opacity: count === 0 ? 0.4 : 1, pointerEvents: count === 0 ? 'none' : 'auto' }}>
+                            <div key={level} style={{ ...bodyCell(level), opacity: count === 0 ? 0.4 : 1, pointerEvents: count === 0 ? 'none' : 'auto' }}>
                               <select value={scoring?.type || 'level_specific'}
                                 onChange={e => updateOthersLevelScoringConfig(level, { type: e.target.value as any, ...(e.target.value === 'level_specific' ? { marksPerQuestion: 2, totalMarks: undefined } : { totalMarks: 10, marksPerQuestion: undefined }) })}
-                                className="w-full px-2 py-1.5 text-xs rounded-lg border outline-none"
-                                style={{ borderColor: hasError ? D.red + '60' : D.border, background: '#fff', color: D.textMain, fontFamily: FONT }}>
-                                <option value="level_specific">Level-specific</option>
-                                <option value="question_specific">Question-specific</option>
+                                style={{ ...SPEC_SELECT, borderColor: hasError ? '#FBD3CE' : D.border2 }}>
+                                <option value="level_specific">Same Marks</option>
+                                <option value="question_specific">Individual</option>
                               </select>
                             </div>
                           );
                         })}
-                      </div>
-                      {/* Row 3: Marks */}
-                      <div style={rowStyle}>
-                        <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Marks</div>
+                        {/* Row 3: Marks */}
+                        <div style={SPEC_MATRIX_RLABEL}>Marks</div>
                         {(['easy', 'medium', 'hard'] as const).map(level => {
                           const count = scoringCounts[level];
                           const scoring = ls[level];
                           const isQSpec = scoring?.type === 'question_specific';
                           const hasError = touchedFields.has(`scoring_others_${level}`) && !!scoringErrors[level];
                           return (
-                            <div key={level} style={{ opacity: count === 0 ? 0.4 : 1, pointerEvents: count === 0 ? 'none' : 'auto' }}>
-                              <ONumberInput value={isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0)}
-                                onChange={v => updateOthersLevelScoringConfig(level, isQSpec ? { totalMarks: v } : { marksPerQuestion: v })}
-                                liveUpdate />
-                              {hasError && <span className="text-[10px]" style={{ color: D.red }}>{scoringErrors[level]}</span>}
+                            <div key={level} style={{ ...bodyCell(level), opacity: count === 0 ? 0.4 : 1, pointerEvents: count === 0 ? 'none' : 'auto' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <ONumberInput value={isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0)}
+                                  onChange={v => updateOthersLevelScoringConfig(level, isQSpec ? { totalMarks: v } : { marksPerQuestion: v })}
+                                  liveUpdate />
+                                <span style={{ fontSize: 10.5, color: D.textMuted, whiteSpace: 'nowrap' }}>
+                                  {isQSpec ? 'Total' : '/ Question'}
+                                </span>
+                              </div>
+                              {hasError && <span style={{ fontSize: 11.4, color: D.red }}>{scoringErrors[level]}</span>}
                             </div>
                           );
                         })}
-                      </div>
-                      {/* Row 4: Total */}
-                      <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '6px', alignItems: 'center' }}>
-                        <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Total</div>
+                        {/* Row 4: Calculated Total — derived, text only */}
+                        <div style={SPEC_MATRIX_RLABEL}>Calculated Total</div>
                         {(['easy', 'medium', 'hard'] as const).map(level => {
                           const count = scoringCounts[level];
-                          if (count === 0) return <div key={level} />;
+                          if (count === 0) return <div key={level} style={bodyCell(level)} />;
                           const scoring = ls[level];
                           const isQSpec = scoring?.type === 'question_specific';
-                          const total = isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0) * count;
+                          const mpq = scoring?.marksPerQuestion || 0;
                           return (
-                            <div key={level} className="text-center text-xs font-semibold py-1 rounded" style={{ background: levelColors[level] + '10', color: levelColors[level] }}>
-                              {total} marks
+                            <div key={level} style={{ ...bodyCell(level), fontSize: 12.6, fontWeight: 600, color: SPEC_LEVEL_TEXT[level] }}>
+                              {isQSpec ? (
+                                <div>{formatDecimal(scoring?.totalMarks || 0)} Marks</div>
+                              ) : (
+                                <>
+                                  <div>{formatDecimal(count * mpq)} Marks</div>
+                                  <div style={{ fontSize: 10.5, fontWeight: 400, color: D.textMuted }}>
+                                    {count} × {formatDecimal(mpq)}
+                                  </div>
+                                </>
+                              )}
                             </div>
                           );
                         })}
+                        </>)}
                       </div>
-                      </>)}
+                      {!isSelLevel && validationErrors.othersLevelCounts && touchedFields.has('othersLevelCounts') && (
+                        <p style={{ marginTop: 5, fontSize: 11.4, color: D.red }}>{validationErrors.othersLevelCounts}</p>
+                      )}
                     </div>
                   );
                 })()}
               </div>
             )}
           </div>
+        </div>
 
-          {/* Question Flow */}
-          <div className={`flex items-center gap-3 py-2.5 border-b${othersLevelMismatch ? ' opacity-40 pointer-events-none' : ''}`} style={{ borderColor: D.border }}>
-            <div className="w-36 flex-shrink-0 flex items-center gap-1.5">
-              <Shuffle size={12} style={{ color: D.textMuted }} />
-              <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>Question Flow</span>
-            </div>
-            <div className="flex-1 flex gap-2">
+        {/* ── QUESTION FLOW ── */}
+        <div className={othersLevelMismatch ? 'opacity-40 pointer-events-none' : ''} style={SPEC_CARD}>
+          <div className="es-card-h" style={SPEC_CARD_H}>
+            <Shuffle size={12} style={{ color: D.textMuted }} />
+            <span style={SPEC_CARD_T}>Question Flow</span>
+          </div>
+          <div className="es-card-b" style={SPEC_CARD_B}>
+            <div style={{ display: 'inline-flex', background: D.surface2, border: `1px solid ${D.border2}`, borderRadius: 8, padding: 3, gap: 3 }}>
               {questionFlowOptions.map(opt => {
                 const sel = formData.othersConfig.questionFlow === opt.value;
                 return (
-                  <button key={opt.value} type="button"
+                  <button key={opt.value} type="button" aria-pressed={sel}
                     onClick={() => setFormData(prev => ({ ...prev, othersConfig: { ...prev.othersConfig, questionFlow: opt.value as any } }))}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all"
-                    style={{ borderColor: sel ? D.orange : D.border, background: sel ? D.orangeLight : D.bg, color: sel ? D.orange : D.textMain, fontFamily: FONT }}>
-                    <span style={{ color: sel ? D.orange : D.textMuted }}>{opt.icon}</span>
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 27, padding: '0 12px', borderRadius: 5, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: sel ? '#fff' : 'transparent', color: sel ? D.orangeDark : D.textMuted, boxShadow: sel ? '0 1px 3px rgba(15,23,42,.1)' : 'none', transition: 'all .16s' }}>
+                    <span style={{ display: 'inline-flex', color: sel ? D.orangeDark : D.textHint }}>{opt.icon}</span>
                     {opt.label}
-                    {sel && <Check size={11} style={{ color: D.orange }} />}
                   </button>
                 );
               })}
             </div>
           </div>
+        </div>
 
-          {/* Attempt Limit */}
-          <div className="py-2.5">
+        {/* ── ATTEMPTS ── */}
+        <div style={SPEC_CARD}>
+          <div className="es-card-h" style={SPEC_CARD_H}>
+            <span style={SPEC_CARD_T}>Attempts</span>
+          </div>
+          <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <OToggle enabled={formData.othersConfig.attemptLimitEnabled}
               onChange={v => setFormData(prev => ({ ...prev, othersConfig: { ...prev.othersConfig, attemptLimitEnabled: v, submissionAttempts: v ? prev.othersConfig.submissionAttempts : 1 } }))}
               label="Attempt Limit" description="Restrict submission attempts" inline />
-            <div className="flex items-center gap-3 mt-2 pt-2 border-t" style={{ borderColor: D.border }}>
-              <div className="w-36 flex-shrink-0 flex items-center gap-1.5">
-                <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>Attempts Allowed</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ ...SPEC_LABEL, marginBottom: 0 }}>Attempts Allowed</span>
                 <InfoTooltip content="Maximum number of submission attempts allowed per student (1–10)" side="right" />
               </div>
-              <div className="w-24">
+              <div style={{ width: 96 }}>
                 <ONumberInput
                   value={formData.othersConfig.attemptLimitEnabled ? formData.othersConfig.submissionAttempts : 1}
                   onChange={v => setFormData(prev => ({ ...prev, othersConfig: { ...prev.othersConfig, submissionAttempts: Math.max(1, Math.min(10, v)) } }))}
@@ -3711,13 +3831,13 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
               </div>
             </div>
           </div>
-
-          {validationErrors.othersTotalMarks && touchedFields.has('othersTotalMarks') && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#fff2f2', border: `1px solid ${D.red}25` }}>
-              <AlertCircle size={13} style={{ color: D.red }} /><p className="text-xs" style={{ color: D.red }}>{validationErrors.othersTotalMarks}</p>
-            </div>
-          )}
         </div>
+
+        {validationErrors.othersTotalMarks && touchedFields.has('othersTotalMarks') && (
+          <div className="es-note" style={SPEC_NOTE.bad}>
+            <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 2 }} /><span>{validationErrors.othersTotalMarks}</span>
+          </div>
+        )}
       </div>
     );
   }, [formData, validationErrors, touchedFields, markTouched, othersAllocatedMarks, othersLevelMismatch, othersShouldShowScoringSection, questionFlowOptions, updateOthersLevelScoringConfig, configOptions]);
@@ -3880,555 +4000,527 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
     const progUsedMarks = programmingAllocatedMarks;
     const progRemainingMarks = Math.max(0, totalToUse - progUsedMarks);
 
+    // Level column tints + dot colors, per the demo's difficulty matrix.
+    const LV = {
+      easy: { label: 'Easy', dot: '#0F9D58', text: '#046C4E', tint: '#F7FDF9' },
+      medium: { label: 'Medium', dot: '#F0A415', text: '#B54708', tint: '#FFFCF5' },
+      hard: { label: 'Hard', dot: '#E0503C', text: '#B42318', tint: '#FFFAF9' },
+    } as const;
+    const MATRIX_LABEL: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: '#57606E' };
+    const MCELL: React.CSSProperties = { padding: '7px 9px', borderBottom: `1px solid ${D.border}` };
+    const MROW: React.CSSProperties = { display: 'grid', gridTemplateColumns: '110px repeat(3, minmax(0,1fr))' };
+    const SELECT_STYLE: React.CSSProperties = {
+      width: '100%', height: 34, padding: '0 28px 0 11px', borderRadius: 8,
+      border: `1px solid ${D.border2}`, background: '#fff', color: D.textMain,
+      fontSize: 12.6, outline: 'none', appearance: 'none',
+      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' fill='none' stroke='%236B7280' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E")`,
+      backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+    };
+
+    const isSelLevel = formData.programmingConfig.questionConfigType === 'selectionLevel';
+    const isLevelMode = formData.programmingConfig.questionConfigType === 'levelBased' || isSelLevel;
+    const mCounts = isSelLevel
+      ? formData.programmingConfig.selectionLevelCounts
+      : formData.programmingConfig.levelBasedCounts;
+    const allThreeFilled = mCounts.easy > 0 && mCounts.medium > 0 && mCounts.hard > 0;
+    const anyFilled = mCounts.easy > 0 || mCounts.medium > 0 || mCounts.hard > 0;
+    const showScoringRows = isSelLevel ? anyFilled : allThreeFilled;
+    const patternTarget = formData.programmingConfig.patternTotal || 0;
+    const patternSum = (mCounts.easy || 0) + (mCounts.medium || 0) + (mCounts.hard || 0);
+    const patternBalanced = patternTarget > 0 && patternSum === patternTarget;
+    const anyQuestionSpecific = (['easy', 'medium', 'hard'] as const)
+      .some(l => (mCounts[l] || 0) > 0 && ls[l]?.type === 'question_specific');
+
+    // Which levels are missing their marks. Same predicate programmingLevelMismatch
+    // uses, so the field-level message and the gate can never disagree — this
+    // only decides WHERE the error is shown, never whether it fires.
+    const marksMissing = (l: 'easy' | 'medium' | 'hard'): boolean => {
+      if ((mCounts[l] || 0) <= 0) return false;
+      const sc = ls?.[l];
+      if (!sc) return true;
+      return sc.type === 'level_specific'
+        ? !(sc.marksPerQuestion && sc.marksPerQuestion > 0)
+        : !(sc.totalMarks && sc.totalMarks > 0);
+    };
+    // The banner keeps only what has no single field to attach to. The
+    // "Please enter marks for: X" case now lives in the X column's own input.
+    const mismatchIsPerField = !!programmingLevelMismatch
+      && programmingLevelMismatch.startsWith('Please enter marks for:');
+
+    // The demo's ± stepper.
+    const stepper = (value: number, onChange: (v: number) => void, disabled?: boolean) => (
+      <span className="es-stepper" style={{
+        display: 'inline-flex', height: 30, borderRadius: 7, border: `1px solid ${D.border2}`,
+        overflow: 'hidden', background: '#fff', opacity: disabled ? 0.4 : 1,
+        pointerEvents: disabled ? 'none' : 'auto',
+      }}>
+        <button type="button" aria-label="Decrease" onClick={() => onChange(Math.max(0, (value || 0) - 1))}
+          style={{ width: 25, border: 'none', background: 'transparent', color: D.textMuted, cursor: 'pointer', fontSize: 13 }}>−</button>
+        <input type="number" value={value || 0} disabled={disabled}
+          onChange={e => onChange(Math.max(0, Number(e.target.value) || 0))}
+          style={{
+            width: 40, border: 'none', borderLeft: `1px solid ${D.border}`, borderRight: `1px solid ${D.border}`,
+            textAlign: 'center', fontSize: 12.5, fontWeight: 600, color: D.textMain, outline: 'none',
+            background: 'transparent',
+          }} />
+        <button type="button" aria-label="Increase" onClick={() => onChange((value || 0) + 1)}
+          style={{ width: 25, border: 'none', background: 'transparent', color: D.textMuted, cursor: 'pointer', fontSize: 13 }}>+</button>
+      </span>
+    );
+
     return (
-      <div className="px-10 pt-4 pb-6">
+      <div className="es-step" style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 13 }}>
         {isCombined && (
-          <div className="mb-3 flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: D.surface2, color: D.textMain }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 22, height: 22, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: D.surface2, color: D.textSub, flexShrink: 0 }}>
               <Terminal size={13} />
             </div>
-            <h3 className="text-sm font-bold" style={{ color: '#000000', fontFamily: FONT }}>
-              Programming Configuration
-            </h3>
+            <h3 style={{ fontSize: 12.6, fontWeight: 700, color: D.textMain }}>Programming Configuration</h3>
           </div>
         )}
 
-        {/* Total Marks read-only field */}
-        {/* <div className="mb-3 pb-3 border-b" style={{ borderColor: D.border }}>
-        <div className="flex items-center gap-1 mb-1">
-          <span className="text-xs font-semibold" style={{ color: D.textSub }}>Total Marks</span>
-          <InfoTooltip content="Auto-filled from Step 1 — cannot be changed here" side="right" />
-        </div>
-        <div className="relative">
-          <input type="text" value={totalToUse} disabled readOnly
-            className="w-full px-3 py-2 text-sm rounded-lg border cursor-not-allowed"
-            style={{ borderColor: D.border, background: '#f4f5f7', color: D.textMuted, fontFamily: FONT, fontWeight: 600 }} />
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold" style={{ color: D.orange }}>Step 1</span>
-        </div>
-      </div> */}
-
-        {/* Warning message — graded only */}
-      
-
-        <div className="space-y-0">
-          {/* Config Strategy + Difficulty Counts — side by side */}
-          <div className="pb-2.5 border-b" style={{ borderColor: D.border }}>
-            {formData.programmingConfig.questionConfigType === 'general' ? (
-              <div>
-                {/* Label row — all three labels on same line */}
-                <div style={{ display: 'grid', gridTemplateColumns: formData.isGraded !== false ? '1fr 1fr 90px' : '1fr 1fr', gap: '12px', marginBottom: '4px', alignItems: 'end' }}>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>
-                      Config Strategy <span style={{ color: D.orange }}>*</span>
-                    </span>
-                    {isConfigStrategyLocked
-                      ? <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 10, background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', marginLeft: 3 }}>Locked</span>
-                      : <InfoTooltip content="General: fixed question count; Level Based: questions by difficulty (Easy/Medium/Hard); Selection Level: pick up to 2 difficulty levels" side="right" />}
-                  </div>
-                  <div>
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>
-                      Total Questions <span style={{ color: D.orange }}>*</span>
-                    </span>
-                  </div>
-                  {formData.isGraded !== false && <div>
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>Marks/Q</span>
-                  </div>}
-                </div>
-
-                {/* Input row */}
-                <div style={{ display: 'grid', gridTemplateColumns: formData.isGraded !== false ? '1fr 1fr 90px' : '1fr 1fr', gap: '12px', alignItems: 'start' }}>
-                  <div>
-                    <ODropdown
-                      value={formData.programmingConfig.questionConfigType}
-                      options={configOptions}
-                      disabled={isConfigStrategyLocked}
-                      onChange={isConfigStrategyLocked ? () => { } : v => {
-                        setFormData(prev => ({
-                          ...prev,
-                          programmingConfig: {
-                            ...prev.programmingConfig,
-                            questionConfigType: v as any,
-                            ...(v === 'general'
-                              ? { generalQuestionCount: 0, levelBasedCounts: { easy: 0, medium: 0, hard: 0 }, selectionLevelCounts: { easy: 0, medium: 0, hard: 0 } }
-                              : { levelBasedCounts: { easy: 0, medium: 0, hard: 0 }, selectionLevelCounts: { easy: 0, medium: 0, hard: 0 } }
-                            )
-                          }
-                        }));
-                        setLevelScoringOpen({ easy: false, medium: false, hard: false });
-                      }}
-                    />
-                  </div>
-                <div>
-                    <ONumberInput
-                      value={formData.programmingConfig.generalQuestionCount}
-                      liveUpdate
-                      onChange={v => {
-                        if (v > 0) setValidationErrors(prev => { const e = { ...prev }; delete e.programmingGeneralQuestionCount; return e; });
-                        setFormData(prev => {
-                          const tot = prev.exerciseType === 'Combined' ? prev.totalMarksProgramming : prev.totalMarks;
-                          return {
-                            ...prev,
-                            programmingConfig: {
-                              ...prev.programmingConfig,
-                              generalQuestionCount: v,
-                              scoreSettings: {
-                                ...prev.programmingConfig.scoreSettings,
-                                equalDistribution: v > 0 && tot > 0 ? tot / v : 0
-                              }
-                            }
-                          };
-                        });
-                      }}
-                      onBlur={() => markTouched('programmingGeneralQuestionCount')}
-                      min={0}
-                      placeholder="e.g. 5"
-                      error={validationErrors.programmingGeneralQuestionCount}
-                      touched={touchedFields.has('programmingGeneralQuestionCount')}
-                    />
-                  </div>
-                  {formData.isGraded !== false && <div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={formData.programmingConfig.scoreSettings.equalDistribution > 0
-                          ? formatDecimal(formData.programmingConfig.scoreSettings.equalDistribution)
-                          : '0'}
-                        disabled
-                        readOnly
-                        className="w-full px-3 py-2 text-sm rounded-lg border text-center"
-                        style={{
-                          borderColor: D.border,
-                          background: D.surface,
-                          color: D.textMuted,
-                          fontFamily: FONT
-                        }}
-                      />
-                      <span
-                        className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] font-bold"
-                        style={{ color: D.orange }}>
-                        Auto
-                      </span>
-                    </div>
-                  </div>}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div style={{ maxWidth: '45%' }}>
-                  <div className="flex items-center gap-1 mb-1.5">
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>
-                      Config Strategy <span style={{ color: D.orange }}>*</span>
-                    </span>
-                    {isConfigStrategyLocked
-                      ? <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 10, background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', marginLeft: 3 }}>Locked</span>
-                      : <InfoTooltip content="General: fixed question count; Level Based: questions by difficulty (Easy/Medium/Hard); Selection Level: pick up to 2 difficulty levels" side="right" />}
-                  </div>
-                  <ODropdown
-                    value={formData.programmingConfig.questionConfigType}
-                    options={configOptions}
-                    disabled={isConfigStrategyLocked}
-                    onChange={isConfigStrategyLocked ? () => { } : v => {
-                      setFormData(prev => ({
-                        ...prev,
-                        programmingConfig: {
-                          ...prev.programmingConfig,
-                          questionConfigType: v as any,
-                          ...(v === 'general'
-                            ? { generalQuestionCount: 0, levelBasedCounts: { easy: 0, medium: 0, hard: 0 }, selectionLevelCounts: { easy: 0, medium: 0, hard: 0 } }
-                            : { levelBasedCounts: { easy: 0, medium: 0, hard: 0 }, selectionLevelCounts: { easy: 0, medium: 0, hard: 0 } }
-                          )
-                        }
-                      }));
-                      setLevelScoringOpen({ easy: false, medium: false, hard: false });
-                    }}
-                  />
-                </div>
-
-                {formData.programmingConfig.questionConfigType === '' ? (
-                  <div className="mt-2 px-3 py-2 rounded-lg text-xs font-semibold"
-                    style={{ background: D.amber + '10', border: `1px solid ${D.amber}30`, color: D.amber }}>
-                    Please select a Config Strategy above to configure questions and scoring.
-                  </div>
-                ) : <>
-                  {/* Pattern total — compact: input + live sum chip only.
-                      The chip colors itself red when mismatched (silent validation);
-                      the wizard's Next / Save button blocks advance on mismatch. */}
-                  {(formData.programmingConfig.questionConfigType === 'levelBased' || formData.programmingConfig.questionConfigType === 'selectionLevel') && (() => {
-                    const c = formData.programmingConfig.questionConfigType === 'levelBased'
-                      ? formData.programmingConfig.levelBasedCounts
-                      : formData.programmingConfig.selectionLevelCounts;
-                    const sum = (c.easy || 0) + (c.medium || 0) + (c.hard || 0);
-                    const target = formData.programmingConfig.patternTotal || 0;
-                    const balanced = target > 0 && sum === target;
-                    return (
-                      <div className="mt-3 flex items-center gap-3">
-                        <div className="flex items-center gap-1.5">
-                          <Hash size={12} style={{ color: D.textMuted }} />
-                          <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>
-                            Total Questions <span style={{ color: D.orange }}>*</span>
-                          </span>
-                          <InfoTooltip content="Total pattern size. Easy + Medium + Hard must equal this." side="right" />
-                        </div>
-                        <div style={{ width: 96 }}>
-                          <ONumberInput
-                            value={target === 0 ? ('' as any) : target}
-                            liveUpdate
-                            min={0}
-                            placeholder="e.g. 15"
-                            onChange={v => {
-                              setFormData(prev => ({
-                                ...prev,
-                                programmingConfig: { ...prev.programmingConfig, patternTotal: v || 0 }
-                              }));
-                            }}
-                          />
-                        </div>
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: (balanced ? D.emerald : (target > 0 ? D.red : D.textMuted)) + '15', color: balanced ? D.emerald : (target > 0 ? D.red : D.textMuted) }}>
-                          E + M + H = <strong>{sum}</strong>{target > 0 ? <> / {target}</> : null}
-                        </span>
-                      </div>
-                    );
-                  })()}
-
-                  <div className="flex items-center justify-between mt-8 mb-4">
-                    <div className="flex items-center gap-1.5">
-                      <Calculator size={12} style={{ color: D.textMuted }} />
-                      <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>Questions and Scoring Configuration</span>
-                    </div>
-
-                      {formData.isGraded !== false && programmingLevelMismatch && (
-          <div className=" flex items-center gap-2 px-3 rounded-lg warning-pulse"
-            style={{ background: D.red + '10', border: `1px solid ${D.red}40` }}>
-            <AlertCircle size={13} style={{ color: D.red, flexShrink: 0 }} />
-            <p className="text-xs font-semibold flex-1" style={{ color: D.red }}>{programmingLevelMismatch}</p>
-          </div>
-        )}
-                    {formData.isGraded !== false && (
-                      <div className="flex items-center gap-1.5" style={{ fontFamily: FONT }}>
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: D.blue + '15', color: D.blue }}>
-                          Total Marks : &nbsp;<strong>{totalToUse}</strong>
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: D.emerald + '15', color: D.emerald }}>
-                          Used Marks : &nbsp;<strong>{formatDecimal(progUsedMarks)}</strong>
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: (progRemainingMarks === 0 ? D.emerald : D.red) + '15', color: progRemainingMarks === 0 ? D.emerald : D.red }}>
-                          Remaining Marks : &nbsp;<strong>{formatDecimal(progRemainingMarks)}</strong>
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {(() => {
-                    const isSelLevel = formData.programmingConfig.questionConfigType === 'selectionLevel';
-                    const gridCols = '70px 1fr 1fr 1fr';
-                    const rowStyle = { display: 'grid', gridTemplateColumns: gridCols, gap: '6px', marginBottom: '4px', alignItems: 'center' } as const;
-
-                    const counts = isSelLevel
-                      ? formData.programmingConfig.selectionLevelCounts
-                      : formData.programmingConfig.levelBasedCounts;
-                    const allThreeFilled = counts.easy > 0 && counts.medium > 0 && counts.hard > 0;
-                    const anyFilled = counts.easy > 0 || counts.medium > 0 || counts.hard > 0;
-                    const showScoringRows = isSelLevel ? anyFilled : allThreeFilled;
-
-                    return (
-                      <div>
-                        {/* Header row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '6px', marginBottom: '4px', alignItems: 'end' }}>
-                          <div />
-                          {(['easy', 'medium', 'hard'] as const).map(level => {
-                            if (isSelLevel) {
-                              const checked = (formData.programmingConfig.selectionLevelCounts?.[level] ?? 0) > 0;
-                              return (
-                                <div key={level}>
-                                  <label className="flex items-center gap-1 cursor-pointer">
-                                    <input type="checkbox" checked={checked} onChange={e => {
-                                      const nc = { ...formData.programmingConfig.selectionLevelCounts, [level]: e.target.checked ? 1 : 0 };
-                                      const active = (['easy', 'medium', 'hard'] as const).filter(l => nc[l] > 0).length;
-                                      if (active > 2) {
-                                        setFormData(prev => ({
-                                          ...prev,
-                                          programmingConfig: {
-                                            ...prev.programmingConfig,
-                                            questionConfigType: 'levelBased',
-                                            levelBasedCounts: { easy: nc.easy > 0 ? nc.easy : 1, medium: nc.medium > 0 ? nc.medium : 1, hard: nc.hard > 0 ? nc.hard : 1 },
-                                            selectionLevelCounts: { easy: 0, medium: 0, hard: 0 }
-                                          }
-                                        }));
-                                      } else {
-                                        setFormData(prev => ({
-                                          ...prev,
-                                          programmingConfig: {
-                                            ...prev.programmingConfig,
-                                            selectionLevelCounts: nc
-                                          }
-                                        }));
-                                      }
-                                    }} className="w-3 h-3 rounded" style={{ accentColor: levelColors[level] }} />
-                                    <span className="text-[10px] font-bold capitalize" style={{ color: levelColors[level] }}>{level}</span>
-                                  </label>
-                                </div>
-                              );
-                            }
-                            return <div key={level} className="text-[10px] font-bold capitalize" style={{ color: levelColors[level] }}>{level}</div>;
-                          })}
-                        </div>
-
-                        {/* Row 1: Questions */}
-                        <div style={rowStyle}>
-                          <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Questions</div>
-                          {(['easy', 'medium', 'hard'] as const).map(level => {
-                            const checked = isSelLevel ? (formData.programmingConfig.selectionLevelCounts?.[level] ?? 0) > 0 : true;
-                            const val = isSelLevel
-                              ? (formData.programmingConfig.selectionLevelCounts?.[level] === 0 ? ('' as any) : formData.programmingConfig.selectionLevelCounts?.[level])
-                              : (formData.programmingConfig.levelBasedCounts?.[level] === 0 ? ('' as any) : formData.programmingConfig.levelBasedCounts?.[level]);
-
-                            const handleChange = (v: number) => {
-                              if (isSelLevel) {
-                                updateSelectionLevelCount(level, v);
-                              } else {
-                                updateLevelCount(level, v);
-                              }
-                            };
-
-                            return (
-                              <div key={level}>
-                                <ONumberInput
-                                  value={val}
-                                  onChange={handleChange}
-                                  liveUpdate
-                                  onBlur={() => {
-                                    if (!isSelLevel) markTouched('programmingLevelCounts');
-                                  }}
-                                  disabled={isSelLevel && !checked}
-                                  min={0}
-                                  placeholder={isSelLevel && !checked ? '—' : 'Count'}
-                                  error={!isSelLevel ? validationErrors[`programmingLevelCounts_${level.charAt(0).toUpperCase() + level.slice(1)}`] : undefined}
-                                  touched={!isSelLevel ? touchedFields.has('programmingLevelCounts') : undefined}
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {!isSelLevel && validationErrors.programmingLevelCounts && touchedFields.has('programmingLevelCounts') && (
-                          <p className="text-[10px] mb-1" style={{ color: D.red }}>{validationErrors.programmingLevelCounts}</p>
-                        )}
-
-                        {/* Scoring rows — hidden when Non-Graded */}
-                        {formData.isGraded === false ? null : !showScoringRows ? (
-                          <div className="mt-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold"
-                            style={{ background: D.amber + '10', border: `1px solid ${D.amber}30`, color: D.amber }}>
-                            {isSelLevel
-                              ? 'Select at least one difficulty level and enter a count to configure scoring'
-                              : 'Fill all three difficulty counts to configure scoring'}
-                          </div>
-                        ) : (
-                          <>
-                            {/* Row 2: Score Type */}
-                            <div style={rowStyle}>
-                              <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Score Type</div>
-                              {(['easy', 'medium', 'hard'] as const).map(level => {
-                                const count = scoringCounts[level];
-                                const scoring = ls[level];
-                                const hasError = touchedFields.has(`scoring_${level}`) && !!scoringErrors[level];
-                                const isDisabled = isSelLevel ? count === 0 : false;
-                                return (
-                                  <div key={level} style={{ opacity: isDisabled ? 0.4 : 1, pointerEvents: isDisabled ? 'none' : 'auto' }}>
-                                    <select
-                                      value={scoring?.type || 'level_specific'}
-                                      onChange={e => updateLevelScoringConfig(level, {
-                                        type: e.target.value as any,
-                                        ...(e.target.value === 'level_specific'
-                                          ? { marksPerQuestion: scoring?.marksPerQuestion || 0, totalMarks: undefined }
-                                          : { totalMarks: scoring?.totalMarks || 0, marksPerQuestion: undefined }
-                                        )
-                                      })}
-                                      className="w-full px-2 py-1.5 text-xs rounded-lg border outline-none"
-                                      style={{ borderColor: hasError ? D.red + '60' : D.border, background: '#fff', color: D.textMain, fontFamily: FONT }}>
-                                      <option value="level_specific">Level-specific</option>
-                                      <option value="question_specific">Question-specific</option>
-                                    </select>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Row 3: Marks */}
-                            <div style={rowStyle}>
-                              <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Marks</div>
-                              {(['easy', 'medium', 'hard'] as const).map(level => {
-                                const count = scoringCounts[level];
-                                const scoring = ls[level];
-                                const isQSpec = scoring?.type === 'question_specific';
-                                const hasError = touchedFields.has(`scoring_${level}`) && !!scoringErrors[level];
-                                const isDisabled = isSelLevel ? count === 0 : false;
-
-                                return (
-                                  <div key={level} style={{ opacity: isDisabled ? 0.4 : 1, pointerEvents: isDisabled ? 'none' : 'auto' }}>
-                                    {!isSelLevel ? (
-                                    // AFTER — add liveUpdate:
-<ONumberInput
-  value={isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0)}
-  liveUpdate
-  onChange={v => {
-    if (isQSpec) {
-      updateLevelScoringConfig(level, { totalMarks: v });
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        programmingConfig: {
-          ...prev.programmingConfig,
-          scoreSettings: {
-            ...prev.programmingConfig.scoreSettings,
-            levelScoringConfiguration: {
-              ...prev.programmingConfig.scoreSettings.levelScoringConfiguration,
-              [level]: {
-                ...prev.programmingConfig.scoreSettings.levelScoringConfiguration[level],
-                marksPerQuestion: v
-              }
-            }
-          }
-        }
-      }));
-    }
-  }}
-/>
-                                    ) : (
-                                      <ONumberInput
-                                        value={isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0)}
-                                        onChange={v => {
-                                          if (isQSpec) {
-                                            updateLevelScoringConfig(level, { totalMarks: v });
-                                          } else {
-                                            setFormData(prev => ({
-                                              ...prev,
-                                              programmingConfig: {
-                                                ...prev.programmingConfig,
-                                                scoreSettings: {
-                                                  ...prev.programmingConfig.scoreSettings,
-                                                  levelScoringConfiguration: {
-                                                    ...prev.programmingConfig.scoreSettings.levelScoringConfiguration,
-                                                    [level]: {
-                                                      ...prev.programmingConfig.scoreSettings.levelScoringConfiguration[level],
-                                                      marksPerQuestion: v
-                                                    }
-                                                  }
-                                                }
-                                              }
-                                            }));
-                                          }
-                                        }}
-                                      />
-                                    )}
-                                    {hasError && <span className="text-[10px]" style={{ color: D.red }}>{scoringErrors[level]}</span>}
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Row 4: Total */}
-                            <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '6px', alignItems: 'center' }}>
-                              <div className="text-[10px] font-semibold" style={{ color: D.textMuted }}>Total</div>
-                              {(['easy', 'medium', 'hard'] as const).map(level => {
-                                const count = scoringCounts[level];
-                                if (count === 0) return <div key={level} />;
-                                const scoring = ls[level];
-                                const isQSpec = scoring?.type === 'question_specific';
-                                const total = isQSpec
-                                  ? (scoring?.totalMarks || 0)
-                                  : (scoring?.marksPerQuestion || 0) * count;
-                                return (
-                                  <div key={level} className="text-center text-xs font-semibold py-1 rounded"
-                                    style={{ background: levelColors[level] + '10', color: levelColors[level] }}>
-                                    {total} marks
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </>}
-              </div>
-            )}
-          </div>
-
-          {/* Question Flow */}
-          <div className={`flex items-center gap-3 py-2.5 border-b${programmingLevelMismatch ? ' opacity-40 pointer-events-none' : ''}`} style={{ borderColor: D.border }}>
-            <div className="w-36 flex-shrink-0 flex items-center gap-1.5">
-              <Shuffle size={12} style={{ color: D.textMuted }} />
-              <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>Question Flow</span>
-            </div>
-            <div className="flex-1 flex gap-2">
-              {questionFlowOptions.map(opt => {
-                const sel = formData.programmingConfig.questionFlow === opt.value;
-                return (
-                  <button key={opt.value} type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, questionFlow: opt.value as any } }))}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all"
-                    style={{ borderColor: sel ? D.orange : D.border, background: sel ? D.orangeLight : D.bg, color: sel ? D.orange : D.textMain, fontFamily: FONT }}>
-                    <span style={{ color: sel ? D.orange : D.textMuted }}>{opt.icon}</span>
-                    {opt.label}
-                    {sel && <Check size={11} style={{ color: D.orange }} />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Compiler File Mode — UI removed; backend always receives 'multiple' as default (see payload). */}
-
-          {/* Evaluation Method — Test Case and/or AI. Stored on the exercise as
-              `evaluationMethod`; nothing evaluates from it yet. */}
-          <div className="py-3 border-b" style={{ borderColor: D.border }}>
-            <EvaluationMethodConfig
-              value={formData.evaluationMethod}
-              onChange={next => setFormData(prev => ({ ...prev, evaluationMethod: next }))}
-              D={D}
-              ODropdown={ODropdown}
-              font={FONT}
-              dense
+        {/* ── TOP ROW: Config Strategy · Total Questions · count chip ── */}
+        <div className="es-toprow" style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 260px', minWidth: 220 }}>
+            <span style={{ ...SPEC_LABEL, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              Config Strategy <span style={{ color: D.orange }}>*</span>
+              {isConfigStrategyLocked
+                ? <span className="es-pill" style={SPEC_PILL.amber}>Locked</span>
+                : <InfoTooltip content="General: fixed question count; Level Based: questions by difficulty (Easy/Medium/Hard); Selection Level: pick up to 2 difficulty levels" side="right" />}
+            </span>
+            <ODropdown
+              value={formData.programmingConfig.questionConfigType}
+              options={configOptions}
+              disabled={isConfigStrategyLocked}
+              onChange={isConfigStrategyLocked ? () => { } : v => {
+                setFormData(prev => ({
+                  ...prev,
+                  programmingConfig: {
+                    ...prev.programmingConfig,
+                    questionConfigType: v as any,
+                    ...(v === 'general'
+                      ? { generalQuestionCount: 0, levelBasedCounts: { easy: 0, medium: 0, hard: 0 }, selectionLevelCounts: { easy: 0, medium: 0, hard: 0 } }
+                      : { levelBasedCounts: { easy: 0, medium: 0, hard: 0 }, selectionLevelCounts: { easy: 0, medium: 0, hard: 0 } }
+                    )
+                  }
+                }));
+                setLevelScoringOpen({ easy: false, medium: false, hard: false });
+              }}
             />
           </div>
 
-          {/* Attempt Limit */}
-          <div className="py-2.5">
-            <div className="flex items-center gap-2.5">
-              <div className="text-sm font-semibold" style={{ color: D.textMain }}>Attempt Limit</div>
-              <button type="button" role="switch" aria-checked={formData.programmingConfig.attemptLimitEnabled}
-                onClick={() => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, attemptLimitEnabled: !prev.programmingConfig.attemptLimitEnabled, submissionAttempts: !prev.programmingConfig.attemptLimitEnabled ? (prev.programmingConfig.submissionAttempts > 1 ? prev.programmingConfig.submissionAttempts : 2) : 1 } }))}
-                className="relative inline-flex items-center h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 focus:outline-none p-[2px]"
-                style={{ background: formData.programmingConfig.attemptLimitEnabled ? D.orange : '#e5e7eb' }}>
-                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-200 ${formData.programmingConfig.attemptLimitEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
-              <span className="text-[10px] font-bold" style={{ color: formData.programmingConfig.attemptLimitEnabled ? D.emerald : D.red }}>
-                {formData.programmingConfig.attemptLimitEnabled ? 'On' : 'Off'}
-              </span>
+          {formData.programmingConfig.questionConfigType === 'general' && (
+            <div style={{ flex: '1 1 220px', minWidth: 180 }}>
+              <span style={SPEC_LABEL}>Total Questions <span style={{ color: D.orange }}>*</span></span>
+              <ONumberInput
+                value={formData.programmingConfig.generalQuestionCount}
+                liveUpdate
+                onChange={v => {
+                  if (v > 0) setValidationErrors(prev => { const e = { ...prev }; delete e.programmingGeneralQuestionCount; return e; });
+                  setFormData(prev => {
+                    const tot = prev.exerciseType === 'Combined' ? prev.totalMarksProgramming : prev.totalMarks;
+                    return {
+                      ...prev,
+                      programmingConfig: {
+                        ...prev.programmingConfig,
+                        generalQuestionCount: v,
+                        scoreSettings: { ...prev.programmingConfig.scoreSettings, equalDistribution: v > 0 && tot > 0 ? tot / v : 0 }
+                      }
+                    };
+                  });
+                }}
+                onBlur={() => markTouched('programmingGeneralQuestionCount')}
+                min={0}
+                placeholder="e.g. 5"
+                error={validationErrors.programmingGeneralQuestionCount}
+                touched={touchedFields.has('programmingGeneralQuestionCount')}
+              />
             </div>
-            <div className="text-xs mt-0.5" style={{ color: D.textMuted }}>Restrict code submission attempts - default 1 submission</div>
-            <div className="flex items-center gap-3 mt-2 pt-2 border-t" style={{ borderColor: D.border }}>
-              <div className="w-36 flex-shrink-0 flex items-center gap-1.5">
-                <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>Attempts Allowed</span>
-                <InfoTooltip content="Maximum number of code submissions allowed per student (1–10)" side="right" />
+          )}
+
+          {isLevelMode && (<>
+            <div style={{ flex: '1 1 220px', minWidth: 180 }}>
+              <span style={{ ...SPEC_LABEL, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                Total Questions <span style={{ color: D.orange }}>*</span>
+                <InfoTooltip content="Total pattern size. Easy + Medium + Hard must equal this." side="right" />
+              </span>
+              <ONumberInput
+                value={patternTarget === 0 ? ('' as any) : patternTarget}
+                liveUpdate min={0} placeholder="e.g. 15"
+                onChange={v => setFormData(prev => ({
+                  ...prev,
+                  programmingConfig: { ...prev.programmingConfig, patternTotal: v || 0 }
+                }))}
+              />
+            </div>
+            <span style={{
+              ...(patternBalanced ? SPEC_PILL.green : (patternTarget > 0 ? SPEC_PILL.amber : SPEC_PILL.grey)),
+              height: 30, marginBottom: 2,
+            }}>
+              {patternBalanced ? '✓' : patternTarget > 0 ? '⚠' : ''} E + M + H = {patternSum}{patternTarget > 0 ? ` / ${patternTarget}` : ''}
+            </span>
+          </>)}
+        </div>
+
+        {formData.programmingConfig.questionConfigType === '' ? (
+          <div className="es-note" style={SPEC_NOTE.warn}>
+            <span>⚠</span>
+            <span>Please select a Config Strategy above to configure questions and scoring.</span>
+          </div>
+        ) : (<>
+
+          {/* ── QUESTIONS & SCORING ── */}
+          <div style={SPEC_CARD}>
+            <div className="es-card-h" style={SPEC_CARD_H}>
+              <span style={SPEC_CARD_T}>Questions &amp; Scoring</span>
+              {formData.isGraded !== false && (
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                  <span className="es-pill" style={SPEC_PILL.blue}>Total <strong>{totalToUse}</strong></span>
+                  <span className="es-pill" style={progUsedMarks > 0 ? SPEC_PILL.green : SPEC_PILL.grey}>
+                    Used <strong>{formatDecimal(progUsedMarks)}</strong>
+                  </span>
+                  <span className="es-pill" style={progRemainingMarks === 0 ? SPEC_PILL.green : (progRemainingMarks > 0 ? SPEC_PILL.amber : SPEC_PILL.red)}>
+                    Remaining <strong>{formatDecimal(progRemainingMarks)}</strong>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {!isLevelMode ? (
+                formData.isGraded !== false && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 12, alignItems: 'end' }}>
+                    <div className="es-note" style={SPEC_NOTE.info}>
+                      <span>ⓘ</span>
+                      <span>
+                        General Configuration doesn&apos;t split by difficulty — marks are divided equally
+                        across all {formData.programmingConfig.generalQuestionCount || 0} questions.
+                      </span>
+                    </div>
+                    <div>
+                      <span style={SPEC_LABEL}>Marks / question</span>
+                      <div style={{
+                        height: 34, borderRadius: 8, border: `1px solid ${D.border}`, background: D.surface,
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 11px',
+                      }}>
+                        <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
+                          {formatDecimal(formData.programmingConfig.scoreSettings.equalDistribution || 0)}
+                        </span>
+                        <span className="es-pill" style={SPEC_PILL.blue}>Auto</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : (<>
+                {/* ── Difficulty matrix ── */}
+                <div className="es-matrix-wrap" style={{ border: `1px solid ${D.border2}`, borderRadius: 10, overflow: 'hidden' }}>
+                  {/* Header */}
+                  <div className="es-matrix" style={MROW}>
+                    <div className="es-mcell" style={{ ...MCELL, background: '#FCFBFA' }} />
+                    {(['easy', 'medium', 'hard'] as const).map(level => {
+                      const checked = (formData.programmingConfig.selectionLevelCounts?.[level] ?? 0) > 0;
+                      return (
+                        <div key={level} style={{ ...MCELL, background: LV[level].tint }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            {isSelLevel && (
+                              <input type="checkbox" checked={checked}
+                                onChange={e => {
+                                  const nc = { ...formData.programmingConfig.selectionLevelCounts, [level]: e.target.checked ? 1 : 0 };
+                                  const active = (['easy', 'medium', 'hard'] as const).filter(l => nc[l] > 0).length;
+                                  if (active > 2) {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      programmingConfig: {
+                                        ...prev.programmingConfig,
+                                        questionConfigType: 'levelBased',
+                                        levelBasedCounts: { easy: nc.easy > 0 ? nc.easy : 1, medium: nc.medium > 0 ? nc.medium : 1, hard: nc.hard > 0 ? nc.hard : 1 },
+                                        selectionLevelCounts: { easy: 0, medium: 0, hard: 0 }
+                                      }
+                                    }));
+                                  } else {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      programmingConfig: { ...prev.programmingConfig, selectionLevelCounts: nc }
+                                    }));
+                                  }
+                                }}
+                                style={{ width: 15, height: 15, accentColor: D.orange, cursor: 'pointer' }} />
+                            )}
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: LV[level].dot, flex: 'none' }} />
+                            <span style={{ fontSize: 12, fontWeight: 700, color: LV[level].text }}>{LV[level].label}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Questions */}
+                  <div className="es-matrix" style={MROW}>
+                    <div className="es-mcell" style={{ ...MCELL, ...MATRIX_LABEL }}>Questions</div>
+                    {(['easy', 'medium', 'hard'] as const).map(level => {
+                      const checked = isSelLevel ? (formData.programmingConfig.selectionLevelCounts?.[level] ?? 0) > 0 : true;
+                      const val = isSelLevel
+                        ? (formData.programmingConfig.selectionLevelCounts?.[level] ?? 0)
+                        : (formData.programmingConfig.levelBasedCounts?.[level] ?? 0);
+                      return (
+                        <div key={level} style={{ ...MCELL, background: LV[level].tint }}>
+                          {stepper(val, v => { if (isSelLevel) updateSelectionLevelCount(level, v); else updateLevelCount(level, v); }, isSelLevel && !checked)}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {formData.isGraded !== false && showScoringRows && (<>
+                    {/* Marking */}
+                    <div className="es-matrix" style={MROW}>
+                      <div className="es-mcell" style={{ ...MCELL, ...MATRIX_LABEL }}>Mark Distribution</div>
+                      {(['easy', 'medium', 'hard'] as const).map(level => {
+                        const count = scoringCounts[level];
+                        const scoring = ls[level];
+                        const isDisabled = isSelLevel ? count === 0 : false;
+                        return (
+                          <div key={level} style={{ ...MCELL, background: LV[level].tint, opacity: isDisabled ? 0.4 : 1, pointerEvents: isDisabled ? 'none' : 'auto' }}>
+                            <select
+                              value={scoring?.type || 'level_specific'}
+                              onChange={e => updateLevelScoringConfig(level, {
+                                type: e.target.value as any,
+                                ...(e.target.value === 'level_specific'
+                                  ? { marksPerQuestion: scoring?.marksPerQuestion || 0, totalMarks: undefined }
+                                  : { totalMarks: scoring?.totalMarks || 0, marksPerQuestion: undefined }
+                                )
+                              })}
+                              style={SELECT_STYLE}>
+                              <option value="level_specific">Same Marks</option>
+                              <option value="question_specific">Individual</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Marks */}
+                    <div className="es-matrix" style={MROW}>
+                      <div className="es-mcell" style={{ ...MCELL, ...MATRIX_LABEL }}>Marks</div>
+                      {(['easy', 'medium', 'hard'] as const).map(level => {
+                        const count = scoringCounts[level];
+                        const scoring = ls[level];
+                        const isQSpec = scoring?.type === 'question_specific';
+                        const isDisabled = isSelLevel ? count === 0 : false;
+                        return (
+                          <div key={level} style={{ ...MCELL, background: LV[level].tint, opacity: isDisabled ? 0.4 : 1, pointerEvents: isDisabled ? 'none' : 'auto' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <ONumberInput
+                              value={isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0)}
+                              liveUpdate
+                              // Errors belong on the field, not in a banner
+                              // below the matrix — the border reddens and the
+                              // message sits directly under the offending cell.
+                              error={scoringErrors[level] || (marksMissing(level) ? 'Enter marks' : undefined)}
+                              touched
+                              onChange={v => {
+                                if (isQSpec) {
+                                  updateLevelScoringConfig(level, { totalMarks: v });
+                                } else {
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    programmingConfig: {
+                                      ...prev.programmingConfig,
+                                      scoreSettings: {
+                                        ...prev.programmingConfig.scoreSettings,
+                                        levelScoringConfiguration: {
+                                          ...prev.programmingConfig.scoreSettings.levelScoringConfiguration,
+                                          [level]: { ...prev.programmingConfig.scoreSettings.levelScoringConfiguration[level], marksPerQuestion: v }
+                                        }
+                                      }
+                                    }
+                                  }));
+                                }
+                              }}
+                            />
+                            {/* The unit sits beside the number so a column can
+                                never be misread — one may hold a pot for the
+                                level while its neighbour holds a rate. */}
+                            <span style={{ fontSize: 10.5, color: D.textMuted, whiteSpace: 'nowrap' }}>
+                              {isQSpec ? 'Total' : '/ Question'}
+                            </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Calculated Total — DERIVED, never an input */}
+                    <div className="es-matrix" style={MROW}>
+                      <div className="es-mcell" style={{ ...MCELL, ...MATRIX_LABEL, borderBottom: 'none' }}>Calculated Total</div>
+                      {(['easy', 'medium', 'hard'] as const).map(level => {
+                        const count = scoringCounts[level] || 0;
+                        const scoring = ls[level];
+                        const isQSpec = scoring?.type === 'question_specific';
+                        return (
+                          <div key={level} style={{ ...MCELL, background: LV[level].tint, borderBottom: 'none' }}>
+                            {/* Value only — the "split equally across N" /
+                                "N marks across N" sublines were redundant with
+                                the Questions row directly above. */}
+                            {count === 0 ? (
+                              <span style={{ fontSize: 12.6, color: D.textHint }}>—</span>
+                            ) : isQSpec ? (
+                              <div style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
+                                {formatDecimal(scoring?.totalMarks || 0)} Marks
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
+                                  {formatDecimal(count * (scoring?.marksPerQuestion || 0))} Marks
+                                </div>
+                                {/* The arithmetic underneath — the cheapest
+                                    possible explanation of where it came from. */}
+                                <div style={{ fontSize: 10.5, color: D.textMuted }}>
+                                  {count} × {formatDecimal(scoring?.marksPerQuestion || 0)}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>)}
+                </div>
+
+                {!isSelLevel && validationErrors.programmingLevelCounts && touchedFields.has('programmingLevelCounts') && (
+                  <p style={{ fontSize: 11.4, color: D.red }}>{validationErrors.programmingLevelCounts}</p>
+                )}
+
+                {formData.isGraded !== false && !showScoringRows && (
+                  <div className="es-note" style={SPEC_NOTE.warn}>
+                    <span>⚠</span>
+                    <span>{isSelLevel
+                      ? 'Select at least one difficulty level and enter a count to configure scoring'
+                      : 'Fill all three difficulty counts to configure scoring'}</span>
+                  </div>
+                )}
+
+                {formData.isGraded !== false && showScoringRows && (
+                  <div className="es-note" style={SPEC_NOTE.info}>
+                    <span>ⓘ</span>
+                    <span>{anyQuestionSpecific
+                      ? 'A level set to Individual holds a total here — you assign each question’s share while creating it.'
+                      : 'Same Marks gives every question in a level the same value, so the total is simply questions × marks.'}</span>
+                  </div>
+                )}
+
+                {formData.isGraded !== false && programmingLevelMismatch && !mismatchIsPerField && (
+                  <div className="es-note" style={SPEC_NOTE.bad}>
+                    <span>⚠</span>
+                    <span>{programmingLevelMismatch}</span>
+                  </div>
+                )}
+              </>)}
+            </div>
+          </div>
+
+          {/* ── QUESTION FLOW · EVALUATION METHOD ── */}
+          <div className="es-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
+            <div style={{ ...SPEC_CARD, ...(programmingLevelMismatch ? { opacity: 0.4, pointerEvents: 'none' as const } : {}) }}>
+              <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span style={{ ...SPEC_LABEL, display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 0 }}>
+                  Question Flow
+                  <InfoTooltip content="Free Flow lets students answer in any order; Controlled Flow locks the sequence." side="right" />
+                </span>
+                <div style={{
+                  display: 'flex', background: D.surface2, border: `1px solid ${D.border2}`,
+                  borderRadius: 8, padding: 3, gap: 3,
+                }}>
+                  {questionFlowOptions.map(opt => {
+                    const sel = formData.programmingConfig.questionFlow === opt.value;
+                    return (
+                      <button key={opt.value} type="button" aria-pressed={sel}
+                        onClick={() => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, questionFlow: opt.value as any } }))}
+                        style={{
+                          flex: 1, height: 27, border: 'none', borderRadius: 5, cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                          fontSize: 12, fontWeight: 600,
+                          background: sel ? '#fff' : 'transparent',
+                          color: sel ? D.orangeDark : D.textMuted,
+                          boxShadow: sel ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
+                        }}>
+                        <span style={{ display: 'inline-flex' }}>{opt.icon}</span>{opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="w-24">
-                <ONumberInput
-                  value={formData.programmingConfig.attemptLimitEnabled ? formData.programmingConfig.submissionAttempts : 1}
-                  onChange={v => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, submissionAttempts: Math.max(1, Math.min(10, v)) } }))}
-                  min={1} max={10}
-                  disabled={!formData.programmingConfig.attemptLimitEnabled} />
+            </div>
+
+            <div style={SPEC_CARD}>
+              <div className="es-card-b" style={SPEC_CARD_B}>
+                <EvaluationMethodConfig
+                  value={formData.evaluationMethod}
+                  onChange={next => setFormData(prev => ({ ...prev, evaluationMethod: next }))}
+                  D={D}
+                  ODropdown={ODropdown}
+                  font={FONT}
+                  dense
+                />
               </div>
+            </div>
+          </div>
+
+          {/* ── ATTEMPT LIMIT ── */}
+          <div style={SPEC_CARD}>
+            <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>Attempt Limit</div>
+                  <div style={{ fontSize: 11.4, color: D.textMuted, marginTop: 1 }}>
+                    {formData.programmingConfig.attemptLimitEnabled
+                      ? 'Students can submit a limited number of times.'
+                      : 'Students can attempt this exercise any number of times.'}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700,
+                  color: formData.programmingConfig.attemptLimitEnabled ? D.emerald : D.textHint,
+                }}>
+                  {formData.programmingConfig.attemptLimitEnabled ? 'Enabled' : 'Off'}
+                </span>
+                <button type="button" role="switch" aria-checked={formData.programmingConfig.attemptLimitEnabled}
+                  onClick={() => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, attemptLimitEnabled: !prev.programmingConfig.attemptLimitEnabled, submissionAttempts: !prev.programmingConfig.attemptLimitEnabled ? (prev.programmingConfig.submissionAttempts > 1 ? prev.programmingConfig.submissionAttempts : 2) : 1 } }))}
+                  style={{
+                    position: 'relative', width: 35, height: 20, borderRadius: 999, border: 'none',
+                    cursor: 'pointer', flexShrink: 0, transition: 'background .16s',
+                    background: formData.programmingConfig.attemptLimitEnabled ? D.emerald : '#DEDAD5',
+                  }}>
+                  <span style={{
+                    position: 'absolute', top: 2, left: 2, width: 16, height: 16, borderRadius: '50%',
+                    background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)', transition: 'transform .16s',
+                    transform: formData.programmingConfig.attemptLimitEnabled ? 'translateX(15px)' : 'none',
+                  }} />
+                </button>
+              </div>
+
+              {formData.programmingConfig.attemptLimitEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 12, borderTop: `1px solid ${D.border}` }}>
+                  <span style={{ ...SPEC_LABEL, marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    Attempts Allowed
+                    <InfoTooltip content="Maximum number of code submissions allowed per student (1–10)" side="right" />
+                  </span>
+                  <div style={{ width: 110, marginLeft: 'auto' }}>
+                    <ONumberInput
+                      value={formData.programmingConfig.submissionAttempts}
+                      onChange={v => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, submissionAttempts: Math.max(1, Math.min(10, v)) } }))}
+                      min={1} max={10} />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {validationErrors.programmingTotalMarks && touchedFields.has('programmingTotalMarks') && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#fff2f2', border: `1px solid ${D.red}25` }}>
-              <AlertCircle size={13} style={{ color: D.red }} /><p className="text-xs" style={{ color: D.red }}>{validationErrors.programmingTotalMarks}</p>
+            <div className="es-note" style={SPEC_NOTE.bad}>
+              <span>⚠</span><span>{validationErrors.programmingTotalMarks}</span>
             </div>
           )}
-        </div>
+        </>)}
       </div>
     );
   }, [
@@ -4907,6 +4999,62 @@ const renderNotifications = useCallback(() => (
   const isOnStep1 = currentStep === step1Id;
   const busy = isLoading || isSavingStep;
 
+  // ── Issue map: step title → the messages that step is currently failing on ──
+  // Only TOUCHED fields count, so a form the teacher hasn't submitted yet stays
+  // quiet; the moment Next/Save runs validateCurrentStep (which marks the
+  // step's fields touched) the same errors light up the rail, the header pill
+  // and the banner together.
+  const stepIssues = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    Object.entries(STEP_ERROR_FIELDS).forEach(([title, fields]) => {
+      const msgs: string[] = [];
+      fields.forEach(f => {
+        const v = validationErrors[f];
+        if (!v || !touchedFields.has(f)) return;
+        if (typeof v === 'string') msgs.push(v);
+        // programmingLevelScoring / othersLevelScoring hold a per-level record.
+        else if (typeof v === 'object') Object.values(v).forEach(m => { if (typeof m === 'string' && m) msgs.push(m); });
+      });
+      out[title] = Array.from(new Set(msgs));
+    });
+    return out;
+  }, [validationErrors, touchedFields]);
+  const currentIssues = stepIssues[currentStepTitle === 'MCQ Configuration'
+    || currentStepTitle === 'Programming Configuration'
+    || currentStepTitle === 'Others Configuration'
+    ? 'Question Configuration'
+    : currentStepTitle] ?? [];
+
+  // ── Rail summary — the three numbers that answer "what am I building?" ──────
+  const summary = useMemo(() => {
+    const et = formData.exerciseType;
+    let questions = 0;
+    if (et === 'MCQ') questions = formData.mcqConfig.generalQuestionCount || 0;
+    else if (et === 'Programming') questions = getProgrammingTotalQuestions();
+    else if (et === 'Other') questions = getOthersTotalQuestions();
+    else if (et === 'Combined') questions = (formData.mcqConfig.generalQuestionCount || 0) + getProgrammingTotalQuestions();
+    const total = et === 'Combined'
+      ? (formData.totalMarksMCQ || 0) + (formData.totalMarksProgramming || 0)
+      : (formData.totalMarks || 0);
+    return {
+      questions,
+      used: calculateAllocatedMarks(),
+      total,
+      type: et || '—',
+    };
+  }, [formData.exerciseType, formData.mcqConfig.generalQuestionCount, formData.totalMarks,
+    formData.totalMarksMCQ, formData.totalMarksProgramming,
+    getProgrammingTotalQuestions, getOthersTotalQuestions, calculateAllocatedMarks]);
+
+  // The rail's fourth summary row. Reads whichever config owns attempts for
+  // the current type — it derives, it never writes.
+  const attemptsSummary = useMemo(() => {
+    const cfg = formData.exerciseType === 'MCQ' ? formData.mcqConfig
+      : formData.exerciseType === 'Other' ? formData.othersConfig
+        : formData.programmingConfig;
+    return cfg?.attemptLimitEnabled ? String(cfg.submissionAttempts || 1) : 'Unlimited';
+  }, [formData.exerciseType, formData.mcqConfig, formData.othersConfig, formData.programmingConfig]);
+
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(30,41,59,0.55)', backdropFilter: 'blur(6px)', fontFamily: FONT }}
       // Arms the unsaved-changes baseline. Capture phase so it lands before the
@@ -4982,15 +5130,98 @@ const renderNotifications = useCallback(() => (
 
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        .es-main, .es-main * { font-family: 'Poppins','DM Sans','Segoe UI', sans-serif !important; }
+        .es-main, .es-main * { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,'Helvetica Neue',Arial,sans-serif !important; }
         /* Thin, subtle scrollbar — matches Coursesidebar .sb-scroll */
         .es-main ::-webkit-scrollbar { width: 4px; height: 4px; }
         .es-main ::-webkit-scrollbar-track { background: transparent; }
         .es-main ::-webkit-scrollbar-thumb { background: #d4d8df; border-radius: 4px; }
         .es-main ::-webkit-scrollbar-thumb:hover { background: #b9becb; }
+
+        /* ── COMPACT DENSITY — VERTICAL ───────────────────────────────────
+           Admins create many exercises a day, so the wizard buys rows on
+           screen by squeezing VERTICAL rhythm only. Horizontal padding is
+           left generous so fields keep room to breathe side to side. */
+        .es-step { padding: 8px 16px 10px !important; gap: 7px !important; }
+        .es-step .es-card-b { padding: 7px 11px 8px !important; gap: 7px !important; }
+        .es-step .es-card-h { padding: 4px 11px !important; }
+        .es-step .es-mcell { padding: 3px 9px !important; }
+        /* Controls: 28px rows. Height is where the savings compound. */
+        .es-step input:not([type=checkbox]):not([type=radio]),
+        .es-step select,
+        .es-step [data-odrop-trigger] {
+          height: 28px !important; font-size: 12px !important;
+          padding-top: 0 !important; padding-bottom: 0 !important;
+        }
+        .es-step textarea { min-height: 44px !important; font-size: 12px !important; }
+        .es-step label, .es-step .es-lbl { margin-bottom: 2px !important; line-height: 1.25 !important; }
+        /* Notes, pills and helper lines all lose their vertical slack. */
+        .es-step .es-note { padding: 5px 9px !important; line-height: 1.4 !important; }
+        .es-step .es-pill { height: 20px !important; }
+        .es-step p { margin: 0 !important; }
+        /* The ± stepper matches the 28px control row. */
+        .es-step .es-stepper { height: 28px !important; }
+        /* Step header + footer: the two fixed bands framing the scroll area. */
+        .es-head { padding: 8px 16px 6px !important; }
+        .es-head h2 { font-size: 17px !important; line-height: 1.15 !important; }
+        .es-head .es-head-sub { display: none !important; }
+        .es-foot { padding: 7px 16px !important; }
+        /* Footer buttons still carry Tailwind py-2.5/py-3 — flatten them to
+           one 30px row so the fixed bottom band stays thin. */
+        .es-foot button {
+          height: 30px !important; padding-top: 0 !important; padding-bottom: 0 !important;
+          font-size: 12.4px !important; border-radius: 8px !important;
+        }
+        /* Rail steps: the tallest thing in the left column. */
+        .es-rail li > button { padding-bottom: 7px !important; padding-top: 4px !important; }
+        .es-rail .es-connector { top: 25px !important; }
+
+        /* ── RESPONSIVE ───────────────────────────────────────────────────
+           The wizard is inline-styled, so collapsing has to happen here. */
+        @media (max-width: 1180px) {
+          .es-2col { grid-template-columns: 1fr !important; }
+          .es-3col { grid-template-columns: 1fr 1fr !important; }
+        }
+        @media (max-width: 1000px) {
+          /* Rail becomes a horizontal strip above the body. */
+          .es-shell { flex-direction: column !important; }
+          .es-rail {
+            width: 100% !important; flex-direction: row !important;
+            overflow-x: auto !important; overflow-y: hidden !important;
+            border-right: none !important; border-bottom: 1px solid #F3E7D9 !important;
+            padding: 8px 12px !important; gap: 10px !important; align-items: center;
+          }
+          .es-rail .es-brand, .es-rail .es-summary { display: none !important; }
+          .es-rail ol { display: flex !important; gap: 4px; }
+          .es-rail li { position: static !important; }
+          .es-rail li > button { padding: 5px 8px !important; white-space: nowrap; }
+          .es-rail .es-connector { display: none !important; }
+        }
+        @media (max-width: 820px) {
+          .es-3col { grid-template-columns: 1fr !important; }
+          /* Difficulty matrix: label column narrows, cells tighten. */
+          .es-matrix { grid-template-columns: 78px repeat(3, minmax(0,1fr)) !important; }
+          .es-step { padding: 10px 12px !important; }
+        }
+        @media (max-width: 620px) {
+          /* Full-screen sheet on phones. */
+          .es-main {
+            width: 100vw !important; height: 100dvh !important;
+            max-width: none !important; border-radius: 0 !important; border: none !important;
+          }
+          .es-toprow { flex-direction: column !important; align-items: stretch !important; gap: 9px !important; }
+          .es-toprow > * { width: 100% !important; }
+          /* Matrix scrolls sideways rather than crushing the columns. */
+          .es-matrix-wrap { overflow-x: auto !important; }
+          .es-matrix { min-width: 460px; }
+          .es-foot { padding: 9px 12px !important; }
+          .es-foot .es-foot-label { display: none !important; }
+        }
         @keyframes es-slidein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         .animate-in { animation: es-slidein 0.18s ease both; }
+        @media (prefers-reduced-motion: reduce) {
+          .es-main .animate-in { animation: none; }
+          .es-main * { transition-duration: 0.01ms !important; }
+        }
 
 
         .sticky {
@@ -5017,137 +5248,197 @@ const renderNotifications = useCallback(() => (
 }
       `}</style>
 
-      {/* ── CARD (white outer with padding — cream sidebar sits inside, white shows as natural border) ── */}
-      <div className="es-main w-full max-w-7xl flex overflow-hidden p-3"
-        style={{ height: '96vh', borderRadius: 24, background: '#ffffff', boxShadow: '0 30px 80px rgba(15,23,42,0.30), 0 8px 24px rgba(15,23,42,0.12)' }}>
+      {/* ── CARD — the prototype's Concept 2 "Smart Adaptive Wizard": a cream
+          210px step rail beside the section body. The RENDERERS are unchanged;
+          only their host is. ── */}
+      <div className="es-main flex flex-col overflow-hidden"
+        style={{
+          width: 'min(1480px, 98%)', height: '94vh', minHeight: 560,
+          borderRadius: 14, background: '#ffffff', border: '1px solid #DFDAD4',
+          boxShadow: '0 14px 40px rgba(15,23,42,.14)',
+        }}>
 
-        {/* ── SIDEBAR (cream bg — white padding on the outer card shows as border around it) ── */}
-        <aside className="w-72 flex-shrink-0 flex flex-col overflow-y-auto rounded-2xl"
-          style={{ background: '#faf3ea' }}>
+        {/* ── APP BAR — mark · crumbs · origin pill · close ── */}
+        <header className="flex items-center flex-shrink-0"
+          style={{ gap: 11, padding: '11px 20px', borderBottom: '1px solid #F1EEEA', background: '#fff' }}>
+          <span className="flex items-center justify-center flex-shrink-0"
+            style={{ width: 27, height: 27, borderRadius: 8, background: 'linear-gradient(140deg,#F58634,#E15912)', color: '#fff', fontSize: 13 }}>
+            ✦
+          </span>
+          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>
+            Exercises / <b style={{ color: '#1D2433', fontWeight: 600 }}>
+              {formData.exerciseName?.trim() || (isEditing ? 'Edit exercise' : 'New exercise')}
+            </b>
+          </span>
+          {/* Origin pill — where this exercise came from. Presentational only:
+              it never enters formData or any payload. */}
+          {seedLabel && (
+            <span className="inline-flex items-center flex-shrink-0" title="Started from a template"
+              style={{ gap: 5, height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#FFF2E8', border: '1px solid #FBD8BE', color: '#D65A16' }}>
+              ▦ {seedLabel}
+            </span>
+          )}
+          <button onClick={requestClose} aria-label="Close"
+            className="ml-auto flex items-center justify-center flex-shrink-0"
+            style={{ width: 30, height: 30, border: '1px solid transparent', background: 'transparent', borderRadius: 8, color: '#6B7280', cursor: 'pointer', fontSize: 15 }}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="es-shell flex flex-1 min-h-0">
+
+        {/* ── STEP RAIL (cream, 210px) ── */}
+        <aside className="es-rail flex-shrink-0 flex flex-col overflow-y-auto"
+          style={{ width: 196, background: '#FDF4EA', borderRight: '1px solid #F3E7D9', padding: '14px 12px', gap: 12 }}>
+
           {/* Brand */}
-          <div className="flex items-center gap-2.5 px-7 pt-7 pb-8">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: isEditing ? D.amber + '20' : D.orange, boxShadow: `0 4px 12px ${D.orangeGlow}` }}>
-              {isEditing ? <Settings2 size={15} style={{ color: D.amber }} /> : <Sparkles size={15} className="text-white" />}
-            </div>
-            <div className="text-[16px] font-extrabold leading-tight" style={{ color: D.textMain }}>
+          <div className="es-brand flex items-center flex-shrink-0" style={{ gap: 11 }}>
+            <span className="flex items-center justify-center flex-shrink-0"
+              style={{ width: 27, height: 27, borderRadius: 8, background: 'linear-gradient(140deg,#F58634,#E15912)', color: '#fff', fontSize: 13 }}>
+              ✦
+            </span>
+            <b style={{ fontSize: 13.5, fontWeight: 700, color: '#1D2433' }}>
               {isEditing ? 'Edit Exercise' : 'Create Exercise'}
-            </div>
+            </b>
           </div>
 
-          {/* Step list */}
-          <div className="flex-1 px-7">
+          {/* Steps */}
+          <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {steps.map((step, idx) => {
               const active = step.active;
-              const isStepSaved = savedSteps.has(step.title);
               const isStep1 = step.title === 'Exercise Details';
               const isLocked_step = !isStep1 && !step1Unlocked;
               const isLast = idx === steps.length - 1;
-              const done = isStepSaved && !active;
-
-              const stepHasError = (() => {
-                switch (step.title) {
-                  case 'Exercise Details':
-                    return !!(validationErrors.exerciseType || validationErrors.selectedModule || validationErrors.selectedLanguages ||
-                      validationErrors.exerciseName || validationErrors.totalDuration ||
-                      validationErrors.totalMarks || validationErrors.totalMarksMCQ || validationErrors.totalMarksProgramming);
-                  case 'Question Configuration':
-                    return !!(validationErrors.mcqGeneralQuestionCount || validationErrors.mcqMarksPerQuestion || validationErrors.mcqTotalMarks ||
-                      validationErrors.programmingGeneralQuestionCount || validationErrors.programmingMarksPerQuestion ||
-                      validationErrors.programmingLevelCounts || validationErrors.programmingLevelCounts_Easy ||
-                      validationErrors.programmingLevelCounts_Medium || validationErrors.programmingLevelCounts_Hard ||
-                      validationErrors.programmingTotalMarks || validationErrors.programmingLevelScoring);
-                  default:
-                    return false;
-                }
-              })();
-
-              // Current: solid orange filled  |  Completed: outlined orange with check  |  Pending/Locked: outlined grey
-              const circleBg = active ? D.orange : '#ffffff';
-              const circleColor = active ? '#ffffff' : done ? D.orange : D.textMuted;
-              const circleBorder = active ? D.orange : done ? D.orange : '#cbd5e1';
-              const titleColor = active ? D.textMain : isLocked_step ? D.textHint : done ? D.textMain : D.textSub;
-              const descText = step.subtitle || '';
+              const stepIssueList = stepIssues[step.title] ?? [];
+              const stepHasError = stepIssueList.length > 0;
+              // The demo's rule: a ✓ only for a step already passed that has no
+              // errors — otherwise the number stays.
+              const done = savedSteps.has(step.title) && !active && !stepHasError;
 
               return (
-                <button
-                  key={step.id}
-                  type="button"
-                  onClick={() => handleStepClick(step.id)}
-                  disabled={isLocked_step}
-                  className="w-full flex items-stretch gap-3 text-left focus:outline-none"
-                  style={{ cursor: isLocked_step ? 'not-allowed' : 'pointer', opacity: isLocked_step ? 0.55 : 1 }}
-                  title={isLocked_step ? 'Please complete Exercise Details first' : step.title}
-                >
-                  <div className="flex flex-col items-center flex-shrink-0">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold border-2 transition-all"
-                      style={{ background: circleBg, color: circleColor, borderColor: circleBorder, boxShadow: active ? `0 4px 10px ${D.orangeGlow}` : 'none' }}>
-                      {isLocked_step ? <Lock size={11} /> : done ? <Check size={13} strokeWidth={3} /> : (idx + 1)}
-                    </div>
-                    {!isLast && (
-                      <div className="w-0.5 flex-1 my-1" style={{ background: done ? D.orange + '80' : '#d0d7e2', minHeight: 22 }} />
-                    )}
-                  </div>
+                <li key={step.id} style={{ position: 'relative' }}>
+                  {/* Connector, drawn behind the dot and stopping before the next. */}
+                  {!isLast && (
+                    <span aria-hidden className="es-connector" style={{
+                      position: 'absolute', left: 11.5, top: 29, bottom: 2, width: 1.5,
+                      background: done ? '#EE6A22' : '#EFD9C2',
+                    }} />
+                  )}
+                  <button type="button"
+                    onClick={() => handleStepClick(step.id)}
+                    disabled={isLocked_step}
+                    title={isLocked_step ? 'Please complete Exercise Details first' : step.title}
+                    className="w-full text-left focus:outline-none"
+                    style={{
+                      display: 'grid', gridTemplateColumns: '24px 1fr', gap: 10,
+                      padding: isLast ? '6px 0 0' : '6px 0 13px',
+                      background: 'transparent', border: 'none',
+                      cursor: isLocked_step ? 'not-allowed' : 'pointer', opacity: isLocked_step ? 0.5 : 1,
+                    }}>
+                    <span className="flex items-center justify-center"
+                      style={{
+                        width: 24, height: 24, borderRadius: '50%', fontSize: 10.5, fontWeight: 700,
+                        background: active ? '#EE6A22' : '#fff',
+                        color: active ? '#fff' : stepHasError ? '#D92D20' : done ? '#EE6A22' : '#9CA3AF',
+                        border: `1.5px solid ${active ? '#EE6A22' : stepHasError ? '#FBD3CE' : done ? '#EE6A22' : '#E7D8C6'}`,
+                        boxShadow: active ? '0 0 0 4px rgba(238,106,34,.15)' : 'none',
+                      }}>
+                      {isLocked_step ? <Lock size={10} /> : done ? <Check size={12} strokeWidth={3} /> : (idx + 1)}
+                    </span>
 
-                  <div className="flex-1 min-w-0 pb-6 pt-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <div className="text-[13px] font-bold leading-tight truncate" style={{ color: titleColor }}>
+                    <span className="min-w-0" style={{ display: 'block' }}>
+                      <span className="truncate" style={{
+                        display: 'block', fontSize: 12.4, lineHeight: 1.25,
+                        fontWeight: active ? 700 : 600,
+                        color: isLocked_step ? '#A79C90' : (active || done) ? '#1D2433' : '#8A8178',
+                      }}>
                         {step.title}
-                      </div>
-                      {stepHasError && !isLocked_step && (
-                        <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[8px] font-black flex-shrink-0"
-                          style={{ background: D.red, color: '#fff', lineHeight: 1 }} title="Required fields missing">!</span>
-                      )}
-                    </div>
-                    {descText && (
-                      <div className="text-[11px] mt-0.5 leading-snug" style={{ color: isLocked_step ? D.textHint : D.textMuted }}>
-                        {descText}
-                      </div>
-                    )}
-                  </div>
-                </button>
+                      </span>
+                      {/* Subtitle gives way to the issue count while failing. */}
+                      <span style={{
+                        display: 'block', fontSize: 10.4, marginTop: 1,
+                        color: stepHasError && !isLocked_step ? '#D92D20' : '#A79C90',
+                      }}>
+                        {stepHasError && !isLocked_step
+                          ? `${stepIssueList.length} issue${stepIssueList.length > 1 ? 's' : ''}`
+                          : step.subtitle}
+                      </span>
+                    </span>
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ol>
 
+          {/* Non-graded drops the Grade Settings step — say so rather than
+              letting a step silently vanish. */}
+          {formData.isGraded === false && (
+            <div style={{
+              display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11, lineHeight: 1.5,
+              background: '#EFF6FF', border: '1px solid #CFE0FB', color: '#1B4DA8',
+            }}>
+              <span>ⓘ</span>
+              <span>Grade Settings is hidden — this exercise is Non-Graded.</span>
+            </div>
+          )}
+
+          {/* Live totals, pinned to the bottom. */}
+          <div className="es-summary flex-shrink-0" style={{ marginTop: 'auto' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 4 }}>
+              Summary
+            </div>
+            {[
+              { k: 'Type', v: summary.type },
+              { k: 'Questions', v: String(summary.questions) },
+              {
+                k: 'Marks',
+                v: `${formatDecimal(summary.used)} / ${formatDecimal(summary.total)}`,
+                bad: summary.total > 0 && !isApproximatelyEqual(summary.used, summary.total),
+              },
+              { k: 'Attempts', v: attemptsSummary },
+            ].map((row) => (
+              <div key={row.k} className="flex items-center justify-between gap-2"
+                style={{ fontSize: 12, padding: '5px 0', borderBottom: '1px dashed #EBE7E2' }}>
+                <span style={{ color: '#6B7280' }}>{row.k}</span>
+                <span className="tabular-nums truncate" title={row.v}
+                  style={{ fontWeight: 600, color: (row as { bad?: boolean }).bad ? '#D92D20' : '#1D2433' }}>
+                  {row.v}
+                </span>
+              </div>
+            ))}
+          </div>
         </aside>
 
-        {/* ── RIGHT PANE (flush white, sidebar alone floats as a bordered card) ── */}
-        <div className="flex-1 flex flex-col overflow-hidden relative" style={{ background: '#ffffff' }}>
+        {/* ── SECTION BODY ── */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ background: '#ffffff' }}>
 
-          {/* Floating close (Back moved to bottom action row) */}
-          <button onClick={requestClose}
-            className="absolute top-5 right-8 z-10 w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-100"
-            style={{ color: D.textMuted }}>
-            <X size={18} />
-          </button>
-
-          {/* Compact step meta header */}
-          <div className="px-10 pb-3 flex-shrink-0 pt-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold mb-0.5" style={{ color: D.textMuted }}>
-                  Step {steps.findIndex(s => s.id === currentStep) + 1}/{steps.length}
-                </div>
-                <h2 className="text-[20px] font-extrabold leading-tight tracking-tight" style={{ color: D.textMain }}>
-                  {steps.find(s => s.id === currentStep)?.title}
-                </h2>
-                {steps.find(s => s.id === currentStep)?.subtitle && (
-                  <p className="text-[12px] mt-0.5" style={{ color: D.textMuted }}>
-                    {steps.find(s => s.id === currentStep)?.subtitle}
-                  </p>
-                )}
+          {/* Step header: eyebrow · title · subtitle · validity pill */}
+          <div className="es-head flex items-start gap-3 flex-shrink-0" style={{ padding: '12px 16px 9px' }}>
+            <div className="min-w-0 flex-1">
+              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#9CA3AF' }}>
+                Step {steps.findIndex(s => s.id === currentStep) + 1} of {steps.length}
               </div>
-
-              {savedSteps.has(steps.find(s => s.id === currentStep)?.title ?? '') && (
-                <span className="flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 mt-1"
-                  style={{ background: D.emerald + '12', color: D.emerald, border: `1px solid ${D.emerald}25`, marginRight: 44 }}>
-                  <Check size={10} strokeWidth={3} />Saved
-                </span>
-              )}
+              <h2 style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-.4px', lineHeight: 1.2, color: '#0F172A', marginTop: 3 }}>
+                {steps.find(s => s.id === currentStep)?.title}
+              </h2>
+              <p className="es-head-sub" style={{ fontSize: 12.6, color: '#6B7280', marginTop: 2 }}>
+                {steps.find(s => s.id === currentStep)?.subtitle}
+              </p>
             </div>
-            <div className="mt-3 border-t" style={{ borderColor: D.border }} />
+
+            {currentIssues.length > 0 ? (
+              <span className="inline-flex items-center gap-1 flex-shrink-0"
+                style={{ height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#D92D20' }}>
+                {currentIssues.length} issue{currentIssues.length > 1 ? 's' : ''}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 flex-shrink-0"
+                style={{ height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#ECFDF3', border: '1px solid #C7EBD5', color: '#046C4E' }}>
+                <Check size={10} strokeWidth={3} /> Section valid
+              </span>
+            )}
           </div>
+          {/* Save-as-template lives in the footer; see below. */}
 
           {/* Content + inline actions (single scroll container, no footer bar) */}
           <div className="flex-1 overflow-y-auto flex flex-col">
@@ -5161,23 +5452,50 @@ const renderNotifications = useCallback(() => (
               </div>
             )}
 
+            {/* ── Fix before continuing — every failing field on this step, in
+                one place, so the teacher isn't hunting for the red input. Only
+                appears after a Next/Save has marked the fields touched. ── */}
+            {currentIssues.length > 0 && !isLocked && (
+              <div role="alert" className="animate-in"
+                style={{
+                  display: 'flex', gap: 8, alignItems: 'flex-start',
+                  margin: '0 22px 4px', padding: '8px 10px', borderRadius: 8,
+                  fontSize: 11.4, lineHeight: 1.5,
+                  background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#912018',
+                }}>
+                <div>
+                  <b style={{ fontWeight: 700 }}>Fix before continuing</b>
+                  <ul style={{ margin: '5px 0 0', paddingLeft: 16 }}>
+                    {currentIssues.map((msg, i) => <li key={i}>{msg}</li>)}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             <div style={isLocked ? { pointerEvents: 'none', userSelect: 'none', opacity: 0.82 } : {}}>
               {renderCurrentStep()}
             </div>
+          </div>
 
-            {/* Inline action row — Back on left, Save/Next/Finish on right */}
-            {(() => {
+          {/* ── FOOTER — pinned action bar: Back left, Save/Next/Finish right.
+              Sits outside the scroll container so the primary action is always
+              reachable on a long step. ── */}
+          {(() => {
               const busy = isLoading || isSavingStep;
               return (
-                <div className="mt-auto flex items-center justify-between gap-3 px-10 pb-8 pt-4 flex-shrink-0">
-                  {currentStep > 1 ? (
+                <div className="es-foot flex items-center gap-3 flex-shrink-0"
+                  style={{ padding: '9px 16px', borderTop: '1px solid #F1EEEA' }}>
+                  {/* Back sits WITH the action cluster on the right, immediately
+                      before Save — the whole footer is one group now, so the
+                      spacer that used to push them apart lives here instead. */}
+                  <div className="ml-auto flex items-center gap-3">
+                  {currentStep > 1 && (
                     <button onClick={handleBack} disabled={busy}
                       className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all border disabled:opacity-50 hover:bg-slate-50"
                       style={{ borderColor: D.border2, color: D.textSub, background: '#ffffff' }}>
                       <ArrowLeft size={14} /> Back
                     </button>
-                  ) : <div />}
-                  <div className="flex items-center gap-3">
+                  )}
                   {!isLastStep && !isLocked && (
                     <button onClick={handleSave} disabled={busy}
                       className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
@@ -5231,9 +5549,9 @@ const renderNotifications = useCallback(() => (
                 </div>
               );
             })()}
-          </div>
-        </div>
-      </div>
+        </div>{/* /section body */}
+        </div>{/* /shell */}
+      </div>{/* /card */}
     </div>
   );
 };

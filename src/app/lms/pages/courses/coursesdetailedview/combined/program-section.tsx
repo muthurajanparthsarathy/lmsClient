@@ -350,8 +350,10 @@ const ProgrammingQuestion: React.FC<ProgrammingQuestionProps> = ({
     if (qid && initializedQuestionIdRef.current === qid) return;
     initializedQuestionIdRef.current = qid;
 
-    // Reset editor first — instantly clear stale code while the restore fetch runs
-    setCode('');
+    // Reset editor first — Code Setup's starterCode (or the legacy
+    // solutions.startedCode) shows immediately while the restore fetch runs;
+    // a found previous submission overrides it below.
+    setCode(question.starterCode || question.solutions?.startedCode || question.solutions?.staetedCode || '');
 
     // Set available languages
     if (question.allowedLanguages && question.allowedLanguages.length > 0) {
@@ -374,7 +376,7 @@ const ProgrammingQuestion: React.FC<ProgrammingQuestionProps> = ({
         const token = getToken() || localStorage.getItem('token') || '';
         if (!token) return;
         const res = await fetch(
-          `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${qid}&category=${category}`,
+          `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${qid}&category=${category}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) return; // 404 — never submitted, keep blank
@@ -621,7 +623,7 @@ solution();`
         isTestSubmission: false, // per-question save — never flips the exercise
       };
 
-      const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files', {
+      const response = await fetch('http://localhost:5533/courses/answers/submit-multiple-files', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

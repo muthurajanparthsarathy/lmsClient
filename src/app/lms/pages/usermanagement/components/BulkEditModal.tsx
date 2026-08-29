@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
   X, CheckCircle, XCircle, Loader2, Building2, Briefcase, ShieldCheck, ChevronDown, Search,
-  UserCog, Info, ArrowRight, Users,
+  UserCog, Info, ArrowLeft, Users, Plus,
 } from "lucide-react";
 import { toast } from "sonner";
-import { updateUser } from "@/apiServices/userService";
+import { bulkAddServiceToUsers } from "@/apiServices/userService";
 import { type ServiceMapping } from "@/apiServices/serviceMappingService";
 import { useClientsQuery, useServiceMappingsQuery } from "@/queries/referenceData";
 import { Role, User } from "./types";
@@ -22,9 +22,41 @@ interface Client { _id: string; clientCompany: string; status?: string; type?: (
 interface RowResult {
   userId: string;
   email: string;
-  status: "updated" | "already_mapped" | "error";
+  status: "added" | "already_mapped" | "error";
   reason?: string;
 }
+
+// One normalized service entry a user already holds: the legacy single fields
+// plus every services[] element. "All of a user's services" is this union.
+type ServiceEntry = { mappingId: string; serviceModel: string; clientName: string };
+const userServices = (u: User): ServiceEntry[] => {
+  const out: ServiceEntry[] = [];
+  if (u.serviceModel || u.serviceMappingId) {
+    out.push({
+      mappingId: u.serviceMappingId || "",
+      serviceModel: u.serviceModel || "",
+      clientName: u.clientName || "",
+    });
+  }
+  (u.services || []).forEach((s) => {
+    out.push({
+      mappingId: s.serviceMappingId || "",
+      serviceModel: s.serviceModel || "",
+      clientName: s.clientName || "",
+    });
+  });
+  // Dedup by mappingId when present, else by model+client name.
+  const seen = new Set<string>();
+  return out.filter((e) => {
+    const key = e.mappingId || `${e.serviceModel}::${e.clientName}`;
+    if (!key.trim() || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const serviceNames = (u: User): string[] =>
+  Array.from(new Set(userServices(u).map((e) => e.serviceModel).filter(Boolean)));
 
 const getApiErrorMessage = (error: any, fallback: string): string => {
   const data = error?.response?.data;
@@ -45,11 +77,9 @@ interface BulkEditModalProps {
 }
 
 export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, onComplete }: BulkEditModalProps) {
-  // Step-tracker — three explicit stages so the admin always knows where they are.
   type Stage = "pick" | "target" | "preview" | "results";
   const [stage, setStage] = useState<Stage>("pick");
 
-  // Selection state — Set of user ids so it survives filter/search changes.
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
 
   // Pick-user filters
@@ -57,44 +87,43 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterRoleId, setFilterRoleId] = useState<string>("");
   const [filterClientName, setFilterClientName] = useState<string>("");
-  const [filterRoleOpen, setFilterRoleOpen] = useState(false);
-  const [filterClientOpen, setFilterClientOpen] = useState(false);
+  const [filterService, setFilterService] = useState<string>("");
 
-  // Target — blank means "leave unchanged" for that field.
-  const [targetRoleId, setTargetRoleId] = useState<string>("");
+  // Destination: client scope (optional pick, defaults to the users' shared
+  // client) + the service to ADD (required).
   const [targetClientId, setTargetClientId] = useState<string>("");
   const [targetService, setTargetService] = useState<string>("");
-  const [targetRoleOpen, setTargetRoleOpen] = useState(false);
-  const [targetClientOpen, setTargetClientOpen] = useState(false);
-  const [targetServiceOpen, setTargetServiceOpen] = useState(false);
 
-  // Preview-stage selection (which rows will actually be updated — always a
-  // subset of "Will Update" rows; Already-Mapped rows are never selectable).
+  // Single-open dropdown coordinator — opening any dropdown closes any other.
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const isOpenDd = (id: string) => openDropdown === id;
+  const toggleDd = (id: string) => setOpenDropdown((cur) => (cur === id ? null : id));
+  const closeDd = () => setOpenDropdown(null);
+
+  // Preview-stage selection — subset of "Will Add" rows.
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set());
 
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<RowResult[] | null>(null);
 
-  // Reference data — reused from the same shared cache as BulkUserModal / UserModals
   const { data: clientsData } = useClientsQuery(isOpen);
   const { data: mappingsData } = useServiceMappingsQuery(isOpen);
   const clients = (clientsData ?? []) as Client[];
   const mappings = (mappingsData ?? []) as ServiceMapping[];
 
-  // Reset the whole flow on open/close so the modal never remembers the prior run.
+  // Reset the whole flow on open/close.
   useEffect(() => {
     if (!isOpen) return;
     setStage("pick");
     setSelectedUserIds(new Set());
     setSearch(""); setDebouncedSearch("");
-    setFilterRoleId(""); setFilterClientName("");
-    setTargetRoleId(""); setTargetClientId(""); setTargetService("");
+    setFilterRoleId(""); setFilterClientName(""); setFilterService("");
+    setTargetClientId(""); setTargetService("");
+    setOpenDropdown(null);
     setPreviewSelectedIds(new Set());
-    setBusy(false); setProgress(0); setResults(null);
+    setBusy(false); setResults(null);
   }, [isOpen]);
 
-  // Debounce search for the roster filter (mirrors the page's own search)
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(t);
@@ -106,23 +135,32 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
     return existingUsers.filter((u) => {
       if (filterRoleId && u.roleId !== filterRoleId) return false;
       if (filterClientName && (u.clientName || "") !== filterClientName) return false;
+      // Service filter matches ANY of the user's services (legacy + array).
+      if (filterService && !serviceNames(u).includes(filterService)) return false;
       if (q) {
         const hay = [
-          u.firstName, u.lastName, u.email, u.role, u.clientName, u.serviceModel,
+          u.firstName, u.lastName, u.email, u.role, u.clientName,
+          ...serviceNames(u),
         ].map((v) => (v || "").toLowerCase()).join(" ");
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [existingUsers, debouncedSearch, filterRoleId, filterClientName]);
+  }, [existingUsers, debouncedSearch, filterRoleId, filterClientName, filterService]);
 
-  // Deduped list of client names present on existing users — the pick-stage
-  // client filter (independent of the target-client dropdown below).
   const clientFilterOptions = useMemo(() => {
     const s = new Set<string>();
     existingUsers.forEach((u) => { if (u.clientName) s.add(u.clientName); });
     return Array.from(s).sort();
   }, [existingUsers]);
+  const serviceFilterOptions = useMemo(() => {
+    const s = new Set<string>();
+    existingUsers.forEach((u) => {
+      if (filterClientName && (u.clientName || "") !== filterClientName) return;
+      serviceNames(u).forEach((n) => s.add(n));
+    });
+    return Array.from(s).sort();
+  }, [existingUsers, filterClientName]);
 
   const allFilteredSelected =
     filteredUsers.length > 0 && filteredUsers.every((u) => selectedUserIds.has(u.id));
@@ -142,7 +180,7 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
     });
   };
 
-  // ── Target-stage reference data ───────────────────────────────────────────
+  // ── Destination reference data ────────────────────────────────────────────
   const targetClient = clients.find((c) => c._id === targetClientId);
   const clientMappings = targetClientId
     ? mappings.filter((m) => (typeof m.client === "string" ? m.client : m.client?._id) === targetClientId)
@@ -154,62 +192,49 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
     (m) => (m.serviceModels || []).includes(targetService) || m.service === targetService
   ) || null;
 
-  // At least one target field must be non-blank OR the flow can't proceed.
-  const hasAnyTarget = !isBlank(targetRoleId) || !isBlank(targetClientId) || !isBlank(targetService);
+  // A service pick is required; the mapping id must resolve too (the server
+  // stores/queries by mapping id, not the display name).
+  const hasRequiredTargets = !isBlank(targetService) && !!targetMapping?._id;
 
   const selectedUsers = useMemo(
     () => existingUsers.filter((u) => selectedUserIds.has(u.id)),
     [existingUsers, selectedUserIds]
   );
 
-  // ── Preview-stage row classification ──────────────────────────────────────
+  // ── Preview rows: Will Add vs Already Mapped ──────────────────────────────
   type PreviewRow = {
     user: User;
-    changed: { role: boolean; client: boolean; service: boolean };
     alreadyMapped: boolean;
-    newRoleLabel: string;
-    newClientLabel: string;
-    newServiceLabel: string;
+    currentServices: string[];
   };
 
-  const rolesById = useMemo(() => {
-    const m = new Map<string, Role>();
-    roles.forEach((r) => m.set(r._id, r));
-    return m;
-  }, [roles]);
-
   const previewRows: PreviewRow[] = useMemo(() => {
-    const newRoleName = targetRoleId ? (rolesById.get(targetRoleId)?.renameRole || "") : "";
-    const newClientName = targetClient?.clientCompany || "";
-    const newService = targetService || "";
+    const targetMappingId = targetMapping?._id ? String(targetMapping._id) : "";
+    const targetClientName = targetClient?.clientCompany || "";
     return selectedUsers.map((u) => {
-      const changedRole = !isBlank(targetRoleId) && targetRoleId !== u.roleId;
-      const changedClient = !isBlank(newClientName) && newClientName !== (u.clientName || "");
-      const changedService = !isBlank(newService) && newService !== (u.serviceModel || "");
-      const anyChange = changedRole || changedClient || changedService;
-      return {
-        user: u,
-        changed: { role: changedRole, client: changedClient, service: changedService },
-        alreadyMapped: !anyChange,
-        newRoleLabel: newRoleName || "—",
-        newClientLabel: newClientName || "—",
-        newServiceLabel: newService || "—",
-      };
+      const entries = userServices(u);
+      const alreadyMapped = entries.some((e) => {
+        if (targetMappingId && e.mappingId) return e.mappingId === targetMappingId;
+        return (
+          !!targetService &&
+          e.serviceModel === targetService &&
+          (!e.clientName || !targetClientName || e.clientName === targetClientName)
+        );
+      });
+      return { user: u, alreadyMapped, currentServices: serviceNames(u) };
     });
-  }, [selectedUsers, targetRoleId, targetClientId, targetService, targetClient, targetService, rolesById]);
+  }, [selectedUsers, targetService, targetMapping, targetClient]);
 
-  const willUpdate = previewRows.filter((r) => !r.alreadyMapped);
+  const willAdd = previewRows.filter((r) => !r.alreadyMapped);
   const alreadyMappedRows = previewRows.filter((r) => r.alreadyMapped);
 
-  // Preview select-all only affects "Will Update" rows — Already-Mapped ones
-  // can never be selected (Section 15 dedup guarantee).
-  const allWillUpdateSelected =
-    willUpdate.length > 0 && willUpdate.every((r) => previewSelectedIds.has(r.user.id));
-  const toggleAllWillUpdate = () => {
+  const allWillAddSelected =
+    willAdd.length > 0 && willAdd.every((r) => previewSelectedIds.has(r.user.id));
+  const toggleAllWillAdd = () => {
     setPreviewSelectedIds((prev) => {
       const next = new Set(prev);
-      if (allWillUpdateSelected) willUpdate.forEach((r) => next.delete(r.user.id));
-      else willUpdate.forEach((r) => next.add(r.user.id));
+      if (allWillAddSelected) willAdd.forEach((r) => next.delete(r.user.id));
+      else willAdd.forEach((r) => next.add(r.user.id));
       return next;
     });
   };
@@ -221,180 +246,159 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
     });
   };
 
-  // Seed preview selection with every "Will Update" row every time we enter the
-  // preview stage — the admin can then un-check the ones they want to skip.
   useEffect(() => {
     if (stage !== "preview") return;
-    setPreviewSelectedIds(new Set(willUpdate.map((r) => r.user.id)));
-    // Intentional: only reseed on entering the stage, not on every selection change.
+    setPreviewSelectedIds(new Set(willAdd.map((r) => r.user.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage]);
 
-  // ── Save (apply updates) ──────────────────────────────────────────────────
+  // On first entry to the destination stage, if every selected user shares one
+  // client, pre-fill the client scope with it (by id, else by name).
+  useEffect(() => {
+    if (stage !== "target") return;
+    if (targetClientId) return;
+    const ids = new Set(selectedUsers.map((u) => u.clientId).filter(Boolean));
+    if (ids.size === 1) {
+      setTargetClientId([...ids][0] as string);
+      return;
+    }
+    const names = new Set(selectedUsers.map((u) => u.clientName).filter(Boolean));
+    if (names.size === 1 && clients.length > 0) {
+      const name = [...names][0] as string;
+      const c = clients.find((cl) => cl.clientCompany === name);
+      if (c) setTargetClientId(c._id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, clients]);
+
+  // ── Apply: ONE bulk request adds the service to every selected row ───────
   const handleConfirm = async () => {
-    if (!previewRows.length) { toast.error("No users to update"); return; }
     const token = getToken();
     if (!token) { toast.error("Not authenticated"); return; }
-    const toUpdate = previewRows.filter((r) => previewSelectedIds.has(r.user.id) && !r.alreadyMapped);
-    if (!toUpdate.length) { toast.error("Select at least one user to update"); return; }
+    if (!targetMapping?._id || !targetClient) { toast.error("Pick a client and service first"); return; }
+    const ids = willAdd.filter((r) => previewSelectedIds.has(r.user.id)).map((r) => r.user.id);
+    if (!ids.length) { toast.error("Select at least one user"); return; }
 
-    setBusy(true); setResults(null); setProgress(0);
-    const out: RowResult[] = [];
+    setBusy(true); setResults(null);
+    try {
+      const resp = await bulkAddServiceToUsers(
+        ids,
+        {
+          serviceMappingId: String(targetMapping._id),
+          serviceModel: targetService,
+          clientId: targetClient._id,
+          clientName: targetClient.clientCompany,
+        },
+        token
+      );
+      const byId = new Map(selectedUsers.map((u) => [u.id, u]));
+      const out: RowResult[] = (resp.results || []).map((r) => ({
+        userId: r.userId,
+        email: r.email || byId.get(r.userId)?.email || "",
+        status: r.status,
+        reason: r.reason,
+      }));
+      // Rows the admin left out or that were Already Mapped client-side are
+      // reported too, so the summary accounts for every previewed row.
+      alreadyMappedRows.forEach((r) => {
+        out.push({ userId: r.user.id, email: r.user.email, status: "already_mapped", reason: "Already had this service" });
+      });
 
-    // Non-selected "Will Update" rows still count as "skipped by admin" — we
-    // don't surface them separately; only submitted rows are reported. But
-    // Already-Mapped rows are always reported so the admin sees the count.
-    for (let i = 0; i < toUpdate.length; i++) {
-      const row = toUpdate[i];
-      const u = row.user;
-      const patch: any = {};
-      // Full replay of the mutable fields so the server sees a complete update:
-      // firstName/lastName/email/phone/gender/status are echoed unchanged, then
-      // any target field overrides the current value.
-      patch.firstName = u.firstName;
-      patch.lastName = u.lastName;
-      patch.email = u.email;
-      patch.phone = u.phone;
-      patch.gender = u.gender;
-      patch.status = u.status;
-      // Role — either the target or the current one, so nothing is nulled.
-      patch.role = row.changed.role ? targetRoleId : u.roleId;
-
-      // Client + service transfer — the trickiest part. When the client
-      // changes, the hierarchy fields (degree/department/section/semester/
-      // phase) that used to point at the old client's mapping become
-      // meaningless, so they're cleared — mirrors the reset the single-user
-      // Edit dropdown already does when its client picker changes.
-      if (row.changed.client) {
-        patch.clientId = targetClient?._id || "";
-        patch.clientName = targetClient?.clientCompany || "";
-        patch.degree = "";
-        patch.department = "";
-        patch.section = "";
-        patch.semester = "";
-        patch.phase = "";
-        // Auto-derive studentType from the new client's type — same rule the
-        // Add User modal uses when its client dropdown changes.
-        const derivedType: "degree-program" | "skilling" | undefined =
-          targetClient?.type?.includes("college") ? "degree-program"
-            : targetClient?.type?.includes("company") ? "skilling" : undefined;
-        if (derivedType) patch.studentType = derivedType;
-      }
-
-      // Service — if targeted, apply. If we changed client but not service,
-      // clear the old service too (it belonged to the old client's mapping).
-      if (row.changed.service) {
-        patch.serviceModel = targetService;
-        if (targetMapping?._id) patch.serviceMappingId = targetMapping._id;
-      } else if (row.changed.client) {
-        patch.serviceModel = "";
-        patch.serviceMappingId = "";
-      }
-
-      try {
-        await updateUser(u.id, patch, token);
-        out.push({ userId: u.id, email: u.email, status: "updated" });
-      } catch (err: any) {
-        const msg = getApiErrorMessage(err, "Failed");
-        out.push({ userId: u.id, email: u.email, status: "error", reason: msg });
-      }
-      setProgress(Math.round(((i + 1) / toUpdate.length) * 100));
+      setResults(out);
+      setStage("results");
+      const added = out.filter((r) => r.status === "added").length;
+      if (added) { toast.success(`Service added to ${added} user${added !== 1 ? "s" : ""}`); onComplete(); }
+      else toast.error("No users were updated");
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, "Failed to add service"));
+    } finally {
+      setBusy(false);
     }
-
-    // Report Already-Mapped rows too so the admin sees the dedup count.
-    alreadyMappedRows.forEach((r) => {
-      out.push({ userId: r.user.id, email: r.user.email, status: "already_mapped", reason: "Already mapped" });
-    });
-
-    setResults(out);
-    setStage("results");
-    const updated = out.filter((r) => r.status === "updated").length;
-    if (updated) { toast.success(`${updated} user${updated !== 1 ? "s" : ""} updated`); onComplete(); }
-    else toast.error("No users were updated");
-    setBusy(false);
   };
 
-  // ── Reusable dropdown (same shape as BulkUserModal's local Dropdown) ─────
+  // ── Reusable dropdown that respects the shared open coordinator ──────────
   const Dropdown = ({
-    label, icon, value, placeholder, open, setOpen, disabled, children,
-  }: any) => (
-    <div>
-      <Label className="mb-1.5 block text-sm font-medium text-body">{label}</Label>
-      <div className="relative">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => setOpen((o: boolean) => !o)}
-          className="h-10 w-full flex items-center justify-between gap-2 rounded-control border border-hairline-strong bg-surface px-3 text-sm transition-colors hover:border-line-hover focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-subtle"
-        >
-          <span className="flex items-center gap-2 min-w-0">
-            {icon}
-            <span className={`truncate ${value ? "text-body" : "text-faint"}`}>{value || placeholder}</span>
-          </span>
-          <ChevronDown size={15} className={`text-faint transition-transform ${open ? "rotate-180" : ""}`} />
-        </button>
-        {open && (
-          <div className="absolute z-dropdown mt-1.5 w-full max-h-60 overflow-y-auto rounded-tile border border-hairline bg-surface shadow-lg p-1">
-            {children}
-          </div>
-        )}
+    id, label, icon, value, placeholder, disabled, children,
+  }: {
+    id: string;
+    label: React.ReactNode;
+    icon: React.ReactNode;
+    value?: string;
+    placeholder: string;
+    disabled?: boolean;
+    children: React.ReactNode;
+  }) => {
+    const open = isOpenDd(id);
+    return (
+      <div>
+        <Label className="mb-1.5 block text-sm font-medium text-body">{label}</Label>
+        <div className="relative">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => toggleDd(id)}
+            className="h-10 w-full flex items-center justify-between gap-2 rounded-control border border-hairline-strong bg-surface px-3 text-sm transition-colors hover:border-line-hover focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-subtle"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              {icon}
+              <span className={`truncate ${value ? "text-body" : "text-faint"}`}>{value || placeholder}</span>
+            </span>
+            <ChevronDown size={15} className={`text-faint transition-transform ${open ? "rotate-180" : ""}`} />
+          </button>
+          {open && (
+            <>
+              <div className="fixed inset-0 z-dropdown" onClick={closeDd} aria-hidden />
+              <div className="absolute z-dropdown mt-1.5 w-full max-h-60 overflow-y-auto rounded-tile border border-hairline bg-surface shadow-lg p-1">
+                {children}
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  const stepPill = (idx: number, label: string, active: boolean, done: boolean) => (
-    <div className={`flex items-center gap-2 ${active ? "text-heading" : done ? "text-success-700" : "text-faint"}`}>
-      <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-2xs font-semibold ${
-        active ? "bg-brand-strong text-white"
-        : done ? "bg-success-500 text-white"
-        : "bg-ink-100 text-subtle"
-      }`}>
-        {done ? <CheckCircle className="h-3 w-3" /> : idx}
-      </span>
-      <span className="text-xs font-medium">{label}</span>
-    </div>
-  );
+  const stageTitle = {
+    pick: "Reassign Client / Service — Select users",
+    target: "Reassign Client / Service — Choose service to add",
+    preview: "Reassign Client / Service — Review changes",
+    results: "Reassign Client / Service — Completed",
+  }[stage];
 
-  // ── Render — one panel per stage inside the fixed shell ───────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Dialog open={isOpen} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
       <DialogContent
-        className="w-[calc(100vw-32px)] sm:max-w-[1200px] h-[90vh] flex flex-col gap-0 p-0 overflow-hidden rounded-2xl shadow-2xl bg-surface"
+        className="!max-w-none flex flex-col gap-0 p-0 overflow-hidden rounded-2xl shadow-2xl bg-surface"
+        style={{ width: "95vw", height: "95vh" }}
         showCloseButton={false}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="px-5 pt-4 pb-2.5">
-          <DialogTitle className="text-base font-semibold text-heading text-left flex items-center gap-2">
-            <span className="w-7 h-7 rounded-tile bg-brand-wash flex items-center justify-center">
-              <UserCog className="h-3.5 w-3.5 text-brand-strong" />
-            </span>
-            Bulk Edit Users
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            Pick users from the roster, choose a target Role / Client / Service, then preview and confirm the update.
-          </DialogDescription>
-          <DialogClose
-            aria-label="Close"
-            className="absolute top-3.5 right-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-hairline-strong bg-surface text-subtle transition-colors hover:bg-row-hover hover:text-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 disabled:pointer-events-none"
-          >
-            <X className="h-3.5 w-3.5" />
-          </DialogClose>
-          {/* Step tracker */}
-          <div className="mt-2 flex items-center gap-3">
-            {stepPill(1, "Pick users", stage === "pick", stage !== "pick")}
-            <ArrowRight className="h-3 w-3 text-faint" />
-            {stepPill(2, "Choose target", stage === "target", stage === "preview" || stage === "results")}
-            <ArrowRight className="h-3 w-3 text-faint" />
-            {stepPill(3, "Preview & confirm", stage === "preview" || stage === "results", stage === "results")}
+        <DialogHeader className="px-6 pt-4 pb-3 border-b border-hairline">
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="text-base font-semibold text-heading text-left flex items-center gap-2">
+              <span className="w-7 h-7 rounded-tile bg-brand-wash flex items-center justify-center">
+                <UserCog className="h-3.5 w-3.5 text-brand-strong" />
+              </span>
+              {stageTitle}
+            </DialogTitle>
+            <DialogClose
+              aria-label="Close"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-full border border-danger-500 bg-danger-500 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40"
+            >
+              <X className="h-3.5 w-3.5" />
+            </DialogClose>
           </div>
+          <DialogDescription className="sr-only">
+            Pick users from the roster, choose a service to add, then preview and confirm. Users keep every service they already have.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {/* ── Stage 1 · Pick users ─────────────────────────────────────── */}
+        <div className="flex-1 min-h-0 overflow-hidden px-6 py-5 flex flex-col">
+          {/* ── Stage 1 · Select users ──────────────────────────────────── */}
           {stage === "pick" && (
-            <div className="space-y-3">
-              {/* Toolbar: search + role filter + client filter */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="flex-1 min-h-0 flex flex-col gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
                   <Label className="mb-1.5 block text-sm font-medium text-body">Search</Label>
                   <div className="relative">
@@ -403,6 +407,7 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
+                      onFocus={closeDd}
                       placeholder="Name, email, role, client, service…"
                       className="h-10 w-full pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-sm text-body placeholder:text-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
                     />
@@ -419,48 +424,66 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                   </div>
                 </div>
                 <Dropdown
+                  id="filterRole"
                   label="Filter by role"
                   icon={<ShieldCheck size={14} className="text-subtle" />}
                   value={roles.find((r) => r._id === filterRoleId)?.renameRole}
                   placeholder="Any role"
-                  open={filterRoleOpen}
-                  setOpen={setFilterRoleOpen}
                 >
-                  <button type="button" onClick={() => { setFilterRoleId(""); setFilterRoleOpen(false); }}
+                  <button type="button" onClick={() => { setFilterRoleId(""); closeDd(); }}
                     className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${!filterRoleId ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
                     <span className="text-faint">Any role</span>
                   </button>
                   {roles.map((r) => (
                     <button key={r._id} type="button"
-                      onClick={() => { setFilterRoleId(r._id); setFilterRoleOpen(false); }}
+                      onClick={() => { setFilterRoleId(r._id); closeDd(); }}
                       className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${filterRoleId === r._id ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
                       {r.renameRole}
                     </button>
                   ))}
                 </Dropdown>
                 <Dropdown
+                  id="filterClient"
                   label="Filter by client"
                   icon={<Building2 size={14} className="text-subtle" />}
                   value={filterClientName}
                   placeholder="Any client"
-                  open={filterClientOpen}
-                  setOpen={setFilterClientOpen}
                 >
-                  <button type="button" onClick={() => { setFilterClientName(""); setFilterClientOpen(false); }}
+                  <button type="button" onClick={() => { setFilterClientName(""); setFilterService(""); closeDd(); }}
                     className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${!filterClientName ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
                     <span className="text-faint">Any client</span>
                   </button>
                   {clientFilterOptions.map((c) => (
                     <button key={c} type="button"
-                      onClick={() => { setFilterClientName(c); setFilterClientOpen(false); }}
+                      onClick={() => { setFilterClientName(c); setFilterService(""); closeDd(); }}
                       className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${filterClientName === c ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
                       {c}
                     </button>
                   ))}
                 </Dropdown>
+                <Dropdown
+                  id="filterService"
+                  label="Filter by service"
+                  icon={<Briefcase size={14} className="text-subtle" />}
+                  value={filterService}
+                  placeholder="Any service"
+                >
+                  <button type="button" onClick={() => { setFilterService(""); closeDd(); }}
+                    className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${!filterService ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
+                    <span className="text-faint">Any service</span>
+                  </button>
+                  {serviceFilterOptions.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-faint">No services on the shown users</p>
+                  ) : serviceFilterOptions.map((s) => (
+                    <button key={s} type="button"
+                      onClick={() => { setFilterService(s); closeDd(); }}
+                      className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${filterService === s ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
+                      {s}
+                    </button>
+                  ))}
+                </Dropdown>
               </div>
 
-              {/* Count strip */}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-xs">
                   <span className="inline-flex items-center gap-1 rounded-full border border-hairline bg-surface px-2.5 py-1 text-2xs font-semibold text-heading">
@@ -477,9 +500,8 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                 )}
               </div>
 
-              {/* Roster table */}
-              <div className="border border-hairline rounded-tile overflow-hidden">
-                <div className="max-h-[52vh] overflow-auto">
+              <div className="flex-1 min-h-0 border border-hairline rounded-tile overflow-hidden">
+                <div className="h-full overflow-auto">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 z-10 bg-surface">
                       <tr className="text-2xs font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
@@ -495,9 +517,9 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                         </th>
                         <th className="px-2 py-2 text-left">User</th>
                         <th className="px-2 py-2 text-left">Email</th>
-                        <th className="px-2 py-2 text-left">Current Role</th>
-                        <th className="px-2 py-2 text-left">Current Client</th>
-                        <th className="px-2 py-2 text-left">Current Service</th>
+                        <th className="px-2 py-2 text-left">Role</th>
+                        <th className="px-2 py-2 text-left">Client</th>
+                        <th className="px-2 py-2 text-left">Current Services</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-hairline">
@@ -509,6 +531,7 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                         </tr>
                       ) : filteredUsers.map((u) => {
                         const checked = selectedUserIds.has(u.id);
+                        const svcNames = serviceNames(u);
                         return (
                           <tr key={u.id} className={`${checked ? "bg-brand-wash/40" : "hover:bg-row-hover"}`}>
                             <td className="px-3 py-2">
@@ -532,8 +555,18 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                             <td className="px-2 py-2 text-subtle whitespace-nowrap max-w-[160px] truncate">
                               {u.clientName || <span className="text-faint">—</span>}
                             </td>
-                            <td className="px-2 py-2 text-subtle whitespace-nowrap max-w-[160px] truncate">
-                              {u.serviceModel || <span className="text-faint">—</span>}
+                            <td className="px-2 py-2 text-subtle max-w-[240px]">
+                              {svcNames.length ? (
+                                <span className="flex flex-wrap gap-1">
+                                  {svcNames.map((n) => (
+                                    <span key={n} className="inline-flex items-center rounded-full border border-hairline bg-canvas px-1.5 py-0.5 text-2xs">
+                                      {n}
+                                    </span>
+                                  ))}
+                                </span>
+                              ) : (
+                                <span className="text-faint">—</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -545,56 +578,20 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
             </div>
           )}
 
-          {/* ── Stage 2 · Choose target ──────────────────────────────────── */}
+          {/* ── Stage 2 · Choose service to add ─────────────────────────── */}
           {stage === "target" && (
-            <div className="space-y-4">
-              <div className="rounded-tile border border-brand-500/25 bg-brand-wash px-3 py-2 text-xs text-heading flex items-start gap-2">
-                <Info className="h-4 w-4 text-brand-strong flex-shrink-0 mt-0.5" />
-                <span>
-                  Choose one or more target fields. Any field left blank keeps its current value on
-                  every selected user. Users whose current values already match every non-blank target
-                  will be marked <span className="font-semibold">Already Mapped</span> and skipped.
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Dropdown
-                  label="New Role"
-                  icon={<ShieldCheck size={14} className="text-subtle" />}
-                  value={roles.find((r) => r._id === targetRoleId)?.renameRole}
-                  placeholder="— Leave unchanged —"
-                  open={targetRoleOpen}
-                  setOpen={setTargetRoleOpen}
-                >
-                  <button type="button" onClick={() => { setTargetRoleId(""); setTargetRoleOpen(false); }}
-                    className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${!targetRoleId ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
-                    <span className="text-faint">— Leave unchanged —</span>
-                  </button>
-                  {roles.map((r) => (
-                    <button key={r._id} type="button"
-                      onClick={() => { setTargetRoleId(r._id); setTargetRoleOpen(false); }}
-                      className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${targetRoleId === r._id ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
-                      {r.renameRole}
-                    </button>
-                  ))}
-                </Dropdown>
-
-                <Dropdown
-                  label="New Client"
+                  id="targetClient"
+                  label={<>Client <span className="text-2xs font-normal text-faint">(defaults to the users&apos; client)</span></>}
                   icon={<Building2 size={14} className="text-subtle" />}
                   value={targetClient?.clientCompany}
-                  placeholder="— Leave unchanged —"
-                  open={targetClientOpen}
-                  setOpen={setTargetClientOpen}
+                  placeholder="Select client"
                 >
-                  <button type="button"
-                    onClick={() => { setTargetClientId(""); setTargetService(""); setTargetClientOpen(false); }}
-                    className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${!targetClientId ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
-                    <span className="text-faint">— Leave unchanged —</span>
-                  </button>
                   {clients.map((c) => (
                     <button key={c._id} type="button"
-                      onClick={() => { setTargetClientId(c._id); setTargetService(""); setTargetClientOpen(false); }}
+                      onClick={() => { setTargetClientId(c._id); setTargetService(""); closeDd(); }}
                       className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${targetClientId === c._id ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
                       {c.clientCompany}
                     </button>
@@ -602,24 +599,18 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                 </Dropdown>
 
                 <Dropdown
-                  label="New Service"
+                  id="targetService"
+                  label={<>Service to Add <span className="text-danger-500">*</span></>}
                   icon={<Briefcase size={14} className="text-subtle" />}
                   value={targetService}
-                  placeholder={targetClientId ? "— Leave unchanged —" : "Pick client first"}
-                  open={targetServiceOpen}
-                  setOpen={setTargetServiceOpen}
+                  placeholder={targetClientId ? "Select a service" : "Pick client first"}
                   disabled={!targetClientId}
                 >
-                  <button type="button"
-                    onClick={() => { setTargetService(""); setTargetServiceOpen(false); }}
-                    className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${!targetService ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
-                    <span className="text-faint">— Leave unchanged —</span>
-                  </button>
                   {targetServiceOptions.length === 0 ? (
                     <p className="px-3 py-2 text-xs text-faint">No services for this client</p>
                   ) : targetServiceOptions.map((s) => (
                     <button key={s} type="button"
-                      onClick={() => { setTargetService(s); setTargetServiceOpen(false); }}
+                      onClick={() => { setTargetService(s); closeDd(); }}
                       className={`w-full text-left rounded-chip px-2.5 py-2 text-sm ${targetService === s ? "bg-brand-wash text-heading" : "text-body hover:bg-row-hover"}`}>
                       {s}
                     </button>
@@ -627,71 +618,66 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                 </Dropdown>
               </div>
 
-              {/* Selected-count strip so admin knows what they're about to preview */}
-              <div className="rounded-tile border border-hairline bg-canvas px-3 py-2 text-xs text-subtle flex items-center gap-2">
-                <Users className="h-3.5 w-3.5" />
-                <span><span className="font-semibold text-heading">{selectedUsers.length}</span> user{selectedUsers.length === 1 ? "" : "s"} selected for this bulk edit.</span>
-              </div>
+              {/* What will happen — one plain sentence, no jargon. */}
+              {targetService && (
+                <div className="rounded-tile border border-success-500/25 bg-success-50 px-3 py-2 text-xs text-success-700 flex items-start gap-2">
+                  <Plus className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-semibold">{targetService}</span> will be ADDED to the selected users.
+                    They keep every service they already have — nothing is removed or replaced.
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
-          {/* ── Stage 3 · Preview & confirm ──────────────────────────────── */}
+          {/* ── Stage 3 · Review changes ─────────────────────────────────── */}
           {stage === "preview" && (
-            <div className="space-y-3">
+            <div className="flex-1 min-h-0 flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1 rounded-full border border-hairline bg-surface px-2.5 py-1 text-2xs font-semibold text-heading">
                   Selected <span className="tabular-nums">{selectedUsers.length}</span>
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full border border-success-500/25 bg-success-50 px-2.5 py-1 text-2xs font-semibold text-success-700">
-                  Will update <span className="tabular-nums">{willUpdate.length}</span>
+                  Yet to add <span className="tabular-nums">{willAdd.length}</span>
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full border border-warn-500/25 bg-warn-50 px-2.5 py-1 text-2xs font-semibold text-warn-700">
-                  Already mapped <span className="tabular-nums">{alreadyMappedRows.length}</span>
+                  Existing users <span className="tabular-nums">{alreadyMappedRows.length}</span>
                 </span>
+                <span className="text-2xs text-subtle ml-1">Existing services stay untouched.</span>
               </div>
 
-              <div className="rounded-tile border border-brand-500/25 bg-brand-wash px-3 py-2 text-xs text-heading flex items-start gap-2">
-                <Info className="h-4 w-4 text-brand-strong flex-shrink-0 mt-0.5" />
-                <span>
-                  These users have not been updated yet. Review the changes below and click{" "}
-                  <span className="font-semibold">Update {previewSelectedIds.size} User{previewSelectedIds.size === 1 ? "" : "s"}</span>.
-                </span>
-              </div>
-
-              <div className="border border-hairline rounded-tile overflow-hidden">
-                <div className="max-h-[52vh] overflow-auto">
+              <div className="flex-1 min-h-0 border border-hairline rounded-tile overflow-hidden">
+                <div className="h-full overflow-auto">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 z-20 bg-surface">
                       <tr className="text-2xs font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
                         <th className="px-3 py-2 w-8 text-left">
                           <input
                             type="checkbox"
-                            checked={allWillUpdateSelected}
-                            onChange={toggleAllWillUpdate}
-                            disabled={willUpdate.length === 0}
-                            aria-label="Select all rows that will update"
+                            checked={allWillAddSelected}
+                            onChange={toggleAllWillAdd}
+                            disabled={willAdd.length === 0}
+                            aria-label="Select all rows"
                             className="h-3.5 w-3.5 rounded border-hairline-strong accent-brand-strong disabled:opacity-40"
                           />
                         </th>
                         <th className="px-2 py-2 text-left">User</th>
-                        <th className="px-2 py-2 text-left">Role · Current → New</th>
-                        <th className="px-2 py-2 text-left">Client · Current → New</th>
-                        <th className="px-2 py-2 text-left">Service · Current → New</th>
+                        <th className="px-2 py-2 text-left">Current Services</th>
+                        <th className="px-2 py-2 text-left">Service to Add</th>
                         <th className="px-3 py-2 text-right">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-hairline">
                       {(() => {
-                        // Render Will-Update first, then Already-Mapped, with
-                        // a divider between them.
-                        const chunks: { title: string; tone: "success" | "warn"; rows: PreviewRow[] }[] = [
-                          { title: "Will Update", tone: "success", rows: willUpdate },
-                          { title: "Already Mapped", tone: "warn", rows: alreadyMappedRows },
-                        ].filter((c) => c.rows.length > 0);
+                        const chunks = ([
+                          { title: "Yet to Add", tone: "success", rows: willAdd },
+                          { title: "Existing Users", tone: "warn", rows: alreadyMappedRows },
+                        ] as { title: string; tone: "success" | "warn"; rows: PreviewRow[] }[]).filter((c) => c.rows.length > 0);
                         return chunks.map((chunk) => (
                           <Fragment key={chunk.title}>
                             <tr>
-                              <td colSpan={6} className={`sticky top-8 z-10 border-l-4 ${chunk.tone === "success" ? "border-l-success-500" : "border-l-warn-500"} bg-canvas px-3 py-2 text-2xs font-semibold uppercase tracking-wider text-subtle`}>
+                              <td colSpan={5} className={`sticky top-8 z-10 border-l-4 ${chunk.tone === "success" ? "border-l-success-500" : "border-l-warn-500"} bg-canvas px-3 py-2 text-2xs font-semibold uppercase tracking-wider text-subtle`}>
                                 {chunk.title} <span className="text-heading tabular-nums">({chunk.rows.length})</span>
                               </td>
                             </tr>
@@ -706,37 +692,40 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                                       checked={checked}
                                       disabled={!canPick}
                                       onChange={() => togglePreviewOne(r.user.id)}
-                                      aria-label={`Include ${r.user.email} in update`}
+                                      aria-label={`Include ${r.user.email}`}
                                       className="h-3.5 w-3.5 rounded border-hairline-strong accent-brand-strong disabled:opacity-40"
                                     />
                                   </td>
-                                  <td className="px-2 py-2 font-medium text-body whitespace-nowrap max-w-[200px] truncate">
+                                  <td className="px-2 py-2 font-medium text-body whitespace-nowrap max-w-[220px] truncate">
                                     <div className="truncate">{[r.user.firstName, r.user.lastName].filter(Boolean).join(" ") || "—"}</div>
                                     <div className="text-2xs text-subtle truncate">{r.user.email}</div>
                                   </td>
-                                  <td className={`px-2 py-2 whitespace-nowrap max-w-[220px] ${r.changed.role ? "text-heading font-medium" : "text-subtle"}`}>
-                                    <span className="truncate">{r.user.role || "—"}</span>
-                                    <ArrowRight className="inline h-3 w-3 mx-1 text-faint" />
-                                    <span className={`truncate ${r.changed.role ? "text-brand-strong" : ""}`}>{r.newRoleLabel}</span>
+                                  <td className="px-2 py-2 text-subtle max-w-[280px]">
+                                    {r.currentServices.length ? (
+                                      <span className="flex flex-wrap gap-1">
+                                        {r.currentServices.map((n) => (
+                                          <span key={n} className="inline-flex items-center rounded-full border border-hairline bg-canvas px-1.5 py-0.5 text-2xs">
+                                            {n}
+                                          </span>
+                                        ))}
+                                      </span>
+                                    ) : (
+                                      <span className="text-faint">No services yet</span>
+                                    )}
                                   </td>
-                                  <td className={`px-2 py-2 whitespace-nowrap max-w-[220px] ${r.changed.client ? "text-heading font-medium" : "text-subtle"}`}>
-                                    <span className="truncate">{r.user.clientName || "—"}</span>
-                                    <ArrowRight className="inline h-3 w-3 mx-1 text-faint" />
-                                    <span className={`truncate ${r.changed.client ? "text-brand-strong" : ""}`}>{r.newClientLabel}</span>
-                                  </td>
-                                  <td className={`px-2 py-2 whitespace-nowrap max-w-[220px] ${r.changed.service ? "text-heading font-medium" : "text-subtle"}`}>
-                                    <span className="truncate">{r.user.serviceModel || "—"}</span>
-                                    <ArrowRight className="inline h-3 w-3 mx-1 text-faint" />
-                                    <span className={`truncate ${r.changed.service ? "text-brand-strong" : ""}`}>{r.newServiceLabel}</span>
+                                  <td className="px-2 py-2 whitespace-nowrap max-w-[200px] truncate">
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-brand/30 bg-brand-wash px-1.5 py-0.5 text-2xs font-semibold text-brand-strong">
+                                      <Plus className="h-3 w-3" /> {targetService}
+                                    </span>
                                   </td>
                                   <td className="px-3 py-2 text-right whitespace-nowrap">
                                     {r.alreadyMapped ? (
                                       <span className="inline-flex items-center gap-1 rounded-full border border-warn-500/20 bg-warn-50 px-2 py-0.5 text-2xs font-semibold text-warn-700">
-                                        <Info className="h-3 w-3" /> Already Mapped
+                                        <Info className="h-3 w-3" /> Existing user
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 rounded-full border border-success-500/20 bg-success-50 px-2 py-0.5 text-2xs font-semibold text-success-700">
-                                        <CheckCircle className="h-3 w-3" /> Will Update
+                                        <CheckCircle className="h-3 w-3" /> Yet to add
                                       </span>
                                     )}
                                   </td>
@@ -752,39 +741,36 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
               </div>
 
               {busy && (
-                <div className="space-y-2">
-                  <div className="w-full bg-ink-100 rounded-full h-2 overflow-hidden">
-                    <div className="h-2 rounded-full bg-brand-strong transition-all" style={{ width: `${progress}%` }} />
-                  </div>
-                  <p className="text-xs text-center text-subtle flex items-center justify-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating users… {progress}%
-                  </p>
-                </div>
+                <p className="text-xs text-center text-subtle flex items-center justify-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Adding service…
+                </p>
               )}
             </div>
           )}
 
           {/* ── Stage 4 · Results ────────────────────────────────────────── */}
+          {/* Results stage scrolls as a whole — it's a summary, not a work list. */}
           {stage === "results" && results && (() => {
-            const updated = results.filter((r) => r.status === "updated").length;
+            const added = results.filter((r) => r.status === "added").length;
             const skipped = results.filter((r) => r.status === "already_mapped").length;
             const errored = results.filter((r) => r.status === "error").length;
             return (
-              <div className="space-y-3">
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
                 <div className="rounded-tile border border-success-500/25 bg-success-50 px-4 py-3">
                   <p className="text-sm font-semibold text-success-700 flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" /> Bulk Edit Completed
+                    <CheckCircle className="h-4 w-4" /> Service Added
                   </p>
                   <p className="text-xs text-heading mt-1">
-                    <span className="font-semibold tabular-nums">{updated}</span> user{updated === 1 ? "" : "s"} updated ·{" "}
-                    <span className="font-semibold tabular-nums">{skipped}</span> skipped (already mapped) ·{" "}
+                    <span className="font-semibold tabular-nums">{added}</span> user{added === 1 ? "" : "s"} got{" "}
+                    <span className="font-semibold">{targetService}</span> ·{" "}
+                    <span className="font-semibold tabular-nums">{skipped}</span> already had it ·{" "}
                     <span className="font-semibold tabular-nums">{errored}</span> error{errored === 1 ? "" : "s"}
                   </p>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: "Updated", n: updated, cls: "border-success-500/20 bg-success-50 text-success-700" },
-                    { label: "Already mapped", n: skipped, cls: "border-warn-500/20 bg-warn-50 text-warn-700" },
+                    { label: "Added", n: added, cls: "border-success-500/20 bg-success-50 text-success-700" },
+                    { label: "Already had it", n: skipped, cls: "border-warn-500/20 bg-warn-50 text-warn-700" },
                     { label: "Errors", n: errored, cls: "border-danger-500/20 bg-danger-50 text-danger-700" },
                   ].map((s) => (
                     <div key={s.label} className={`rounded-tile border p-2.5 text-center ${s.cls}`}>
@@ -796,7 +782,7 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
                 <div className="max-h-64 overflow-y-auto border border-hairline rounded-tile divide-y divide-hairline">
                   {results.map((r, i) => (
                     <div key={i} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                      {r.status === "updated" ? <CheckCircle className="h-3.5 w-3.5 text-success-500 flex-shrink-0" />
+                      {r.status === "added" ? <CheckCircle className="h-3.5 w-3.5 text-success-500 flex-shrink-0" />
                         : <XCircle className={`h-3.5 w-3.5 flex-shrink-0 ${r.status === "already_mapped" ? "text-warn-500" : "text-danger-500"}`} />}
                       <span className="font-medium text-body truncate">{r.email || "—"}</span>
                       {r.reason && <span className="text-faint truncate ml-auto">{r.reason}</span>}
@@ -808,53 +794,80 @@ export default function BulkEditModal({ isOpen, onClose, roles, existingUsers, o
           })()}
         </div>
 
-        {/* Footer — actions depend on the stage. */}
-        <DialogFooter className="bg-surface px-5 pb-4 pt-2">
-          <div className="flex w-full justify-between items-center">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (stage === "target") setStage("pick");
-                else if (stage === "preview") setStage("target");
-                else onClose();
-              }}
-              disabled={busy}
-              className="h-9 px-4 text-xs font-semibold rounded-control"
-            >
-              {stage === "pick" || stage === "results" ? (results ? "Done" : "Cancel") : "Back"}
-            </Button>
+        <DialogFooter className="bg-surface px-6 pb-4 pt-3 border-t border-hairline">
+          <div className="flex w-full justify-between items-center gap-3">
+            <div>
+              {(stage === "target" || stage === "preview") && (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    closeDd();
+                    if (stage === "target") setStage("pick");
+                    else if (stage === "preview") setStage("target");
+                  }}
+                  disabled={busy}
+                  className="h-9 px-4 text-xs font-semibold rounded-control inline-flex items-center gap-1.5 bg-brand-wash text-brand-strong hover:bg-brand-wash/80 border border-brand/40 shadow-none disabled:opacity-50"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back
+                </Button>
+              )}
+            </div>
 
-            {stage === "pick" && (
+            <div className="flex items-center gap-2">
               <Button
-                onClick={() => setStage("target")}
-                disabled={selectedUserIds.size === 0}
+                variant="outline"
+                onClick={() => onClose()}
+                disabled={busy}
                 className="h-9 px-4 text-xs font-semibold rounded-control"
               >
-                Next · Choose target →
+                {stage === "results" ? "Done" : "Cancel"}
               </Button>
-            )}
-            {stage === "target" && (
-              <Button
-                onClick={() => setStage("preview")}
-                disabled={!hasAnyTarget}
-                className="h-9 px-4 text-xs font-semibold rounded-control"
-              >
-                Next · Preview →
-              </Button>
-            )}
-            {stage === "preview" && (
-              <Button
-                onClick={handleConfirm}
-                disabled={busy || previewSelectedIds.size === 0}
-                className="h-9 px-4 text-xs font-semibold rounded-control"
-              >
-                {busy ? (
-                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating…</>
-                ) : (
-                  <><UserCog className="h-3.5 w-3.5" /> Update {previewSelectedIds.size} User{previewSelectedIds.size === 1 ? "" : "s"}</>
-                )}
-              </Button>
-            )}
+              {stage === "pick" && (
+                <Button
+                  onClick={() => { closeDd(); setStage("target"); }}
+                  disabled={selectedUserIds.size === 0}
+                  className="h-9 px-4 text-xs font-semibold rounded-control"
+                >
+                  Continue
+                </Button>
+              )}
+              {stage === "target" && (
+                <Button
+                  onClick={() => { closeDd(); setStage("preview"); }}
+                  disabled={!hasRequiredTargets}
+                  className="h-9 px-4 text-xs font-semibold rounded-control"
+                >
+                  Review Changes
+                </Button>
+              )}
+              {stage === "preview" && (
+                // Wrapping span carries the tooltip — a disabled button
+                // swallows pointer events in some browsers, so the hover
+                // hint must live on the wrapper to always show.
+                <span
+                  title={
+                    willAdd.length === 0
+                      ? "All selected users already have this service — go back and choose a different service."
+                      : previewSelectedIds.size === 0
+                        ? "Tick at least one user in the list above."
+                        : `Adds ${targetService} to the ${previewSelectedIds.size} ticked user${previewSelectedIds.size === 1 ? "" : "s"}.`
+                  }
+                >
+                  <Button
+                    onClick={handleConfirm}
+                    disabled={busy || previewSelectedIds.size === 0}
+                    className="h-9 px-4 text-xs font-semibold rounded-control"
+                  >
+                    {busy ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Adding…</>
+                    ) : (
+                      <><Plus className="h-3.5 w-3.5" /> Add Service to {previewSelectedIds.size} User{previewSelectedIds.size === 1 ? "" : "s"}</>
+                    )}
+                  </Button>
+                </span>
+              )}
+            </div>
           </div>
         </DialogFooter>
       </DialogContent>

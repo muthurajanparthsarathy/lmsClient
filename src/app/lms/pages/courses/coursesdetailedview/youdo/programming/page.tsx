@@ -58,7 +58,7 @@ const ProgrammingPageContent = () => {
 
       try {
         const token = getToken() || localStorage.getItem('token') || '';
-        const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exerciseId}`, {
+        const res = await fetch(`http://localhost:5533/exercise/${exerciseId}`, {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         });
         if (res.ok) {

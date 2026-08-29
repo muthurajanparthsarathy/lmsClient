@@ -1,5 +1,6 @@
 "use client";
 import { getToken } from "@/lib/session";
+import { API_BASE_URL } from "@/lib/http";
 
 import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -92,7 +93,12 @@ const MCQPageContent = () => {
 
         console.log('Fetching exercise data for ID:', finalExerciseId);
 
-        const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${finalExerciseId}`, {
+        // Was hard-coded to the Render deployment, which sleeps on the free
+        // tier and cold-starts for 30-60s — hitting the 30s client timeout
+        // and showing "The server took too long to respond". Route through
+        // the shared API_BASE_URL so local dev hits the local server and
+        // deploys hit whatever NEXT_PUBLIC_API_URL points to.
+        const response = await fetch(`${API_BASE_URL}/exercise/${finalExerciseId}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,

@@ -3,7 +3,7 @@ import { getToken } from "@/lib/session";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const API_BASE = "https://lmsserver-yeve.onrender.com";
+const API_BASE = "http://localhost:5533";
 
 /* ─── Google Font ───────────────────────────────────────────────── */
 const FONT_URL =
@@ -111,7 +111,7 @@ function ActivityContent() {
 
   /* ── Loading / error ── */
   if (loading) return (
-    <div style={T({ background: "#F7F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" })}>
+    <div style={T({ background: "#F7F6FB", minHeight: "calc(100vh * var(--ui-scale-inv, 1))", display: "flex", alignItems: "center", justifyContent: "center" })}>
       <div style={{ textAlign: "center" }}>
         <div style={{ width: 40, height: 40, border: "3px solid #EDE9F8", borderTop: "3px solid #7C3AED", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -120,7 +120,7 @@ function ActivityContent() {
     </div>
   );
   if (error) return (
-    <div style={T({ background: "#F7F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 14 })}>
+    <div style={T({ background: "#F7F6FB", minHeight: "calc(100vh * var(--ui-scale-inv, 1))", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 14 })}>
       <p style={T({ color: "#DC2626", fontWeight: 600, fontSize: 14 })}>{error}</p>
       <button onClick={() => router.back()} style={T({ display: "flex", alignItems: "center", gap: 7, background: "#fff", border: "1.5px solid #DDD6FE", borderRadius: 9, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#7C3AED" })}>
         <IcoBack /> Go Back
@@ -131,7 +131,7 @@ function ActivityContent() {
   const isIDo = type === "I_Do";
 
   return (
-    <div style={T({ background: "#F7F6FB", minHeight: "100vh", padding: "26px 30px" })}>
+    <div style={T({ background: "#F7F6FB", minHeight: "calc(100vh * var(--ui-scale-inv, 1))", padding: "26px 30px" })}>
 
       {/* ── Back button ── */}
       <button
@@ -239,7 +239,7 @@ function ActivityContent() {
 }
 
 const Spinner = () => (
-  <div style={{ minHeight: "100vh", background: "#F7F6FB", display: "flex", alignItems: "center", justifyContent: "center" }}>
+  <div style={{ minHeight: "calc(100vh * var(--ui-scale-inv, 1))", background: "#F7F6FB", display: "flex", alignItems: "center", justifyContent: "center" }}>
     <div style={{ width: 40, height: 40, border: "3px solid #EDE9F8", borderTop: "3px solid #7C3AED", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
     <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
   </div>

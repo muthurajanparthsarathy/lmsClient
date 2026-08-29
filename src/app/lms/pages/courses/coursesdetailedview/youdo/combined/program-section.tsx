@@ -238,7 +238,7 @@ const ProgrammingQuestion: React.FC<ProgrammingQuestionProps> = ({
   // Initialize code from question
   useEffect(() => {
     if (question) {
-      const initialCode = question.solutions?.startedCode || question.solutions?.staetedCode;
+      const initialCode = question.starterCode || question.solutions?.startedCode || question.solutions?.staetedCode;
       if (initialCode) {
         setCode(initialCode);
       } else {
@@ -436,7 +436,7 @@ solution();`
       formData.append('nodeType', nodeType);
       formData.append('language', selectedLanguage);
 
-      const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+      const response = await fetch('http://localhost:5533/courses/answers/submit', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -479,7 +479,7 @@ solution();`
   };
 
   const resetCode = () => {
-    const initialCode = question.solutions?.startedCode || question.solutions?.staetedCode || getInitialCode(selectedLanguage);
+    const initialCode = question.starterCode || question.solutions?.startedCode || question.solutions?.staetedCode || getInitialCode(selectedLanguage);
     setCode(initialCode);
     if (editorInstanceRef.current) editorInstanceRef.current.setValue(initialCode);
     addTerminalLog('system', 'Code reset to initial state');

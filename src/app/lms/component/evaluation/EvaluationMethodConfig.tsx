@@ -228,20 +228,33 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
     });
   };
 
-  // Inline label fallback — mirrors the "Config Strategy *" labels used by the
-  // surrounding ExerciseSettings programming rows.
+  // Spec info dot — 13×13 circle, 1px #D6D3D1 border, 8.5px/700 "i" in #9CA3AF.
+  // Keeps the `title` tooltip the old lucide icon carried.
+  const infoDot = (info: string) => (
+    <span
+      title={info}
+      style={{
+        width: 13, height: 13, borderRadius: '50%', border: '1px solid #D6D3D1',
+        fontSize: 8.5, fontWeight: 700, color: '#9CA3AF', lineHeight: 1,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'help', marginLeft: 4, flexShrink: 0,
+      }}
+    >i</span>
+  );
+
+  // Inline label fallback — spec label metrics (11px/600 #4B5563, 5px gap
+  // below), matching the restyled ExerciseSettings programming rows.
   const inlineLabel = (text: string, info: string) => (
-    <div className="flex items-center gap-1 mb-1.5">
-      <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: font }}>
+    <div className="flex items-center" style={{ marginBottom: 5 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', fontFamily: font }}>
         {text} <span style={{ color: D.orange }}>*</span>
       </span>
-      <span title={info} style={{ display: 'inline-flex', color: D.textMuted, cursor: 'help' }}>
-        <Info size={12} />
-      </span>
+      {infoDot(info)}
       {disabled && (
         <span style={{
-          fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 10,
-          background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', marginLeft: 3,
+          height: 23, display: 'inline-flex', alignItems: 'center', padding: '0 9px',
+          borderRadius: 999, fontSize: 10.8, fontWeight: 600,
+          background: '#FFFAEB', color: '#B54708', border: '1px solid #F5DFA8', marginLeft: 6,
         }}>Locked</span>
       )}
     </div>
@@ -249,6 +262,12 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
 
   return (
     <div style={{ fontFamily: font }}>
+      {/* Scoped, styling-only CSS: hide number spinners + spec orange focus ring. */}
+      <style>{`
+        .emc-num::-webkit-outer-spin-button, .emc-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .emc-num { -moz-appearance: textfield; }
+        .emc-num:focus { border-color: #EE6A22 !important; box-shadow: 0 0 0 3px rgba(238,106,34,.13); }
+      `}</style>
       {SectionLabel
         ? <SectionLabel required info={INFO}>Evaluation Method</SectionLabel>
         : inlineLabel('Evaluation Method', INFO)}
@@ -271,38 +290,31 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
             ? <SectionLabel required info={CRITERIA_INFO}>Evaluation Criteria</SectionLabel>
             : inlineLabel('Evaluation Criteria', CRITERIA_INFO)}
 
-          <div className="flex flex-wrap" style={{ gap: '6px 16px' }}>
+          <div className="flex flex-wrap" style={{ gap: 6 }}>
             {AI_CRITERIA_OPTIONS.map(opt => {
               const on = v.ai.criteria.includes(opt.value);
               return (
                 <button
                   key={opt.value}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => toggleCriterion(opt.value)}
                   disabled={disabled}
-                  className="flex items-center gap-2 py-1 text-sm font-semibold transition-colors"
+                  className="inline-flex items-center flex-shrink-0 transition-colors"
                   style={{
-                    color: on ? D.textMain : D.textSub,
-                    fontFamily: font,
+                    // Spec pill: 23px tall, radius 999, 10.8px/600 — grey when
+                    // off, orange-soft/#D65A16 with an orange border when on.
+                    height: 23, padding: '0 9px', borderRadius: 999, gap: 5,
+                    fontSize: 10.8, fontWeight: 600,
+                    background: on ? '#FFF2E8' : '#F4F4F5',
+                    color: on ? '#D65A16' : '#57606E',
+                    border: `1px solid ${on ? D.orange : '#E7E5E4'}`,
                     cursor: disabled ? 'not-allowed' : 'pointer',
-                    opacity: disabled ? 0.6 : 1,
-                    background: 'transparent',
-                    border: 'none',
-                    padding: '4px 0',
+                    opacity: disabled ? 0.45 : 1,
+                    fontFamily: font,
                   }}
                 >
-                  {/* Checkbox — orange accent, matches the app's selection colour */}
-                  <span
-                    className="flex items-center justify-center flex-shrink-0 rounded"
-                    style={{
-                      width: 15, height: 15,
-                      border: `1.5px solid ${on ? D.orange : D.border}`,
-                      background: on ? D.orange : D.bg,
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {on && <Check size={10} strokeWidth={3} style={{ color: '#fff' }} />}
-                  </span>
+                  {on && <Check size={10} strokeWidth={3} style={{ flexShrink: 0 }} />}
                   {opt.label}
                 </button>
               );
@@ -310,7 +322,13 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
           </div>
 
           {v.ai.criteria.length === 0 && (
-            <p className="mt-1 text-[10px]" style={{ color: D.red }}>
+            <p
+              className="mt-2 flex items-start"
+              style={{
+                gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11.4, lineHeight: 1.5,
+                background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#912018',
+              }}
+            >
               Select at least one criterion for the AI evaluator.
             </p>
           )}
@@ -323,18 +341,21 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
               legacy questions without it fall back to the exercise's count
               (still stored below as safety net). */}
           <div className="mt-3">
-            <div className="flex items-center gap-1 mb-1.5">
-              <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: font }}>
+            <div className="flex items-center" style={{ marginBottom: 5 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', fontFamily: font }}>
                 AI Test Cases Count <span style={{ color: D.orange }}>*</span>
               </span>
-              <span
-                title="Choose whether one count applies to every question in the exercise, or each Programming question has its own count entered in the question authoring form."
-                style={{ display: 'inline-flex', color: D.textMuted, cursor: 'help' }}
-              >
-                <Info size={12} />
-              </span>
+              {infoDot('Choose whether one count applies to every question in the exercise, or each Programming question has its own count entered in the question authoring form.')}
             </div>
-            <div className="flex flex-wrap gap-3 mb-2">
+            {/* Spec segmented control — the two modes are mutually exclusive,
+                so the old radio pair maps 1:1 onto the demo's 2-way segment. */}
+            <div
+              className="mb-2 inline-flex max-w-full flex-wrap"
+              style={{
+                background: '#F5F3F1', border: '1px solid #E9E5E1', borderRadius: 8,
+                padding: 3, gap: 3, opacity: disabled ? 0.45 : 1,
+              }}
+            >
               {([
                 { value: 'common' as const, label: 'Common (one for the exercise)' },
                 { value: 'perQuestion' as const, label: 'Per Question (each question’s own count)' },
@@ -344,33 +365,22 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
                   <button
                     key={opt.value}
                     type="button"
+                    aria-pressed={on}
                     onClick={() => onChange({ ...v, ai: { ...v.ai, testCasesCountMode: opt.value } })}
                     disabled={disabled}
-                    className="flex items-center gap-2 py-1 text-sm font-semibold transition-colors"
+                    className="transition-colors"
                     style={{
-                      color: on ? D.textMain : D.textSub,
-                      fontFamily: font,
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                      background: 'transparent',
+                      height: 27, padding: '0 12px', borderRadius: 5,
+                      fontSize: 12, fontWeight: 600,
+                      background: on ? '#fff' : 'transparent',
+                      color: on ? '#D65A16' : '#6B7280',
                       border: 'none',
-                      padding: 0,
+                      boxShadow: on ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                      fontFamily: font,
                     }}
                   >
-                    <span
-                      className="flex items-center justify-center flex-shrink-0 rounded-full"
-                      style={{
-                        width: 14, height: 14,
-                        border: `1.5px solid ${on ? D.orange : D.border}`,
-                        background: D.bg,
-                      }}
-                    >
-                      {on && (
-                        <span style={{
-                          width: 6, height: 6, borderRadius: '50%',
-                          background: D.orange, display: 'inline-block',
-                        }} />
-                      )}
-                    </span>
                     {opt.label}
                   </button>
                 );
@@ -386,16 +396,11 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
             {SectionLabel
               ? <SectionLabel info="How many test cases the AI generates + evaluates against the student's code. Cached per question so every student sees the same set.">AI Test Cases</SectionLabel>
               : (
-                <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: font }}>
+                <div className="flex items-center" style={{ marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', fontFamily: font }}>
                     AI Test Cases <span style={{ color: D.orange }}>*</span>
                   </span>
-                  <span
-                    title="How many test cases the AI generates + evaluates against the student's code. Cached per question so every student sees the same set."
-                    style={{ display: 'inline-flex', color: D.textMuted, cursor: 'help' }}
-                  >
-                    <Info size={12} />
-                  </span>
+                  {infoDot("How many test cases the AI generates + evaluates against the student's code. Cached per question so every student sees the same set.")}
                 </div>
               )}
             <div style={{ maxWidth: dense ? '30%' : 160 }}>
@@ -409,33 +414,52 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
                   const raw = e.target.value === '' ? 0 : Math.max(0, Math.min(50, Math.floor(Number(e.target.value) || 0)));
                   onChange({ ...v, ai: { ...v.ai, testCasesCount: raw } });
                 }}
+                className="emc-num"
                 style={{
+                  // Spec small input: 30px tall, 12px text, 8px radius,
+                  // 1px #E9E5E1 border; readonly/disabled goes wash + muted.
                   width: '100%',
-                  padding: '6px 10px',
-                  fontSize: 13,
-                  fontWeight: 600,
+                  height: 30,
+                  padding: '0 10px',
+                  fontSize: 12,
                   borderRadius: 8,
-                  border: `1px solid ${D.border}`,
-                  background: disabled ? D.surface : D.bg,
-                  color: D.textMain,
+                  border: '1px solid #E9E5E1',
+                  background: disabled ? '#FAF9F8' : '#fff',
+                  color: disabled ? '#6B7280' : '#1D2433',
                   outline: 'none',
                   fontFamily: font,
                 }}
               />
             </div>
-            <p className="mt-1 text-[10px]" style={{ color: D.textMuted }}>
-              Judged alongside any test cases already on the question. Max 50.
-            </p>
+            <div
+              className="mt-2 flex items-start"
+              style={{
+                gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11.4, lineHeight: 1.5,
+                background: '#EFF6FF', border: '1px solid #CFE0FB', color: '#1B4DA8',
+              }}
+            >
+              <Info size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>Judged alongside any test cases already on the question. Max 50.</span>
+            </div>
           </div>
           )}
 
           {v.ai.testCasesCountMode === 'perQuestion' && (
-            <p className="mt-3 text-[10.5px]" style={{ color: D.textMuted, fontFamily: font }}>
-              Per-question mode is on — enter the AI test case count on each
-              Programming question in its authoring form. It's a required field
-              there. Questions authored before this feature will fall back to
-              the exercise's saved default.
-            </p>
+            <div
+              className="mt-3 flex items-start"
+              style={{
+                gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11.4, lineHeight: 1.5,
+                background: '#EFF6FF', border: '1px solid #CFE0FB', color: '#1B4DA8', fontFamily: font,
+              }}
+            >
+              <Info size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                Per-question mode is on — enter the AI test case count on each
+                Programming question in its authoring form. It's a required field
+                there. Questions authored before this feature will fall back to
+                the exercise's saved default.
+              </span>
+            </div>
           )}
         </div>
       )}

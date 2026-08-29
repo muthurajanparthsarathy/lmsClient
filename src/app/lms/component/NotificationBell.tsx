@@ -1,51 +1,174 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { useRouter } from "next/navigation";
 import { useSectionHref } from "@/lib/sectionRoute";
-import { Bell, CheckCheck, Inbox } from "lucide-react";
+import {
+  Bell,
+  Inbox,
+  CheckCircle2,
+  MessageSquare,
+  ShieldAlert,
+  FileText,
+  IndianRupee,
+  BookOpen,
+  Megaphone,
+  Info,
+} from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { notificationsService, notificationKeys, type Notification } from "@/apiServices/notifications";
 
-// Reusable notification bell — surfaces the EXISTING notification system
-// (same `notificationsService` data used by the navbar/TopBar). No new mechanism;
-// this just renders the existing notifications where a header lacks the bell.
+// Header notification bell — surfaces the EXISTING notification system
+// (same `notificationsService` data used by the sidebar/TopBar). Do not
+// add a second polling / storage / websocket path here.
 
-const timeAgo = (d: string): string => {
-  if (!d) return "";
-  const diff = Date.now() - new Date(d).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const days = Math.floor(h / 24);
-  if (days < 7) return `${days}d ago`;
+// ── Time helpers ─────────────────────────────────────────────────────────
+const MS_HOUR = 60 * 60 * 1000;
+const MS_DAY = 24 * MS_HOUR;
+
+function formatWhen(iso: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diff = Date.now() - then;
+  if (diff < 60_000) return "just now";
+  if (diff < MS_HOUR) return `${Math.floor(diff / 60_000)} min`;
+  if (diff < MS_DAY) return `${Math.floor(diff / MS_HOUR)} hr`;
+  if (diff < 2 * MS_DAY) return "Yesterday";
+  const days = Math.floor(diff / MS_DAY);
+  if (days < 7) return `${days} d`;
   try {
-    return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-  } catch {
-    return "";
-  }
+    return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  } catch { return ""; }
+}
+
+function isToday(iso: string): boolean {
+  if (!iso) return false;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return false;
+  return Date.now() - then < MS_DAY;
+}
+
+// ── Icon / tint variant per notification ─────────────────────────────────
+// Tangerine-first: neutral notifications ride the brand tone. Semantic
+// statuses (success = green, error = red) stay their own color so the
+// meaning survives the theme.
+type IconVariant = {
+  Icon: React.ComponentType<{ size?: number; color?: string }>;
+  bg: string;
+  fg: string;
 };
 
+const readMeta = (n: Notification): Record<string, any> => {
+  const m: any = n.metadata;
+  if (!m) return {};
+  if (m instanceof Map) return Object.fromEntries(m);
+  return typeof m === "object" ? m : {};
+};
+
+// Palette (matches the app's tangerine re-theme; see MEMORY).
+const ACCENT = "#F97316";
+const ACCENT_STRONG = "#C2410C";
+const ACCENT_ACTIVE = "#EA580C";
+const ACCENT_HOVER = "#9A3412";
+const ACCENT_SOFT = "#FFF7ED";
+const ACCENT_BORDER = "#FED7AA";
+const UNREAD_BG = "#FFFBF8";
+const TEXT_STRONG = "#111827";
+const TEXT_MUTED = "#64748B";
+const TEXT_LABEL = "#4B5563";
+const TEXT_INACTIVE = "#475569";
+const BORDER = "#E5E7EB";
+
+function iconFor(n: Notification): IconVariant {
+  const meta = readMeta(n);
+  const kind = String(meta.kind || "").toLowerCase();
+  const title = (n.title || "").toLowerCase();
+  const rel = n.relatedEntity;
+  const type = n.type;
+
+  // Semantic statuses keep their meaning color.
+  if (type === "success" || rel === "assignment")
+    return { Icon: CheckCircle2, bg: "#DCFCE7", fg: "#16A34A" };
+  if (type === "error")
+    return { Icon: ShieldAlert, bg: "#FEE2E2", fg: "#DC2626" };
+
+  // Highest-priority: explicit intent from server metadata / title.
+  if (kind === "payment" || title.includes("payment"))
+    return { Icon: IndianRupee, bg: "#DCFCE7", fg: "#16A34A" };
+  if (kind === "comment" || title.includes("comment") || title.includes("mention"))
+    return { Icon: MessageSquare, bg: ACCENT_SOFT, fg: ACCENT_ACTIVE };
+  if (kind === "security" || type === "warning" || title.includes("sign-in") || title.includes("security"))
+    return { Icon: ShieldAlert, bg: ACCENT_SOFT, fg: ACCENT_ACTIVE };
+  if (kind === "report" || title.includes("report"))
+    return { Icon: FileText, bg: ACCENT_SOFT, fg: ACCENT_ACTIVE };
+
+  switch (rel) {
+    case "enrollment":
+    case "course":
+      return { Icon: BookOpen, bg: ACCENT_SOFT, fg: ACCENT_ACTIVE };
+    case "announcement":
+      return { Icon: Megaphone, bg: ACCENT_SOFT, fg: ACCENT_ACTIVE };
+    default: break;
+  }
+  if (type === "info") return { Icon: Info, bg: ACCENT_SOFT, fg: ACCENT_ACTIVE };
+
+  return { Icon: Bell, bg: ACCENT_SOFT, fg: ACCENT_ACTIVE };
+}
+
+// One-time stylesheet the portal uses for hover / focus / animation /
+// scrollbar. Kept scoped by class prefix so it can't collide.
+const PANEL_STYLE_ID = "nbp-style-v2";
+function ensurePanelStyle() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(PANEL_STYLE_ID)) return;
+  const s = document.createElement("style");
+  s.id = PANEL_STYLE_ID;
+  s.textContent = `
+    .nbp-row { transition: background-color 120ms ease; }
+    .nbp-row:hover { background-color: #F8FAFC; }
+    .nbp-row.nbp-unread:hover { background-color: #FFF4EB; }
+    .nbp-row:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: -2px; }
+    .nbp-link { transition: color 120ms ease, background-color 120ms ease; }
+    .nbp-link:hover { color: ${ACCENT_HOVER}; }
+    .nbp-link:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; border-radius: 4px; }
+    .nbp-tab { transition: color 120ms ease, background-color 120ms ease; }
+    .nbp-tab:hover { color: ${ACCENT_STRONG}; }
+    .nbp-tab:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: -2px; }
+    .nbp-bell:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+    .nbp-footer-link { transition: background-color 120ms ease, color 120ms ease; }
+    .nbp-footer-link:hover { background-color: ${ACCENT_SOFT}; color: ${ACCENT_HOVER}; }
+    .nbp-scroll { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
+    .nbp-scroll::-webkit-scrollbar { width: 6px; }
+    .nbp-scroll::-webkit-scrollbar-track { background: transparent; }
+    .nbp-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    .nbp-scroll::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+    @keyframes nbp-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+    .nbp-anim { animation: nbp-in 140ms ease-out; transform-origin: top right; }
+    @media (prefers-reduced-motion: reduce) { .nbp-anim { animation: none; } }
+    .nbp-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  `;
+  document.head.appendChild(s);
+}
+
+// ── Component ────────────────────────────────────────────────────────────
 export const NotificationBell: React.FC = () => {
   const qc = useQueryClient();
   const router = useRouter();
   const sectionHref = useSectionHref();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"all" | "unread">("all");
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+
+  useEffect(() => { ensurePanelStyle(); }, []);
 
   const { data } = useQuery({
     queryKey: notificationKeys.all,
     queryFn: () => notificationsService.fetchNotifications(),
     refetchOnWindowFocus: true,
     staleTime: 30 * 1000,
-    // Background freshness. Replaces the notifications service's old
-    // self-starting 5s interval (12 req/min for the life of the tab whose
-    // results this bell never rendered) with one visible refresh per 30s;
-    // pauses automatically while the tab is hidden.
     refetchInterval: 30 * 1000,
   });
 
@@ -61,23 +184,15 @@ export const NotificationBell: React.FC = () => {
   const notifications: Notification[] = data?.notifications || [];
   const unread = data?.unreadCount || 0;
 
-  // Read metadata handling both plain-object and Map shapes — the server ships
-  // notifications as a Map (see the enrollment/removal senders), but React
-  // Query hydrates them as plain objects with the toJSON'd keys.
-  const readMeta = (n: Notification): Record<string, any> => {
-    const m: any = n.metadata;
-    if (!m) return {};
-    if (m instanceof Map) return Object.fromEntries(m);
-    return typeof m === "object" ? m : {};
-  };
+  const grouped = useMemo(() => {
+    const src = tab === "unread" ? notifications.filter(n => !n.isRead) : notifications;
+    const capped = src.slice(0, 20);
+    const today: Notification[] = [];
+    const earlier: Notification[] = [];
+    capped.forEach(n => (isToday(n.createdAt) ? today : earlier).push(n));
+    return { today, earlier, empty: capped.length === 0 };
+  }, [notifications, tab]);
 
-  // A notification click follows this precedence:
-  //   1. `metadata.redirectUrl` — the app-wide contract. The server sets it on
-  //      enrollment (→ /lms/pages/courses/uploadcourseresources?courseId=…)
-  //      and approval-reject (→ the exact assessment row).
-  //   2. The retest-request shape, which predates the shared contract and
-  //      routes with a query string of its own.
-  //   3. Anything else falls through and stays as a plain in-place item.
   const handleNotifClick = (n: Notification) => {
     if (!n.isRead) markRead.mutate(n._id);
     const m = readMeta(n);
@@ -88,7 +203,6 @@ export const NotificationBell: React.FC = () => {
       router.push(redirectUrl);
       return;
     }
-
     const isRetest =
       m.kind === "retest_request" ||
       !!m.requestId ||
@@ -104,13 +218,11 @@ export const NotificationBell: React.FC = () => {
         nodeType: String(m.nodeType || ""),
         tab: "requests",
       }).toString();
-      // The bell rides along on both the Courses and the Course Structure copy
-      // of the upload screen, so the retest request opens in whichever section
-      // the user is already in.
       router.push(`${sectionHref("manageUsers")}?${q}`);
     }
   };
 
+  // Position + outside-click + Escape close (with focus return).
   useEffect(() => {
     if (!open) return;
     const update = () => {
@@ -122,97 +234,253 @@ export const NotificationBell: React.FC = () => {
     update();
     const close = (e: MouseEvent) => {
       const t = e.target as Element;
-      if (btnRef.current && !btnRef.current.contains(t) && !t.closest?.(".notif-bell-pop")) {
+      if (
+        btnRef.current && !btnRef.current.contains(t) &&
+        !t.closest?.(".nbp-panel")
+      ) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
         setOpen(false);
+        requestAnimationFrame(() => btnRef.current?.focus());
       }
     };
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
     document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
       document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  const [vw, setVw] = useState<number>(typeof window !== "undefined" ? window.innerWidth : 1440);
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", onResize);
+      return () => window.removeEventListener("resize", onResize);
+    }
+  }, []);
+  const isNarrow = vw < 440;
+  const panelWidth = isNarrow ? Math.max(0, vw - 24) : 400;
+  const clampedRight = pos
+    ? isNarrow ? 12 : Math.min(pos.right, Math.max(12, vw - (panelWidth + 12)))
+    : 0;
+
+  const bellBtnStyle: React.CSSProperties = {
+    position: "relative",
+    width: 38, height: 38, borderRadius: "50%",
+    border: `1px solid ${open ? ACCENT_BORDER : "#e8e4eb"}`,
+    background: open ? ACCENT_SOFT : "#fff",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    cursor: "pointer", color: open ? ACCENT_ACTIVE : "#475569", flexShrink: 0,
+  };
 
   return (
     <>
       <button
         ref={btnRef}
+        className="nbp-bell"
         onClick={() => setOpen(o => !o)}
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         title="Notifications"
-        style={{
-          position: "relative", width: 38, height: 38, borderRadius: "50%",
-          border: "1px solid #e8e4eb", background: open ? "#FFF4F1" : "#fff",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: "pointer", color: "#475569", flexShrink: 0,
-        }}
+        style={bellBtnStyle}
       >
         <Bell size={17} />
         {unread > 0 && (
-          <span style={{
-            position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, padding: "0 4px",
-            borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 700,
-            display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff",
-          }}>
-            {unread > 9 ? "9+" : unread}
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute", top: -2, right: -2,
+              minWidth: 16, height: 16, padding: "0 4px",
+              borderRadius: 999, background: ACCENT_STRONG, color: "#fff",
+              fontSize: 10, fontWeight: 700, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              border: "2px solid #fff",
+            }}
+          >
+            {unread > 99 ? "99+" : unread}
           </span>
         )}
       </button>
 
       {open && pos && typeof document !== "undefined" && ReactDOM.createPortal(
         <div
-          className="notif-bell-pop"
+          className="nbp-panel nbp-anim"
+          role="dialog"
+          aria-modal="false"
+          aria-label="Notifications"
           style={{
-            /* Clamp so the 360px panel never runs off the LEFT edge when the
-               bell sits near it (e.g. on the L&D sidebar rail). */
-            position: "fixed", top: pos.top, zIndex: 100000,
-            right: Math.min(pos.right, Math.max(12, window.innerWidth - 372)),
-            width: 360, maxWidth: "calc(100vw - 24px)", background: "#fff",
-            border: "1px solid #e9eaf0", borderRadius: 14,
-            boxShadow: "0 16px 44px rgba(0,0,0,0.16)", overflow: "hidden",
+            position: "fixed", top: pos.top, right: clampedRight,
+            width: panelWidth, maxWidth: "calc(100vw - 24px)",
+            maxHeight: "min(500px, calc(100vh - 88px))",
+            background: "#fff",
+            border: `1px solid ${BORDER}`, borderRadius: 14,
+            boxShadow: "0 12px 32px rgba(15, 23, 42, 0.12)",
+            overflow: "hidden", zIndex: 100000,
+            display: "flex", flexDirection: "column",
+            // Inherit the LMS font stack — do not pin our own family.
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid #f1f5f9" }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#1a1a2e" }}>Notifications</span>
+          {/* ── Header ────────────────────────────────────────────────── */}
+          <div
+            style={{
+              padding: "0 16px", height: 56, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{
+                fontSize: "18px",
+                fontWeight: 600,
+                lineHeight: "24px",
+                fontFamily: "inherit",
+                letterSpacing: "normal",
+                margin: 0,
+                color: TEXT_STRONG,
+              }}>
+                Notifications
+              </span>
+              {unread > 0 && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    minWidth: 18, height: 18, padding: "0 5px",
+                    borderRadius: 999, background: ACCENT_STRONG, color: "#fff",
+                    fontSize: 11, fontWeight: 600, lineHeight: 1,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
+            </div>
             {unread > 0 && (
               <button
+                type="button"
+                className="nbp-link"
                 onClick={() => markAll.mutate()}
-                style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#F97316", background: "transparent", border: "none", cursor: "pointer" }}
+                disabled={markAll.isPending}
+                style={{
+                  fontSize: 13, fontWeight: 500, color: ACCENT_STRONG,
+                  background: "transparent", border: "none",
+                  cursor: markAll.isPending ? "wait" : "pointer",
+                  padding: "4px 2px", fontFamily: "inherit",
+                }}
               >
-                <CheckCheck size={13} /> Mark all read
+                Mark all as read
               </button>
             )}
           </div>
-          <div style={{ maxHeight: 380, overflowY: "auto" }}>
-            {notifications.length === 0 ? (
-              <div style={{ padding: "32px 16px", textAlign: "center", color: "#94a3b8" }}>
-                <Inbox size={22} style={{ margin: "0 auto 8px" }} />
-                <div style={{ fontSize: 12.5 }}>No notifications yet</div>
-              </div>
-            ) : (
-              notifications.slice(0, 20).map((n) => (
+
+          {/* ── Tabs ─────────────────────────────────────────────────── */}
+          <div
+            role="tablist"
+            aria-label="Notification filters"
+            style={{
+              display: "flex", height: 40, flexShrink: 0,
+              borderBottom: `1px solid ${BORDER}`, padding: "0 12px",
+              background: "#fff",
+            }}
+          >
+            {(["all", "unread"] as const).map(t => {
+              const active = tab === t;
+              return (
                 <button
-                  key={n._id}
-                  onClick={() => handleNotifClick(n)}
+                  key={t}
+                  role="tab"
+                  aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  className="nbp-tab"
+                  onClick={() => setTab(t)}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                      e.preventDefault();
+                      setTab(t === "all" ? "unread" : "all");
+                    }
+                  }}
                   style={{
-                    display: "block", width: "100%", textAlign: "left", padding: "11px 14px",
-                    border: "none", borderBottom: "1px solid #f5f6f8", cursor: "pointer",
-                    background: n.isRead ? "#fff" : "#FFF7ED",
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    color: active ? ACCENT_STRONG : TEXT_INACTIVE,
+                    fontSize: 13, fontWeight: 500, cursor: "pointer",
+                    position: "relative", height: "100%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "inherit",
                   }}
                 >
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", marginTop: 5, flexShrink: 0, background: n.isRead ? "transparent" : "#F97316" }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: "#1a1a2e" }}>{n.title || "Notification"}</div>
-                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2, lineHeight: 1.4 }}>{n.message}</div>
-                      <div style={{ fontSize: 10.5, color: "#a0a6b3", marginTop: 4 }}>{timeAgo(n.createdAt)}</div>
-                    </div>
-                  </div>
+                  {t === "all" ? "All" : "Unread"}
+                  {active && (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute", left: 10, right: 10, bottom: -1,
+                        height: 2, background: ACCENT, borderRadius: 2,
+                      }}
+                    />
+                  )}
                 </button>
-              ))
+              );
+            })}
+          </div>
+
+          {/* ── Scroll area ──────────────────────────────────────────── */}
+          <div className="nbp-scroll" style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>
+            {grouped.empty ? (
+              <div style={{
+                padding: "40px 24px", textAlign: "center", color: "#94A3B8",
+              }}>
+                <Inbox size={24} style={{ margin: "0 auto 10px", display: "block" }} />
+                <div style={{ fontSize: 13, fontWeight: 500, color: "#64748B" }}>
+                  {tab === "unread" ? "You're all caught up" : "No notifications yet"}
+                </div>
+              </div>
+            ) : (
+              <>
+                {grouped.today.length > 0 && <SectionLabel>Today</SectionLabel>}
+                {grouped.today.map(n => (
+                  <NotificationRow key={n._id} n={n} onClick={handleNotifClick} />
+                ))}
+                {grouped.earlier.length > 0 && <SectionLabel>Earlier</SectionLabel>}
+                {grouped.earlier.map(n => (
+                  <NotificationRow key={n._id} n={n} onClick={handleNotifClick} />
+                ))}
+              </>
             )}
+          </div>
+
+          {/* ── Footer ───────────────────────────────────────────────── */}
+          <div
+            style={{
+              height: 44, borderTop: `1px solid ${BORDER}`,
+              display: "flex", alignItems: "stretch", flexShrink: 0,
+            }}
+          >
+            <button
+              type="button"
+              className="nbp-footer-link nbp-link"
+              onClick={() => {
+                setOpen(false);
+                router.push("/lms/pages/notifications");
+              }}
+              style={{
+                flex: 1, background: "transparent", border: "none", cursor: "pointer",
+                fontSize: 13, fontWeight: 500, color: ACCENT_STRONG,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 6, fontFamily: "inherit",
+              }}
+            >
+              View all notifications
+              <span aria-hidden="true">→</span>
+            </button>
           </div>
         </div>,
         document.body
@@ -220,5 +488,95 @@ export const NotificationBell: React.FC = () => {
     </>
   );
 };
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      height: 30, padding: "0 12px",
+      fontSize: 12, fontWeight: 600, color: TEXT_LABEL,
+      lineHeight: "30px", letterSpacing: "0.02em",
+      background: "#FAFAFA",
+      borderBottom: `1px solid ${BORDER}`,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function NotificationRow({ n, onClick }: { n: Notification; onClick: (n: Notification) => void }) {
+  const variant = iconFor(n);
+  const { Icon } = variant;
+  const unreadClass = n.isRead ? "" : "nbp-unread";
+  return (
+    <button
+      type="button"
+      className={`nbp-row ${unreadClass}`}
+      onClick={() => onClick(n)}
+      style={{
+        display: "flex", width: "100%", textAlign: "left",
+        padding: "8px 12px", gap: 10,
+        alignItems: "flex-start",
+        background: n.isRead ? "#FFFFFF" : UNREAD_BG,
+        border: "none", borderBottom: `1px solid ${BORDER}`,
+        cursor: "pointer", minHeight: 68,
+        fontFamily: "inherit",
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: 36, height: 36, borderRadius: "50%",
+          background: variant.bg, color: variant.fg,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0, marginTop: 1,
+        }}
+      >
+        <Icon size={18} color={variant.fg} />
+      </span>
+
+      <div style={{
+        flex: 1, minWidth: 0,
+        display: "flex", flexDirection: "column", gap: 1,
+      }}>
+        <div style={{
+          display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8,
+        }}>
+          <span
+            className="nbp-truncate"
+            style={{
+              fontSize: 14, fontWeight: 600, color: TEXT_STRONG, lineHeight: "18px",
+              flex: 1, minWidth: 0,
+            }}
+          >
+            {n.title || "Notification"}
+          </span>
+          <span style={{
+            fontSize: 11, fontWeight: 400, color: TEXT_MUTED, flexShrink: 0,
+            whiteSpace: "nowrap", lineHeight: "18px",
+          }}>
+            {formatWhen(n.createdAt)}
+          </span>
+        </div>
+        <span
+          className="nbp-truncate"
+          style={{
+            fontSize: 12, fontWeight: 400, color: TEXT_MUTED, lineHeight: "17px",
+          }}
+        >
+          {n.message}
+        </span>
+      </div>
+
+      <span
+        aria-label={n.isRead ? undefined : "Unread"}
+        style={{
+          width: 7, height: 7, borderRadius: "50%", marginTop: 6,
+          background: n.isRead ? "transparent" : ACCENT,
+          flexShrink: 0,
+        }}
+      />
+    </button>
+  );
+}
 
 export default NotificationBell;

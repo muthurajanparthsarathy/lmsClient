@@ -1211,7 +1211,7 @@ body {
     background-color: var(--bg-color);
     color: var(--text-color);
     line-height: 1.6;
-    min-height: 100vh;
+    min-height: calc(100vh * var(--ui-scale-inv, 1));
 }
 
 .container {
@@ -1712,7 +1712,7 @@ const [showQuestionSidebar, setShowQuestionSidebar] = useState(true);
       try {
         const token = getToken() || localStorage.getItem('token') || '';
         
-        await axios.post('https://lmsserver-yeve.onrender.com/exercise/lock', {
+        await axios.post('http://localhost:5533/exercise/lock', {
           courseId,
           exerciseId,
           category,
@@ -1809,7 +1809,7 @@ const [showQuestionSidebar, setShowQuestionSidebar] = useState(true);
 
     try {
       const token = getToken() || localStorage.getItem('token') || '';
-      await axios.post('https://lmsserver-yeve.onrender.com/exercise/lock', {
+      await axios.post('http://localhost:5533/exercise/lock', {
         courseId,
         exerciseId,
         category,
@@ -2178,7 +2178,7 @@ const [showQuestionSidebar, setShowQuestionSidebar] = useState(true);
 
       try {
         const token = getToken() || localStorage.getItem('token') || '';
-        const response = await axios.get('https://lmsserver-yeve.onrender.com/exercise/status', {
+        const response = await axios.get('http://localhost:5533/exercise/status', {
           params: { courseId, exerciseId, category, subcategory },
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -2228,7 +2228,7 @@ const [showQuestionSidebar, setShowQuestionSidebar] = useState(true);
   //     }
 
   //     const response = await fetch(
-  //       `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${questionId}&category=${category}`,
+  //       `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${questionId}&category=${category}`,
   //       {
   //         headers: {  
   //           'Authorization': `Bearer ${token}`,
@@ -2862,7 +2862,7 @@ const [showQuestionSidebar, setShowQuestionSidebar] = useState(true);
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                min-height: 100vh;
+                min-height: calc(100vh * var(--ui-scale-inv, 1));
                 margin: 0;
                 padding: 20px;
             }
@@ -3737,7 +3737,7 @@ document.addEventListener('DOMContentLoaded', init${name.charAt(0).toUpperCase()
       };
 
       const response = await axios.post(
-        'https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files',
+        'http://localhost:5533/courses/answers/submit-multiple-files',
         payload,
         {
           headers: {

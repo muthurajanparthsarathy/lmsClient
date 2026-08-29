@@ -1,5 +1,7 @@
 "use client"
 import { getToken } from "@/lib/session";
+import { useAttemptSession } from "../useAttemptSession";
+import ConnectionStatusBanner from "../ConnectionStatusBanner";
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import {
@@ -199,6 +201,22 @@ export default function SectionBasedTestPage({
     exercise?._id ? String(exercise._id) : "",
     Array.isArray((exercise as any).questions) ? (exercise as any).questions.length : 0,
   )
+
+  // Recovery & Resume — parent-owned attempt lifecycle for section-based
+  // tests. Embedded children (MCQ / Programming / Frontend / SQL) all pass
+  // embedded=true and skip their own useAttemptSession, deferring to this
+  // parent's server timer + offline queue.
+  const attemptSession = useAttemptSession({
+    exerciseId: (exercise as any)?._id ? String((exercise as any)._id) : "",
+    courseId: courseId || "",
+    nodeId: nodeId || "",
+    nodeType: (exercise as any)?.nodeType || "topics",
+    subcategory: subcategory || "",
+    category: "You_Do",
+    totalQuestions: Array.isArray((exercise as any)?.questions) ? (exercise as any).questions.length : undefined,
+    durationMinutesHint: (exercise as any)?.exerciseInformation?.totalDuration || (exercise as any)?.totalDuration || undefined,
+    enabled: !!((exercise as any)?._id) && !!courseId,
+  });
 
   // ── Normalise sections ─────────────────────────────────────────────────────
   const sections: NormSection[] = useMemo(() => {
@@ -454,7 +472,7 @@ export default function SectionBasedTestPage({
       fd.append("submitType",       _secAuto ? "AUTO" : "USER")
       fd.append("autoSubmitReason", _secAuto || "")
 
-      const res = await fetch("https://lmsserver-yeve.onrender.com/courses/answers/submit", {
+      const res = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
         method:  "POST",
         headers: { "Authorization": `Bearer ${token}` },
         body:    fd,
@@ -465,6 +483,8 @@ export default function SectionBasedTestPage({
         throw new Error(err?.message || `Server error ${res.status}`)
       }
 
+      // Recovery hook: mark attempt terminal so a reopen doesn't resume.
+      try { await attemptSession.submit({ submitType: autoReasonRef.current ? "AUTO" : "USER" }); } catch {}
       live.submitted()
       onSubmit(payload)
       setShowSubmitConfirm(false)
@@ -851,7 +871,7 @@ export default function SectionBasedTestPage({
   // ── No sections ────────────────────────────────────────────────────────────
   if (sections.length === 0) {
     return (
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:12 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"calc(100vh * var(--ui-scale-inv, 1))", flexDirection:"column", gap:12 }}>
         <AlertCircle size={40} style={{ color:"#94a3b8" }} />
         <p style={{ fontSize:15, color:"#64748b", fontWeight:500 }}>No sections configured for this exercise.</p>
         <button
@@ -927,6 +947,8 @@ export default function SectionBasedTestPage({
       background: "#fff",
       fontFamily: "var(--lms-font, 'Poppins', sans-serif)",
     }}>
+      {/* Recovery banner — always shown at parent level (children are embedded). */}
+      <ConnectionStatusBanner netStatus={attemptSession.netStatus} queueCount={attemptSession.queueCount} />
 
       {/* ── Live Screen Monitoring — parent owns sharing for all sections ──
            Only active when proctoring screen recording is ON: live monitoring shares the

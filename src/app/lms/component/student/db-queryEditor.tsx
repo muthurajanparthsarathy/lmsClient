@@ -2985,7 +2985,7 @@ export default function DBQueryEditorPage({
             }
 
             const response = await axios.post(
-                'https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files',
+                'http://localhost:5533/courses/answers/submit-multiple-files',
                 payload,
                 {
                     headers: {
@@ -3061,7 +3061,7 @@ export default function DBQueryEditorPage({
             }
 
             const response = await fetch(
-                `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
+                `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -3155,7 +3155,7 @@ export default function DBQueryEditorPage({
             }
 
             const response = await fetch(
-                `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
+                `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,

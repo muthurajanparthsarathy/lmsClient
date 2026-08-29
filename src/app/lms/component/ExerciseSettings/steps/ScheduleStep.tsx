@@ -79,13 +79,13 @@ const SegInput: React.FC<{
           onChange(c);
         }
       }}
-      className="text-center font-semibold bg-white rounded-md outline-none transition-colors"
+      className="text-center font-semibold bg-white outline-none transition-colors"
       style={{
-        width: pad === 4 ? 42 : 26, height: 24, fontSize: 11,
-        border: `1.5px solid ${D.border}`, color: D.textMain, fontFamily: FONT,
+        width: pad === 4 ? 48 : 32, height: 30, fontSize: 12, borderRadius: 8,
+        border: `1px solid ${D.border2}`, color: D.textMain, fontFamily: FONT,
       }}
-      onFocus={e => (e.target.style.borderColor = D.orange)}
-      onBlurCapture={e => (e.target.style.borderColor = D.border)}
+      onFocus={e => { e.target.style.borderColor = D.orange; e.target.style.boxShadow = `0 0 0 3px ${D.orangeMed}`; }}
+      onBlurCapture={e => { e.target.style.borderColor = D.border2; e.target.style.boxShadow = 'none'; }}
     />
   );
 };
@@ -187,9 +187,9 @@ const CalendarPopup: React.FC<{
   const selVal: DV = { day: selDay, month: selMonth, year: selYear, hour, minute };
 
   return (
-    <div ref={popRef} style={pos}
-      className="bg-white rounded-xl shadow-2xl w-[360px] overflow-hidden select-none">
-      <div style={{ borderTop: `1px solid ${D.border}`, borderLeft: `1px solid ${D.border}`, borderRight: `1px solid ${D.border}`, borderBottom: 'none' }} />
+    <div ref={popRef}
+      style={{ ...pos, border: `1px solid ${D.border2}`, borderRadius: 11, boxShadow: '0 12px 32px rgba(15,23,42,.14)' }}
+      className="bg-white w-[360px] overflow-hidden select-none">
       {/* Header */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-b" style={{ borderColor: D.border }}>
         <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: D.orangeLight }}>
@@ -259,8 +259,8 @@ const CalendarPopup: React.FC<{
         <button onClick={setNow} className="text-xs font-semibold" style={{ color: D.orange }}>Now</button>
         <button onClick={onClose} className="text-xs font-semibold" style={{ color: D.textMuted }}>Cancel</button>
         <button onClick={confirm} disabled={!selDay}
-          className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white transition-all"
-          style={{ background: selDay ? D.orange : '#d1d5db' }}>
+          className="inline-flex items-center justify-center text-white transition-all"
+          style={{ height: 29, padding: '0 10px', borderRadius: 8, fontSize: 11.5, fontWeight: 600, background: '#0F172A', opacity: selDay ? 1 : 0.45, cursor: selDay ? 'pointer' : 'not-allowed' }}>
           Confirm
         </button>
       </div>
@@ -276,6 +276,53 @@ const QUICK_OFFSETS = [
   { label: '+1d',  ms: 24 * 60 * 60 * 1000 },
   { label: '+1w',  ms: 7 * 24 * 60 * 60 * 1000 },
 ];
+
+// ── Spec card / switch (presentational only) ─────────────────────────────────
+const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div style={{ border: `1px solid ${D.border2}`, borderRadius: 11, background: '#fff' }}>
+    <div
+      className="flex items-center"
+      style={{
+        padding: '9px 13px', gap: 9, background: D.surface,
+        borderBottom: `1px solid ${D.border}`, borderRadius: '11px 11px 0 0',
+      }}
+    >
+      <span style={{ fontSize: 11.2, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: D.textSub }}>
+        {title}
+      </span>
+    </div>
+    <div style={{ padding: 13 }}>{children}</div>
+  </div>
+);
+
+const SpecSwitch: React.FC<{ on: boolean; onClick: () => void }> = ({ on, onClick }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={on}
+    onClick={onClick}
+    className="relative flex-shrink-0"
+    style={{
+      width: 35, height: 20, borderRadius: 999, padding: 0, border: 'none',
+      background: on ? D.emerald : '#DEDAD5', cursor: 'pointer', transition: 'background .16s',
+    }}
+  >
+    <span
+      style={{
+        position: 'absolute', top: 2, left: 2, width: 16, height: 16, borderRadius: '50%',
+        background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+        transition: 'transform .16s', transform: on ? 'translateX(15px)' : 'translateX(0)',
+      }}
+    />
+  </button>
+);
+
+// Approval-scope options (same values/labels as before — layout is now a
+// segmented control, so the hint of the active option renders below the track).
+const SCOPE_OPTIONS = [
+  { val: 'settings', label: 'Settings only', hint: 'Schedule, grade, notifications, security, etc.' },
+  { val: 'settings_and_questions', label: 'Settings + Questions', hint: 'Everything above plus the actual question content.' },
+] as const;
 
 // ── ScheduleStep ─────────────────────────────────────────────────────────────
 export const ScheduleStep: React.FC<ScheduleStepProps> = ({
@@ -402,22 +449,19 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
   ];
 
   return (
-    <div className="px-10 pt-4 pb-6">
-      <div className="divide-y" style={{ borderColor: D.border }}>
+    <div className="flex flex-col" style={{ padding: '18px 22px', gap: 13 }}>
+      <Card title="Approval">
         {/* Approval — visibility gate. Students only see the exercise after every approver in the course's Approval Hierarchy approves. */}
-        <div
-          className="flex flex-col gap-2 py-3 relative"
-          style={{ borderColor: D.border }}
-        >
+        <div className="flex flex-col gap-2 relative">
           <div className="flex items-center gap-3 flex-wrap">
             <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: 'rgba(251,146,60,0.10)', color: '#fb923c' }}
+              className="w-8 h-8 flex items-center justify-center flex-shrink-0"
+              style={{ background: '#FFF2E8', color: D.orangeDark, borderRadius: 8 }}
             >
               <ShieldCheck size={15} />
             </div>
             <div className="flex items-center gap-1 w-40 flex-shrink-0">
-              <span className="text-xs font-semibold" style={{ color: D.textMain }}>
+              <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
                 Requires Approval
               </span>
               <InfoTooltip
@@ -426,17 +470,8 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
               />
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => toggleField('requiresAdminApproval')}
-                className="relative inline-flex items-center h-5 w-9 flex-shrink-0 rounded-full p-[2px] transition-colors duration-200"
-                style={{ background: approvalOn ? D.orange : '#e2e3e8' }}
-              >
-                <span
-                  className={`inline-block h-[13px] w-[13px] rounded-full bg-white shadow transition-transform duration-200 ${approvalOn ? 'translate-x-[17px]' : 'translate-x-0'}`}
-                />
-              </button>
-              <span className="text-xs font-semibold" style={{ color: approvalOn ? D.orange : D.textMuted }}>
+              <SpecSwitch on={approvalOn} onClick={() => toggleField('requiresAdminApproval')} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: approvalOn ? D.emerald : D.textHint }}>
                 {approvalOn ? 'Yes' : 'No'}
               </span>
             </div>
@@ -445,77 +480,80 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
           {approvalOn && (
             <div className="ml-11 space-y-2">
               {approvalLoading && (
-                <span className="text-xs" style={{ color: D.textMuted }}>Loading approvers…</span>
+                <span style={{ fontSize: 11.4, color: D.textMuted }}>Loading approvers…</span>
               )}
               {!approvalLoading && approvalSteps && approvalSteps.length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {approvalSteps.map((s: any, i: number) => (
                     <React.Fragment key={s.roleId || i}>
-                      {i > 0 && <span className="text-xs" style={{ color: D.textHint }}>→</span>}
+                      {i > 0 && <span style={{ fontSize: 11, color: D.textHint }}>→</span>}
                       <span
-                        className="px-2 py-0.5 rounded-full text-[11px] font-semibold border"
-                        style={{ background: '#eef2ff', borderColor: '#c7d2fe', color: '#4338ca' }}
+                        className="inline-flex items-center"
+                        style={{ height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#F4F4F5', border: '1px solid #E7E5E4', color: '#57606E' }}
                       >
                         {i + 1}. {s.roleName}
                       </span>
                     </React.Fragment>
                   ))}
-                  <span className="text-[11px] ml-1" style={{ color: D.textMuted }}>
+                  <span className="ml-1" style={{ fontSize: 10.8, color: D.textMuted }}>
                     → Students
                   </span>
                 </div>
               )}
               {!approvalLoading && Array.isArray(approvalSteps) && approvalSteps.length === 0 && (
                 <div
-                  className="flex items-start gap-1.5 text-xs px-2 py-1.5 rounded-md"
-                  style={{ background: 'rgba(239,68,68,0.08)', color: D.red }}
+                  className="flex items-start"
+                  style={{ gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11.4, lineHeight: 1.5, background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#912018' }}
                 >
-                  <AlertCircle size={12} className="mt-[1px] flex-shrink-0" />
+                  <AlertCircle size={12} className="mt-[2px] flex-shrink-0" />
                   <span>
                     Course has no Approval Hierarchy configured. Configure it on the course participants page first.
                   </span>
                 </div>
               )}
 
-              {/* Approval scope */}
+              {/* Approval scope — spec segmented control */}
               <div className="pt-1">
-                <div className="text-[11px] font-semibold mb-1" style={{ color: D.textMuted }}>
+                <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#4B5563', marginBottom: 5 }}>
                   What should approvers review?
-                </div>
-                <div className="flex flex-col gap-1">
-                  {([
-                    { val: 'settings', label: 'Settings only', hint: 'Schedule, grade, notifications, security, etc.' },
-                    { val: 'settings_and_questions', label: 'Settings + Questions', hint: 'Everything above plus the actual question content.' },
-                  ] as const).map(({ val, label, hint }) => {
+                </span>
+                <div className="inline-flex" style={{ background: D.surface2, border: `1px solid ${D.border2}`, borderRadius: 8, padding: 3, gap: 3 }}>
+                  {SCOPE_OPTIONS.map(({ val, label, hint }) => {
                     const selected = ((formData.schedule as any).approvalScope || 'settings') === val;
                     return (
-                      <label
+                      <button
                         key={val}
-                        className="flex items-start gap-2 cursor-pointer p-1.5 rounded-md hover:bg-gray-50 transition-colors"
+                        type="button"
+                        aria-pressed={selected}
+                        title={hint}
+                        onClick={() => setFormData((prev: any) => ({
+                          ...prev,
+                          schedule: { ...prev.schedule, approvalScope: val },
+                        }))}
+                        className="flex items-center justify-center transition-all"
+                        style={{
+                          height: 27, padding: '0 12px', borderRadius: 5, fontSize: 12, fontWeight: 600,
+                          border: 'none', cursor: 'pointer',
+                          background: selected ? '#fff' : 'transparent',
+                          color: selected ? D.orangeDark : D.textMuted,
+                          boxShadow: selected ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
+                        }}
                       >
-                        <input
-                          type="radio"
-                          name="approvalScope"
-                          checked={selected}
-                          onChange={() => setFormData((prev: any) => ({
-                            ...prev,
-                            schedule: { ...prev.schedule, approvalScope: val },
-                          }))}
-                          className="mt-[2px]"
-                          style={{ accentColor: D.orange }}
-                        />
-                        <span>
-                          <span className="text-xs font-semibold" style={{ color: D.textMain }}>{label}</span>
-                          <span className="block text-[11px]" style={{ color: D.textMuted }}>{hint}</span>
-                        </span>
-                      </label>
+                        {label}
+                      </button>
                     );
                   })}
+                </div>
+                <div style={{ fontSize: 11.4, lineHeight: 1.5, color: D.textMuted, marginTop: 5 }}>
+                  {SCOPE_OPTIONS.find(o => o.val === ((formData.schedule as any).approvalScope || 'settings'))?.hint}
                 </div>
               </div>
             </div>
           )}
         </div>
+      </Card>
+      <Card title="Availability">
+        <div className="divide-y" style={{ borderColor: D.border }}>
         {FIELDS.map(({ label, fieldKey, icon, iconColor, iconBg, toggleable, enabledKey, required, tooltip, showOffsets }) => {
           const enabled  = !toggleable || !!(formData.schedule as any)[enabledKey];
           const val      = getDV(fieldKey);
@@ -534,27 +572,20 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
               style={{ borderColor: D.border }}
             >
               {/* Icon */}
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: iconBg, color: iconColor }}>
+              <div className="w-8 h-8 flex items-center justify-center flex-shrink-0" style={{ background: iconBg, color: iconColor, borderRadius: 8 }}>
                 {icon}
               </div>
 
               {/* Label */}
               <div className="flex items-center gap-1 w-40 flex-shrink-0">
-                <span className="text-xs font-semibold" style={{ color: D.textMain }}>{label}</span>
-                {required && <span className="text-xs font-bold" style={{ color: D.orange }}>*</span>}
+                <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>{label}</span>
+                {required && <span style={{ fontSize: 12.6, fontWeight: 700, color: D.orange }}>*</span>}
                 {tooltip && <InfoTooltip content={tooltip} side="right" />}
               </div>
 
               {/* Toggle */}
               {toggleable && (
-                <button
-                  type="button"
-                  onClick={() => toggleField(enabledKey)}
-                  className="relative inline-flex items-center h-5 w-9 flex-shrink-0 rounded-full p-[2px] transition-colors duration-200"
-                  style={{ background: enabled ? D.orange : '#e2e3e8' }}
-                >
-                  <span className={`inline-block h-[13px] w-[13px] rounded-full bg-white shadow transition-transform duration-200 ${enabled ? 'translate-x-[17px]' : 'translate-x-0'}`} />
-                </button>
+                <SpecSwitch on={enabled} onClick={() => toggleField(enabledKey)} />
               )}
 
               {/* Date/time row */}
@@ -576,11 +607,12 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
                     ref={el => { rowRefs.current[fieldKey + '_btn'] = el as HTMLDivElement | null; }}
                     type="button"
                     onClick={() => setOpenField(isOpen ? null : fieldKey)}
-                    className="ml-2 w-8 h-8 rounded-xl flex items-center justify-center border transition-all flex-shrink-0"
+                    className="ml-2 flex items-center justify-center border transition-all flex-shrink-0"
                     style={{
-                      background: isOpen ? D.orange : D.surface2,
+                      width: 30, height: 30, borderRadius: 8,
+                      background: isOpen ? D.orange : '#fff',
                       color: isOpen ? '#fff' : D.textMuted,
-                      borderColor: isOpen ? D.orange : D.border,
+                      borderColor: isOpen ? D.orange : D.border2,
                     }}
                   >
                     <Calendar size={14} />
@@ -598,14 +630,25 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
                           title={offsetBase
                             ? `Set to ${o.label} after ${fmtDateTime(dateToDV(offsetBase))}`
                             : 'Fill the previous date first'}
-                          className="px-1.5 h-5 rounded-md border font-semibold transition-all"
+                          className="inline-flex items-center transition-all"
                           style={{
-                            fontSize: 10,
-                            background: canOffset ? '#fff' : D.surface,
-                            color: canOffset ? iconColor : D.textHint,
-                            borderColor: canOffset ? iconColor + '55' : D.border,
+                            height: 23, padding: '0 9px', borderRadius: 999,
+                            fontSize: 10.8, fontWeight: 600,
+                            background: '#F4F4F5', border: '1px solid #E7E5E4', color: '#57606E',
+                            opacity: canOffset ? 1 : 0.45,
                             cursor: canOffset ? 'pointer' : 'not-allowed',
                             fontFamily: FONT,
+                          }}
+                          onMouseEnter={e => {
+                            if (!canOffset) return;
+                            e.currentTarget.style.background = '#FFF2E8';
+                            e.currentTarget.style.borderColor = '#FBD8BE';
+                            e.currentTarget.style.color = D.orangeDark;
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.background = '#F4F4F5';
+                            e.currentTarget.style.borderColor = '#E7E5E4';
+                            e.currentTarget.style.color = '#57606E';
                           }}
                         >
                           {o.label}
@@ -615,7 +658,7 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5 text-xs" style={{ color: D.textMuted }}>
+                <div className="flex items-center gap-1.5" style={{ fontSize: 11.4, color: D.textMuted }}>
                   <Lock size={12} />
                   <span>Disabled</span>
                 </div>
@@ -623,7 +666,7 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
 
               {/* Error */}
               {error && touched && (
-                <span className="text-xs ml-1" style={{ color: D.red }}>{error}</span>
+                <span className="ml-1" style={{ fontSize: 11.4, color: D.red }}>{error}</span>
               )}
 
               {/* Popup */}
@@ -640,7 +683,8 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
             </div>
           );
         })}
-      </div>
+        </div>
+      </Card>
     </div>
   );
 };

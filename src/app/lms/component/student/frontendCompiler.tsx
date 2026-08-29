@@ -578,7 +578,7 @@ const FrontendCompiler: React.FC<FrontendCompilerProps> = ({
         };
 
         await axios.post(
-          'https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files',
+          'http://localhost:5533/courses/answers/submit-multiple-files',
           savePayload,
           {
             headers: {
@@ -1339,7 +1339,7 @@ body {
     background-color: var(--bg-color);
     color: var(--text-color);
     line-height: 1.6;
-    min-height: 100vh;
+    min-height: calc(100vh * var(--ui-scale-inv, 1));
 }
 
 .container {
@@ -1584,6 +1584,37 @@ console.log('Project utilities available at window.projectUtils');`,
         lastModified: file.lastModified || new Date(),
         isDirty: false
       }));
+    }
+    // Code Setup's starterCode (html/css/javascript) — the trainer-authored
+    // starting point for THIS question — takes priority over the generic
+    // boilerplate below. No previous submission exists yet at this point
+    // (that case returned above), so this only applies to a fresh attempt.
+    const starter = questions[initialQuestionIndex]?.starterCode;
+    if (starter && (starter.html || starter.css || starter.javascript)) {
+      console.log("Setting initial files from question starterCode");
+      const starterFiles: FileType[] = [];
+      if (starter.html) {
+        starterFiles.push({
+          id: 'file-1-index-html', filename: 'index.html', content: starter.html,
+          language: 'html', path: '/index.html', folderPath: '/',
+          isEntryPoint: true, lastModified: new Date(),
+        });
+      }
+      if (starter.css) {
+        starterFiles.push({
+          id: 'file-2-styles-css', filename: 'styles.css', content: starter.css,
+          language: 'css', path: '/styles.css', folderPath: '/',
+          lastModified: new Date(),
+        });
+      }
+      if (starter.javascript) {
+        starterFiles.push({
+          id: 'file-3-script-js', filename: 'script.js', content: starter.javascript,
+          language: 'javascript', path: '/script.js', folderPath: '/',
+          lastModified: new Date(),
+        });
+      }
+      if (starterFiles.length > 0) return starterFiles;
     }
     console.log("Using default files");
     // Filter the pre-loaded defaults by the exercise's selectedLanguages so the
@@ -1861,7 +1892,7 @@ console.log('Project utilities available at window.projectUtils');`,
       try {
         const token = getToken() || localStorage.getItem('token') || '';
 
-        await axios.post('https://lmsserver-yeve.onrender.com/exercise/lock', {
+        await axios.post('http://localhost:5533/exercise/lock', {
           courseId,
           exerciseId,
           category,
@@ -1958,7 +1989,7 @@ console.log('Project utilities available at window.projectUtils');`,
 
     try {
       const token = getToken() || localStorage.getItem('token') || '';
-      await axios.post('https://lmsserver-yeve.onrender.com/exercise/lock', {
+      await axios.post('http://localhost:5533/exercise/lock', {
         courseId,
         exerciseId,
         category,
@@ -2327,7 +2358,7 @@ console.log('Project utilities available at window.projectUtils');`,
 
       try {
         const token = getToken() || localStorage.getItem('token') || '';
-        const response = await axios.get('https://lmsserver-yeve.onrender.com/exercise/status', {
+        const response = await axios.get('http://localhost:5533/exercise/status', {
           params: { courseId, exerciseId, category, subcategory },
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -2377,7 +2408,7 @@ console.log('Project utilities available at window.projectUtils');`,
   //     }
 
   //     const response = await fetch(
-  //       `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${questionId}&category=${category}`,
+  //       `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${questionId}&category=${category}`,
   //       {
   //         headers: {  
   //           'Authorization': `Bearer ${token}`,
@@ -3011,7 +3042,7 @@ console.log('Project utilities available at window.projectUtils');`,
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                min-height: 100vh;
+                min-height: calc(100vh * var(--ui-scale-inv, 1));
                 margin: 0;
                 padding: 20px;
             }
@@ -3921,7 +3952,7 @@ document.addEventListener('DOMContentLoaded', init${name.charAt(0).toUpperCase()
       };
 
       const response = await axios.post(
-        'https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files',
+        'http://localhost:5533/courses/answers/submit-multiple-files',
         payload,
         {
           headers: {

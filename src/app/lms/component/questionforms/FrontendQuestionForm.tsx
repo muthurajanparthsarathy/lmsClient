@@ -15,6 +15,7 @@ import ProgrammingMockModal from '../ProgrammingMockModal';
 import QuestionBankSelector from './mcq/QuestionBankSelector';
 import GenerateProgFamilyAI from './GenerateProgFamilyAI';
 import { parseProgrammingFile } from '@/app/lms/component/questionforms/parseQuestionsTxt';
+import { FrontendCodeSetupSection, FrontendCode, EMPTY_FRONTEND, normalizeFrontendCode, isFrontendSolutionEmpty } from './CodeSetupSection';
 import { toast } from 'react-toastify';
 
 // ─── FONT INJECTION ───────────────────────────────────────────────────────────
@@ -396,6 +397,12 @@ interface FlowQuestion {
   isSaved: boolean;
   isDirty?: boolean;
   isPreExisting?: boolean;
+  isLinkQuestion?: boolean;
+  questionLink?: string;
+  // Code Setup — Frontend keeps HTML / CSS / JS separately for both editors.
+  // Starter is shown to students on attempt start; Solution is author-only.
+  starterCode?: FrontendCode;
+  solutionCode?: FrontendCode;
 }
 
 type Diff = 'easy' | 'medium' | 'hard';
@@ -523,6 +530,10 @@ const dbQuestionToFlow = (q: any): FlowQuestion => ({
   isSaved: true,
   isDirty: false,
   isPreExisting: true,
+  isLinkQuestion: q.isLinkQuestion === true,
+  questionLink: q.questionLink || '',
+  starterCode: normalizeFrontendCode(q.starterCode),
+  solutionCode: normalizeFrontendCode(q.solutionCode),
 });
 
 // ─── Inline Inputs ─────────────────────────────────────────────────────────────
@@ -595,7 +606,7 @@ const ProgImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
+      const res = await fetch('http://localhost:5533/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -3262,6 +3273,9 @@ const isAIAvailable = () => allowedSources.ai;
   const [constraints, setConstr] = useState<string[]>(['']);
   const [hint, setHint] = useState('');
   const [extraHints, setExtraH] = useState<Array<{ hintText: string; pointsDeduction: number; isPublic: boolean }>>([]);
+  // Code Setup — Frontend keeps HTML/CSS/JS split for both editors.
+  const [starterCode, setStarterCode] = useState<FrontendCode>({ ...EMPTY_FRONTEND });
+  const [solutionCode, setSolutionCode] = useState<FrontendCode>({ ...EMPTY_FRONTEND });
   const [score, setScore] = useState(0);
   const [timeLimit, setTL] = useState(2000);
   const [memLimit, setML] = useState(256);
@@ -3430,6 +3444,8 @@ const isAIAvailable = () => allowedSources.ai;
     setExtraH((q.hints || []).slice(1).map((h: any) => ({ hintText: h.hintText, pointsDeduction: h.pointsDeduction || 0, isPublic: h.isPublic !== false })));
     setScore(q.score || 0); setTL(q.timeLimit || 2000); setML(q.memoryLimit || 256);
     setCurrentDiff((q.difficulty as Diff) || currentDiff);
+    setStarterCode(normalizeFrontendCode((q as any).starterCode));
+    setSolutionCode(normalizeFrontendCode((q as any).solutionCode));
     setErrs({}); setTouched(new Set());
     setIsEditMode(!!(getServerId(q)));
   };
@@ -3438,6 +3454,7 @@ const isAIAvailable = () => allowedSources.ai;
     setTitleBlocks([mkProgTextBlock()]); setDesc(''); setDescBlocks([mkProgTextBlock()]); setConstr(['']); setHint(''); setExtraH([]);
     setScore(defaultScore ?? (isGeneral ? generalMPQ : isScoreEditable(currentDiff) ? 0 : getFixedScore(currentDiff)));
     setTL(2000); setML(256); setErrs({}); setTouched(new Set()); setIsEditMode(false);
+    setStarterCode({ ...EMPTY_FRONTEND }); setSolutionCode({ ...EMPTY_FRONTEND });
   };
 
   const snapshotForm = (overrides?: Partial<FlowQuestion>): FlowQuestion => {
@@ -3461,6 +3478,8 @@ const isAIAvailable = () => allowedSources.ai;
       constraints: constraints.filter(c => c.trim()), hints: allHints, timeLimit, memoryLimit: memLimit,
       questionType: 'programming', isSaved: !!(serverId) || existing?.isSaved || false,
       isDirty: hasChanges && !!(serverId) ? true : false, isPreExisting: existing?.isPreExisting || !!(serverId) || false,
+      starterCode: normalizeFrontendCode(starterCode),
+      solutionCode: normalizeFrontendCode(solutionCode),
       ...overrides,
     };
   };
@@ -3478,6 +3497,10 @@ const isAIAvailable = () => allowedSources.ai;
       score: q.score, points: q.score, constraints: q.constraints, hints: q.hints,
       testCases: [], solutions: { startedCode: '', functionName: 'main', language: 'python' },
       timeLimit: q.timeLimit, memoryLimit: q.memoryLimit, isActive: true,
+      // Code Setup — split HTML/CSS/JS bundles. Server strips solutionCode
+      // from student-facing pedagogy responses.
+      starterCode: normalizeFrontendCode(starterCode),
+      solutionCode: normalizeFrontendCode(solutionCode),
     };
   };
 
@@ -3534,7 +3557,7 @@ const isAIAvailable = () => allowedSources.ai;
     }
 
     // ── 5. Create a new empty slot for difficulty d ──
-    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: { ...EMPTY_FRONTEND }, solutionCode: { ...EMPTY_FRONTEND } };
     const newFlow = [...flowAfterDbLoad, newQ];
     flowQuestionsRef.current = newFlow; setFlowQuestions(newFlow);
     const newIdx = newFlow.length - 1; currentIndexRef.current = newIdx; setCurrentIndex(newIdx); setCurrentDiff(d);
@@ -3609,6 +3632,8 @@ const isAIAvailable = () => allowedSources.ai;
           isSaved: false,
           isDirty: false,
           isPreExisting: false,
+          starterCode: { ...EMPTY_FRONTEND },
+          solutionCode: { ...EMPTY_FRONTEND },
         };
         newFlow.push(emptyQ);
         newIndex = 0;
@@ -3653,6 +3678,8 @@ const isAIAvailable = () => allowedSources.ai;
     setScore(isGeneral ? generalMPQ : (isScoreEditable(currentDiff) ? 0 : getFixedScore(currentDiff)));
     setTL(2000);
     setML(256);
+    setStarterCode({ ...EMPTY_FRONTEND });
+    setSolutionCode({ ...EMPTY_FRONTEND });
     setErrs({});
     setTouched(new Set());
     setIsEditMode(false);
@@ -3842,6 +3869,8 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
       hints: hintsList,
       timeLimit: q.timeLimit || 2000,
       memoryLimit: q.memoryLimit || 256,
+      starterCode: normalizeFrontendCode(q.starterCode),
+      solutionCode: normalizeFrontendCode(q.solutionCode),
     };
   };
 
@@ -3891,6 +3920,8 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
       isSaved: false,
       isDirty: false,
       isPreExisting: false,
+      starterCode: normalizeFrontendCode((base as any).starterCode),
+      solutionCode: normalizeFrontendCode((base as any).solutionCode),
     };
     return newQ;
   });
@@ -4052,13 +4083,13 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
     if (isEditing) { onClose(); return; }
     if (isGeneral) {
       if (getRemainingSlots(undefined, flow) > 0) {
-        const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: 'medium', score: generalMPQ, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+        const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: 'medium', score: generalMPQ, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: { ...EMPTY_FRONTEND }, solutionCode: { ...EMPTY_FRONTEND } };
         const newFlow = [...flow, newQ]; flowQuestionsRef.current = newFlow; setFlowQuestions(newFlow);
         setCurrentIndex(flow.length); currentIndexRef.current = flow.length; resetForm(generalMPQ); setTimeout(() => titleRef.current?.focus(), 80);
       } else { onClose(); }
     } else {
       if (getRemainingSlots(currentDiff, flow) > 0) {
-        const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: currentDiff, score: isScoreEditable(currentDiff) ? 0 : getFixedScore(currentDiff), testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+        const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: currentDiff, score: isScoreEditable(currentDiff) ? 0 : getFixedScore(currentDiff), testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: { ...EMPTY_FRONTEND }, solutionCode: { ...EMPTY_FRONTEND } };
         const newFlow = [...flow, newQ]; flowQuestionsRef.current = newFlow; setFlowQuestions(newFlow);
         setCurrentIndex(flow.length); currentIndexRef.current = flow.length; resetForm(isScoreEditable(currentDiff) ? 0 : getFixedScore(currentDiff)); setTimeout(() => titleRef.current?.focus(), 80);
       } else {
@@ -4100,7 +4131,7 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
       currentIndexRef.current = existingEmptyIdx; setCurrentIndex(existingEmptyIdx); setCurrentDiff(d);
       resetForm(defaultScore); setTimeout(() => titleRef.current?.focus(), 80); return;
     }
-    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: { ...EMPTY_FRONTEND }, solutionCode: { ...EMPTY_FRONTEND } };
     const newFlow2 = [...flowWithDb, newQ]; flowQuestionsRef.current = newFlow2; setFlowQuestions(newFlow2);
     const newIdx2 = newFlow2.length - 1; currentIndexRef.current = newIdx2; setCurrentIndex(newIdx2); setCurrentDiff(d);
     resetForm(defaultScore); setTimeout(() => titleRef.current?.focus(), 80);
@@ -4112,6 +4143,7 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
     if (!titleText && !titleBlocks.some(b => b.type === 'image' || b.type === 'code')) e.title = 'Title is required';
     const descText = descBlocks.filter(b => b.type === 'text').map(b => (b as any).value).join(' ').trim();
     if (!descText && !descBlocks.some(b => b.type === 'image' || b.type === 'code')) e.description = 'Description is required';
+    if (isFrontendSolutionEmpty(solutionCode)) e.solutionCode = 'Solution code is required (HTML, CSS, or JS)';
     if (!constraints.some(c => c.trim())) e.constraints = 'At least one constraint is required';
     const currentQ = flowQuestions[currentIndex]; const dbQsForDiff = getDbQuestionsForDiff(currentDiff);
     if (!isGeneral && isScoreEditable(currentDiff)) {
@@ -4850,6 +4882,20 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
                 />
               </div>
             </div>
+
+            {/* ── Code Setup ── */}
+            <FrontendCodeSetupSection
+              starterCode={starterCode}
+              onStarterChange={setStarterCode}
+              solutionCode={solutionCode}
+              onSolutionChange={v => {
+                setSolutionCode(v);
+                if (errs.solutionCode && !isFrontendSolutionEmpty(v)) setErrs(p => { const n = { ...p }; delete n.solutionCode; return n; });
+              }}
+              disabled={isFormDisabled}
+              solutionError={touched.has('solutionCode') ? errs.solutionCode : undefined}
+              onSolutionBlur={() => setTouched(p => new Set(p).add('solutionCode'))}
+            />
 
             {/* ── Constraints ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

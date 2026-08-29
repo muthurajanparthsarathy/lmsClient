@@ -57,7 +57,7 @@ interface SubmitResult {
 
 type PageState = "loading" | "error" | "active" | "submitting" | "completed";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const getToken = () =>
@@ -124,7 +124,7 @@ function ResultScreen({
 
   return (
     <div style={{
-      minHeight: "100vh", background: "linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)",
+      minHeight: "calc(100vh * var(--ui-scale-inv, 1))", background: "linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)",
       display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: "'DM Sans', sans-serif", padding: 24,
     }}>
@@ -358,7 +358,7 @@ export default function LiveMCQPage() {
   if (pageState === "loading") {
     return (
       <div style={{
-        minHeight: "100vh", background: "#0a0a0f",
+        minHeight: "calc(100vh * var(--ui-scale-inv, 1))", background: "#0a0a0f",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         gap: 16, fontFamily: "'DM Sans', sans-serif",
       }}>
@@ -377,7 +377,7 @@ export default function LiveMCQPage() {
   if (pageState === "error") {
     return (
       <div style={{
-        minHeight: "100vh", background: "#0a0a0f",
+        minHeight: "calc(100vh * var(--ui-scale-inv, 1))", background: "#0a0a0f",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         gap: 16, fontFamily: "'DM Sans', sans-serif", padding: 24,
       }}>
@@ -413,7 +413,7 @@ export default function LiveMCQPage() {
   if (!quizData || pageState === "submitting") {
     return (
       <div style={{
-        minHeight: "100vh", background: "#0a0a0f",
+        minHeight: "calc(100vh * var(--ui-scale-inv, 1))", background: "#0a0a0f",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         gap: 16, fontFamily: "'DM Sans', sans-serif",
       }}>
@@ -449,7 +449,7 @@ export default function LiveMCQPage() {
     <>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <div style={{
-        minHeight: "100vh",
+        minHeight: "calc(100vh * var(--ui-scale-inv, 1))",
         background: "linear-gradient(160deg, #0d0d1a 0%, #12122a 40%, #0d0d1a 100%)",
         fontFamily: "'DM Sans', sans-serif",
         color: "white",

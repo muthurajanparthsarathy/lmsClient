@@ -16,6 +16,7 @@ import { toast } from 'react-toastify';
 // Unified with We_Do — use the rich picker from the shared questionforms path.
 import QuestionBankSelector from '@/app/lms/component/questionforms/mcq/QuestionBankSelector';
 import GenerateProgFamilyAI from '@/app/lms/component/questionforms/GenerateProgFamilyAI';
+import { CodeSetupSection, isStringSolutionEmpty } from '@/app/lms/component/questionforms/CodeSetupSection';
 
 // ─── FONT INJECTION ───────────────────────────────────────────────────────────
 const injectFonts = (() => {
@@ -433,6 +434,13 @@ interface FlowQuestion {
   // Per-question AI test case count (evaluationMethod 'ai' + perQuestion mode);
   // null = not set / legacy questions.
   aiTestCasesCount?: number | null;
+  // Link mode (optional here — student authoring copy).
+  isLinkQuestion?: boolean;
+  questionLink?: string;
+  // Code Setup — starter shown to students; solution used for validation.
+  starterCode?: string;
+  solutionCode?: string;
+  codeSetupLanguage?: string;
 }
 
 type Diff = 'easy' | 'medium' | 'hard';
@@ -626,6 +634,11 @@ const dbQuestionToFlow = (q: any): FlowQuestion => {
     // Same preservation rule for the origin bank-row id — re-saving an edit
     // must not strip it, or the picker would re-offer an already-imported row.
     bankQuestionId: q.bankQuestionId ?? null,
+    isLinkQuestion: q.isLinkQuestion === true,
+    questionLink: q.questionLink || '',
+    starterCode: typeof q.starterCode === 'string' ? q.starterCode : '',
+    solutionCode: typeof q.solutionCode === 'string' ? q.solutionCode : '',
+    codeSetupLanguage: typeof q.codeSetupLanguage === 'string' ? q.codeSetupLanguage : undefined,
   };
 };
 
@@ -699,7 +712,7 @@ const ProgImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
+      const res = await fetch('http://localhost:5533/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -3366,6 +3379,16 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
   // Per-question AI test case count — see the We_Do ProgrammingQuestionForm
   // for the full rationale; identical semantics here.
   const [aiTestCasesCount, setAiTestCasesCount] = useState<number | null>(null);
+  // Link mode (optional here — student authoring copy).
+  const [isLinkQuestion, setIsLinkQuestion] = useState(false);
+  const [questionLink, setQuestionLink] = useState('');
+  // Code Setup — starter shown to students; solution author-only.
+  const [starterCode, setStarterCode] = useState('');
+  const [solutionCode, setSolutionCode] = useState('');
+  const [codeSetupLanguage, setCodeSetupLanguage] = useState<string>(() => {
+    const langs: string[] = (exerciseData as any)?.fullExerciseData?.programmingSettings?.selectedLanguages || [];
+    return langs[0] || 'Python';
+  });
 
   const [showPreview, setShowPreview] = useState(false);
   const [showMockModal, setShowMockModal] = useState(false);
@@ -3481,6 +3504,7 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
   const scoreSectionRef = useRef<HTMLDivElement>(null);
   const titleSectionRef = useRef<HTMLDivElement>(null);
   const descSectionRef = useRef<HTMLDivElement>(null);
+  const codeSetupSectionRef = useRef<HTMLDivElement>(null);
   const constraintsSectionRef = useRef<HTMLDivElement>(null);
   const testcasesSectionRef = useRef<HTMLDivElement>(null);
   const stickyToolbarRef = useRef<HTMLDivElement>(null);
@@ -3493,6 +3517,7 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
     const order: { key: string; ref: React.RefObject<HTMLDivElement | null> }[] = [
       { key: 'title', ref: titleSectionRef },
       { key: 'description', ref: descSectionRef },
+      { key: 'solutionCode', ref: codeSetupSectionRef },
       { key: 'constraints', ref: constraintsSectionRef },
       { key: 'testcases', ref: testcasesSectionRef },
     ];
@@ -3687,6 +3712,13 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
     setAiTestCasesCount(
       typeof rawAiCount === 'number' && rawAiCount >= 0 ? Math.min(50, Math.floor(rawAiCount)) : null,
     );
+    setIsLinkQuestion((q as any).isLinkQuestion === true);
+    setQuestionLink((q as any).questionLink || '');
+    setStarterCode(typeof (q as any).starterCode === 'string' ? (q as any).starterCode : '');
+    setSolutionCode(typeof (q as any).solutionCode === 'string' ? (q as any).solutionCode : '');
+    if (typeof (q as any).codeSetupLanguage === 'string' && (q as any).codeSetupLanguage) {
+      setCodeSetupLanguage((q as any).codeSetupLanguage);
+    }
     setErrs({});
     setTouched(new Set());
     setIsEditMode(!!(getServerId(q)));
@@ -3697,6 +3729,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
     setScore(defaultScore ?? (isGeneral ? generalMPQ : isScoreEditable(currentDiff) ? 0 : getFixedScore(currentDiff)));
     setTL(2000); setML(256); setTcs([mkTC(0)]); setErrs({}); setTouched(new Set()); setIsEditMode(false);
     setAiTestCasesCount(null);
+    setIsLinkQuestion(false); setQuestionLink('');
+    setStarterCode(''); setSolutionCode('');
   };
 
   const snapshotForm = (overrides?: Partial<FlowQuestion>): FlowQuestion => {
@@ -3739,6 +3773,11 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
       isDirty: !!(serverId),
       isPreExisting: existing?.isPreExisting || !!(serverId) || false,
       aiTestCasesCount,
+      isLinkQuestion,
+      questionLink: questionLink.trim(),
+      starterCode,
+      solutionCode,
+      codeSetupLanguage,
       ...overrides,
     };
   };
@@ -3803,6 +3842,12 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
       memoryLimit: memLimit,
       isActive: true,
       aiTestCasesCount,
+      isLinkQuestion,
+      questionLink: questionLink.trim(),
+      ...(isLinkQuestion && !safeTitle ? { title: questionLink.trim() } : {}),
+      starterCode: isLinkQuestion ? '' : (starterCode || ''),
+      solutionCode: isLinkQuestion ? '' : (solutionCode || ''),
+      codeSetupLanguage: isLinkQuestion ? undefined : (codeSetupLanguage || undefined),
     };
   };
   const handleEditClick = () => setIsEditMode(true);
@@ -3858,7 +3903,7 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
     }
 
     // ── 5. Create a new empty question for difficulty d ──
-    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: '', solutionCode: '' };
     const newFlow = [...flowAfterDbLoad, newQ];
     flowQuestionsRef.current = newFlow; setFlowQuestions(newFlow);
     const newIdx = newFlow.length - 1; currentIndexRef.current = newIdx; setCurrentIndex(newIdx); setCurrentDiff(d);
@@ -4058,6 +4103,9 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
         // so the picker can exclude this row even before/after the copy saves
         // under its own _id.
         bankQuestionId: (q as any)?._id || null,
+        starterCode: typeof q.starterCode === 'string' ? q.starterCode : '',
+        solutionCode: typeof q.solutionCode === 'string' ? q.solutionCode : '',
+        codeSetupLanguage: typeof q.codeSetupLanguage === 'string' ? q.codeSetupLanguage : undefined,
       } as FlowQuestion;
     });
     // Fill the CURRENT blank slot in place instead of appending after it — a
@@ -4261,6 +4309,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
           isSaved: false,
           isDirty: false,
           isPreExisting: false,
+          starterCode: '',
+          solutionCode: '',
         };
         newFlow.push(emptyQ);
         newIndex = 0;
@@ -4306,6 +4356,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
     setTL(2000);
     setML(256);
     setTcs([mkTC(0)]);
+    setStarterCode('');
+    setSolutionCode('');
     setErrs({});
     setTouched(new Set());
     setIsEditMode(false);
@@ -4322,6 +4374,8 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
         hints: [],
         isDirty: false,
         isSaved: false,
+        starterCode: '',
+        solutionCode: '',
       };
       setFlowQuestions(prev => {
         const newFlow = [...prev];
@@ -4565,7 +4619,7 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
 
     if (isGeneral) {
       if (getRemainingSlots(undefined, flow) > 0) {
-        const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: 'medium', score: generalMPQ, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+        const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: 'medium', score: generalMPQ, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: '', solutionCode: '' };
         const newFlow = [...flow, newQ]; flowQuestionsRef.current = newFlow; setFlowQuestions(newFlow);
         setCurrentIndex(flow.length); currentIndexRef.current = flow.length;
         resetForm(generalMPQ);
@@ -4589,7 +4643,7 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
 
     if (savedCountForDiff < diffQuota) {
       // Still room → create the next blank question for this difficulty
-      const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: diffToUse, score: isScoreEditable(diffToUse) ? 0 : getFixedScore(diffToUse), testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+      const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: diffToUse, score: isScoreEditable(diffToUse) ? 0 : getFixedScore(diffToUse), testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: '', solutionCode: '' };
       const newFlow = [...flow, newQ];
       flowQuestionsRef.current = newFlow;
       setFlowQuestions(newFlow);
@@ -4647,7 +4701,7 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
       currentIndexRef.current = existingEmptyIdx; setCurrentIndex(existingEmptyIdx); setCurrentDiff(d);
       resetForm(defaultScore); setTimeout(() => titleRef.current?.focus(), 80); return;
     }
-    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false };
+    const newQ: FlowQuestion = { __localId: mkLocalId(), _id: undefined, title: '', description: { text: '', imageUrl: null, imageAlignment: 'left', imageSizePercent: 100 }, difficulty: d, score: defaultScore, testCases: [], constraints: [], hints: [], timeLimit: 2000, memoryLimit: 256, questionType: 'programming', isSaved: false, isDirty: false, starterCode: '', solutionCode: '' };
     const newFlow2 = [...flowWithDb, newQ]; flowQuestionsRef.current = newFlow2; setFlowQuestions(newFlow2);
     const newIdx2 = newFlow2.length - 1; currentIndexRef.current = newIdx2; setCurrentIndex(newIdx2); setCurrentDiff(d);
     resetForm(defaultScore); setTimeout(() => titleRef.current?.focus(), 80);
@@ -4655,10 +4709,17 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
 
   const validate = (): { valid: boolean; errors: Record<string, string> } => {
     const e: Record<string, string> = {};
+    // Link mode: only URL required.
+    if (isLinkQuestion) {
+      if (!/^https?:\/\/\S+$/i.test(questionLink.trim())) e.questionLink = 'Paste a valid http(s) link';
+      setErrs(e); setTouched(new Set(Object.keys(e)));
+      return { valid: Object.keys(e).length === 0, errors: e };
+    }
     const titleText = getTitleText(titleBlocks);
     if (!titleText && !titleBlocks.some(b => b.type === 'image' || b.type === 'code')) e.title = 'Title is required';
     const descText = descBlocks.filter(b => b.type === 'text').map(b => (b as any).value).join(' ').trim();
     if (!descText && !descBlocks.some(b => b.type === 'image' || b.type === 'code')) e.description = 'Description is required';
+    if (isStringSolutionEmpty(solutionCode)) e.solutionCode = 'Solution code is required';
     if (!constraints.some(c => c.trim())) e.constraints = 'At least one constraint is required';
     if (!tcs.some(tc => tc.input.trim() && tc.expectedOutput.trim())) e.testcases = 'At least one test case with input & output is required';
     const currentQ = flowQuestions[currentIndex]; const dbQsForDiff = getDbQuestionsForDiff(currentDiff);
@@ -5614,6 +5675,28 @@ const ProgrammingQuestionForm: React.FC<ProgrammingQuestionFormProps> = ({
                 />
               </div>
             </div>
+
+            {/* ── Code Setup ── */}
+            {!isLinkQuestion && (
+              <div ref={codeSetupSectionRef}>
+                <CodeSetupSection
+                  variant="programming"
+                  starterCode={starterCode}
+                  onStarterChange={setStarterCode}
+                  solutionCode={solutionCode}
+                  onSolutionChange={v => {
+                    setSolutionCode(v);
+                    if (errs.solutionCode && v.trim()) setErrs(p => { const n = { ...p }; delete n.solutionCode; return n; });
+                  }}
+                  disabled={isFormDisabled}
+                  languages={(exerciseData as any)?.fullExerciseData?.programmingSettings?.selectedLanguages}
+                  language={codeSetupLanguage}
+                  onLanguageChange={setCodeSetupLanguage}
+                  solutionError={touched.has('solutionCode') ? errs.solutionCode : undefined}
+                  onSolutionBlur={() => setTouched(p => new Set(p).add('solutionCode'))}
+                />
+              </div>
+            )}
 
             {/* ── Constraints ── */}
             <div ref={constraintsSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

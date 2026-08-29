@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
-import { D, FONT } from '../shared/tokens';
+import { D } from '../shared/tokens';
 import { InfoTooltip, OInput, ONumberInput } from '../shared/UIComponents';
 import TipTapEditor from '../../tiptopEditor';
 
@@ -26,6 +26,43 @@ const moduleLanguages: Record<string, { name: string; icon: string }[]> = {
     { name: 'SQL',     icon: '/active-images/sql.png' },
     { name: 'MongoDB', icon: '/active-images/mongodb.png' },
   ],
+};
+
+// ─── Demo-spec card + pill styles (styling only) ─────────────────────────────
+const cardStyle: React.CSSProperties = {
+  border: `1px solid ${D.border2}`,
+  borderRadius: 11,
+  background: D.bg,
+};
+const cardHStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 9,
+  padding: '9px 13px',
+  background: D.surface,
+  borderBottom: `1px solid ${D.border}`,
+  borderRadius: '11px 11px 0 0',
+};
+const cardTStyle: React.CSSProperties = {
+  fontSize: 11.2,
+  fontWeight: 700,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  color: D.textSub,
+};
+const cardBStyle: React.CSSProperties = { padding: 13 };
+const greyPillStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  height: 23,
+  padding: '0 9px',
+  borderRadius: 999,
+  border: '1px solid #E7E5E4',
+  background: '#F4F4F5',
+  color: '#57606E',
+  fontSize: 10.8,
+  fontWeight: 600,
 };
 
 interface ExerciseDetailsStepProps {
@@ -94,178 +131,152 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
   const allLangs = buildConfiguredLangList();
 
   const fieldLabel = (label: string, required?: boolean, info?: string) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: D.textSub, fontFamily: FONT }}>{label}</span>
-      {required && <span style={{ fontSize: 12, fontWeight: 600, color: D.orange }}>*</span>}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 5 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563' }}>{label}</span>
+      {required && <span style={{ fontSize: 11, fontWeight: 600, color: D.orange }}>*</span>}
       {info && <InfoTooltip content={info} />}
     </div>
   );
 
-  const chevronBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`;
+  const chevronBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`;
 
   const allStepsSaved = steps.length > 0 && steps.every(s => savedSteps.has(s.title));
   const gradedLocked = allStepsSaved;
 
   return (
-    <div className="px-10 pt-4 pb-6">
+    <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+      <style>{`
+        .exd-sel{
+          width:100%; height:34px; border-radius:8px; padding:0 28px 0 11px;
+          font-size:12.6px; color:#1D2433; border:1px solid #E9E5E1;
+          background-color:#fff; appearance:none; -webkit-appearance:none;
+          outline:none; cursor:pointer;
+        }
+        .exd-sel:focus{ border-color:#EE6A22; box-shadow:0 0 0 3px rgba(238,106,34,.13); }
+        .exd-sel:disabled{ background-color:#FAF9F8; color:#6B7280; cursor:not-allowed; }
+      `}</style>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 24, rowGap: 20 }}>
-
-        {/* Row 1: Exercise ID + Name */}
-        <div>
-          {fieldLabel('Exercise ID', false, 'Auto-generated unique identifier for this exercise')}
-          <OInput value={formData.exerciseId} onChange={() => { }} readOnly />
+      {/* ── Card: Basics ── */}
+      <div style={cardStyle}>
+        <div style={cardHStyle}>
+          <span style={cardTStyle}>Basics</span>
         </div>
-        <div>
-          {fieldLabel('Exercise Name', true, 'The name displayed to students in their dashboard')}
-          <OInput
-            value={formData.exerciseName}
-            onChange={v => {
-              setFormData((prev: any) => ({ ...prev, exerciseName: v }));
-              if (v.trim()) setValidationErrors((prev: any) => { const e = { ...prev }; delete e.exerciseName; return e; });
-            }}
-            onBlur={() => markTouched('exerciseName')}
-            placeholder="e.g. Advanced Algorithms"
-            error={validationErrors.exerciseName}
-            touched={touchedFields.has('exerciseName')}
-          />
-        </div>
+        <div style={{ ...cardBStyle, display: 'flex', flexDirection: 'column', gap: 13 }}>
 
-        {/* Row 2: Exercise Type + Graded Type */}
-        <div>
-          {fieldLabel('Exercise Type', true, 'MCQ for multiple-choice, Programming for code challenges, or Combined for both')}
-          <select
-            value={formData.exerciseType || ''}
-            onChange={e => {
-              const v = e.target.value as any;
-              handleSelectExerciseType(v);
-              if (v) setValidationErrors((prev: any) => { const n = { ...prev }; delete n.exerciseType; return n; });
-            }}
-            onBlur={() => markTouched('exerciseType')}
-            disabled={isLockedForEdit}
-            style={{
-              width: '100%',
-              padding: '9px 32px 9px 12px', borderRadius: 8,
-              border: `1px solid ${validationErrors.exerciseType && touchedFields.has('exerciseType') ? D.red : D.border2}`,
-              background: isLockedForEdit ? D.surface : D.bg,
-              color: formData.exerciseType ? (isLockedForEdit ? D.textMuted : D.textMain) : D.textMuted,
-              fontSize: 13, fontWeight: 500, fontFamily: FONT,
-              outline: 'none', cursor: isLockedForEdit ? 'not-allowed' : 'pointer',
-              appearance: 'none' as any,
-              backgroundImage: chevronBg, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center',
-            }}
-          >
-            <option value="" disabled>Select exercise type…</option>
-            {exerciseTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          {isLockedForEdit && (
-            <p style={{ marginTop: 4, fontSize: 11, color: D.textMuted }}>
-              Exercise type cannot be changed after creation
-            </p>
-          )}
-          {validationErrors.exerciseType && touchedFields.has('exerciseType') && (
-            <p style={{ marginTop: 4, fontSize: 11, color: D.red, display: 'flex', alignItems: 'center', gap: 3 }}>
-              <AlertCircle size={11} /> {validationErrors.exerciseType}
-            </p>
-          )}
-        </div>
-
-        <div>
-          {fieldLabel('Graded Type', true, 'Graded exercises require marks configuration; Non-Graded tracks completion only')}
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 2,
-            padding: 3, borderRadius: 8,
-            background: D.surface,
-            border: `1px solid ${D.border2}`,
-            opacity: gradedLocked ? 0.7 : 1,
-            cursor: gradedLocked ? 'not-allowed' : 'auto',
-          }}>
-            {(['Graded', 'Non-Graded'] as const).map(opt => {
-              const active = opt === 'Graded' ? formData.isGraded !== false : formData.isGraded === false;
-              return (
-                <button
-                  key={opt}
-                  type="button"
-                  disabled={gradedLocked}
-                  onClick={() => {
-                    if (gradedLocked) return;
-                    const graded = opt === 'Graded';
-                    setFormData((prev: any) => ({
-                      ...prev,
-                      isGraded: graded,
-                      ...(graded ? {} : { totalMarks: 0, totalMarksMCQ: 0, totalMarksProgramming: 0 }),
-                    }));
-                  }}
-                  style={{
-                    padding: '6px 18px', borderRadius: 6, border: 'none',
-                    fontSize: 12, fontWeight: 600,
-                    cursor: gradedLocked ? 'not-allowed' : 'pointer',
-                    fontFamily: FONT,
-                    transition: 'background 0.15s, color 0.15s',
-                    background: active ? D.orange : 'transparent',
-                    color: active ? '#fff' : D.textMuted,
-                  }}
-                >
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
-          {gradedLocked && (
-            <p style={{ marginTop: 4, fontSize: 11, color: D.textMuted }}>
-              Graded type cannot be changed after the exercise has been fully completed
-            </p>
-          )}
-        </div>
-
-        {/* Row 3: Skill Set (full width) */}
-        <div style={{ gridColumn: '1 / -1' }}>
-          {fieldLabel('Skill Set', false, 'Skill set configured for this topic')}
-          {allLangs.length === 0 ? (
-            <span style={{ fontSize: 12, color: D.textMuted }}>No languages configured</span>
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {allLangs.map(lang => (
-                <span key={lang.name}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                    padding: '4px 12px', borderRadius: 8,
-                    border: `1px solid ${D.orange}`,
-                    background: D.orangeLight, color: D.orange,
-                    fontSize: 12, fontWeight: 600,
-                  }}>
-                  {lang.icon && (
-                    <img src={lang.icon} alt={lang.name}
-                      style={{ width: 14, height: 14, objectFit: 'contain' }}
-                      onError={e => { (e.target as any).style.display = 'none'; }} />
-                  )}
-                  {lang.name}
-                </span>
-              ))}
+          {/* Row 1: Exercise ID + Name */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              {fieldLabel('Exercise ID', false, 'Auto-generated unique identifier for this exercise')}
+              <OInput value={formData.exerciseId} onChange={() => { }} readOnly />
             </div>
-          )}
-        </div>
+            <div>
+              {fieldLabel('Exercise Name', true, 'The name displayed to students in their dashboard')}
+              <OInput
+                value={formData.exerciseName}
+                onChange={v => {
+                  setFormData((prev: any) => ({ ...prev, exerciseName: v }));
+                  if (v.trim()) setValidationErrors((prev: any) => { const e = { ...prev }; delete e.exerciseName; return e; });
+                }}
+                onBlur={() => markTouched('exerciseName')}
+                placeholder="e.g. Advanced Algorithms"
+                error={validationErrors.exerciseName}
+                touched={touchedFields.has('exerciseName')}
+              />
+            </div>
+          </div>
 
-        {/* Row 4: Description (full width) */}
-        <div style={{ gridColumn: '1 / -1' }}>
-          {fieldLabel('Description', false, 'A brief overview shown to students before they start')}
-          <TipTapEditor
-            value={formData.description}
-            onChange={(v: string) => setFormData((prev: any) => ({ ...prev, description: v }))}
-            placeholder="Enter a brief description..."
-            minHeight="150px"
-            maxHeight="300px"
-            showToolbar
-            editable
-          />
-        </div>
+          {/* Row 2: Exercise Type + Graded Type */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              {fieldLabel('Exercise Type', true, 'MCQ for multiple-choice, Programming for code challenges, or Combined for both')}
+              <select
+                value={formData.exerciseType || ''}
+                onChange={e => {
+                  const v = e.target.value as any;
+                  handleSelectExerciseType(v);
+                  if (v) setValidationErrors((prev: any) => { const n = { ...prev }; delete n.exerciseType; return n; });
+                }}
+                onBlur={() => markTouched('exerciseType')}
+                disabled={isLockedForEdit}
+                className="exd-sel"
+                style={{
+                  ...(validationErrors.exerciseType && touchedFields.has('exerciseType')
+                    ? { borderColor: '#FBD3CE', backgroundColor: '#FFFCFC' }
+                    : {}),
+                  color: formData.exerciseType ? (isLockedForEdit ? D.textMuted : D.textMain) : D.textMuted,
+                  backgroundImage: chevronBg, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+                }}
+              >
+                <option value="" disabled>Select exercise type…</option>
+                {exerciseTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {isLockedForEdit && (
+                <p style={{ marginTop: 4, fontSize: 11, color: D.textMuted }}>
+                  Exercise type cannot be changed after creation
+                </p>
+              )}
+              {validationErrors.exerciseType && touchedFields.has('exerciseType') && (
+                <p style={{ marginTop: 4, fontSize: 11, color: D.red, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <AlertCircle size={11} /> {validationErrors.exerciseType}
+                </p>
+              )}
+            </div>
 
-        {/* Row 5: Difficulty + Duration + Total Marks (full width, sub-grid) */}
-        <div style={{ gridColumn: '1 / -1' }}>
+            <div>
+              {fieldLabel('Graded Type', true, 'Graded exercises require marks configuration; Non-Graded tracks completion only')}
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: 3, borderRadius: 8,
+                background: D.surface2,
+                border: `1px solid ${D.border2}`,
+                opacity: gradedLocked ? 0.45 : 1,
+                cursor: gradedLocked ? 'not-allowed' : 'auto',
+              }}>
+                {(['Graded', 'Non-Graded'] as const).map(opt => {
+                  const active = opt === 'Graded' ? formData.isGraded !== false : formData.isGraded === false;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      disabled={gradedLocked}
+                      aria-pressed={active}
+                      onClick={() => {
+                        if (gradedLocked) return;
+                        const graded = opt === 'Graded';
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          isGraded: graded,
+                          ...(graded ? {} : { totalMarks: 0, totalMarksMCQ: 0, totalMarksProgramming: 0 }),
+                        }));
+                      }}
+                      style={{
+                        height: 27, padding: '0 12px', borderRadius: 5, border: 'none',
+                        fontSize: 12, fontWeight: 600,
+                        cursor: gradedLocked ? 'not-allowed' : 'pointer',
+                        transition: 'background 0.15s, color 0.15s',
+                        background: active ? '#fff' : 'transparent',
+                        color: active ? D.orangeDark : D.textMuted,
+                        boxShadow: active ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+              {gradedLocked && (
+                <p style={{ marginTop: 4, fontSize: 11, color: D.textMuted }}>
+                  Graded type cannot be changed after the exercise has been fully completed
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Row 3: Difficulty + Duration + Total Marks */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: formData.isGraded !== false ? '1fr 1fr 1.5fr' : '1fr 1fr',
-            gap: 20,
+            gridTemplateColumns: formData.isGraded !== false ? 'repeat(3,1fr)' : '1fr 1fr',
+            gap: 12,
             alignItems: 'flex-start',
           }}>
             <div>
@@ -276,16 +287,13 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
                   setFormData((prev: any) => ({ ...prev, exerciseLevel: e.target.value as any }));
                   if (e.target.value) setValidationErrors((prev: any) => { const n = { ...prev }; delete n.exerciseLevel; return n; });
                 }}
+                className="exd-sel"
                 style={{
-                  width: '100%',
-                  padding: '9px 32px 9px 12px', borderRadius: 8,
-                  border: `1px solid ${validationErrors.exerciseLevel && touchedFields.has('exerciseLevel') ? D.red : D.border2}`,
-                  background: D.bg,
+                  ...(validationErrors.exerciseLevel && touchedFields.has('exerciseLevel')
+                    ? { borderColor: '#FBD3CE', backgroundColor: '#FFFCFC' }
+                    : {}),
                   color: formData.exerciseLevel ? D.textMain : D.textMuted,
-                  fontSize: 13, fontWeight: 500, fontFamily: FONT,
-                  outline: 'none', cursor: 'pointer',
-                  appearance: 'none' as any,
-                  backgroundImage: chevronBg, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center',
+                  backgroundImage: chevronBg, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
                 }}
               >
                 <option value="" disabled hidden>Select difficulty…</option>
@@ -366,23 +374,69 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
                         style={{ width: '100%' }}
                       />
                     </div>
-                    <div style={{
-                      display: 'inline-flex', alignItems: 'center',
-                      padding: '9px 12px', borderRadius: 8,
-                      background: D.orangeLight, border: `1px solid ${D.orange}40`,
-                      fontSize: 12, fontWeight: 600, color: D.orange,
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      height: 23, marginTop: 5, padding: '0 9px', borderRadius: 999,
+                      background: '#FFF2E8', border: '1px solid #FBD8BE',
+                      fontSize: 10.8, fontWeight: 600, color: D.orangeDark,
                       whiteSpace: 'nowrap',
                     }}>
                       {combinedTotal} marks
-                    </div>
+                    </span>
                   </div>
                 )}
               </div>
             )}
           </div>
-        </div>
 
+        </div>
       </div>
+
+      {/* ── Card: Skill Set ── */}
+      <div style={cardStyle}>
+        <div style={cardHStyle}>
+          <span style={cardTStyle}>Skill Set</span>
+          <InfoTooltip content="Skill set configured for this topic" />
+        </div>
+        <div style={cardBStyle}>
+          {allLangs.length === 0 ? (
+            <span style={{ fontSize: 11.5, color: D.textMuted }}>No languages configured</span>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {allLangs.map(lang => (
+                <span key={lang.name} style={greyPillStyle}>
+                  {lang.icon && (
+                    <img src={lang.icon} alt={lang.name}
+                      style={{ width: 13, height: 13, objectFit: 'contain' }}
+                      onError={e => { (e.target as any).style.display = 'none'; }} />
+                  )}
+                  {lang.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Card: Description ── */}
+      <div style={cardStyle}>
+        <div style={cardHStyle}>
+          <span style={cardTStyle}>Description</span>
+          <InfoTooltip content="A brief overview shown to students before they start" />
+        </div>
+        <div style={cardBStyle}>
+          <TipTapEditor
+            value={formData.description}
+            onChange={(v: string) => setFormData((prev: any) => ({ ...prev, description: v }))}
+            placeholder="Enter a brief description..."
+            minHeight="150px"
+            maxHeight="300px"
+            showToolbar
+            editable
+          />
+        </div>
+      </div>
+
     </div>
   );
 };

@@ -45,6 +45,14 @@ export const transformUser = (user: any): User => ({
   batch: user.batch || "",
   phase: user.phase || "",
   serviceModel: user.serviceModel || "",
+  services: Array.isArray(user.services)
+    ? user.services.map((s: any) => ({
+        serviceMappingId: s.serviceMappingId ? String(s.serviceMappingId) : "",
+        serviceModel: s.serviceModel || "",
+        clientId: s.clientId ? String(s.clientId) : "",
+        clientName: s.clientName || "",
+      }))
+    : [],
   studentType: user.studentType || "",
   clientId: user.clientId || "",
   clientName: user.clientName || "",

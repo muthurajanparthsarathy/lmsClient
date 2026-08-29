@@ -1,5 +1,5 @@
 import { getToken } from "@/lib/session";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Plus, FileCode, RefreshCw, Loader2, Trash2,
   ChevronLeft, ChevronRight, MoreVertical, Calendar, Code,
@@ -13,6 +13,7 @@ import {
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useSectionHref } from '@/lib/sectionRoute';
+import GradesFlow from '@/app/lms/pages/grades/GradesFlow';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 import toast from 'react-hot-toast';  // instead of react-toastify
@@ -33,6 +34,9 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@radix-ui/react-select';
 
 import ExerciseSettings from './ExerciseSettings';
+// The three-method entry screen (template / command / scratch). It only builds
+// a seed document — every rule still runs inside ExerciseSettings.
+import CreateExerciseLauncher from './CreateExerciseLauncher';
 import Questions from './QuestionsView';
 import AddQuestionForm from './questionforms/AddQuestionForm';
 import { exerciseApi, EntityType } from '@/apiServices/exercise';
@@ -40,6 +44,9 @@ import { resubmitExerciseForApproval } from '@/apiServices/userService';
 import QuestionBankSelector from './questionforms/mcq/QuestionBankSelector';
 import { Play } from 'next/font/google';
 import { useQueryClient } from '@tanstack/react-query';
+// Resources by Batch — the active batch is part of the cached list's identity
+// (batch 1 and batch 2 hold different exercises at the same node).
+import { getActiveBatchId } from '@/apiServices/resourceBatch';
 import TableFooter from '@/app/lms/shared/listing/TableFooter';
 
 // ─── Design tokens (parity with QuestionsView) ────────────────────────────────
@@ -54,7 +61,7 @@ const isProgrammingType = (q: Question) =>
 // Pure `nodeType` → `EntityType` map. Lives at module scope so the render
 // path can call it before its old in-component declaration would have
 // initialised (the exercises cache key needs it during the first render).
-const getEntityType = (nt: string): EntityType => {
+export const getEntityType = (nt: string): EntityType => {
   const map: Record<string, EntityType> = {
     module: 'modules', modules: 'modules',
     submodule: 'submodules', submodules: 'submodules',
@@ -63,6 +70,125 @@ const getEntityType = (nt: string): EntityType => {
   };
   return map[(nt || '').toLowerCase().trim()] || 'topics';
 };
+
+// ─── Shared query identity + fetcher ─────────────────────────────────────────
+// EXPORTED so the resources page can warm this exact cache entry while its
+// node-level ring loader is still up — this component then mounts onto a warm
+// cache (cache-hit path below) and paints instantly, with no second
+// "Loading Assignment…" loader. Must stay in lockstep with the component's
+// exercisesCacheKey and fetchExercises, which are built on these.
+
+export const problemSolvingExercisesKey = (args: {
+  nodeType: string;
+  nodeId: string;
+  activeTab: string;
+  subcategory: string;
+  courseId?: string;
+}) => [
+  'problemSolvingExercises',
+  getEntityType(args.nodeType),
+  args.nodeId,
+  args.activeTab,
+  args.subcategory,
+  args.courseId || '',
+  getActiveBatchId() || '',
+] as const;
+
+export const fetchProblemSolvingExercises = async (
+  nodeType: string,
+  nodeId: string,
+  activeTab: string,
+  subcategory: string,
+): Promise<Exercise[]> => {
+  const resp = await exerciseApi.getExercises(getEntityType(nodeType), nodeId, activeTab as any, subcategory);
+  const list: Exercise[] = (resp.data?.exercises ?? []).map((ex: Exercise) => ({
+    ...ex,
+    // Guarantee every question has a questionType so score helpers never skip them
+    questions: (ex.questions ?? []).map(q => ({
+      ...q,
+      questionType: q.questionType ?? 'mcq',
+    })),
+  }));
+  return [...list].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+};
+
+// ── Server-paginated page fetch (Question-Bank pattern) ──────────────────────
+// The backend sends ONE page (default 10 rows) with the pager totals; filters
+// (search / type / derived status) and the newest-first sort run server-side
+// over the whole list. Each page is cached under its own React Query key, so
+// pagination back-navigation paints from cache instantly.
+
+// Module-scope memory of the last page size this list rendered at, so a
+// remount (and the resources page's warm prefetch) asks for the same page
+// the auto-fit will settle on — same trick as Course Setup's MappingList.
+let lastProblemSolvingPageSize = 10;
+export const getLastProblemSolvingPageSize = () => lastProblemSolvingPageSize;
+export const rememberProblemSolvingPageSize = (n: number) => { lastProblemSolvingPageSize = n; };
+
+export interface ProblemSolvingPage {
+  rows: Exercise[];
+  totalItems: number;
+  totalPages: number;
+  currentPage: number;
+  itemsPerPage: number;
+}
+
+export interface ProblemSolvingPageArgs {
+  page: number;
+  limit: number;
+  search: string;
+  exerciseType: string;
+  status: string;
+}
+
+export const problemSolvingPageKey = (
+  base: { nodeType: string; nodeId: string; activeTab: string; subcategory: string; courseId?: string },
+  pageArgs: ProblemSolvingPageArgs,
+) => [
+  ...problemSolvingExercisesKey(base),
+  pageArgs.page,
+  pageArgs.limit,
+  pageArgs.search,
+  pageArgs.exerciseType,
+  pageArgs.status,
+] as const;
+
+export const fetchProblemSolvingPage = async (
+  nodeType: string,
+  nodeId: string,
+  activeTab: string,
+  subcategory: string,
+  pageArgs: ProblemSolvingPageArgs,
+): Promise<ProblemSolvingPage> => {
+  const resp = await exerciseApi.getExercises(
+    getEntityType(nodeType), nodeId, activeTab as any, subcategory,
+    {
+      page: pageArgs.page,
+      limit: pageArgs.limit,
+      search: pageArgs.search || undefined,
+      exerciseType: pageArgs.exerciseType || undefined,
+      status: pageArgs.status || undefined,
+    },
+  );
+  const rows: Exercise[] = (resp.data?.exercises ?? []).map((ex: Exercise) => ({
+    ...ex,
+    questions: (ex.questions ?? []).map(q => ({
+      ...q,
+      questionType: q.questionType ?? 'mcq',
+    })),
+  }));
+  const pg: any = (resp.data as any)?.pagination;
+  return {
+    rows,
+    totalItems: pg?.totalItems ?? rows.length,
+    totalPages: pg?.totalPages ?? 1,
+    currentPage: pg?.currentPage ?? pageArgs.page,
+    itemsPerPage: pg?.itemsPerPage ?? pageArgs.limit,
+  };
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Interfaces
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2920,13 +3046,34 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
   const queryClient = useQueryClient();
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  // ── Create flow ──────────────────────────────────────────────────────────
+  // `creatingExercise` says a CREATE is in progress at all; editing never sets
+  // it, so the Edit paths bypass the launcher entirely.
+  //
+  // `seed` is the three-state value the launcher resolves:
+  //   undefined → nothing chosen yet, the launcher is showing
+  //   null      → Start from Scratch; the wizard opens blank, exactly as before
+  //   object    → a template / command / duplicate seed document
+  const [creatingExercise, setCreatingExercise] = useState(false);
+  const [seed, setSeed] = useState<Record<string, unknown> | null | undefined>(undefined);
+  // Origin label for the wizard's app-bar pill ("Programming Assessment",
+  // "Copied from …"). Presentational only — never enters formData or a payload.
+  const [seedLabel, setSeedLabel] = useState<string | undefined>(undefined);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAddQuestionModal, setShowAddQuestionModal] = useState(false);
+  // Set when a question-authoring surface is opened FROM the Exercise Settings
+  // wizard. Closing that surface then returns to the wizard instead of dumping
+  // the user back to the exercise list — the authoring modals are a detour
+  // inside the wizard's "Add Questions" step, not a destination.
+  const [authorReturnsToSettings, setAuthorReturnsToSettings] = useState(false);
   const [showAddQuestionOptions, setShowAddQuestionOptions] = useState(false);
   const [qbankFromMCQOpts, setQbankFromMCQOpts] = useState(false);
 
   const [showQuestionBank, setShowQuestionBank] = useState(false);
   const [showQuestions, setShowQuestions] = useState(false);
+  // Grade opens IN PLACE, the same way Manage Exercise does — same URL,
+  // same syllabus rail, only this panel swaps. See the early return below.
+  const [showGrades, setShowGrades] = useState(false);
 
   const [selectedExerciseForAdd, setSelectedExerciseForAdd] = useState<Exercise | null>(null);
   const [fullExerciseForAdd, setFullExerciseForAdd] = useState<any>(null);
@@ -2946,12 +3093,32 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [submissionStatusMap, setSubmissionStatusMap] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  // Server-side search runs on the DEBOUNCED value, so typing doesn't fire a
+  // request per keystroke; the input itself stays instant via searchQuery.
+  const [searchDebounced, setSearchDebounced] = useState('');
   // Add this state with your other useState declarations
   const [exerciseTypeFilter, setExerciseTypeFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [pagination, setPagination] = useState({
-    currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 10,
+    // itemsPerPage seeded from the last mount's auto-fit result (module
+    // memory) so this mount's first page request — and the resources page's
+    // warm prefetch — use the size the list will actually settle on.
+    currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: getLastProblemSolvingPageSize(),
   });
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Mirror every page-size change into the module memory (see above).
+  useEffect(() => { rememberProblemSolvingPageSize(pagination.itemsPerPage); }, [pagination.itemsPerPage]);
+
+  // Any filter change starts over at page 1 — the server recomputes totals.
+  useEffect(() => {
+    setPagination(p => (p.currentPage === 1 ? p : { ...p, currentPage: 1 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchDebounced, exerciseTypeFilter, statusFilter]);
 
   // Auto-fit page size — measure the tbody scroll region and pick the
   // largest itemsPerPage that fits without overflow, so the "9 assignments
@@ -2995,31 +3162,52 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
   }, [nodeId, subcategory, activeTab]);
 
   // Cache key: any two calls with the same (entityType, entityId, tab,
-  // subcategory) share a cached list. `courseId` is part of the key so a
-  // different course's cache can never leak in (nodeId collisions are
-  // theoretically possible across courses).
+  // subcategory, batch) share a cached list. `courseId` is part of the key so
+  // a different course's cache can never leak in (nodeId collisions are
+  // theoretically possible across courses). The BATCH is part of the key too:
+  // this component remounts on a batch switch (its React key carries the
+  // batch), and without it here batch 1's cached rows would paint under
+  // batch 2 before the silent refresh corrected them.
+  const activeBatchKey = getActiveBatchId() || '';
+  // One cache entry PER PAGE of the server-paginated list: the base identity
+  // (entity, node, tab, subcategory, course, batch) plus the page dimensions
+  // (page number, page size, search, type filter, status filter).
   const exercisesCacheKey = React.useMemo(
-    () => [
-      'problemSolvingExercises',
-      getEntityType(nodeType),
-      nodeId,
-      activeTab,
-      subcategory,
-      courseId || '',
-    ] as const,
+    () => problemSolvingPageKey(
+      { nodeType, nodeId, activeTab, subcategory, courseId },
+      {
+        page: pagination.currentPage,
+        limit: pagination.itemsPerPage,
+        search: searchDebounced,
+        exerciseType: exerciseTypeFilter || '',
+        status: statusFilter || '',
+      },
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [nodeType, nodeId, activeTab, subcategory, courseId],
+    [nodeType, nodeId, activeTab, subcategory, courseId, activeBatchKey,
+     pagination.currentPage, pagination.itemsPerPage, searchDebounced, exerciseTypeFilter, statusFilter],
   );
 
   useEffect(() => {
     if (!showQuestions && subcategory?.trim()) {
-      // Cache hit → paint immediately, then refresh silently in the
-      // background so the user never sees a loader on a revisit. Cache
-      // miss → fall through to the loud fetch (spinner + first paint).
-      const cached = queryClient.getQueryData<Exercise[]>(exercisesCacheKey);
-      if (cached && cached.length > 0) {
-        setExercises(cached);
+      // Cached page (an EMPTY page counts — `!== undefined`) → paint it
+      // immediately with no loader, then refresh silently in the background.
+      // Uncached page while rows are already on screen (a page/filter move) →
+      // keep the current rows and swap when the response lands, Course Setup
+      // style. The loud spinner is reserved for a TRUE first load, when
+      // there is nothing on screen at all.
+      const cached = queryClient.getQueryData<ProblemSolvingPage>(exercisesCacheKey);
+      if (cached !== undefined) {
+        setExercises(cached.rows);
+        setPagination(prev => ({
+          ...prev,
+          currentPage: cached.currentPage,
+          totalPages: cached.totalPages,
+          totalItems: cached.totalItems,
+        }));
         setLoadingExercises(false);
+        fetchExercises({ silent: true });
+      } else if (exercises.length > 0 || !loadingExercises) {
         fetchExercises({ silent: true });
       } else {
         fetchExercises();
@@ -3027,29 +3215,12 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     }
     else { setExercises([]); setLoadingExercises(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId, subcategory, nodeType, activeTab, showQuestions]);
+  }, [exercisesCacheKey, showQuestions]);
 
 
 
-  useEffect(() => {
-    const q = searchQuery.toLowerCase();
-    const filtered = exercises.filter(ex => {
-      const matchesType = !exerciseTypeFilter || ex.exerciseType === exerciseTypeFilter;
-      const matchesSearch =
-        !searchQuery ||
-        ex.exerciseInformation?.exerciseName?.toLowerCase().includes(q) ||
-        ex.exerciseInformation?.exerciseId?.toLowerCase().includes(q);
-      return matchesType && matchesSearch;
-    });
-    const totalItems = filtered.length;
-    const totalPages = Math.ceil(totalItems / pagination.itemsPerPage) || 1;
-    setPagination(prev => ({
-      ...prev,
-      totalItems,
-      totalPages,
-      currentPage: Math.min(prev.currentPage, totalPages),
-    }));
-  }, [searchQuery, exerciseTypeFilter, exercises]);
+  // (Client-side totals recompute removed — the server's paginated mode owns
+  // filtering and the pager totals now; see fetchExercises.)
 
   // ResizeObserver on the tbody scroll region — recomputes the fitting
   // page size whenever the workspace resizes. ROW_H matches the h-11 body
@@ -3153,50 +3324,34 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
       setLoadingExercises(false);
       return [];
     }
-    // Silent = fired from the cache-hit path — the previous rows are
-    // already on screen, so a loader would just flicker.
+    // Silent = fired from the cache-hit / page-move path — the previous rows
+    // are already on screen, so a loader would just flicker.
     if (!opts.silent) setLoadingExercises(true);
     try {
-      const resp = await exerciseApi.getExercises(getEntityType(nodeType), nodeId, activeTab, subcategory);
-      const list: Exercise[] = (resp.data?.exercises ?? []).map((ex: Exercise) => ({
-        ...ex,
-        // Guarantee every question has a questionType so score helpers never skip them
-        questions: (ex.questions ?? []).map(q => ({
-          ...q,
-          questionType: q.questionType ?? 'mcq', // fallback — adjust default if needed
-        })),
-      }));
-
-      const sorted = [...list].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-      setExercises(sorted);
-      // Persist into the React Query cache so a later remount at the same
-      // (node, tab, subcategory) reads instantly without a loader.
-      queryClient.setQueryData<Exercise[]>(exercisesCacheKey, sorted);
-
-      // Compute pagination AFTER applying current filters (match getFilteredExercises logic)
-      const q = searchQuery.toLowerCase();
-      const filtered = sorted.filter(ex => {
-        const matchesType = !exerciseTypeFilter || ex.exerciseType === exerciseTypeFilter;
-        const matchesSearch =
-          !searchQuery ||
-          ex.exerciseInformation?.exerciseName?.toLowerCase().includes(q) ||
-          ex.exerciseInformation?.exerciseId?.toLowerCase().includes(q);
-        return matchesType && matchesSearch;
+      // ONE server page (Question-Bank pattern): filters + sort + slice run
+      // server-side; the pager totals come back with the rows. Same fetcher
+      // the resources page uses to warm this cache during a first node visit.
+      const pageData = await fetchProblemSolvingPage(nodeType, nodeId, activeTab, subcategory, {
+        page: pagination.currentPage,
+        limit: pagination.itemsPerPage,
+        search: searchDebounced,
+        exerciseType: exerciseTypeFilter || '',
+        status: statusFilter || '',
       });
-
-      const totalItems = filtered.length;
-      const totalPages = Math.ceil(totalItems / pagination.itemsPerPage) || 1;
+      setExercises(pageData.rows);
       setPagination(prev => ({
         ...prev,
-        totalItems,
-        totalPages,
-        currentPage: Math.min(prev.currentPage, totalPages),
+        // The server clamps out-of-range pages (list shrank under a filter).
+        currentPage: pageData.currentPage,
+        totalPages: pageData.totalPages,
+        totalItems: pageData.totalItems,
       }));
+      // Cache THIS page under its own key so pagination back-navigation
+      // paints instantly from memory.
+      queryClient.setQueryData<ProblemSolvingPage>(exercisesCacheKey, pageData);
 
-      fetchSubmissionStatuses(sorted);
-      return sorted;
+      fetchSubmissionStatuses(pageData.rows);
+      return pageData.rows;
     } catch (error) {
       console.error('Error fetching exercises:', error);
       toast.error('Failed to fetch exercises');
@@ -3215,7 +3370,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
       const ids = exerciseList.map(e => e._id).join(',');
       const params = new URLSearchParams({ courseId, tabType: activeTab, subcategory, exerciseIds: ids });
       const resp = await fetch(
-        `https://lmsserver-yeve.onrender.com/analytics/exercise-submission-status?${params}`,
+        `http://localhost:5533/analytics/exercise-submission-status?${params}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!resp.ok) return;
@@ -3227,10 +3382,11 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
   const refreshExercisesAndUpdateSelected = async (): Promise<Exercise | null> => {
     if (!subcategory?.trim()) return null;
     try {
-      const resp = await exerciseApi.getExercises(getEntityType(nodeType), nodeId, activeTab, subcategory);
-      const list: Exercise[] = resp.data?.exercises ?? [];
-      setExercises(list);
-      setPagination(p => ({ ...p, totalItems: list.length, totalPages: Math.ceil(list.length / p.itemsPerPage) }));
+      // Full-list read (the endpoint's unpaginated mode) ONLY to refresh the
+      // selected exercise, which may live on a different page than the one
+      // on screen. The visible page refreshes separately, silently.
+      const list = await fetchProblemSolvingExercises(nodeType, nodeId, activeTab, subcategory);
+      fetchExercises({ silent: true });
       const targetId = selectedExerciseForAdd?._id;
       if (targetId) {
         const fresh = list.find(e => e._id === targetId);
@@ -3302,12 +3458,61 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     finally { setIsAddingQuestions(false); setShowQuestionBank(false); setSelectedExerciseForAdd(null); }
   };
 
+  /**
+   * Close a question-authoring surface. When it was opened from the Exercise
+   * Settings wizard, reopen the wizard on the step the user left — otherwise
+   * fall back to the exercise list, which is the pre-existing behaviour.
+   *
+   * `editingExercise` is deliberately NOT cleared on the return path: it is
+   * what the wizard hydrates from, and clearing it would reopen a blank form.
+   */
+  const closeAuthoringSurface = useCallback(async () => {
+    setShowAddQuestionModal(false);
+    setShowQuestionBank(false);
+    setShowDocumentUpload(false);
+    setQbankFromMCQOpts(false);
+
+    const targetId = (editingExercise as Exercise | null)?._id
+      ?? (selectedExerciseForAdd as Exercise | null)?._id;
+    // One awaited fetch, and we use its RESULT — reading `exercises` here would
+    // still hold the pre-fetch value.
+    const fresh = await fetchExercises();
+    const refreshed = targetId ? fresh.find(e => e._id === targetId) : undefined;
+
+    if (authorReturnsToSettings) {
+      setAuthorReturnsToSettings(false);
+      if (refreshed) {
+        // Re-point at the freshly-saved document so the wizard's Add Questions
+        // step counts the questions that were just authored.
+        setEditingExercise(refreshed);
+        setSelectedExerciseForAdd(refreshed);
+        setFullExerciseForAdd(refreshed);
+      }
+      setShowSettingsModal(true);
+      return;
+    }
+    setSelectedExerciseForAdd(null);
+    setFullExerciseForAdd(null);
+    // `fetchExercises` is re-created every render (it is a plain function, not a
+    // useCallback), so listing it here would rebuild this callback on every
+    // render and defeat the memo. It closes over no state that matters to us —
+    // we use its awaited RESULT, not anything it captured.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authorReturnsToSettings, editingExercise, selectedExerciseForAdd]);
+
   const handleNewExercise = () => {
     if (!subcategory) { toast.error('Please select a subcategory first'); return; }
-    setEditingExercise(null); setIsEditing(false); setShowSettingsModal(true);
+    // Creation starts at the method picker; the wizard opens from there, with
+    // or without a seed. Every EDIT path below still goes straight to it.
+    setEditingExercise(null); setIsEditing(false);
+    setSeed(undefined); setSeedLabel(undefined); setCreatingExercise(true);
   };
 
-  const handleEditExercise = (ex: Exercise) => { setEditingExercise(ex); setIsEditing(true); setShowSettingsModal(true); };
+  const handleEditExercise = (ex: Exercise) => {
+    setEditingExercise(ex); setIsEditing(true);
+    setCreatingExercise(false); setSeed(undefined); setSeedLabel(undefined);
+    setShowSettingsModal(true);
+  };
   const handleDeleteConfirm = async () => {
     if (!exerciseToDelete) return;
     setDeleting(true);
@@ -3320,35 +3525,11 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
         subcategory
       );
 
-      // Update exercises list
-      const updatedExercises = exercises.filter(e => e._id !== exerciseToDelete._id);
-      setExercises(updatedExercises);
-
-      // Get filtered exercises based on search query
-      const filteredExercises = updatedExercises.filter(ex => {
-        if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
-        return ex.exerciseInformation?.exerciseName?.toLowerCase().includes(q) ||
-          ex.exerciseInformation?.exerciseId?.toLowerCase().includes(q);
-      });
-
-      // Calculate new pagination values
-      const newTotalItems = filteredExercises.length;
-      const newTotalPages = Math.ceil(newTotalItems / pagination.itemsPerPage);
-
-      // If current page is greater than new total pages, move to the last available page
-      let newCurrentPage = pagination.currentPage;
-      if (newCurrentPage > newTotalPages) {
-        newCurrentPage = Math.max(1, newTotalPages);
-      }
-
-      // Update pagination state
-      setPagination(prev => ({
-        ...prev,
-        totalItems: newTotalItems,
-        totalPages: newTotalPages,
-        currentPage: newCurrentPage
-      }));
+      // Optimistic removal from the visible page, then re-read the current
+      // page silently — the server recomputes the totals and back-fills the
+      // row that slides up from the next page.
+      setExercises(prev => prev.filter(e => e._id !== exerciseToDelete._id));
+      await fetchExercises({ silent: true });
 
       setShowDeleteModal(false);
       setExerciseToDelete(null);
@@ -3435,6 +3616,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     switch (type) {
       case 'edit': handleEditExercise(ex); break;
       case 'manageQuestions': setSelectedExercise(ex); setShowQuestions(true); break;
+      case 'grade': setSelectedExercise(ex); setShowGrades(true); break;
       case 'addQuestion': handleAddQuestion(ex); break;
       case 'delete': setExerciseToDelete(ex); setShowDeleteModal(true); break;
       case 'review': handleAnalytics(ex); break;
@@ -3474,28 +3656,11 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     return 'Completed';
   };
 
-  const getFilteredExercises = () => {
-    let f = exercises;
-    if (exerciseTypeFilter) {
-      f = f.filter(ex => ex.exerciseType === exerciseTypeFilter);
-    }
-    if (statusFilter) {
-      f = f.filter(ex => getExerciseStatus(ex) === statusFilter);
-    }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      f = f.filter(ex =>
-        ex.exerciseInformation?.exerciseName?.toLowerCase().includes(q) ||
-        ex.exerciseInformation?.exerciseId?.toLowerCase().includes(q)
-      );
-    }
-    return f;
-  };
-  const getPaginatedExercises = () => {
-    const f = getFilteredExercises();
-    const s = (pagination.currentPage - 1) * pagination.itemsPerPage;
-    return f.slice(s, s + pagination.itemsPerPage);
-  };
+  // Filtering, sorting and slicing all run SERVER-SIDE now (see
+  // fetchProblemSolvingPage): `exercises` already IS the filtered current
+  // page. These stay as functions so the render code below is unchanged.
+  const getFilteredExercises = () => exercises;
+  const getPaginatedExercises = () => exercises;
 
   // ── UI sub-components ──────────────────────────────────────────────────────
 
@@ -3819,7 +3984,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                     {exercise.questions.length} Qs
                   </span>
                 </DropdownMenuItem>
-                <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
+                <div style={{ height: 1, background: 'rgba(15,23,42,0.06)', margin: '4px 0' }} aria-hidden />
               </>
             )}
 
@@ -3843,21 +4008,17 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                   <BarChart3 className="h-3.5 w-3.5" style={{ color: submissionStatusMap[exercise._id] ? '#fb923c' : '#bcbccc' }} />
                   Review Submissions
                 </DropdownMenuItem>
+                <div style={{ height: 1, background: 'rgba(15,23,42,0.06)', margin: '4px 0' }} aria-hidden />
                 <DropdownMenuItem
                   onClick={() => {
                     if (!courseId) {
                       toast.error('Course context is missing — cannot open the grades view.');
                       return;
                     }
-                    const here = typeof window !== 'undefined'
-                      ? `${window.location.pathname}${window.location.search}${window.location.hash}`
-                      : '';
-                    const q = new URLSearchParams({
-                      exerciseId: exercise._id,
-                      openTab: 'students',
-                      ...(here ? { returnTo: here } : {}),
-                    }).toString();
-                    router.push(`/lms/pages/grades/${courseId}?${q}`);
+                    // Opens IN PLACE — no navigation. The syllabus rail and the
+                    // I/We/You Do tabs stay exactly as they are and only this
+                    // panel swaps, the same way Manage Exercise behaves.
+                    handleAction('grade', exercise);
                   }}
                   className="cursor-pointer text-xs gap-2"
                   disabled={!submissionStatusMap[exercise._id]}
@@ -3865,7 +4026,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                   <GraduationCap className="h-3.5 w-3.5" style={{ color: submissionStatusMap[exercise._id] ? '#059669' : '#bcbccc' }} />
                   Grade
                 </DropdownMenuItem>
-                <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
+                <div style={{ height: 1, background: 'rgba(15,23,42,0.06)', margin: '4px 0' }} aria-hidden />
               </>
             )}
 
@@ -3883,7 +4044,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                     {exercise.questions?.length ?? 0}
                   </span>
                 </DropdownMenuItem>
-                <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
+                <div style={{ height: 1, background: 'rgba(15,23,42,0.06)', margin: '4px 0' }} aria-hidden />
               </>
             )}
 
@@ -3907,26 +4068,32 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
             )}
 
             {approval.status === 'rejected' && (
-              <DropdownMenuItem
-                onClick={() => setRejectionViewer(exercise)}
-                className="cursor-pointer text-xs gap-2"
-                style={{ color: '#dc2626', fontFamily: JKT.fontFamily }}>
-                <AlertTriangle className="h-3.5 w-3.5" style={{ color: '#dc2626' }} />
-                See rejection
-              </DropdownMenuItem>
+              <>
+                <div style={{ height: 1, background: 'rgba(15,23,42,0.06)', margin: '4px 0' }} aria-hidden />
+                <DropdownMenuItem
+                  onClick={() => setRejectionViewer(exercise)}
+                  className="cursor-pointer text-xs gap-2"
+                  style={{ color: '#dc2626', fontFamily: JKT.fontFamily }}>
+                  <AlertTriangle className="h-3.5 w-3.5" style={{ color: '#dc2626' }} />
+                  See rejection
+                </DropdownMenuItem>
+              </>
             )}
             {(approval.status === 'rejected' || approval.hasRejectedQuestions) && (
-              <DropdownMenuItem
-                onClick={() => handleResubmit(exercise)}
-                disabled={!!resubmittingId}
-                className="cursor-pointer text-xs gap-2"
-                style={{ color: '#4f46e5', fontFamily: JKT.fontFamily }}>
-                <RefreshCw className={`h-3.5 w-3.5 ${resubmittingId === exercise._id ? 'animate-spin' : ''}`} style={{ color: '#4f46e5' }} />
-                {resubmittingId === exercise._id ? 'Requesting…' : 'Request Approval'}
-              </DropdownMenuItem>
+              <>
+                <div style={{ height: 1, background: 'rgba(15,23,42,0.06)', margin: '4px 0' }} aria-hidden />
+                <DropdownMenuItem
+                  onClick={() => handleResubmit(exercise)}
+                  disabled={!!resubmittingId}
+                  className="cursor-pointer text-xs gap-2"
+                  style={{ color: '#4f46e5', fontFamily: JKT.fontFamily }}>
+                  <RefreshCw className={`h-3.5 w-3.5 ${resubmittingId === exercise._id ? 'animate-spin' : ''}`} style={{ color: '#4f46e5' }} />
+                  {resubmittingId === exercise._id ? 'Requesting…' : 'Request Approval'}
+                </DropdownMenuItem>
+              </>
             )}
 
-            <Separator className="my-1" style={{ height: '1px', background: '#e4e4ed', display: 'block' }} />
+            <div style={{ height: 1, background: 'rgba(15,23,42,0.06)', margin: '4px 0' }} aria-hidden />
 
             <DropdownMenuItem onClick={() => handleAction('delete', exercise)} className="cursor-pointer text-xs gap-2 text-red-600 focus:text-red-600" style={{ fontFamily: JKT.fontFamily }}>
               <Trash2 className="h-3.5 w-3.5" /> Delete
@@ -4174,6 +4341,22 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
     `}</style>
   );
 
+  // ── Grades view ────────────────────────────────────────────────────────────
+  // Same in-place swap as the Questions view below: the host page's shell
+  // (syllabus rail, I/We/You Do tabs) stays mounted and only this panel
+  // changes, so Grade behaves like Manage Exercise rather than a page nav.
+  if (showGrades && selectedExercise) {
+    return (
+      <GradesFlow
+        embedded
+        courseId={courseId}
+        exerciseId={selectedExercise._id}
+        openTab="students"
+        onBack={() => { setShowGrades(false); setSelectedExercise(null); }}
+      />
+    );
+  }
+
   // ── Questions view ─────────────────────────────────────────────────────────
   if (showQuestions && selectedExercise) {
     return (
@@ -4326,16 +4509,73 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
       <div style={{ position: 'relative', flex: '1 1 0', minHeight: '200px', display: 'flex', flexDirection: 'column' }}
            className="px-3 sm:px-4 md:px-6 overflow-x-hidden">
         {loadingExercises ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16">
-            <div className="relative">
-              <div className="w-10 h-10 border-4 rounded-full" style={{ borderColor: '#f5f5f8' }} />
-              <div className="absolute inset-0 border-4 rounded-full animate-spin" style={{ borderColor: '#F27757', borderTopColor: 'transparent' }} />
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex-shrink-0 bg-canvas border-b border-hairline">
+              <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '30%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '21%' }} />
+                  <col style={{ width: '8%' }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {['#', `${subLabelSingular} ID`, `${subLabelSingular} Name`, 'Type', 'Created', 'Status', 'Actions'].map((label, index) => (
+                      <th key={label}
+                        className={`${index === 0 ? 'pl-4 pr-2' : index === 6 ? 'pl-2 pr-4 text-right' : 'px-3'} h-8 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle whitespace-nowrap`}>
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+              </table>
             </div>
-            <p className="text-[12px] font-medium" style={{ color: '#8b8b9e', ...JKT }}>
-              {activeTab === 'We_Do' ? 'Loading Assignment…'
-                : activeTab === 'You_Do' ? 'Loading Assessment…'
-                : `Loading ${subLabelSingular}…`}
-            </p>
+            <div className="ps-table-scroll flex-1 min-h-0 overflow-hidden">
+              <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }} aria-label={`Loading ${subLabelPlural}`}>
+                <colgroup>
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '30%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '21%' }} />
+                  <col style={{ width: '8%' }} />
+                </colgroup>
+                <tbody>
+                  {Array.from({ length: Math.max(6, Math.min(10, pagination.itemsPerPage)) }).map((_, idx) => (
+                    <tr key={idx} className="border-b border-hairline bg-surface">
+                      <td className="h-11 pl-4 pr-2 align-middle">
+                        <div className="h-3 w-3 rounded bg-slate-100 animate-pulse" />
+                      </td>
+                      <td className="h-11 px-3 align-middle">
+                        <div className="h-3 w-14 rounded bg-slate-100 animate-pulse" />
+                      </td>
+                      <td className="h-11 px-3 align-middle">
+                        <div className="h-3 w-2/3 max-w-[220px] rounded bg-slate-100 animate-pulse" />
+                      </td>
+                      <td className="h-11 px-3 align-middle">
+                        <div className="h-5 w-20 rounded-md bg-orange-50 animate-pulse" />
+                      </td>
+                      <td className="h-11 px-3 align-middle">
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-3 w-3 rounded bg-slate-100 animate-pulse" />
+                          <div className="h-3 w-20 rounded bg-slate-100 animate-pulse" />
+                        </div>
+                      </td>
+                      <td className="h-11 px-3 align-middle">
+                        <div className="h-5 w-24 rounded-md bg-orange-50 animate-pulse" />
+                      </td>
+                      <td className="h-11 pl-2 pr-4 align-middle">
+                        <div className="ml-auto h-5 w-5 rounded bg-slate-100 animate-pulse" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : paginated.length > 0 ? (
           <>
@@ -4553,7 +4793,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                 exerciseType: selectedExerciseForAdd.exerciseType,
               }}
               tabType={activeTab}
-              onClose={() => { setShowQuestionBank(false); setQbankFromMCQOpts(false); setSelectedExerciseForAdd(null); }}
+              onClose={closeAuthoringSurface}
               onBack={qbankFromMCQOpts ? () => { setShowQuestionBank(false); setQbankFromMCQOpts(false); setShowAddQuestionOptions(true); } : undefined}
               onSelect={handleQuestionBankSelect}
               existingQuestionIds={selectedExerciseForAdd.questions?.map(q => q._id) || []}
@@ -4583,7 +4823,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
           }}
           breadcrumbs={getBreadcrumbs()}
           tabType={activeTab}
-          onClose={async () => { setShowAddQuestionModal(false); setSelectedExerciseForAdd(null); setFullExerciseForAdd(null); await fetchExercises(); }}
+          onClose={closeAuthoringSurface}
           onSave={handleQuestionSaved}
           onOpenQuestionBank={() => { setShowAddQuestionModal(false); setShowQuestionBank(true); }}
           onOpenDocumentUpload={() => { setShowAddQuestionModal(false); setShowDocumentUpload(true); }}
@@ -4613,10 +4853,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
           }}
           tabType={activeTab}
           breadcrumbs={getBreadcrumbs()}
-          onClose={() => {
-            setShowDocumentUpload(false);
-            setSelectedExerciseForAdd(null);
-          }}
+          onClose={closeAuthoringSurface}
           onInserted={async (count) => {
             await fetchExercises();
             toast.success(`${count} question${count !== 1 ? "s" : ""} added via document`);
@@ -4625,13 +4862,44 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
       )}
 
 
+      {/* Create-method picker — CREATE path only, and only while nothing has
+          been chosen yet (seed === undefined). Hands the wizard a seed
+          document or null for a blank start. */}
+      {creatingExercise && seed === undefined && (
+        <CreateExerciseLauncher
+          configuredLanguages={configuredLanguages}
+          // Powers Duplicate and Continue-a-draft from real saved exercises —
+          // a saved doc is already the shape the wizard hydrates from.
+          recentExercises={exercises}
+          onClose={() => { setCreatingExercise(false); setSeed(undefined); setSeedLabel(undefined); }}
+          onProceed={(picked, label) => {
+            setSeed(picked);              // null = scratch, object = seeded
+            setSeedLabel(label);          // app-bar pill; presentational only
+            setShowSettingsModal(true);   // launcher hides: seed !== undefined
+          }}
+        />
+      )}
+
       {showSettingsModal && (
         <ExerciseSettings
           hierarchyData={hierarchyData} nodeId={nodeId} nodeName={nodeName}
           subcategory={subcategory} nodeType={nodeType} level={hierarchyData.level}
           tabType={activeTab} onSave={handleSaveSettings}
-          onClose={async () => { setShowSettingsModal(false); setEditingExercise(null); setIsEditing(false); setLockConfigStrategy(false); await fetchExercises(); }}
-          isEditing={isEditing} exercise_Id={editingExercise?._id} initialData={editingExercise ?? undefined}
+          onClose={async () => {
+            setShowSettingsModal(false); setEditingExercise(null); setIsEditing(false);
+            setCreatingExercise(false); setSeed(undefined); setSeedLabel(undefined);
+            // Closing the wizard ends the authoring detour too — otherwise a
+            // stale flag would bounce a later, unrelated authoring session
+            // back into a wizard the user never opened.
+            setAuthorReturnsToSettings(false);
+            setLockConfigStrategy(false); await fetchExercises();
+          }}
+          isEditing={isEditing} exercise_Id={editingExercise?._id}
+          // Editing wins: a real exercise is never overridden by a seed.
+          initialData={editingExercise ?? seed ?? undefined}
+          // A seeded exercise is still a CREATE — this must never imply isEditing.
+          isSeeded={!isEditing && !!seed}
+          seedLabel={!isEditing ? seedLabel : undefined}
           configuredLanguages={configuredLanguages}
           lockConfigStrategy={lockConfigStrategy}
           onOpenQuestionAuthor={(mode) => {
@@ -4641,6 +4909,7 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
             const ex = editingExercise as any;
             if (!ex?._id) return;
             setShowSettingsModal(false);
+            setAuthorReturnsToSettings(true);   // ← come back here on close
             setSelectedExerciseForAdd(ex);
             setFullExerciseForAdd(ex);
             if (mode === 'scratch-bank') setShowQuestionBank(true);

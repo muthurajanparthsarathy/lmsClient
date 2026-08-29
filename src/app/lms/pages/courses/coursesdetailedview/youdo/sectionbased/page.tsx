@@ -15,7 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import SectionBasedTestPage from "@/app/lms/component/student/YouDo/assessment/components/SectionBasedTestPage";
 
-const API_BASE = "https://lmsserver-yeve.onrender.com";
+const API_BASE = "http://localhost:5533";
 
 const Spinner = () => (
   <div className="w-full h-screen bg-white flex items-center justify-center">

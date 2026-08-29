@@ -1084,8 +1084,8 @@ export default function UserManagementPage() {
                     <DropdownMenuItem onClick={() => setShowBulkEditModal(true)} className="cursor-pointer">
                       <UserCog className="h-4 w-4" />
                       <div className="flex-1">
-                        <div className="text-sm font-medium">Bulk Edit</div>
-                        <div className="text-2xs text-subtle">Move users between roles, clients or services in bulk.</div>
+                        <div className="text-sm font-medium">Reassign Client / Service</div>
+                        <div className="text-2xs text-subtle">Move many users to a different client or service.</div>
                       </div>
                     </DropdownMenuItem>
                   )}

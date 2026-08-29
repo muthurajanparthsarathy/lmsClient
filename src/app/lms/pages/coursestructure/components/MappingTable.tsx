@@ -1,5 +1,7 @@
 "use client";
 import React from "react";
+import { motion } from "framer-motion";
+import * as Popover from "@radix-ui/react-popover";
 import {
   ChevronUp,
   ChevronDown,
@@ -68,6 +70,52 @@ function SortButton({
   );
 }
 
+// The Available Courses count + its course-list card. CLICK opens it (Radix's
+// default toggle); outside-click and Escape close it. No hover behaviour and
+// no title tooltips — the card itself is the whole disclosure.
+function AvailableCoursesPopover({ courses, year }: { courses: string[]; year: string }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center h-6 px-2 rounded-chip bg-info-50 text-info-700 text-2xs font-semibold tabular-nums whitespace-nowrap hover:bg-info-50/70 hover:underline underline-offset-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info-700/30"
+        >
+          {courses.length} Available Course{courses.length > 1 ? "s" : ""}
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="start"
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-popover w-64 rounded-tile border border-hairline bg-surface shadow-lg focus:outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2"
+        >
+          <p className="px-3 pt-2.5 pb-2 text-2xs font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
+            Available Courses ({courses.length})
+          </p>
+          <ul className="max-h-56 overflow-y-auto py-1.5">
+            {courses.map((name) => (
+              <li
+                key={name}
+                className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-body"
+              >
+                <span className="size-1.5 rounded-full bg-info-700 flex-shrink-0" aria-hidden />
+                <span className="min-w-0 truncate">
+                  {name}
+                  <span className="text-subtle"> — {year || "—"}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 export function MappingTable({
   rows,
   isLoading,
@@ -78,23 +126,29 @@ export function MappingTable({
   onOpen,
   emptyState,
 }: MappingTableProps) {
-  // Client + BusinessModel + ServiceModel + ProvidingYear + Action
-  const COL_SPAN = 5;
+  // Client + BusinessModel + ServiceModel + ProvidingYear + AvailableCourses + Action
+  const COL_SPAN = 6;
+
+  // Pagination page-move animation — the User Management stagger, made
+  // visibly kinetic: every row is a motion.tr that fades AND slides up into
+  // place (opacity 0→1, y 8→0, 20ms stagger) whenever it mounts. Page moves
+  // swap the row keys, so each new page cascades in from the top.
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden">
       <table className="w-full table-fixed border-collapse">
         <thead className="sticky top-0 z-sticky">
           <tr>
-            <th className={`${HEAD_CELL} w-[32%] text-left`}>
+            <th className={`${HEAD_CELL} w-[26%] text-left`}>
               <SortButton label="Client" columnKey="client" active={sortKey === "client"} dir={sortDir} onSort={onSort} />
             </th>
-            <th className={`${HEAD_CELL} w-[16%] text-left`}>Business Model</th>
-            <th className={`${HEAD_CELL} w-[22%] text-left`}>Service Model</th>
-            <th className={`${HEAD_CELL} w-[14%] text-left`}>
+            <th className={`${HEAD_CELL} w-[12%] text-left`}>Business Model</th>
+            <th className={`${HEAD_CELL} w-[18%] text-left`}>Service Model</th>
+            <th className={`${HEAD_CELL} w-[12%] text-left`}>
               <SortButton label="Providing Year" columnKey="year" active={sortKey === "year"} dir={sortDir} onSort={onSort} />
             </th>
-            <th className={`${HEAD_CELL} w-[16%] pl-2 pr-4 sm:pr-5 text-right`}>Action</th>
+            <th className={`${HEAD_CELL} w-[17%] text-left`}>Available Courses</th>
+            <th className={`${HEAD_CELL} w-[15%] pl-2 pr-4 sm:pr-5 text-right`}>Action</th>
           </tr>
         </thead>
 
@@ -114,6 +168,9 @@ export function MappingTable({
                 <td className={BODY_CELL}>
                   <div className="h-3 w-12 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
                 </td>
+                <td className={BODY_CELL}>
+                  <div className="h-3 w-28 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                </td>
                 <td className={`${BODY_CELL} pl-2 pr-4 sm:pr-5 text-right`}>
                   <div className="ml-auto h-7 w-24 rounded-control bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
                 </td>
@@ -127,13 +184,11 @@ export function MappingTable({
             </tr>
           ) : (
             rows.map((row, i) => (
-              // Row fade-in removed — this component remounts on every
-              // stage change in the parent (AnimatePresence mode="wait"),
-              // so the staggered `initial={{ opacity: 0 }}` fade replayed
-              // on every Back-to-list navigation and read like a loader
-              // cascade. Rows now paint instantly from cached data.
-              <tr
+              <motion.tr
                 key={row.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, ease: "easeOut", delay: Math.min(i, 10) * 0.02 }}
                 className="group border-b border-hairline last:border-0 transition-colors duration-150 hover:bg-row-hover"
               >
                 {/* Client — plain text, no service subline. */}
@@ -168,6 +223,20 @@ export function MappingTable({
                   )}
                 </td>
 
+                {/* Available Courses — a compact blue count; clicking it
+                    opens a small card listing the courses mapped under this
+                    row with their providing year. Radix portals the card to
+                    the body, so the table's overflow-hidden wrapper never
+                    clips it. The info (blue) tokens are deliberate: brand
+                    here is orange, and this count is specified as blue. */}
+                <td className={BODY_CELL}>
+                  {row.courses.length > 0 ? (
+                    <AvailableCoursesPopover courses={row.courses} year={row.year} />
+                  ) : (
+                    <span className="text-line-muted">No courses</span>
+                  )}
+                </td>
+
                 {/* Action — Manage only. Kebab dropped; Copy ID / Open in
                     Service Mapping still reachable from the toolbar's
                     Service Mapping button + the client-picker export. */}
@@ -183,7 +252,7 @@ export function MappingTable({
                     <Settings2 size={12} /> Manage
                   </button>
                 </td>
-              </tr>
+              </motion.tr>
             ))
           )}
         </tbody>

@@ -3,7 +3,7 @@ import { getToken } from "@/lib/session";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
-const API_BASE = "https://lmsserver-yeve.onrender.com";
+const API_BASE = "http://localhost:5533";
 
 /* ─── Google Font injection ─────────────────────────────────────── */
 const FONT_URL =
@@ -307,7 +307,7 @@ export default function StudentProgressOverview() {
 
   /* ── Loading / Error states ── */
   if (loading) return (
-    <div style={T({ background: "#F7F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" })}>
+    <div style={T({ background: "#F7F6FB", minHeight: "calc(100vh * var(--ui-scale-inv, 1))", display: "flex", alignItems: "center", justifyContent: "center" })}>
       <div style={T({ textAlign: "center" })}>
         <div style={{ width: 40, height: 40, border: "3px solid #EDE9F8", borderTop: "3px solid #7C3AED", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -317,7 +317,7 @@ export default function StudentProgressOverview() {
   );
 
   if (error) return (
-    <div style={T({ background: "#F7F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" })}>
+    <div style={T({ background: "#F7F6FB", minHeight: "calc(100vh * var(--ui-scale-inv, 1))", display: "flex", alignItems: "center", justifyContent: "center" })}>
       <div style={{ background: "#fff", border: "1px solid #FECACA", borderRadius: 14, padding: "24px 32px", textAlign: "center" }}>
         <p style={T({ color: "#DC2626", fontWeight: 600, fontSize: 14 })}>Failed to load analytics</p>
         <p style={T({ color: "#9CA3AF", fontSize: 12, marginTop: 4 })}>{error}</p>
@@ -326,7 +326,7 @@ export default function StudentProgressOverview() {
   );
 
   return (
-    <div style={T({ background: "#F7F6FB", minHeight: "100vh", padding: "28px 30px" })}>
+    <div style={T({ background: "#F7F6FB", minHeight: "calc(100vh * var(--ui-scale-inv, 1))", padding: "28px 30px" })}>
       <style>{`
         html, body { scrollbar-color: #4B5563 #1F2937; scrollbar-width: thin; }
         html::-webkit-scrollbar, body::-webkit-scrollbar { width: 12px; height: 12px; }

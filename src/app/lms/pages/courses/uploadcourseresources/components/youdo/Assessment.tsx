@@ -4,6 +4,7 @@ import { getToken } from "@/lib/session";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSectionHref } from "@/lib/sectionRoute";
+import GradesFlow from '@/app/lms/pages/grades/GradesFlow';
 import SmartCliffRingLoader from "@/components/SmartCliffRingLoader";
 import ReactDOM from "react-dom";
 import {
@@ -342,11 +343,16 @@ const PortalDropMenu: React.FC<{
       style={{
         ...style,
         background: T.bg,
-        border: `1px solid ${T.border}`,
+        // Match the We Do assignments (ProblemSolving) dropdown chrome so the
+        // two menus look like the same component to the trainer — same border
+        // token, same shadow, same corner rounding, and the same 288px width
+        // (w-72) as `<DropdownMenuContent className="w-72" ...>` uses over
+        // there.
+        border: "1px solid #e4e4ed",
         borderRadius: 12,
-        boxShadow: "0 10px 32px rgba(0,0,0,0.12)",
+        boxShadow: "0 8px 32px rgba(26,26,46,0.14)",
         padding: 4,
-        minWidth: 148,
+        width: 288,
         animation: "asmFadeIn 0.12s cubic-bezier(0.16,1,0.3,1) both",
       }}
     >
@@ -357,29 +363,41 @@ const PortalDropMenu: React.FC<{
 };
 
 // ─── DropItem Component ───────────────────────────────────────────────────────
+// Sized + coloured to match the We Do assignments dropdown (see
+// ProblemSolving.tsx `<DropdownMenuItem className="cursor-pointer text-xs
+// gap-2" style={{ color: '#1a1a2e' }}>`) so the two three-dot menus read as
+// one system: same 12px text, same near-black label colour, same 8px gap
+// between icon and label, same 6px item radius. Only rows that pass a
+// semantic `color` (Delete, See rejection) override the neutral label.
 const DropItem: React.FC<{
   icon: React.ReactNode; label: string; color?: string; divider?: boolean; onClick: () => void;
 }> = ({ icon, label, color, divider, onClick }) => (
-  <button
-    type="button" onClick={onClick}
-    className="flex items-center gap-2 w-full px-2.5 py-2 text-[11px] font-semibold rounded-lg"
-    style={{
-      color: color || T.textSub,
-      borderTop: divider ? `1px solid ${T.border}` : "none",
-      marginTop: divider ? 3 : 0,
-      background: "transparent", transition: "all 0.12s",
-    }}
-    onMouseEnter={e => {
-      (e.currentTarget as HTMLElement).style.background = color ? `${color}10` : T.pageBg;
-      (e.currentTarget as HTMLElement).style.color = color || T.textMain;
-    }}
-    onMouseLeave={e => {
-      (e.currentTarget as HTMLElement).style.background = "transparent";
-      (e.currentTarget as HTMLElement).style.color = color || T.textSub;
-    }}
-  >
-    {icon}{label}
-  </button>
+  <>
+    {/* 1px hairline separator that matches ProblemSolving's
+        `<Separator className="my-1" style={{ height: '1px', background:
+        '#e4e4ed' }} />` — rendered as a sibling above the button so the
+        item can still round its own corners on hover without a
+        borderTop cutting through the highlight. */}
+    {divider && (
+      <div style={{ height: 1, background: "rgba(15,23,42,0.06)", margin: "4px 0" }} aria-hidden />
+    )}
+    <button
+      type="button" onClick={onClick}
+      className="flex items-center gap-2 w-full px-2 py-1.5 text-xs font-normal rounded-md"
+      style={{
+        color: color || "#1a1a2e",
+        background: "transparent", transition: "background 0.12s",
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.background = color ? `${color}10` : "#f4f4f5";
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.background = "transparent";
+      }}
+    >
+      {icon}{label}
+    </button>
+  </>
 );
 
 // ─── Pagination Component ─────────────────────────────────────────────────────
@@ -789,6 +807,9 @@ export default function Assessment({
   });
   const [isDeleting, setIsDeleting] = useState(false);
   const [showQuestionsTest, setShowQuestionsTest] = useState(false);
+  // Grade opens IN PLACE like Manage Questions — same URL, same syllabus
+  // rail, only this panel swaps. See the early return below.
+  const [gradeAssessment, setGradeAssessment] = useState<AssessmentRecord | null>(null);
   const [selectedAssessmentForTest, setSelectedAssessmentForTest] = useState<any>(null);
   // The FULL exercise doc that pairs with the slim `selectedAssessmentForTest`
   // record — carries sectionConfigs / questionSource / customSources that the
@@ -1154,6 +1175,22 @@ export default function Assessment({
   // Assessment loader would blank out the questions view — the user
   // reported it as "click Manage Questions, Loading Assessment shown
   // instead of loading questions". QuestionsTest owns its own loader.
+  // ── Grades view ────────────────────────────────────────────────────────
+  // In-place swap, same as the QuestionsTest view below: the host screen's
+  // shell (syllabus rail, I/We/You Do tabs) stays mounted and only this panel
+  // changes, so Grade behaves like Manage Questions rather than a page nav.
+  if (gradeAssessment) {
+    return (
+      <GradesFlow
+        embedded
+        courseId={courseId}
+        exerciseId={gradeAssessment._id || gradeAssessment.id || ''}
+        openTab="students"
+        onBack={() => setGradeAssessment(null)}
+      />
+    );
+  }
+
   if (showQuestionsTest && selectedAssessmentForTest) {
     return (
       <QuestionsTest
@@ -1180,7 +1217,7 @@ export default function Assessment({
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');`}</style>
 
       {/* ── Header bar ── */}
-      <div className="flex-shrink-0" style={{ background: T.bg, borderBottom: `1px solid ${T.border}` }}>
+      <div className="flex-shrink-0" style={{ background: T.bg }}>
 
         {/* ── Mock / Final test tabs — student-only ── */}
         {isStudentView && (
@@ -1507,7 +1544,7 @@ export default function Assessment({
                           {asm.hasParticipants && (
                             <>
                               <DropItem
-                                icon={<LayoutDashboard size={11} />} label="Dashboard"
+                                icon={<LayoutDashboard size={14} color="#3b82f6" />} label="Dashboard"
                                 onClick={() => {
                                   setOpenDrop(null);
                                   const q = new URLSearchParams({
@@ -1524,26 +1561,27 @@ export default function Assessment({
                                     subtopicName: hierarchyData?.subtopicName || '',
                                     tabType: 'You_Do',
                                   }).toString();
+                                  // liveDashboard is now mounted under BOTH section prefixes
+                                  // (see app/lms/pages/coursestructure/liveDashboard/page.tsx),
+                                  // so sectionHref is safe and keeps the trainer inside the
+                                  // section they came from — same rule the other shared
+                                  // screens follow.
                                   router.push(`${sectionHref("liveDashboard")}?${q}`);
                                 }}
                               />
                               <DropItem
-                                icon={<GraduationCap size={11} />} label="Grade"
+                                icon={<GraduationCap size={14} color="#059669" />} label="Grade" divider
                                 onClick={() => {
                                   setOpenDrop(null);
                                   if (!courseId) {
                                     toast.error('Course context is missing — cannot open the grades view for this assessment.');
                                     return;
                                   }
-                                  const here = typeof window !== 'undefined'
-                                    ? `${window.location.pathname}${window.location.search}${window.location.hash}`
-                                    : '';
-                                  const q = new URLSearchParams({
-                                    exerciseId: asm._id || asm.id || '',
-                                    openTab: 'students',
-                                    ...(here ? { returnTo: here } : {}),
-                                  }).toString();
-                                  router.push(`/lms/pages/grades/${courseId}?${q}`);
+                                  // Opens IN PLACE — no navigation. The syllabus
+                                  // rail and the I/We/You Do tabs stay exactly as
+                                  // they are and only this panel swaps, the same
+                                  // way Manage Questions behaves.
+                                  setGradeAssessment(asm);
                                 }}
                               />
                             </>
@@ -1575,12 +1613,12 @@ export default function Assessment({
                               || (Array.isArray(rawEx?.questions) && rawEx.questions.length > 0)
                           ) && (
                             <DropItem
-                              icon={<Settings size={11} />} label="Manage Questions"
+                              icon={<Settings size={14} color="#F27757" />} label="Manage Questions" divider
                               onClick={() => handleManageQuestion(asm)}
                             />
                           )}
                           <DropItem
-                            icon={<Users size={11} />} label="Manage Users"
+                            icon={<Users size={14} color="#0891b2" />} label="Manage Users" divider
                             onClick={() => {
                               setOpenDrop(null);
                               // Manage Users now houses the live-dashboard controls
@@ -1607,26 +1645,27 @@ export default function Assessment({
                             }}
                           />
                           <DropItem
-                            icon={<Edit2 size={11} />} label="Edit"
+                            icon={<Edit2 size={14} color="#fb923c" />} label="Edit" divider
                             onClick={() => handleEdit(asm)}
                           />
                           {asm.approvalStatus === "rejected" && (
                             <DropItem
-                              icon={<AlertTriangle size={11} />}
-                              label="See rejection"
+                              icon={<AlertTriangle size={14} color="#dc2626" />}
+                              label="See rejection" divider
                               color="#dc2626"
                               onClick={() => { setOpenDrop(null); setRejectionViewer(asm); }}
                             />
                           )}
                           {(asm.approvalStatus === "rejected" || asm.hasRejectedQuestions) && (
                             <DropItem
-                              icon={<RefreshCw size={11} className={resubmittingId === (asm._id || asm.id) ? "animate-spin" : ""} />}
+                              icon={<RefreshCw size={14} color="#4f46e5" className={resubmittingId === (asm._id || asm.id) ? "animate-spin" : ""} />}
                               label={resubmittingId === (asm._id || asm.id) ? "Requesting…" : "Request Approval"}
+                              divider
                               onClick={() => { if (!resubmittingId) handleResubmit(asm); }}
                             />
                           )}
                           <DropItem
-                            icon={<Trash2 size={11} />} label="Delete"
+                            icon={<Trash2 size={14} color="#ef4444" />} label="Delete"
                             color="#ef4444" divider
                             onClick={() => openDeleteModal(asm.id, asm.name, asm._id)}
                           />

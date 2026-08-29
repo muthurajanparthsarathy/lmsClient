@@ -20,7 +20,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, FileText, Printer, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, Printer, Search, X } from "lucide-react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
@@ -55,10 +55,13 @@ interface StudentExportRow {
 }
 
 // Status badge palette reused from ReportRow so the preview matches.
+// Labels aligned with the dashboard row status badges — "In Progress" /
+// "Completed" instead of the older "Started" / "Submitted" so the exported
+// report reads the same as the on-screen table.
 const STATUS_BADGE = {
   "not-started": { label: "Not Started", cls: "bg-gray-100  text-gray-600" },
-  "started":     { label: "Started",     cls: "bg-amber-50  text-amber-700" },
-  "submitted":   { label: "Submitted",   cls: "bg-green-50  text-green-700" },
+  "started":     { label: "In Progress", cls: "bg-amber-50  text-amber-700" },
+  "submitted":   { label: "Completed",   cls: "bg-green-50  text-green-700" },
 } as const;
 
 const QUESTION_STATUS_META = {
@@ -118,7 +121,7 @@ const SUMMARY_COLUMNS: ColumnDef<StudentExportRow>[] = [
     value: r => r.student.completed ?? 0,
   },
   {
-    key: "nonCompleted", label: "Non Completed", excelWidth: 14,
+    key: "nonCompleted", label: "Remaining", excelWidth: 14,
     render: r => {
       const total = r.student.totalQuestions ?? 0;
       const done = r.student.completed ?? 0;
@@ -257,8 +260,8 @@ type ExportStatusFilter = "all" | "not-started" | "started" | "submitted";
 const STATUS_FILTER_OPTIONS: { value: ExportStatusFilter; label: string }[] = [
   { value: "all",         label: "All Statuses"  },
   { value: "not-started", label: "Not Started"   },
-  { value: "started",     label: "Started"       },
-  { value: "submitted",   label: "Submitted"     },
+  { value: "started",     label: "In Progress"   },
+  { value: "submitted",   label: "Completed"     },
 ];
 
 const PAGE_SIZES = [10, 25, 50];
@@ -295,6 +298,13 @@ export default function ReportExportModal({
   const [scaleToPct, setScaleToPct] = useState("");
   const PASS_THRESHOLD = 50;
   const [passFailFilter, setPassFailFilter] = useState<"all" | "pass" | "fail">("all");
+
+  // Columns picker → multi-select dropdown. Open state kept local to the
+  // modal since it never opens more than one column picker at a time.
+  const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
+  // Advanced-filter strip (Scale / Result / Page Layout / Section-Based)
+  // starts collapsed to keep the main toolbar minimal.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // ── Section-based grouping ──
   // When the assessment is section-based (Part A / Part B …) the Detailed
@@ -1142,91 +1152,229 @@ ${body}
 
         {/* ── Body ── */}
         <div className="flex-1 min-h-0 overflow-auto p-4 lmsd-scroll">
-          {/* Top control row: column picker | report options | export buttons */}
-          <div className="grid grid-cols-12 gap-3 mb-4">
-            {/* Columns — narrowed to col-span-6 (from 7) to make room for the
-                widened Report Options card that now houses the status filter
-                in addition to the mode radios. 6 + 3 + 3 = 12. */}
-            <div className="col-span-12 lg:col-span-6 border border-gray-200 rounded-lg p-3 bg-white">
-              <div className="text-[13px] font-semibold text-gray-900 mb-2.5">Select Columns to Include</div>
+          {/* ── Compact toolbar row — all essential controls on one line ──
+              The old 3-card layout (Columns + Report Options + Export
+              Options) is collapsed into a single horizontal strip. Column
+              picker becomes a "Columns ▾" dropdown (multi-select checkboxes
+              inside). Advanced filters (Scale, Result, Page Layout,
+              Section-Based) move behind an "Advanced ▾" toggle so they
+              only cost vertical space when the user asks for them. */}
+          <div className="mb-3 border border-gray-200 rounded-md bg-white p-2 flex flex-wrap items-center gap-2">
+            {/* Report Type — segmented control (2 buttons act as radios) */}
+            <div className="inline-flex rounded-md border border-gray-200 overflow-hidden flex-shrink-0">
+              {(["summary", "detailed"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setReportMode(m)}
+                  className={`px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                    reportMode === m
+                      ? "bg-gray-800 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  {m === "summary" ? "Summary" : "Detailed"}
+                </button>
+              ))}
+            </div>
 
-              {/* Student Summary checkboxes — laid out in a responsive grid
-                  (2 / 3 / 4 columns) so labels of different lengths line up
-                  in clean rows instead of wrapping unevenly. Each item is a
-                  light "chip" with a soft border + hover lift so the cluster
-                  reads as one coordinated control, not a loose pile. */}
-              <div className="text-[12px] font-semibold text-gray-700 mb-2">Student Summary (Overall)</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
-                {SUMMARY_COLUMNS.map(c => {
-                  const checked = selectedSummary.has(c.key);
-                  return (
-                    <label
-                      key={c.key}
-                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-[12px] cursor-pointer transition-colors ${
-                        checked
-                          ? "border-blue-200 bg-blue-50/60 text-gray-900"
-                          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleColumn("summary", c.key)}
-                        className="accent-blue-600 flex-shrink-0"
-                      />
-                      <span className="truncate">{c.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-
-              {/* Question-by-Question checkboxes — same grid treatment. Only
-                  rendered in Detailed mode; Summary mode hides them since
-                  they'd be inert there anyway. */}
-              {reportMode === "detailed" && (
+            {/* Columns — multi-select dropdown. Shows a compact "N selected"
+                pill; opening it reveals Student Summary checkboxes (and, in
+                Detailed mode, Question-by-Question checkboxes). Fixed
+                click-catcher overlay closes it when clicking anywhere else. */}
+            <div className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setColumnsDropdownOpen(v => !v)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-[12px] font-medium text-gray-700 hover:bg-gray-50"
+                title="Choose which columns appear in the report"
+              >
+                Columns
+                <span className="text-gray-500 tabular-nums">
+                  ({selectedSummary.size}{reportMode === "detailed" ? ` + ${selectedDetail.size}` : ""})
+                </span>
+                <ChevronDown size={12} className={`text-gray-400 transition-transform ${columnsDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+              {columnsDropdownOpen && (
                 <>
-                  <div className="text-[12px] font-semibold text-gray-700 mb-2">Question-by-Question Details</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                    {DETAIL_COLUMNS.map(c => {
-                      const checked = selectedDetail.has(c.key);
-                      return (
-                        <label
-                          key={c.key}
-                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-[12px] cursor-pointer transition-colors ${
-                            checked
-                              ? "border-blue-200 bg-blue-50/60 text-gray-900"
-                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleColumn("detail", c.key)}
-                            className="accent-blue-600 flex-shrink-0"
-                          />
-                          <span className="truncate">{c.label}</span>
-                        </label>
-                      );
-                    })}
+                  <div className="fixed inset-0 z-[1990]" onClick={() => setColumnsDropdownOpen(false)} aria-hidden />
+                  <div className="absolute z-[1991] mt-1.5 min-w-[320px] max-h-[60vh] overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg p-2 left-0">
+                    <div className="flex items-center justify-between mb-1.5 px-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Student Summary</span>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <button type="button" onClick={() => setSelectedSummary(new Set(SUMMARY_COLUMNS.map(c => c.key)))} className="text-blue-600 hover:underline">All</button>
+                        <button type="button" onClick={() => setSelectedSummary(new Set())} className="text-gray-500 hover:underline">None</button>
+                      </div>
+                    </div>
+                    <div className="space-y-0.5 mb-2">
+                      {SUMMARY_COLUMNS.map(c => {
+                        const checked = selectedSummary.has(c.key);
+                        return (
+                          <label key={c.key} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleColumn("summary", c.key)}
+                              className="accent-blue-600 flex-shrink-0"
+                            />
+                            <span>{c.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {reportMode === "detailed" && (
+                      <>
+                        <div className="flex items-center justify-between mb-1.5 px-1 mt-2 border-t border-gray-100 pt-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Question Details</span>
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <button type="button" onClick={() => setSelectedDetail(new Set(DETAIL_COLUMNS.map(c => c.key)))} className="text-blue-600 hover:underline">All</button>
+                            <button type="button" onClick={() => setSelectedDetail(new Set())} className="text-gray-500 hover:underline">None</button>
+                          </div>
+                        </div>
+                        <div className="space-y-0.5">
+                          {DETAIL_COLUMNS.map(c => {
+                            const checked = selectedDetail.has(c.key);
+                            return (
+                              <label key={c.key} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleColumn("detail", c.key)}
+                                  className="accent-blue-600 flex-shrink-0"
+                                />
+                                <span>{c.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </>
               )}
             </div>
 
-            {/* Report Options — now also houses the status filter so the
-                user can scope what gets previewed AND exported. */}
-            <div className="col-span-6 lg:col-span-3 border border-gray-200 rounded-lg p-3 bg-white">
-              <div className="text-[13px] font-semibold text-gray-900 mb-2">Report Options</div>
-              <label className="flex items-center gap-2 text-[12.5px] text-gray-700 cursor-pointer mb-1.5">
-                <input type="radio" name="reportMode" value="detailed" checked={reportMode === "detailed"} onChange={() => setReportMode("detailed")} className="accent-blue-600" />
-                Detailed Report
-              </label>
-              {/* Section-Based grouping — only offered for section-based tests.
-                  When checked, the Detailed Report shows each section (Part A /
-                  Part B …) as its own table instead of one flat list. Indented
-                  so it reads as a modifier of "Detailed Report". */}
+            {/* Status filter — compact dropdown */}
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as ExportStatusFilter)}
+              className="border border-gray-200 rounded-md px-2 py-1.5 text-[12px] text-gray-700 bg-white outline-none focus:border-indigo-400 flex-shrink-0"
+              title="Filter by student status"
+            >
+              {STATUS_FILTER_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+
+            {/* Search — grows to fill the remaining space in the row */}
+            <div className="relative flex-1 min-w-[180px] max-w-[280px]">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search name or email…"
+                className="w-full border border-gray-200 rounded-md pl-7 pr-2 py-1.5 text-[12px] text-gray-700 outline-none focus:border-indigo-400"
+              />
+            </div>
+
+            {/* Advanced ▾ — reveals the compact secondary filter row below */}
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(v => !v)}
+              className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-md border text-[12px] font-medium flex-shrink-0 transition-colors ${
+                advancedOpen
+                  ? "border-gray-300 bg-gray-100 text-gray-800"
+                  : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
+              title="Scale · Result · Page Layout · Section-Based"
+            >
+              Advanced
+              <ChevronDown size={12} className={`text-gray-500 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {/* Export buttons — right-aligned, same row */}
+            <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+              <button type="button" onClick={exportPrint} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50">
+                <Printer size={12} /> Print
+              </button>
+              <button type="button" onClick={exportExcel} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-white bg-emerald-600 hover:bg-emerald-700">
+                <FileText size={12} /> Excel
+              </button>
+              <button type="button" onClick={exportPdf} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-white bg-rose-600 hover:bg-rose-700">
+                <FileText size={12} /> PDF
+              </button>
+            </div>
+          </div>
+
+          {/* ── Advanced filters strip — collapsible, compact ────────────── */}
+          {advancedOpen && (
+            <div className="mb-3 border border-gray-200 rounded-md bg-gray-50/60 p-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {/* Scale % range */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-gray-600">Scale %:</span>
+                <input
+                  type="number" min={0} max={100} step={1} inputMode="numeric"
+                  value={scaleFromPct}
+                  onChange={e => setScaleFromPct(e.target.value)}
+                  placeholder="From"
+                  aria-label="Scale from percent"
+                  className="w-16 border border-gray-200 rounded-md px-1.5 py-1 text-[12px] text-gray-700 bg-white outline-none focus:border-indigo-400"
+                />
+                <span className="text-[11px] text-gray-400">to</span>
+                <input
+                  type="number" min={0} max={100} step={1} inputMode="numeric"
+                  value={scaleToPct}
+                  onChange={e => setScaleToPct(e.target.value)}
+                  placeholder="To"
+                  aria-label="Scale to percent"
+                  className="w-16 border border-gray-200 rounded-md px-1.5 py-1 text-[12px] text-gray-700 bg-white outline-none focus:border-indigo-400"
+                />
+              </div>
+
+              {/* Result */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-gray-600">Result:</span>
+                <select
+                  value={passFailFilter}
+                  onChange={e => setPassFailFilter(e.target.value as "all" | "pass" | "fail")}
+                  className="border border-gray-200 rounded-md px-2 py-1 text-[12px] text-gray-700 bg-white outline-none focus:border-indigo-400"
+                >
+                  <option value="all">All</option>
+                  <option value="pass">Pass ≥ {PASS_THRESHOLD}%</option>
+                  <option value="fail">Fail &lt; {PASS_THRESHOLD}%</option>
+                </select>
+              </div>
+
+              {/* Page Layout */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-gray-600">Layout:</span>
+                <select
+                  value={pageLayout}
+                  onChange={e => setPageLayout(e.target.value as PageLayoutMode)}
+                  className="border border-gray-200 rounded-md px-2 py-1 text-[12px] text-gray-700 bg-white outline-none focus:border-indigo-400"
+                >
+                  <option value="flow">Flow as is</option>
+                  <option value="one">One per page</option>
+                  <option value="custom">Custom N per page</option>
+                </select>
+                {pageLayout === "custom" && (
+                  <input
+                    type="number" min={1} max={50}
+                    value={customStudentsPerPage}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      if (!Number.isNaN(n)) setCustomStudentsPerPage(Math.max(1, Math.min(50, n)));
+                    }}
+                    className="w-14 border border-gray-200 rounded-md px-1.5 py-1 text-[12px] text-gray-700 bg-white outline-none focus:border-indigo-400"
+                    aria-label="Custom students per page"
+                  />
+                )}
+              </div>
+
+              {/* Section-Based grouping — shown only for section-based tests */}
               {isSectionBased && (
-                <label className={`flex items-center gap-2 text-[12px] cursor-pointer mb-1.5 ml-6 ${reportMode === "detailed" ? "text-gray-700" : "text-gray-400"}`}>
+                <label className={`flex items-center gap-1.5 text-[12px] cursor-pointer ${reportMode === "detailed" ? "text-gray-700" : "text-gray-400"}`}>
                   <input
                     type="checkbox"
                     checked={groupBySection}
@@ -1234,180 +1382,11 @@ ${body}
                     disabled={reportMode !== "detailed"}
                     className="accent-blue-600"
                   />
-                  Section Based <span className="text-gray-400">(Part A / Part B tables)</span>
+                  Section-Based tables (Detailed only)
                 </label>
               )}
-              <label className="flex items-center gap-2 text-[12.5px] text-gray-700 cursor-pointer mb-3">
-                <input type="radio" name="reportMode" value="summary" checked={reportMode === "summary"} onChange={() => setReportMode("summary")} className="accent-blue-600" />
-                Summary Report
-              </label>
-              {/* Status filter — sits below the radios, separated by a thin
-                  border so it's visually distinct from the mode selector but
-                  still part of the same Options card. Label color matches
-                  "Report Options" (gray-900, semibold) so the two headings
-                  read as siblings instead of label / sublabel. */}
-              <div className="border-t border-gray-100 pt-2">
-                <label htmlFor="export-status-filter" className="block text-[13px] font-semibold text-gray-900 mb-1">
-                  Filter by status:
-                </label>
-                <select
-                  id="export-status-filter"
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value as ExportStatusFilter)}
-                  className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-[12.5px] text-gray-700 bg-white outline-none focus:border-indigo-400"
-                >
-                  {STATUS_FILTER_OPTIONS.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Search by name / email — mirrors the dashboard's Reports view
-                  filter. Applied to preview AND every exporter via
-                  `filteredRows`, so the file the user downloads matches what
-                  they see in the modal. */}
-              <div className="border-t border-gray-100 pt-2 mt-2">
-                <label htmlFor="export-search" className="block text-[13px] font-semibold text-gray-900 mb-1">
-                  Search:
-                </label>
-                <input
-                  id="export-search"
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Name or email…"
-                  className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-[12.5px] text-gray-700 bg-white outline-none focus:border-indigo-400"
-                />
-              </div>
-
-              {/* Scale percentage range — both bounds optional. Either alone
-                  means "≥ From" or "≤ To". Empty = filter off. */}
-              <div className="border-t border-gray-100 pt-2 mt-2">
-                <label className="block text-[13px] font-semibold text-gray-900 mb-1">
-                  Scale (%):
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={1}
-                    inputMode="numeric"
-                    value={scaleFromPct}
-                    onChange={e => setScaleFromPct(e.target.value)}
-                    placeholder="From"
-                    aria-label="Scale from percent"
-                    className="border border-gray-200 rounded-md px-2 py-1.5 text-[12.5px] text-gray-700 bg-white outline-none focus:border-indigo-400 w-full"
-                  />
-                  <span className="text-[12px] text-gray-400">to</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={1}
-                    inputMode="numeric"
-                    value={scaleToPct}
-                    onChange={e => setScaleToPct(e.target.value)}
-                    placeholder="To"
-                    aria-label="Scale to percent"
-                    className="border border-gray-200 rounded-md px-2 py-1.5 text-[12.5px] text-gray-700 bg-white outline-none focus:border-indigo-400 w-full"
-                  />
-                </div>
-              </div>
-
-              {/* Result — pass / fail at the 50% threshold. Ungraded rows
-                  drop out of both subsets, same rule as the dashboard. */}
-              <div className="border-t border-gray-100 pt-2 mt-2">
-                <label htmlFor="export-passfail-filter" className="block text-[13px] font-semibold text-gray-900 mb-1">
-                  Result:
-                </label>
-                <select
-                  id="export-passfail-filter"
-                  value={passFailFilter}
-                  onChange={e => setPassFailFilter(e.target.value as "all" | "pass" | "fail")}
-                  className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-[12.5px] text-gray-700 bg-white outline-none focus:border-indigo-400"
-                >
-                  <option value="all">All Results</option>
-                  <option value="pass">Pass (≥ {PASS_THRESHOLD}%)</option>
-                  <option value="fail">Fail (&lt; {PASS_THRESHOLD}%)</option>
-                </select>
-              </div>
-
-              {/* Page Layout — controls how Print / PDF detailed exports
-                  arrange students across pages. Excel and the in-modal
-                  preview ignore this (Excel has no pages; the preview is a
-                  single scrollable card). */}
-              <div className="border-t border-gray-100 pt-2 mt-2">
-                <div className="text-[13px] font-semibold text-gray-900 mb-1.5">Page Layout:</div>
-                <label className="flex items-center gap-2 text-[12.5px] text-gray-700 cursor-pointer mb-1">
-                  <input
-                    type="radio"
-                    name="pageLayout"
-                    value="one"
-                    checked={pageLayout === "one"}
-                    onChange={() => setPageLayout("one")}
-                    className="accent-blue-600"
-                  />
-                  Per page per student
-                </label>
-                <label className="flex items-center gap-2 text-[12.5px] text-gray-700 cursor-pointer mb-1">
-                  <input
-                    type="radio"
-                    name="pageLayout"
-                    value="flow"
-                    checked={pageLayout === "flow"}
-                    onChange={() => setPageLayout("flow")}
-                    className="accent-blue-600"
-                  />
-                  Flow as it is
-                </label>
-                <label className="flex items-center gap-2 text-[12.5px] text-gray-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="pageLayout"
-                    value="custom"
-                    checked={pageLayout === "custom"}
-                    onChange={() => setPageLayout("custom")}
-                    className="accent-blue-600"
-                  />
-                  Custom:
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={customStudentsPerPage}
-                    onChange={(e) => {
-                      const n = parseInt(e.target.value, 10);
-                      if (!Number.isNaN(n)) setCustomStudentsPerPage(Math.max(1, Math.min(50, n)));
-                    }}
-                    // Focusing or editing the number implies the user wants
-                    // the custom mode — flip the radio so they don't have to
-                    // click it separately.
-                    onFocus={() => setPageLayout("custom")}
-                    disabled={pageLayout !== "custom"}
-                    className="w-14 border border-gray-200 rounded-md px-1.5 py-0.5 text-[12.5px] text-gray-700 bg-white outline-none focus:border-indigo-400 disabled:bg-gray-50 disabled:text-gray-400"
-                  />
-                  <span className="text-gray-500 text-[11.5px]">per page</span>
-                </label>
-              </div>
             </div>
-
-            {/* Export Options (top — duplicated in footer per the screenshots) */}
-            <div className="col-span-6 lg:col-span-3 border border-gray-200 rounded-lg p-3 bg-white">
-              <div className="text-[13px] font-semibold text-gray-900 mb-2">Export Options</div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={exportPrint} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-[12.5px] font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50">
-                  <Printer size={14} /> Print
-                </button>
-                <button type="button" onClick={exportExcel} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-[12.5px] font-medium text-white bg-blue-600 hover:bg-blue-700">
-                  <FileText size={14} /> Excel
-                </button>
-                <button type="button" onClick={exportPdf} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-[12.5px] font-medium text-white bg-rose-600 hover:bg-rose-700">
-                  <FileText size={14} /> PDF
-                </button>
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* ── Preview ── */}
           <div className="border border-gray-200 rounded-lg bg-white">

@@ -65,26 +65,55 @@ export function ExerciseCells({ item, index }: { item: any; index: number }) {
 //   9. Actions            — View Details
 export function StudentCells({ item, index, selectedExercise, onDetails }: { item: any; index: number; selectedExercise: any; onDetails: () => void }) {
   const p = item.exerciseProgress || {};
-  const total = p.overallScore || 0;
-  const max = p.totalMaxScore || selectedExercise?.totalPoints || 0;
+
+  // Marks = the exercise TOTAL, summed from the per-question attempts the
+  // payload already carries. Deliberately NOT read straight off
+  // `overallScore`: per-question scores are stored as STRINGS, so the
+  // server-side reduce that builds `overallScore` used to concatenate them
+  // ("00555005550" where the sum is 30). That is fixed server-side, but
+  // summing here means the column is correct even against an older server or
+  // a response cached before the fix — and `Number()` on an already-glued
+  // string cannot recover it, so a cast alone would not be enough.
+  const attempts: any[] = Array.isArray(p.questionAttempts) ? p.questionAttempts : [];
+  const total = attempts.length
+    ? attempts.reduce((sum, q) => sum + (Number(q?.score) || 0), 0)
+    : Number(p.overallScore) || 0;
+  // Denominator comes from `totalMaxScore`, which the server computes from the
+  // exercise definition. NOT summed from the attempts: their `totalScore` is
+  // null on stored records, so a sum would be 0 — and worse, a partially
+  // populated set would produce a truthy but wrong max.
+  const max = Number(p.totalMaxScore) || Number(selectedExercise?.totalPoints) || 0;
   const scorePct = max > 0 ? (total / max) * 100 : 0;
   const band = bandOf(scorePct);
   const noAttempt = max === 0 || total === 0;
 
-  // Total / attended question counts. The server exposes them under several
-  // legacy field names, so we probe a few — first hit wins — and fall back
-  // to the exercise's total when nothing per-student is available.
+  // Total / attended question counts. `questionsTotal` / `questionsAttempted`
+  // are what this endpoint actually returns — the older probe list here
+  // (attemptedQuestions / attendedQuestions / completedCount / …) matched
+  // none of them, so Attended rendered 0 for every student even when all ten
+  // questions had been answered. The legacy names are kept as fallbacks for
+  // any other caller still shaped that way, and the per-question array is the
+  // last resort since it is present whenever progress is included.
   const totalQuestions =
-    Number(p.totalQuestions ?? selectedExercise?.totalQuestions ?? selectedExercise?.questions?.length ?? 0) || 0;
+    Number(
+      p.questionsTotal
+      ?? p.totalQuestions
+      ?? selectedExercise?.totalQuestions
+      ?? selectedExercise?.questions?.length
+      ?? attempts.length
+      ?? 0,
+    ) || 0;
   const attendedQuestions =
     Number(
-      p.attemptedQuestions
+      p.questionsAttempted
+      ?? p.attemptedQuestions
       ?? p.attendedQuestions
       ?? p.completedCount
       ?? p.completedQuestions
       ?? p.answeredQuestions
-      ?? (typeof p.completionPercentage === "number" && totalQuestions > 0
-            ? Math.round((p.completionPercentage / 100) * totalQuestions)
+      ?? (attempts.length ? attempts.filter(q => q?.status || q?.submittedAt || Number(q?.attempts) > 0).length : undefined)
+      ?? (Number(p.completionPercentage) > 0 && totalQuestions > 0
+            ? Math.round((Number(p.completionPercentage) / 100) * totalQuestions)
             : 0),
     ) || 0;
 
@@ -131,8 +160,11 @@ export function StudentCells({ item, index, selectedExercise, onDetails }: { ite
       <td className={BODY}>
         <span className="truncate block text-subtle" title={item.email || undefined}>{item.email || "—"}</span>
       </td>
-      <td className={`${BODY} text-right tabular-nums`}>{totalQuestions}</td>
-      <td className={`${BODY} text-right tabular-nums`}>{attendedQuestions}</td>
+      {/* Attended — attempted/total in one cell (0/10, 5/10, 10/10), matching
+          the scored/max shape of Marks beside it. */}
+      <td className={`${BODY} text-right tabular-nums`}>
+        {attendedQuestions}<span className="text-faint">/{totalQuestions}</span>
+      </td>
       <td className={`${BODY} text-right tabular-nums`}>
         {noAttempt
           ? "—"

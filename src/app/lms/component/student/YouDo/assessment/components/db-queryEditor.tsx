@@ -1,5 +1,7 @@
 "use client";
 import { getToken } from "@/lib/session";
+import { useAttemptSession } from "../useAttemptSession";
+import ConnectionStatusBanner from "../ConnectionStatusBanner";
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useExamLiveEmitter } from "./useExamLiveEmitter"
@@ -125,6 +127,8 @@ interface QuestionType {
     sampleResult?: any
     questionType?: string
     isDatabase?: boolean
+    // Code Setup — Starter Code shown to students when an attempt begins.
+    starterCode?: string
 }
 interface DBQueryEditorProps {
     exercise?: any
@@ -2558,14 +2562,18 @@ export default function DBQueryEditorPage({
     const [currentTheme, setCurrentTheme] = useState<string>(theme)
     const [databases, setDatabases] = useState<BrowserDatabase[]>([])
     const [currentDatabase, setCurrentDatabase] = useState<BrowserDatabase | null>(null)
-    const [queryTabs, setQueryTabs] = useState<QueryTab[]>([
-        {
-            id: 'tab-1',
-            name: 'Query 1',
-            query: `-- Write your SQL query here\n-- Example: SELECT * FROM employees;`,
-            isDirty: false
-        }
-    ])
+    const [queryTabs, setQueryTabs] = useState<QueryTab[]>(() => {
+        // Code Setup's starterCode takes priority over the generic placeholder.
+        const starter = (exercise?.questions || defaultQuestions || [])[initialQuestionIndex]?.starterCode;
+        return [
+            {
+                id: 'tab-1',
+                name: 'Query 1',
+                query: starter || `-- Write your SQL query here\n-- Example: SELECT * FROM employees;`,
+                isDirty: false
+            }
+        ];
+    })
     const [activeTab, setActiveTab] = useState('tab-1')
     const [queryResults, setQueryResults] = useState<Record<string, ExecutionResult>>({})
     const [queryHistory, setQueryHistory] = useState<QueryHistoryItem[]>([])
@@ -2577,6 +2585,20 @@ export default function DBQueryEditorPage({
     const [toasts, setToasts] = useState<ToastNotification[]>([])
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(initialQuestionIndex)
     const [isSubmitting, setIsSubmitting] = useState(false)
+
+    // Recovery & Resume — idempotent /start, offline queue for the
+    // /submit-multiple-files writes. Skipped when embedded.
+    const attemptSession = useAttemptSession({
+      exerciseId: (exercise as any)?._id || "",
+      courseId: courseId || "",
+      nodeId: nodeId || "",
+      nodeType: nodeType || "topics",
+      subcategory: subcategory || "",
+      category: "You_Do",
+      totalQuestions: Array.isArray(defaultQuestions) ? defaultQuestions.length : undefined,
+      durationMinutesHint: (exercise as any)?.exerciseInformation?.totalDuration || undefined,
+      enabled: !embedded && !!((exercise as any)?._id) && !!courseId,
+    });
     const [userAttempts, setUserAttempts] = useState<{ [key: string]: number }>({})
     const [isLoadingPrevious, setIsLoadingPrevious] = useState(false)
     const [previousAttempts, setPreviousAttempts] = useState<number>(0)
@@ -2600,7 +2622,7 @@ export default function DBQueryEditorPage({
         toast.error(`${reason} — assessment locked.`, { toastId: 'sql-term' });
         try {
             const token = getToken() || localStorage.getItem('token') || '';
-            await fetch('https://lmsserver-yeve.onrender.com/exercise/lock', {
+            await fetch('http://localhost:5533/exercise/lock', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
@@ -3129,8 +3151,14 @@ export default function DBQueryEditorPage({
                 }
             }
 
+            // Enqueue via recovery hook for offline safety, then direct
+            // axios call for immediate response.
+            if (!embedded && attemptSession.attempt && currentQuestion?._id) {
+              try { await attemptSession.saveAnswer({ questionId: currentQuestion._id, body: payload, endpoint: '/courses/answers/submit-multiple-files' }); }
+              catch { /* fall through */ }
+            }
             const response = await axios.post(
-                'https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files',
+                `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit-multiple-files`,
                 payload,
                 {
                     headers: {
@@ -3166,6 +3194,8 @@ export default function DBQueryEditorPage({
                     }, 1500)
                 } else {
                     stopRecording(); // stop proctoring recording when all questions completed
+                    // Recovery hook: mark attempt terminal on last-question completion.
+                    if (!embedded) { try { await attemptSession.submit({ submitType: "USER" }); } catch {} }
                     showToast({
                         type: 'success',
                         title: 'All Questions Completed',
@@ -3208,7 +3238,7 @@ export default function DBQueryEditorPage({
             }
 
             const response = await fetch(
-                `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
+                `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -3302,7 +3332,7 @@ export default function DBQueryEditorPage({
             }
 
             const response = await fetch(
-                `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
+                `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -3394,10 +3424,11 @@ export default function DBQueryEditorPage({
         if (currentQuestionIndex > 0) {
             live.questionChanged(questions[currentQuestionIndex]?._id || null, questions[currentQuestionIndex - 1]?._id || null)
             setCurrentQuestionIndex(prev => prev - 1)
+            const prevStarter = questions[currentQuestionIndex - 1]?.starterCode;
             setQueryTabs([{
                 id: 'tab-1',
                 name: `Query ${currentQuestionIndex}`,
-                query: `-- Question ${currentQuestionIndex}: ${questions[currentQuestionIndex - 1]?.title || 'Previous Question'}\n\n`,
+                query: prevStarter || `-- Question ${currentQuestionIndex}: ${questions[currentQuestionIndex - 1]?.title || 'Previous Question'}\n\n`,
                 isDirty: false
             }])
             setActiveTab('tab-1')
@@ -3412,10 +3443,11 @@ export default function DBQueryEditorPage({
         if (currentQuestionIndex < questions.length - 1) {
             live.questionChanged(questions[currentQuestionIndex]?._id || null, questions[currentQuestionIndex + 1]?._id || null)
             setCurrentQuestionIndex(prev => prev + 1)
+            const nextStarter = questions[currentQuestionIndex + 1]?.starterCode;
             setQueryTabs([{
                 id: 'tab-1',
                 name: `Query ${currentQuestionIndex + 2}`,
-                query: `-- Question ${currentQuestionIndex + 2}: ${questions[currentQuestionIndex + 1]?.title || 'Next Question'}\n\n`,
+                query: nextStarter || `-- Question ${currentQuestionIndex + 2}: ${questions[currentQuestionIndex + 1]?.title || 'Next Question'}\n\n`,
                 isDirty: false
             }])
             setActiveTab('tab-1')
@@ -3515,6 +3547,8 @@ export default function DBQueryEditorPage({
                 : 'bg-white text-gray-900 light-theme'
                 }`}
         >
+            {/* Recovery banner — hidden in embedded mode. */}
+            {!embedded && <ConnectionStatusBanner netStatus={attemptSession.netStatus} queueCount={attemptSession.queueCount} />}
             <ToastContainer
                 position="bottom-right"
                 autoClose={3000}

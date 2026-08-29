@@ -9,6 +9,13 @@
 //   2. router.push / router.replace — caught via history.pushState/replaceState patch
 //   3. Browser back / forward — caught via popstate
 //
+// PATHNAME changes only. A same-pathname transition that only rewrites the
+// query string is in-page state sync (the resources page mirrors its selected
+// node / tab / subcategory into the URL on every syllabus click) — the page
+// stays mounted and its sections carry their own loaders. Painting the global
+// overlay for those made every syllabus click flash the already-visible page,
+// then cover it with "Loading… Just a moment" seconds later.
+//
 // STOP has two layers:
 //   A) usePathname/useSearchParams change → the new route committed. Fast-path:
 //      if nothing is loading right now, hide immediately.
@@ -160,13 +167,27 @@ export function NavigationLoaderProvider({ children }: { children: React.ReactNo
 
     const observer = new MutationObserver(scheduled);
     observer.observe(document.body, { childList: true, subtree: true });
-    // Prime once immediately.
-    rescan();
+    // Prime once, deferred to a microtask. installDomObserver can be called
+    // synchronously from patchedPushState, which itself may run inside a
+    // useInsertionEffect (some libraries call router.push there). Scheduling
+    // a state update from inside useInsertionEffect throws — deferring the
+    // first rescan lets the effect finish before setDomBusyTick fires.
+    let primed: ReturnType<typeof queueMicrotask> | number | null = null;
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(() => {
+        if (domObserverActiveRef.current) rescan();
+      });
+    } else {
+      primed = setTimeout(() => {
+        if (domObserverActiveRef.current) rescan();
+      }, 0) as unknown as number;
+    }
 
     // Stash the cleanup on the ref so we can call it from uninstallDomObserver.
     (domObserverActiveRef as any).cleanup = () => {
       observer.disconnect();
       if (debounce) clearTimeout(debounce);
+      if (primed !== null) clearTimeout(primed as number);
       domObserverActiveRef.current = false;
       (domObserverActiveRef as any).cleanup = null;
     };
@@ -369,9 +390,9 @@ export function NavigationLoaderProvider({ children }: { children: React.ReactNo
       try { url = new URL(anchor.href, window.location.href); } catch { return; }
       if (url.origin !== window.location.origin) return;
 
-      const samePath = url.pathname === window.location.pathname;
-      const sameQuery = url.search === window.location.search;
-      if (samePath && sameQuery) return;
+      // Query-only changes on the same pathname are in-page state sync — the
+      // page stays mounted, so its own section loaders are the right feedback.
+      if (url.pathname === window.location.pathname) return;
 
       start();
     };
@@ -386,7 +407,8 @@ export function NavigationLoaderProvider({ children }: { children: React.ReactNo
       if (nextUrl != null) {
         try {
           const target = new URL(String(nextUrl), window.location.href);
-          if (target.pathname !== window.location.pathname || target.search !== window.location.search) {
+          // Pathname change only — query-only rewrites are in-page state sync.
+          if (target.pathname !== window.location.pathname) {
             start();
           }
         } catch { /* noop */ }
@@ -398,7 +420,8 @@ export function NavigationLoaderProvider({ children }: { children: React.ReactNo
       if (nextUrl != null) {
         try {
           const target = new URL(String(nextUrl), window.location.href);
-          if (target.pathname !== window.location.pathname || target.search !== window.location.search) {
+          // Pathname change only — query-only rewrites are in-page state sync.
+          if (target.pathname !== window.location.pathname) {
             start();
           }
         } catch { /* noop */ }
@@ -418,8 +441,12 @@ export function NavigationLoaderProvider({ children }: { children: React.ReactNo
     //     onLocationChange) so a router.push followed by a legitimate back-nav
     //     is not mis-detected as a no-op pop.
     const onPopState = () => {
-      const nextHref = window.location.pathname + window.location.search;
-      if (nextHref === lastCommittedHrefRef.current) return;
+      // Same rule as push/replace: only a PATHNAME change is a page navigation.
+      // Back/forward between query states of the same page (node/tab history
+      // on the resources page) repaints in place with section-local loaders.
+      const nextPath = window.location.pathname;
+      const lastPath = lastCommittedHrefRef.current.split('?')[0];
+      if (nextPath === lastPath) return;
       start();
     };
     window.addEventListener('popstate', onPopState);

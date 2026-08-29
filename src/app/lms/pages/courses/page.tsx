@@ -38,6 +38,12 @@ import { StaffLayout } from '../../component/stafflayout/staff-layout';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERMISSION_IDS } from '@/components/permissions';
 
+// Per-course progress comes from the student dashboard's own metrics engine —
+// see the note on computeCourseProgress below for what it replaced.
+import { useCurrentUserQuery } from '@/queries/auth';
+import { useStudentAnalyticsQuery, getUserSpecificAnalytics } from '@/queries/studentDashboard';
+import { buildDashboard, idStr as metricsIdStr } from '../studentdashboard/_lib/metrics';
+
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const T = {
   orange: '#F97316', orangeDark: '#EA580C', orangeGlow: 'rgba(249,115,22,0.20)', orangeLight: 'rgba(249,115,22,0.08)',
@@ -155,8 +161,15 @@ const countStudents = (course: Course): number => {
   return set.size;
 };
 
-// Per-course progress from the signed-in student's own attempts — same formula
-// the dashboard/sidebar use, so numbers stay consistent across the app.
+// FALLBACK ONLY — used for the moment before the analytics read resolves.
+//
+// The comment here used to claim this was "the same formula the dashboard/
+// sidebar use". It was not: it reads only `answers.We_Do.practical`, ignores I
+// Do and You Do entirely, and blends on an assumed 4 questions per exercise. A
+// learner with resources opened and assessments attempted still scored 0% on
+// this card while the dashboard showed 15% for the same course. Real progress
+// now comes from buildDashboard() (see courseProgressFromMetrics below), which
+// is the engine the dashboard and Profile both read.
 const computeCourseProgress = (userCourse: any): number => {
   const practicals = userCourse?.answers?.We_Do?.practical;
   if (!practicals?.length) return 0;
@@ -219,7 +232,8 @@ const CourseCard = React.memo(function CourseCard({
   isDark: boolean;
   // Staff-only button gates. For students these are ignored; for staff/trainer
   // they hide (not disable) the Analytics/Manage CTAs when the permission is
-  // absent — the whole card remains clickable regardless.
+  // absent. Navigation happens ONLY through the CTA buttons — the card body
+  // itself is not clickable.
   canStaffAccessMaterials: boolean;
   canStaffViewSchedule: boolean;
 }) {
@@ -247,9 +261,8 @@ const CourseCard = React.memo(function CourseCard({
   if (viewMode === 'list') {
     return (
       <motion.div layout variants={cardV}
-        className="group flex items-center gap-4 p-3 rounded-2xl cursor-pointer"
+        className="group flex items-center gap-4 p-3 rounded-2xl"
         style={{ background: isDark ? T.dark.card : T.bg, border: `1px solid ${isDark ? T.dark.border : T.border}`, transition: 'border-color .15s, box-shadow .15s' }}
-        onClick={handleStart}
         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = T.orange; (e.currentTarget as HTMLElement).style.boxShadow = `0 4px 16px ${T.orangeGlow}`; handlePrefetch(); }}
         onFocus={handlePrefetch}
         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = isDark ? T.dark.border : T.border; (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
@@ -275,9 +288,12 @@ const CourseCard = React.memo(function CourseCard({
             <span className="flex items-center gap-1 text-[11px]" style={{ color: isDark ? T.dark.textMuted : T.textMuted }}>
               <Box className="w-3 h-3" style={{ color: isDark ? T.dark.textMuted : T.textMuted }} />{modules} Modules
             </span>
-            <span className="flex items-center gap-1 text-[11px]" style={{ color: isDark ? T.dark.textMuted : T.textMuted }}>
-              <Users className="w-3 h-3" style={{ color: isDark ? T.dark.textMuted : T.textMuted }} />{formatCount(studentCount)}
-            </span>
+            {/* Staff only — see the note on the grid card. */}
+            {!isStudent && (
+              <span className="flex items-center gap-1 text-[11px]" style={{ color: isDark ? T.dark.textMuted : T.textMuted }}>
+                <Users className="w-3 h-3" style={{ color: isDark ? T.dark.textMuted : T.textMuted }} />{formatCount(studentCount)}
+              </span>
+            )}
             {isStudent && started && (
               <span className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: T.orange }}>
                 <Activity className="w-3 h-3" />{progress}%
@@ -309,14 +325,13 @@ const CourseCard = React.memo(function CourseCard({
   // ── GRID view ──────────────────────────────────────────────────────────────
   return (
     <motion.div layout variants={cardV}
-      className="group flex flex-col rounded-2xl overflow-hidden cursor-pointer"
+      className="group flex flex-col rounded-2xl overflow-hidden"
       style={{
         background: isDark ? T.dark.card : T.bg,
         border: `1px solid ${isDark ? T.dark.border : T.border}`,
         boxShadow: '0 1px 3px rgba(16,24,40,0.06)',
         transition: 'transform .18s, box-shadow .18s, border-color .18s',
       }}
-      onClick={handleStart}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-4px)'; (e.currentTarget as HTMLElement).style.boxShadow = `0 14px 32px ${T.orangeGlow}`; (e.currentTarget as HTMLElement).style.borderColor = T.orange + '66'; handlePrefetch(); }}
       onFocus={handlePrefetch}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 3px rgba(16,24,40,0.06)'; (e.currentTarget as HTMLElement).style.borderColor = isDark ? T.dark.border : T.border }}
@@ -379,9 +394,13 @@ const CourseCard = React.memo(function CourseCard({
           <span className="flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: isDark ? T.dark.textSub : T.textSub }}>
             <Box className="w-3.5 h-3.5 flex-shrink-0" style={{ color: isDark ? T.dark.textSub : T.textSub }} />{modules} Modules
           </span>
-          <span className="flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: isDark ? T.dark.textSub : T.textSub }}>
-            <Users className="w-3.5 h-3.5 flex-shrink-0" style={{ color: isDark ? T.dark.textSub : T.textSub }} />{formatCount(studentCount)}
-          </span>
+          {/* Staff only. How many classmates are enrolled is a roster figure —
+              it tells a learner nothing about their own course. */}
+          {!isStudent && (
+            <span className="flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: isDark ? T.dark.textSub : T.textSub }}>
+              <Users className="w-3.5 h-3.5 flex-shrink-0" style={{ color: isDark ? T.dark.textSub : T.textSub }} />{formatCount(studentCount)}
+            </span>
+          )}
         </div>
 
         {/* Progress (students only — real data) */}
@@ -615,6 +634,36 @@ export default function CoursesPage() {
 
   // Per-course student progress + lastAccessed, keyed by courseId (from the signed-in user's data)
   const [progressMap, setProgressMap] = useState<Record<string, { progress: number; lastAccessed?: string | null }>>({});
+
+  // ── Real per-course progress ──────────────────────────────────────────────
+  // The same two reads the student dashboard opens with, off the same cache
+  // keys — arriving here from the dashboard costs no extra requests. Attendance
+  // and study time are deliberately NOT fetched: neither feeds a course's
+  // `progress`, and pulling them would fire one request per enrolled course to
+  // render a bar. buildDashboard tolerates both being empty.
+  const { data: meUser } = useCurrentUserQuery();
+  const perfStudentId = isStudent ? metricsIdStr((meUser as any)?.user?._id) : '';
+  const { data: perfAnalytics } = useStudentAnalyticsQuery(perfStudentId || null);
+
+  const perfCourses = useMemo(
+    () => (perfAnalytics && perfStudentId
+      ? getUserSpecificAnalytics(perfAnalytics, perfStudentId)?.userCourses || []
+      : []),
+    [perfAnalytics, perfStudentId],
+  );
+
+  const metricsProgress = useMemo(() => {
+    if (!isStudent || !meUser || !perfCourses.length) return null;
+    const model = buildDashboard(meUser, perfCourses, [], null);
+    const map: Record<string, { progress: number; lastAccessed?: string | null }> = {};
+    model.courses.forEach((c) => {
+      map[c.id] = {
+        progress: Math.max(0, Math.min(100, Math.round(c.progress))),
+        lastAccessed: c.lastAccessed ? c.lastAccessed.toISOString() : null,
+      };
+    });
+    return map;
+  }, [isStudent, meUser, perfCourses]);
 
 
   useEffect(() => {
@@ -876,7 +925,9 @@ export default function CoursesPage() {
           <motion.div key={`${viewMode}-${safePage}`} variants={containerV} initial="hidden" animate="visible"
             className={viewMode === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" : "space-y-3"}>
             {paginatedCourses.map(c => {
-              const p = progressMap[c._id];
+              // Metrics first; the localStorage map is only the pre-analytics
+              // fallback, and it under-reports (We Do practicals only).
+              const p = metricsProgress?.[c._id] ?? progressMap[c._id];
               return (
                 <CourseCard
                   key={c._id}

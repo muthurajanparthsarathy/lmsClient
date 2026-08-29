@@ -54,12 +54,10 @@ export function headersFor(
       { label: "#", align: "right" },
       { label: "Student Name" },
       { label: "Email" },
-      // Shortened: "Total Questions" was overflowing the narrow numeric
-      // column and bleeding into the next header ("Attended") in the live
-      // screenshot. "Questions" alone is unambiguous — the whole tab is a
-      // single exercise's students, so every row's Questions count is the
-      // total. Same rationale for "Marks" (was "Mark Scored").
-      { label: "Questions", align: "right" },
+      // Questions and Attended were two numeric columns whose only useful
+      // reading was the pair ("how many of how many"), so they are one
+      // "Attended" column showing `attempted/total` — 0/10, 5/10, 10/10.
+      // Same shape as Marks beside it, which reads scored/max.
       { label: "Attended", align: "right" },
       { label: "Marks", align: "right" },
       { label: "Grade" },

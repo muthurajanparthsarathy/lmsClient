@@ -281,7 +281,7 @@ const CombinedExerciseMixed = () => {
         const token = getToken() || localStorage.getItem('token') || '';
         if (!token) throw new Error('Authentication token not found');
 
-        const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exerciseId}`, {
+        const response = await fetch(`http://localhost:5533/exercise/${exerciseId}`, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         });
@@ -408,7 +408,7 @@ const CombinedExerciseMixed = () => {
       formData.append('status', 'attempted');
       formData.append('language', 'text');
 
-      const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+      const response = await fetch('http://localhost:5533/courses/answers/submit', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -457,7 +457,7 @@ const CombinedExerciseMixed = () => {
         lastModified: new Date().toISOString(), size: Buffer.byteLength(query, 'utf8'),
       }];
 
-      const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files', {
+      const response = await fetch('http://localhost:5533/courses/answers/submit-multiple-files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
@@ -526,7 +526,7 @@ const CombinedExerciseMixed = () => {
       formData.append('language', 'text');
       formData.append('isTestSubmission', 'true'); // ← THE KEY FLAG (Submit Exercise only)
 
-      const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+      const response = await fetch('http://localhost:5533/courses/answers/submit', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -951,7 +951,7 @@ const CombinedExerciseMixed = () => {
                   nodeName={nodeName}
                   nodeType={nodeType}
                   studentId={studentId}
-                  initialQuery={currentQuestion.solutions?.startedCode || `-- ${currentQuestion.description || 'Write your SQL query here'}\n\n`}
+                  initialQuery={currentQuestion.starterCode || currentQuestion.solutions?.startedCode || `-- ${currentQuestion.description || 'Write your SQL query here'}\n\n`}
                   theme="light"
                   showSubmitButton={true}
                   submitLabel="Submit Answer"

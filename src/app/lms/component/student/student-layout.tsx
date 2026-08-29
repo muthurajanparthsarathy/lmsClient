@@ -20,6 +20,9 @@ import { Poppins } from "next/font/google"
 import { StudentSidebar } from "./student-sidebar"
 import { cn } from "@/lib/utils"
 import { useSyncPermissions } from "@/hooks/useSyncPermissions"
+import { useQueryClient } from "@tanstack/react-query"
+import { clearAllStorage } from "@/lib/session"
+import { postLogout } from "@/apiServices/activityLog"
 
 // The SAME next/font declaration the admin shell makes (component/layout.tsx),
 // weight list included. It is not cosmetic duplication: without it this shell
@@ -45,6 +48,27 @@ interface StudentLayoutProps {
 export function StudentLayout({ children }: StudentLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const pathname = usePathname()
+  const queryClient = useQueryClient()
+
+  // Sign out. The rail's user menu only renders its Sign Out item when the host
+  // supplies this — the shell never did, so the menu opened with Profile alone
+  // and a student had no way out of the app short of clearing the browser.
+  //
+  // Same shape as the Super Admin rail's (SuperAdminSidebar): stamp the logout
+  // server-side first (best effort — postLogout swallows its own errors so a
+  // missing endpoint or a dead token can't strand the user in a signed-in
+  // shell), drop the query cache so no cached answer survives into the next
+  // account on this browser, then clearAllStorage() — the wipe documented for
+  // an explicit sign-out, as opposed to clearSession()'s narrow 401 path.
+  //
+  // A full document load rather than router.push: it guarantees every provider,
+  // store and in-flight request is torn down with the session.
+  const handleLogout = async () => {
+    await postLogout()
+    queryClient.clear()
+    clearAllStorage()
+    window.location.href = "/login"
+  }
 
   // Re-fetch this session's permissions on every student-shell mount so a
   // just-issued grant (from an admin) shows up without a re-login.
@@ -69,6 +93,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
     if (pathname.includes('/studentcalendar')) return 'studentcalendar'
     if (pathname.includes('/notifications')) return 'notifications'
     if (pathname.includes('/codinganalytics')) return 'codinganalytics'
+    if (pathname.includes('/feedback')) return 'feedback'
     if (pathname.includes('/courses')) return 'courses'
     if (pathname.includes('/dashboard')) return 'dashboard'
     if (pathname.includes('/profile')) return 'profile'
@@ -110,6 +135,7 @@ export function StudentLayout({ children }: StudentLayoutProps) {
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           activeRoute={activeRoute}
+          onLogout={handleLogout}
         />
       </aside>
 

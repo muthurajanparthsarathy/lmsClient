@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Check, Loader2, Send, Upload, Trash2, UserPlus, GraduationCap, ShieldCheck, ChevronDown, BookOpen, Building, Users, Briefcase, Building2, Layers, X } from "lucide-react";
+import { Check, Eye, EyeOff, Loader2, Send, Upload, Trash2, UserPlus, GraduationCap, ShieldCheck, ChevronDown, BookOpen, Building, Users, Briefcase, Building2, Layers, X } from "lucide-react";
 import { toast } from "sonner";
 import { User, Role, UserFormData, ApiPermission } from "./types";
 import { PermissionModal } from "@/app/lms/component/PermissionModal";
@@ -131,6 +131,10 @@ export const UserModals: React.FC<UserModalsProps> = ({
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [isGenderDropdownOpen, setIsGenderDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+  // Reveal toggle for the create-user password, mirroring the profile editor.
+  // Whoever types a password they are about to hand to someone else needs to
+  // be able to read it back before submitting.
+  const [showPassword, setShowPassword] = useState(false);
   const [isDegreeDropdownOpen, setIsDegreeDropdownOpen] = useState(false);
   const [isDepartmentDropdownOpen, setIsDepartmentDropdownOpen] = useState(false);
   const [isSemesterDropdownOpen, setIsSemesterDropdownOpen] = useState(false);
@@ -370,6 +374,12 @@ export const UserModals: React.FC<UserModalsProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Re-hide the password every time the modal opens. Leaving it revealed would
+  // carry one user's typed password onto the screen for the next one created.
+  useEffect(() => {
+    if (showAddUserModal) setShowPassword(false);
+  }, [showAddUserModal]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -871,15 +881,27 @@ export const UserModals: React.FC<UserModalsProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3.5 gap-y-2.5">
                     <div>
                       <Label className={LABEL_CLS}>Password</Label>
-                      <input
-                        name="password"
-                        type="password"
-                        value={newUser.password}
-                        onChange={handleInputChange}
-                        disabled={isSubmitting}
-                        className={INPUT_CLS}
-                        placeholder="Enter password..."
-                      />
+                      <div className="relative">
+                        <input
+                          name="password"
+                          type={showPassword ? "text" : "password"}
+                          value={newUser.password}
+                          onChange={handleInputChange}
+                          disabled={isSubmitting}
+                          className={`${INPUT_CLS} pr-9`}
+                          placeholder="Enter password..."
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(v => !v)}
+                          disabled={isSubmitting}
+                          tabIndex={-1}
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          className="absolute inset-y-0 right-0 grid w-9 place-items-center text-faint transition-colors hover:text-body disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </div>
                     <div ref={statusDropdownRef}>
                     <Label className={LABEL_CLS}>Status</Label>
@@ -1067,6 +1089,24 @@ export const UserModals: React.FC<UserModalsProps> = ({
                   <div><p className="text-2xs font-medium uppercase tracking-wide text-faint">Role</p><div className="mt-1"><StatusPill tone={roleTone(selectedUserForDetails.role)}>{selectedUserForDetails.role}</StatusPill></div></div>
                   <div><p className="text-2xs font-medium uppercase tracking-wide text-faint">Status</p><div className="mt-1"><StatusPill tone={selectedUserForDetails.status === "active" ? "success" : "danger"} dot>{selectedUserForDetails.status === "active" ? "Active" : "Inactive"}</StatusPill></div></div>
                   {selectedUserForDetails.clientName && (<div><p className="text-2xs font-medium uppercase tracking-wide text-faint">Client</p><p className="text-sm text-heading mt-0.5">{selectedUserForDetails.clientName}</p></div>)}
+                  {(() => {
+                    // Every service the user belongs to: the legacy single
+                    // field + the services[] array added by Reassign Users.
+                    const all = Array.from(new Set([
+                      selectedUserForDetails.serviceModel || "",
+                      ...(selectedUserForDetails.services || []).map((s) => s.serviceModel || ""),
+                    ].filter(Boolean)));
+                    return all.length > 0 ? (
+                      <div>
+                        <p className="text-2xs font-medium uppercase tracking-wide text-faint">Services</p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {all.map((n) => (
+                            <StatusPill key={n} tone="info" className="h-5 px-2 text-2xs">{n}</StatusPill>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null;
+                  })()}
                   {selectedUserForDetails.lastLogin && (<div><p className="text-2xs font-medium uppercase tracking-wide text-faint">Last Login</p><p className="text-sm text-heading mt-0.5">{selectedUserForDetails.lastLogin}</p></div>)}
                 </div>
               </div>

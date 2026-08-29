@@ -13,6 +13,8 @@ import CodeEditor from '@/app/lms/component/student/YouDo/assessment/components/
 import MCQ from '@/app/lms/component/student/YouDo/assessment/components/mcq';
 import FrontendCompiler from '@/app/lms/component/student/YouDo/assessment/components/frontendCompiler';
 import DbQueryEditor from '@/app/lms/component/student/YouDo/assessment/components/db-queryEditor';
+import { useAttemptSession } from '@/app/lms/component/student/YouDo/assessment/useAttemptSession';
+import ConnectionStatusBanner from '@/app/lms/component/student/YouDo/assessment/ConnectionStatusBanner';
 
 // ── Embedded wrappers (CSS transform traps position:fixed children) ──────────
 function EmbeddedMCQ(props: React.ComponentProps<typeof MCQ>) {
@@ -68,6 +70,21 @@ const CombinedExercise = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const autoSubmitFiredRef = useRef(false);
 
+  // Recovery & Resume — parent-owned lifecycle for Combined. Embedded
+  // MCQ / CodeEditor / FrontendCompiler / DbQueryEditor all skip their own
+  // hook via embedded=true and read the timer from `externalTimeLeft`.
+  const attemptSession = useAttemptSession({
+    exerciseId: exerciseId || "",
+    courseId: courseId || "",
+    nodeId: nodeId || "",
+    nodeType: nodeType || "topics",
+    subcategory: subcategory || "",
+    category: "You_Do",
+    totalQuestions: undefined, // resolved server-side from the exercise
+    durationMinutesHint: totalDuration || undefined,
+    enabled: !!exerciseId && !!courseId,
+  });
+
   // ── Fetch exercise ─────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchData = async () => {
@@ -77,7 +94,7 @@ const CombinedExercise = () => {
         const token = getToken() || localStorage.getItem('token') || '';
         if (!token) throw new Error('Authentication token not found');
 
-        const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exerciseId}`, {
+        const res = await fetch(`http://localhost:5533/exercise/${exerciseId}`, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         });
@@ -211,12 +228,14 @@ const CombinedExercise = () => {
       fd.append('language', 'text');
       fd.append('isTestSubmission', 'true');
 
-      const res = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+      const res = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: fd,
       });
       if (res.ok) {
+        // Recovery hook: mark attempt terminal.
+        try { await attemptSession.submit({ submitType: autoSubmitFiredRef.current ? "AUTO" : "USER" }); } catch {}
         setIsTestSubmitted(true);
         if (timerRef.current) clearInterval(timerRef.current);
         try {
@@ -337,6 +356,8 @@ const CombinedExercise = () => {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.pageBg, fontFamily: "'Poppins', -apple-system, sans-serif", color: T.textMain, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Recovery banner — parent-owned; embedded children hide theirs. */}
+      <ConnectionStatusBanner netStatus={attemptSession.netStatus} queueCount={attemptSession.queueCount} />
       <ToastContainer position="top-right" />
       {submitConfirmDialog}
 

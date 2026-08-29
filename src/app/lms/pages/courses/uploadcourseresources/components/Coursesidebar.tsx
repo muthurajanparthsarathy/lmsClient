@@ -138,9 +138,22 @@ const FontImport = () => (
     .sb-chip-btn { transition: background .15s, border-color .15s, color .15s; }
     .sb-chip-btn:hover { background: #f4f5f7 !important; border-color: #e5e7eb !important; color: #E8640C !important; }
     .sb-node-row { transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
-    /* One step darker than the gray canvas so hover stays visible on it. */
-    .sb-node-row:hover { background: #E9EBF0 !important; }
+    /* Unselected hover — subtle neutral tint (per syllabus-sidebar spec). */
+    .sb-node-row:hover { background: #F8FAFC !important; }
+    /* Selected row is a raised white pill (matches the main admin sidebar);
+       hover keeps it white so the pill doesn't strobe between fills. */
     .sb-node-row.sb-node-selected:hover { background: #ffffff !important; }
+    /* Slim tangerine active-rail on the left edge of the selected row. */
+    .sb-node-row.sb-node-selected::before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      background: #F97316;
+      border-radius: 0 3px 3px 0;
+    }
   `}</style>
 );
 
@@ -267,27 +280,29 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         onClick={select}
         style={{
           display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 10px 8px 0",
+          padding: "6px 10px 6px 0",
           marginLeft: 8 + indentPx,
           marginRight: 8,
           borderRadius: 10,
-          // Selected = white raised pill on the gray rail (app-wide pattern);
-          // the orange text/icon carries the accent.
+          // Selected pill — raised white on the gray rail (matches the main
+          // admin sidebar's selection idiom: white fill + hairline border +
+          // subtle shadow carry "selected"; the tangerine still appears in
+          // the icon/text tone and the slim ::before rail).
           background: isSelected ? "#ffffff" : "transparent",
-          border: `1px solid ${isSelected ? "#E4E7EC" : "transparent"}`,
-          boxShadow: isSelected ? "0 1px 2px rgba(16,24,40,.06)" : "none",
+          border: isSelected ? "1px solid #E4E7EC" : "1px solid transparent",
+          boxShadow: isSelected ? "0 1px 2px rgba(15, 23, 42, 0.04)" : "none",
           cursor: "pointer",
           userSelect: "none",
           position: "relative",
         }}
       >
-        {/* Vertical tree line */}
+        {/* Vertical tree line — light gray guide beside child syllabus items. */}
         {depth > 0 && (
           <span style={{
             position: "absolute",
             top: 0, bottom: 0, width: 1,
             left: -indentPx + 4,
-            background: T.border,
+            background: "#E2E8F0",
           }} />
         )}
 
@@ -318,8 +333,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             </button>
           ) : (
             <span style={{
-              width: 4, height: 4, borderRadius: "50%",
-              background: isSelected ? T.acc : T.textGhost,
+              width: isSelected ? 6 : 4, height: isSelected ? 6 : 4,
+              borderRadius: "50%",
+              background: isSelected ? "#F97316" : "#94A3B8",
               display: "block",
             }} />
           )}
@@ -327,7 +343,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 
         {/* Type icon */}
         <div style={{
-          width: iconBox, height: iconBox,
+          width: isSelected ? 18 : iconBox, height: isSelected ? 18 : iconBox,
           flexShrink: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
           background: "transparent",
@@ -335,8 +351,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         }}>
           <NodeIcon
             type={node.type}
-            size={iconSize + 2}
-            color={isSelected ? T.acc : tone.icon}
+            size={isSelected ? 18 : iconSize + 2}
+            color={isSelected ? "#EA580C" : "#64748B"}
           />
         </div>
 
@@ -345,8 +361,10 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           <div style={{
             fontFamily: T.font,
             fontSize,
-            fontWeight: isSelected ? 600 : depth === 0 ? 500 : 500,
-            color: isSelected ? T.acc : T.textSub,
+            fontWeight: isSelected ? 600 : 500,
+            // Selected uses the strong-tangerine text tone; unselected keeps
+            // the neutral slate (T.textSub === #334155).
+            color: isSelected ? "#C2410C" : T.textSub,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             lineHeight: 1.3,
             transition: "color .15s",

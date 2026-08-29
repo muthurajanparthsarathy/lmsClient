@@ -1119,7 +1119,7 @@ const YouDoSubmitDialog = ({ unansweredCount, onConfirm, onCancel }: { unanswere
 );
 
 const LoadingScreen = () => (
-  <div style={{ minHeight: '100vh', background: T.pageBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+  <div style={{ minHeight: 'calc(100vh * var(--ui-scale-inv, 1))', background: T.pageBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
     <div style={{ width: 44, height: 44, borderRadius: '50%', border: `3px solid ${T.border}`, borderTopColor: T.orange, animation: 'spin 0.7s linear infinite' }} />
     <p style={{ fontSize: 14, color: T.textMuted, fontFamily: 'inherit' }}>Loading quiz…</p>
     <style>{`@keyframes spin{to{transform:rotate(360deg);}}`}</style>
@@ -1933,7 +1933,7 @@ const StudentTestYourSkillsMCQQuestion: React.FC<YouDoMCQProps> = ({
         const token = getToken() || localStorage.getItem('token') || '';
         const entityTypeToPath: Record<string, string> = { topic: 'topics', subtopic: 'subtopics', submodule: 'submodules', module: 'modules' };
         const path = entityTypeToPath[nodeType] || 'topics';
-        const res = await fetch(`https://lmsserver-yeve.onrender.com/you-do/getAllQuestions/${path}/${nodeId}/you-do`, {
+        const res = await fetch(`http://localhost:5533/you-do/getAllQuestions/${path}/${nodeId}/you-do`, {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1981,7 +1981,7 @@ const StudentTestYourSkillsMCQQuestion: React.FC<YouDoMCQProps> = ({
   }
   if (questions.length === 0) {
     return (
-      <div style={{ minHeight: '100vh', background: T.pageBg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'Poppins',-apple-system,BlinkMacSystemFont,sans-serif" }}>
+      <div style={{ minHeight: 'calc(100vh * var(--ui-scale-inv, 1))', background: T.pageBg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'Poppins',-apple-system,BlinkMacSystemFont,sans-serif" }}>
         <div style={{ textAlign: 'center', maxWidth: 320 }}>
           <AlertCircle size={40} style={{ color: T.amber, marginBottom: 16 }} />
           <h2 style={{ fontSize: 20, fontWeight: 800, color: T.textMain, marginBottom: 8 }}>No Questions Found</h2>

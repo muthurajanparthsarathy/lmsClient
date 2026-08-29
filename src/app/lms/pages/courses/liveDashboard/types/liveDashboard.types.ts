@@ -12,6 +12,22 @@ export interface StudentProgress {
   completionPercent: number;
   lastActivity: string;
   submitted: boolean;
+  /** Recovery & Resume — live socket-presence flag. `false` means the student's
+   *  tab is currently disconnected (may still be in an active attempt). Distinct
+   *  from `inProgress` which the socket already flips after the 30s grace. */
+  isOnline?: boolean;
+  /** Server-side attempt lifecycle. `active` while the attempt is in progress;
+   *  `submitted` after explicit submit; `terminated` after server-side timer
+   *  expiry or an admin/proctor action. Present only after the student has
+   *  actually started the assessment. */
+  attemptStatus?: 'active' | 'submitted' | 'terminated';
+  /** Why a `terminated`/`submitted` attempt ended. Null while active. */
+  terminationReason?: 'submit' | 'timer' | 'security' | null;
+  /** Resume permission-gate state (see attemptController.js). Drives the
+   *  Approve / Reject action in the dashboard row's kebab. */
+  resumeState?: 'active' | 'awaiting_approval' | 'approved_for_resume' | 'rejected';
+  resumeRequestedAt?: string | null;
+  resumeApprovedAt?: string | null;
   /** Display id for the Dashboard Student ID column. Falls back to `id` when absent. */
   studentDisplayId?: string;
   /** Total seconds the student spent on the test (start → submit). Populated by
@@ -38,21 +54,20 @@ export interface StudentProgress {
 }
 
 /**
- * Collapsed three-value status used by the Dashboard table.
+ * Row-status used by the Dashboard table.
  *
- * Semantics (per product feedback):
- *   - `started`     → student is CURRENTLY attending the test live right now.
- *                     They have an active session — `inProgress === true`.
- *   - `not-started` → catch-all "not currently in the test". Covers both the
- *                     truly-never-started case AND the case where a student
- *                     began at some point but has since walked away (no
- *                     active session, no submission). The previous
- *                     "In Progress" status has been removed — partial
- *                     progress without a live session is treated as
- *                     not-started.
- *   - `submitted`   → student has submitted their attempt (final).
+ * Recovery & Resume expansion — the base states (`not-started` / `started` /
+ * `submitted`) still mean the same thing. Two new states surface the
+ * attempt-lifecycle nuances the recovery system exposes:
+ *   - `disconnected` → started an attempt, live socket is currently down
+ *                      (browser closed / crashed / lost Wi-Fi) but attempt is
+ *                      still `active` on the server. Distinct from `started`
+ *                      because there's no live presence to show.
+ *   - `terminated`   → server ended the attempt without an explicit submit —
+ *                      timer expiry OR a security violation. Kept separate
+ *                      from `submitted` so trainers can spot enforcement.
  */
-export type TestStatus = 'not-started' | 'started' | 'submitted';
+export type TestStatus = 'not-started' | 'started' | 'disconnected' | 'awaiting-approval' | 'submitted' | 'terminated';
 
 export interface LiveDashboardResponse {
   assessmentName: string;
@@ -111,6 +126,15 @@ export interface DashboardStudentUpdate {
   /** Rarely changes (only if the question pool is reshaped mid-session) but
    *  carried on the same event for completeness. */
   totalMarks?: number;
+  /** Recovery & Resume — socket presence + attempt lifecycle. Emitted by the
+   *  sweep job (`liveDashboardSocket.js:startExpirySweep`) and the offline
+   *  grace timer (`scheduleOfflineFlip`). */
+  isOnline?: boolean;
+  attemptStatus?: 'active' | 'submitted' | 'terminated';
+  terminationReason?: 'submit' | 'timer' | 'security' | null;
+  resumeState?: 'active' | 'awaiting_approval' | 'approved_for_resume' | 'rejected';
+  resumeRequestedAt?: string | null;
+  resumeApprovedAt?: string | null;
 }
 
 /** "dashboard:student_joined" — a full new student row. */

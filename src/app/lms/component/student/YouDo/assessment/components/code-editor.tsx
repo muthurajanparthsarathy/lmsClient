@@ -1,5 +1,7 @@
 "use client"
 import { getToken } from "@/lib/session";
+import { useAttemptSession } from "../useAttemptSession";
+import ConnectionStatusBanner from "../ConnectionStatusBanner";
 import { hostOf } from "@/lib/frameEmbed";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
@@ -188,6 +190,9 @@ interface ExerciseQuestion {
         language: string
         _id: string
     }
+    // Code Setup — Starter Code shown to students when an attempt begins.
+    // Takes priority over the legacy solutions.startedCode fallback below.
+    starterCode?: string
     timeLimit: number
     memoryLimit: number
     isActive: boolean
@@ -396,9 +401,9 @@ const convertExerciseToProblems = (exercise: Exercise): ProblemData[] => {
             difficulty: (exercise.exerciseInformation.exerciseLevel.charAt(0).toUpperCase() + exercise.exerciseInformation.exerciseLevel.slice(1)) as "Easy" | "Medium" | "Hard",
             examples: [],
             constraints: [],
-            initialCode: exercise.questions?.[0]?.solutions?.startedCode || exercise.questions?.[0]?.solutions?.staetedCode || `// Write your solution here\nfunction solution() {\n    // Your code here\n    return null;\n}`,
+            initialCode: exercise.questions?.[0]?.starterCode || exercise.questions?.[0]?.solutions?.startedCode || exercise.questions?.[0]?.solutions?.staetedCode || `// Write your solution here\nfunction solution() {\n    // Your code here\n    return null;\n}`,
             hints: exercise.questions?.[0]?.hints?.map(h => h.hintText) || [],
-            solution: exercise.questions?.[0]?.solutions?.startedCode || exercise.questions?.[0]?.solutions?.staetedCode
+            solution: exercise.questions?.[0]?.starterCode || exercise.questions?.[0]?.solutions?.startedCode || exercise.questions?.[0]?.solutions?.staetedCode
         }];
     }
 
@@ -421,7 +426,7 @@ const convertExerciseToProblems = (exercise: Exercise): ProblemData[] => {
                 explanation: "Sample input and output"
             }] : []),
         constraints: question.constraints || [],
-        initialCode: question.solutions?.startedCode || question.solutions?.staetedCode ||
+        initialCode: question.starterCode || question.solutions?.startedCode || question.solutions?.staetedCode ||
             (() => {
                 // Generate a function stub: name from solutions.functionName, param
                 // count inferred from the first test case (one input line = one arg).
@@ -899,6 +904,21 @@ export default function CodeEditor({
     const [isRunning, setIsRunning] = useState(false)
     const [isFullscreen, setIsFullscreen] = useState(false)
     const [currentProblemIndex, setCurrentProblemIndex] = useState(0)
+
+    // Recovery & Resume — idempotent /start on mount, server-authoritative
+    // timer, offline queue. Skipped when embedded (Combined/Section-Based
+    // owns lifecycle).
+    const attemptSession = useAttemptSession({
+      exerciseId: (exercise as any)?._id || "",
+      courseId: courseId || "",
+      nodeId: nodeId || "",
+      nodeType: nodeType || "topics",
+      subcategory: subcategory || "",
+      category: "You_Do",
+      totalQuestions: Array.isArray(defaultProblems) ? defaultProblems.length : undefined,
+      durationMinutesHint: (exercise as any)?.exerciseInformation?.totalDuration || undefined,
+      enabled: !embedded && !!((exercise as any)?._id) && !!courseId,
+    });
     const [showSidebar, setShowSidebar] = useState(false)
     const [leftPanelWidth, setLeftPanelWidth] = useState(40)
     const [isResizing, setIsResizing] = useState(false)
@@ -979,7 +999,7 @@ export default function CodeEditor({
         if (!exercise?._id) return;
         // Always re-fetch so totalMarks / totalMarksProgramming are complete
         const token = getToken() || localStorage.getItem('token') || '';
-        fetch(`https://lmsserver-yeve.onrender.com/exercise/${exercise._id}`, {
+        fetch(`http://localhost:5533/exercise/${exercise._id}`, {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
         })
             .then(r => r.ok ? r.json() : null)
@@ -1496,7 +1516,7 @@ function solve() {
                 subcategory: subcategory || ""
             });
 
-            const response = await fetch(`https://lmsserver-yeve.onrender.com/courses/answers/single?${params.toString()}`, {
+            const response = await fetch(`http://localhost:5533/courses/answers/single?${params.toString()}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -2221,7 +2241,7 @@ function solve() {
             // Save recording URL to backend
             try {
                 const token = getToken() || '';
-                const saveResponse = await fetch('https://lmsserver-yeve.onrender.com/assessment/recording', {
+                const saveResponse = await fetch('http://localhost:5533/assessment/recording', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -2434,7 +2454,7 @@ function solve() {
                 formData.append('screenRecording', screenRecordingBlob, filename);
             }
 
-            await fetch('https://lmsserver-yeve.onrender.com/exercise/lock', {
+            await fetch('http://localhost:5533/exercise/lock', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -2951,7 +2971,7 @@ else:
                 submitBreakdown = aiResult.breakdown;
                 if (aiResult.newlyGeneratedTestCases && aiResult.newlyGeneratedTestCases.length > 0 && (liveQuestion as any)?._id) {
                     const token = getToken() || localStorage.getItem('token') || '';
-                    fetch('https://lmsserver-yeve.onrender.com/courses/answers/persist-ai-test-cases', {
+                    fetch('http://localhost:5533/courses/answers/persist-ai-test-cases', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                         body: JSON.stringify({
@@ -3061,7 +3081,7 @@ else:
                         submitBreakdown = aiResult.breakdown;
                         if (aiResult.newlyGeneratedTestCases && aiResult.newlyGeneratedTestCases.length > 0 && (liveQuestion as any)?._id) {
                             const token = getToken() || localStorage.getItem('token') || '';
-                            fetch('https://lmsserver-yeve.onrender.com/courses/answers/persist-ai-test-cases', {
+                            fetch('http://localhost:5533/courses/answers/persist-ai-test-cases', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                                 body: JSON.stringify({
@@ -3133,6 +3153,11 @@ else:
                 submittedScoresRef.current[qId] = score;
             }
             if (exercise?._id) localStorage.removeItem('ex_in_progress_' + exercise._id);
+
+            // Recovery hook: flip attempt.status → terminated/timer so a
+            // reopen no longer hits the resume path AND the offline queue
+            // is cleaned up. Idempotent.
+            if (!embedded) { try { await attemptSession.submit({ submitType: "AUTO" }); } catch {} }
 
             try { sessionStorage.setItem('lms_submit_toast', 'Test auto-submitted — time expired.'); } catch {}
 
@@ -3261,7 +3286,20 @@ else:
                 || localStorage.getItem('token')
                 || '';
 
-            const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+            // Direct fetch retained as a fallback path (embedded mode where
+            // useAttemptSession is disabled). When the hook IS active, we
+            // ALSO enqueue this write so a network outage doesn't drop it —
+            // server dedupes by (userId, exerciseId, questionId).
+            if (!embedded && attemptSession.attempt && currentQuestion?._id) {
+              try {
+                // Serialize the FormData that's about to be posted into a
+                // plain object so the hook's JSON-body queue can carry it.
+                const body: Record<string, any> = {};
+                formData.forEach((v: any, k: string) => { body[k] = v; });
+                await attemptSession.saveAnswer({ questionId: currentQuestion._id, body });
+              } catch { /* fall through to direct fetch */ }
+            }
+            const response = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData,
@@ -3517,6 +3555,8 @@ else:
                 });
 
                 if (isLastQuestion) {
+                    // Recovery hook: mark attempt terminal on manual submit.
+                    if (!embedded) { try { await attemptSession.submit({ submitType: "USER" }); } catch {} }
                     showToast({
                         type: 'success',
                         title: 'Exercise Completed',
@@ -3783,7 +3823,7 @@ else:
 
             try {
                 const token = getToken() || '';
-                const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/status?courseId=${courseId}&exerciseId=${exercise._id}&category=You_Do&subcategory=${subcategory}`, {
+                const response = await fetch(`http://localhost:5533/exercise/status?courseId=${courseId}&exerciseId=${exercise._id}&category=You_Do&subcategory=${subcategory}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -3909,8 +3949,10 @@ else:
         <div
             ref={editorRef}
             className={`${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'} border-gray-300 flex flex-col border ${isFullscreen ? 'rounded-none' : 'rounded-lg relative h-full min-h-0 flex-1'}`}
-            style={{ fontFamily: FONT, ...(isFullscreen ? { position: 'fixed', inset: 0, width: '100vw', height: '100vh', zIndex: 2147483647, overflow: 'hidden' } : {}) }}
+            style={{ fontFamily: FONT, ...(isFullscreen ? { position: 'fixed', inset: 0, width: 'calc(100vw * var(--ui-scale-inv, 1))', height: 'calc(100vh * var(--ui-scale-inv, 1))', zIndex: 2147483647, overflow: 'hidden' } : {}) }}
         >
+            {/* Recovery banner — hidden in embedded mode. */}
+            {!embedded && <ConnectionStatusBanner netStatus={attemptSession.netStatus} queueCount={attemptSession.queueCount} />}
             {submitConfirmDialog}
             {/* Live Screen Monitoring — standalone code editor (parent owns it in section mode).
                 Only active when proctoring screen recording is ON: live monitoring shares the

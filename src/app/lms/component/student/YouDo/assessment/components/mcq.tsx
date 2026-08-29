@@ -1,5 +1,8 @@
 'use client';
 import { getToken } from "@/lib/session";
+import { useAttemptSession } from "../useAttemptSession";
+import ConnectionStatusBanner from "../ConnectionStatusBanner";
+import ResumeGate from "../ResumeGate";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -450,7 +453,7 @@ const SubmitDialog = ({ unansweredCount,flaggedCount,unansweredIndices,flaggedIn
 };
 
 const CompletionScreen = ({ onClose, timeUp }:{ onClose:()=>void; timeUp?:boolean }) => (
-  <div style={{ minHeight:'100vh',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
+  <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
     <div style={{ textAlign:'center',maxWidth:360 }}>
       <div style={{ width:80,height:80,borderRadius:24,margin:'0 auto 24px',background:timeUp?T.redLight:T.orangeLight,display:'flex',alignItems:'center',justifyContent:'center' }}>
         {timeUp?<Timer size={36} style={{ color:T.red }} />:<CheckCircle size={36} style={{ color:T.orange }} />}
@@ -463,7 +466,7 @@ const CompletionScreen = ({ onClose, timeUp }:{ onClose:()=>void; timeUp?:boolea
 );
 
 const LoadingScreen = () => (
-  <div style={{ minHeight:'100vh',background:T.pageBg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16 }}>
+  <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))',background:T.pageBg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16 }}>
     <div style={{ width:44,height:44,borderRadius:'50%',border:`3px solid ${T.border}`,borderTopColor:T.orange,animation:'spin 0.7s linear infinite' }} />
     <style>{`@keyframes spin{to{transform:rotate(360deg);}}`}</style>
   </div>
@@ -753,6 +756,166 @@ const [showOverviewModal, setShowOverviewModal] = useState(false);
     onTimeWarning: onSecTimeWarning,
   });
 
+  // ── Recovery & Resume attempt session ──────────────────────────────────
+  // Server-authoritative attempt: idempotent /start on mount returns the SAME
+  // attempt on refresh/reopen, `serverExpiresAt` drives the timer, saveAnswer
+  // queues writes locally on offline. Skipped when embedded — SectionBased
+  // owns lifecycle in that case (its own recovery-wiring turn will follow).
+  const attemptSession = useAttemptSession({
+    exerciseId: (propExercise as any)?._id || urlExerciseId || "",
+    courseId: urlCourseId || courseId || "",
+    nodeId: nodeId || (searchParams.get('nodeId') || ""),
+    nodeType: nodeType || (searchParams.get('nodeType') || "topics"),
+    subcategory: urlSubcategory || subcategory || "",
+    category: "You_Do",
+    totalQuestions: questions.length || undefined,
+    durationMinutesHint: totalDuration || undefined,
+    enabled: !embedded && !!(urlCourseId || courseId) && !!((propExercise as any)?._id || urlExerciseId),
+  });
+
+  // Server timer wins over the local setInterval. When the hook returns a
+  // fresh remaining-seconds value we mirror it into local `timeLeft` so the
+  // existing render + auto-submit-on-zero path works unchanged.
+  useEffect(() => {
+    if (embedded) return;
+    if (!attemptSession.hasTimer) return;
+    if (attemptSession.timeLeftSeconds == null) return;
+    // Kill any client-driven interval to avoid double decrements.
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setTimeLeft(attemptSession.timeLeftSeconds);
+    if (attemptSession.timeLeftSeconds === 0 && !quizCompleted && !isSubmitting) {
+      // Server has already terminated the attempt (or is about to). Fire
+      // the same handleTimeUp path so the client cleans up + navigates.
+      if (securityConfig.autoSubmitOnTimeout !== false) handleTimeUp();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attemptSession.timeLeftSeconds, attemptSession.hasTimer, embedded]);
+
+  // Resume-from-last-question + answer prefill.
+  // Server-side savedAnswers[] is authoritative. On a fresh browser (no
+  // localStorage cache), the server tells us both where the student was AND
+  // what they had answered. We rebuild the `answers` Map by re-deriving
+  // each Answer from the persisted `code` field, matching the same shape
+  // the runtime handlers use so the render code sees no difference.
+  const resumeAppliedRef = useRef(false);
+  useEffect(() => {
+    if (embedded) return;
+    if (resumeAppliedRef.current) return;
+    if (!attemptSession.canResume) return;
+    if (questions.length === 0) return;
+
+    // Land on the last-viewed / last-submitted question.
+    const qid = attemptSession.attempt?.currentQuestionId;
+    if (qid) {
+      const idx = filteredQuestions.length > 0
+        ? filteredQuestions.findIndex((q) => q._id === qid)
+        : questions.findIndex((q) => q._id === qid);
+      if (idx >= 0) setCurrentQuestionIndex(idx);
+    }
+
+    // Rehydrate the answers Map from server-side savedAnswers[].
+    // Only overwrite entries the local cache doesn't already have — the
+    // localStorage path may have stashed the very latest keystroke that
+    // hasn't reached the server yet. Server data wins on ties by questionId.
+    const saved = attemptSession.savedAnswers || [];
+    if (saved.length > 0) {
+      const nextMap = new Map(answersRef.current);
+      const cfgMarks = exerciseData?.questionConfiguration?.mcqQuestionConfiguration?.marksPerQuestion;
+      for (const s of saved) {
+        const q = questions.find((qq) => qq._id === s.questionId);
+        if (!q) continue;
+        const code = String(s.code || "");
+        const marks = cfgMarks || q.mcqQuestionScore || 10;
+        try {
+          switch (q.mcqQuestionType) {
+            case "multiple_choice":
+            case "dropdown": {
+              const opt = q.mcqQuestionOptions.find((o) => o.text === code);
+              if (opt) {
+                const ic = opt.isCorrect === true;
+                nextMap.set(q._id, { questionId: q._id, optionId: opt._id, optionText: opt.text, isCorrect: ic, score: ic ? marks : 0, status: ic ? "solved" : "attempted" });
+              }
+              break;
+            }
+            case "multiple_select": {
+              const parts = code.split(" || ").map((s) => s.trim()).filter(Boolean);
+              parts.forEach((t) => {
+                const opt = q.mcqQuestionOptions.find((o) => o.text === t);
+                if (!opt) return;
+                nextMap.set(`${q._id}_${opt._id}`, {
+                  questionId: q._id, optionId: opt._id, optionText: opt.text,
+                  isCorrect: opt.isCorrect === true, score: opt.isCorrect === true ? marks : 0,
+                  status: "attempted",
+                });
+              });
+              break;
+            }
+            case "true_false": {
+              const val = code === "true";
+              const ic = q.trueFalseAnswer === val;
+              nextMap.set(q._id, { questionId: q._id, booleanAnswer: val, isCorrect: ic, score: ic ? marks : 0, status: ic ? "solved" : "attempted" });
+              break;
+            }
+            case "short_answer":
+            case "essay": {
+              if (code) {
+                const ic = gradeTextAnswer(code, q.shortAnswer || q.essayAnswer || "");
+                nextMap.set(q._id, { questionId: q._id, textAnswer: code, isCorrect: ic, score: ic ? marks : 0, status: ic ? "solved" : "attempted" });
+              }
+              break;
+            }
+            case "numeric": {
+              const num = Number(code);
+              if (Number.isFinite(num)) {
+                const ca = q.numericAnswer || 0;
+                const tol = q.numericTolerance || 0;
+                const ic = Math.abs(num - ca) <= tol;
+                nextMap.set(q._id, { questionId: q._id, numericAnswer: num, isCorrect: ic, score: ic ? marks : 0, status: ic ? "solved" : "attempted" });
+              }
+              break;
+            }
+            case "matching": {
+              try {
+                const arr = JSON.parse(code);
+                if (Array.isArray(arr)) {
+                  const ok = gradeMatching(arr as any, q.matchingPairs || []);
+                  nextMap.set(q._id, { questionId: q._id, matchingAnswers: arr as any, isCorrect: ok, score: ok ? marks : 0, status: "attempted" });
+                }
+              } catch { /* ignore parse error */ }
+              break;
+            }
+            case "ordering": {
+              try {
+                const arr = JSON.parse(code);
+                if (Array.isArray(arr)) {
+                  const ok = gradeOrdering(arr as any, q.orderingItems || []);
+                  nextMap.set(q._id, { questionId: q._id, orderingAnswers: arr as any, isCorrect: ok, score: ok ? marks : 0, status: "attempted" });
+                }
+              } catch { /* ignore parse error */ }
+              break;
+            }
+          }
+        } catch { /* per-question rehydration failure is non-fatal */ }
+      }
+      // Persist rehydrated map into the buffer + localStorage cache.
+      persistAnswers(nextMap);
+    }
+
+    resumeAppliedRef.current = true;
+  }, [
+    attemptSession.canResume, attemptSession.attempt?.currentQuestionId,
+    attemptSession.savedAnswers, questions, filteredQuestions, embedded,
+    exerciseData,
+  ]);
+
+  // Terminal-state guard: if the server says the attempt is submitted or
+  // terminated, freeze the quiz UI so the student can't answer any more.
+  useEffect(() => {
+    const st = attemptSession.attempt?.status;
+    if (!st || st === "active") return;
+    if (!quizCompleted) setQuizCompleted(true);
+  }, [attemptSession.attempt?.status, quizCompleted]);
+
   // ── Screen recording (proctoring) ──────────────────────────────────────────
   const { isRecording, isSaving: isRecordingSaving, startRecording, stopRecording } = useScreenRecording();
 
@@ -787,6 +950,7 @@ const handleTimeUp = async () => {
   setIsSubmitting(true);
   await saveCurrentAnswer();
   await sendFinalSubmission();
+  if (!embedded) { try { await attemptSession.submit({ submitType: "AUTO" }); } catch (e) { console.warn('attempt.submit failed:', e); } }
   stopRecording(); // stop proctoring recording on timeout
   if (timerRef.current) clearInterval(timerRef.current);
   if (exerciseData?._id) {
@@ -830,7 +994,7 @@ const sendFinalSubmission = async () => {
     fd.append('submitType', _autoReason ? 'AUTO' : 'USER');
     fd.append('autoSubmitReason', _autoReason || '');
 
-    await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+    await fetch('http://localhost:5533/courses/answers/submit', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body: fd,
@@ -893,7 +1057,7 @@ const sendFinalSubmission = async () => {
         const finalId=urlExerciseId||propExercise?._id;
         if(!finalId){ toast.error('Exercise ID is required'); setLoading(false); return; }
         const token=getToken()||localStorage.getItem('token')||'';
-        const res=await fetch(`https://lmsserver-yeve.onrender.com/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
+        const res=await fetch(`http://localhost:5533/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const data=await res.json();
         if(data.message?.[0]?.key==='success'&&data.data?.exercise){
@@ -965,7 +1129,7 @@ const sendFinalSubmission = async () => {
       let changed = false;
       for (const q of qs) {
         try {
-          const res = await fetch(`https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${fCId}&exerciseId=${exId}&questionId=${q._id}&category=${fCat}`, { headers: { Authorization: `Bearer ${token}` } });
+          const res = await fetch(`http://localhost:5533/courses/answers/previous-submission?courseId=${fCId}&exerciseId=${exId}&questionId=${q._id}&category=${fCat}`, { headers: { Authorization: `Bearer ${token}` } });
           if (!res.ok) continue;
           const data = await res.json();
           const ca: string = (data?.success && data?.data?.codeAnswer != null) ? String(data.data.codeAnswer) : '';
@@ -1076,7 +1240,25 @@ const sendFinalSubmission = async () => {
       const fCId=urlCourseId||courseId; const fCat=urlCategory||category; const fSub=urlSubcategory||subcategory;
       if(!fCId||!exerciseData._id) return;
       const marks=exerciseData.questionConfiguration?.mcqQuestionConfiguration?.marksPerQuestion||q.mcqQuestionScore||10;
-      const sub=async(fd:FormData)=>{ await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); };
+      // Route through the recovery hook's queue-aware saveAnswer so an
+      // offline / flaky-network write is captured in IndexedDB and retried
+      // when connectivity returns. Convert the FormData to a plain object
+      // once — the server accepts both shapes (see answer.js:submitAnswer).
+      // Fallback to the direct fetch when the hook is disabled (embedded
+      // section-based mode owns its own writes).
+      const sub = async (fd: FormData) => {
+        if (!embedded && attemptSession.attempt) {
+          const body: Record<string, any> = {};
+          fd.forEach((v, k) => { (body as any)[k] = v; });
+          await attemptSession.saveAnswer({ questionId: q._id, body });
+          return;
+        }
+        await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        });
+      };
       const base=(nt:string,lang:string)=>{ const fd=new FormData(); fd.append('courseId',fCId); fd.append('exerciseId',exerciseData._id); fd.append('questionId',q._id); fd.append('category',fCat); fd.append('subcategory',fSub); fd.append('nodeId',nodeId||''); fd.append('nodeName',exerciseData.exerciseInformation?.exerciseName||'MCQ Assessment'); fd.append('nodeType',nt); fd.append('language',lang); return fd; };
       switch(q.mcqQuestionType){
         case 'multiple_choice': if(selectedRadioOption){ const opt=q.mcqQuestionOptions.find(o=>o._id===selectedRadioOption); if(opt){ const ic=opt.isCorrect===true; const fd=base('mcq','text'); fd.append('code',opt.text); fd.append('score',(ic?marks:0).toString()); fd.append('status',ic?'solved':'attempted'); await sub(fd); } } break;
@@ -1113,6 +1295,10 @@ const submitQuiz = async () => {
   setShowSubmitDialog(false);
   await saveCurrentAnswer();
   await sendFinalSubmission();
+  // Recovery hook: flip attempt.status → 'submitted' server-side so a
+  // reopen no longer hits the resume path AND the IndexedDB queue is
+  // cleaned up. Idempotent — safe to call after sendFinalSubmission.
+  if (!embedded) { try { await attemptSession.submit({ submitType: autoReasonRef.current ? "AUTO" : "USER" }); } catch (e) { console.warn('attempt.submit failed:', e); } }
   stopRecording(); // stop proctoring recording on submit
   if (timerRef.current) clearInterval(timerRef.current);
   if (exerciseData?._id) {
@@ -1126,9 +1312,9 @@ const submitQuiz = async () => {
 };  const handleSubmitClick=()=>{ const ua=questions.length-getAnsweredCount(); if(ua>0) setShowSubmitDialog(true); else submitQuiz(); };
   // Section mode: save the current answer only — stay on the question, never advance the section.
   const handleSubmitQuestion=async()=>{ await saveCurrentAnswer(); toast.success('Answer saved'); };
-  const handlePrev=async()=>{ if(currentQuestionIndex<=0){ if(onCrossPrev){ await saveCurrentAnswer(); onCrossPrev(); } return; } await saveCurrentAnswer(); live.questionChanged(filteredQuestions[currentQuestionIndex]?._id||null, filteredQuestions[currentQuestionIndex-1]?._id||null); loadAnswersForQuestion(filteredQuestions[currentQuestionIndex-1],answersRef.current); setCurrentQuestionIndex(p=>p-1); };
-  const handleNext=async()=>{ await saveCurrentAnswer(); if(currentQuestionIndex<filteredQuestions.length-1){ live.questionChanged(filteredQuestions[currentQuestionIndex]?._id||null, filteredQuestions[currentQuestionIndex+1]?._id||null); loadAnswersForQuestion(filteredQuestions[currentQuestionIndex+1],answersRef.current); setCurrentQuestionIndex(p=>p+1); } else if(onCrossNext){ onCrossNext(); } };
-  const handleJumpToQuestion=async(index:number)=>{ if(index<0||index>=filteredQuestions.length) return; await saveCurrentAnswer(); live.questionChanged(filteredQuestions[currentQuestionIndex]?._id||null, filteredQuestions[index]?._id||null); loadAnswersForQuestion(filteredQuestions[index],answersRef.current); setCurrentQuestionIndex(index); setShowSubmitDialog(false); };
+  const handlePrev=async()=>{ if(currentQuestionIndex<=0){ if(onCrossPrev){ await saveCurrentAnswer(); onCrossPrev(); } return; } await saveCurrentAnswer(); live.questionChanged(filteredQuestions[currentQuestionIndex]?._id||null, filteredQuestions[currentQuestionIndex-1]?._id||null); loadAnswersForQuestion(filteredQuestions[currentQuestionIndex-1],answersRef.current); setCurrentQuestionIndex(p=>p-1); if(!embedded && filteredQuestions[currentQuestionIndex-1]?._id) attemptSession.setCurrentQuestion(filteredQuestions[currentQuestionIndex-1]._id); };
+  const handleNext=async()=>{ await saveCurrentAnswer(); if(currentQuestionIndex<filteredQuestions.length-1){ live.questionChanged(filteredQuestions[currentQuestionIndex]?._id||null, filteredQuestions[currentQuestionIndex+1]?._id||null); loadAnswersForQuestion(filteredQuestions[currentQuestionIndex+1],answersRef.current); setCurrentQuestionIndex(p=>p+1); if(!embedded && filteredQuestions[currentQuestionIndex+1]?._id) attemptSession.setCurrentQuestion(filteredQuestions[currentQuestionIndex+1]._id); } else if(onCrossNext){ onCrossNext(); } };
+  const handleJumpToQuestion=async(index:number)=>{ if(index<0||index>=filteredQuestions.length) return; await saveCurrentAnswer(); live.questionChanged(filteredQuestions[currentQuestionIndex]?._id||null, filteredQuestions[index]?._id||null); loadAnswersForQuestion(filteredQuestions[index],answersRef.current); setCurrentQuestionIndex(index); setShowSubmitDialog(false); if(!embedded && filteredQuestions[index]?._id) attemptSession.setCurrentQuestion(filteredQuestions[index]._id); };
   const handleBack=()=>{ if(onCloseExercise) onCloseExercise(); else router.back(); };
   const handleTimeUpConfirm=()=>{ setShowTimeUpDialog(false); setQuizCompleted(true); };
 
@@ -1233,9 +1419,9 @@ const submitQuiz = async () => {
 
   // In section mode never paint the full-screen "completed" placeholder — that
   // showed as a blank gray screen inside the section. The parent advances instead.
-  if(quizCompleted) return embedded ? null : <div style={{ minHeight:'100vh', background:T.pageBg }}><ToastContainer position="top-right" /></div>;
+  if(quizCompleted) return embedded ? null : <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))', background:T.pageBg }}><ToastContainer position="top-right" /></div>;
   if(!quizStarted||filteredQuestions.length===0) return (
-    <div style={{ minHeight:'100vh',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
+    <div style={{ minHeight:'calc(100vh * var(--ui-scale-inv, 1))',background:T.pageBg,display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
       <div style={{ textAlign:'center',maxWidth:320 }}>
         <AlertCircle size={40} style={{ color:T.amber,marginBottom:16 }} />
         <h2 style={{ fontSize:20,fontWeight:800,color:T.textMain,marginBottom:8 }}>{selectedDifficulty?`No ${selectedDifficulty} questions`:'No Questions Found'}</h2>
@@ -1261,8 +1447,27 @@ const submitQuiz = async () => {
   const getGridCols=()=>{ const p=cq.mcqQuestionOptionsPerRow||2; if(p===1) return 'repeat(1,1fr)'; if(p===3) return 'repeat(3,1fr)'; if(p===4) return 'repeat(4,1fr)'; return 'repeat(2,1fr)'; };
   const isLastQ=currentQuestionIndex>=filteredQuestions.length-1;
 
+  // ── Permission gate — displayed IN PLACE OF the exam UI while the server
+  //     says the student needs trainer approval to (re-)enter. Skipped when
+  //     embedded (parent owns the gate). ─────────────────────────────────
+  if (!embedded && attemptSession.requiresApproval) {
+    return (
+      <ResumeGate
+        attempt={attemptSession.attempt}
+        assessmentName={exerciseData?.exerciseInformation?.exerciseName}
+        onRequest={attemptSession.requestResume}
+        onEnter={async () => { await attemptSession.refresh(); }}
+        onExit={() => { if (onCloseExercise) onCloseExercise(); else router.back(); }}
+      />
+    );
+  }
+
   return (
     <div style={{ position:'fixed',inset:0,background:T.pageBg,fontFamily:"'Poppins',-apple-system,BlinkMacSystemFont,sans-serif",color:T.textMain,display:'flex',flexDirection:'column',overflow:'hidden' }}>
+      {/* Recovery & Resume connection status banner — invisible when online +
+          empty queue, orange when offline, blue while syncing pending writes.
+          Hidden in embedded mode; the section parent owns its own banner. */}
+      {!embedded && <ConnectionStatusBanner netStatus={attemptSession.netStatus} queueCount={attemptSession.queueCount} />}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
         *{box-sizing:border-box;}

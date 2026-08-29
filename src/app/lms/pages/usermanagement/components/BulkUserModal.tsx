@@ -276,7 +276,7 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
           return { ...r, category: "duplicate", reason: "Email appears more than once in this file" };
         }
         if (emailLc && existingEmailSet.has(emailLc)) {
-          return { ...r, category: "existing", reason: "Already in system — will be skipped" };
+          return { ...r, category: "existing", reason: "Existing user — will be skipped" };
         }
         return { ...r, category: "new" };
       });
@@ -327,7 +327,7 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
     const toCreate = groups.new;
     // Skipped rows count in the final summary so nothing is silently dropped.
     const skipped: RowResult[] = [
-      ...groups.existing.map<RowResult>((r) => ({ row: r.rowNo, email: r.data.email || "", status: "exists", reason: "Already in system" })),
+      ...groups.existing.map<RowResult>((r) => ({ row: r.rowNo, email: r.data.email || "", status: "exists", reason: "Existing user" })),
       ...groups.duplicate.map<RowResult>((r) => ({ row: r.rowNo, email: r.data.email || "", status: "error", reason: r.reason || "Duplicate in file" })),
       ...groups.invalid.map<RowResult>((r) => ({ row: r.rowNo, email: r.data.email || "", status: "error", reason: r.reason || "Invalid row" })),
     ];
@@ -415,12 +415,12 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
       <td className="px-3 py-2 text-right whitespace-nowrap">
         {r.category === "new" && (
           <span className="inline-flex items-center gap-1 rounded-full border border-success-500/20 bg-success-50 px-2 py-0.5 text-2xs font-semibold text-success-700">
-            <CheckCircle className="h-3 w-3" /> Ready
+            <CheckCircle className="h-3 w-3" /> Yet to add
           </span>
         )}
         {r.category === "existing" && (
           <span className="inline-flex items-center gap-1 rounded-full border border-warn-500/20 bg-warn-50 px-2 py-0.5 text-2xs font-semibold text-warn-700">
-            <Info className="h-3 w-3" /> Already in system
+            <Info className="h-3 w-3" /> Existing user
           </span>
         )}
         {r.category === "invalid" && (
@@ -439,7 +439,7 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
 
   const groupOrder: { key: RowCategory; title: string; tone: "success" | "warn" | "danger" }[] = [
     { key: "new", title: "New Users", tone: "success" },
-    { key: "existing", title: "Users Already in System", tone: "warn" },
+    { key: "existing", title: "Existing Users", tone: "warn" },
     { key: "duplicate", title: "Duplicate Emails in File", tone: "warn" },
     { key: "invalid", title: "Invalid Rows", tone: "danger" },
   ];
@@ -502,7 +502,7 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
                 )}
                 <DialogClose
                   aria-label="Close"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-hairline-strong bg-surface text-subtle transition-colors hover:bg-row-hover hover:text-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 disabled:pointer-events-none"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-danger-500 bg-danger-500 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40 disabled:pointer-events-none"
                 >
                   <X className="h-3.5 w-3.5" />
                 </DialogClose>
@@ -621,7 +621,7 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
                   <CheckCircle className="h-3 w-3" /> New <span className="tabular-nums">{counts.new}</span>
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full border border-warn-500/25 bg-warn-50 px-2.5 py-1 text-2xs font-semibold text-warn-700">
-                  <Info className="h-3 w-3" /> Already in system <span className="tabular-nums">{counts.existing}</span>
+                  <Info className="h-3 w-3" /> Existing users <span className="tabular-nums">{counts.existing}</span>
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full border border-warn-500/25 bg-warn-50 px-2.5 py-1 text-2xs font-semibold text-warn-700">
                   <Copy className="h-3 w-3" /> Duplicates <span className="tabular-nums">{counts.duplicate}</span>
@@ -712,7 +712,7 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
                   Bulk Upload Preview
                 </DialogTitle>
                 <DialogDescription className="mt-1 text-2xs text-subtle">
-                  Read-only list of every parsed row. Only rows marked <span className="font-semibold text-success-700">Ready</span> will be added.
+                  Read-only list of every parsed row. Only rows marked <span className="font-semibold text-success-700">Yet to add</span> will be added.
                 </DialogDescription>
               </div>
               <div className="flex items-center gap-2">
@@ -724,18 +724,12 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
                     New <span className="tabular-nums">{counts.new}</span>
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-full border border-warn-500/25 bg-warn-50 px-2 py-0.5 text-2xs font-semibold text-warn-700">
-                    In system <span className="tabular-nums">{counts.existing}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-warn-500/25 bg-warn-50 px-2 py-0.5 text-2xs font-semibold text-warn-700">
-                    Duplicates <span className="tabular-nums">{counts.duplicate}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-danger-500/25 bg-danger-50 px-2 py-0.5 text-2xs font-semibold text-danger-700">
-                    Invalid <span className="tabular-nums">{counts.invalid}</span>
+                    Existing users <span className="tabular-nums">{counts.existing}</span>
                   </span>
                 </div>
                 <DialogClose
                   aria-label="Close preview"
-                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control border border-hairline-strong bg-surface text-xs font-semibold text-body hover:bg-row-hover hover:text-heading transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control border border-danger-500 bg-danger-500 text-xs font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40"
                 >
                   <X className="h-3.5 w-3.5" />
                   Close Preview
@@ -745,13 +739,14 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
           </DialogHeader>
 
           <div className="flex-1 overflow-hidden px-6 py-4 flex flex-col gap-3">
-            <div className="rounded-tile border border-brand-500/25 bg-brand-wash px-3 py-2 text-xs text-heading flex items-start gap-2 flex-shrink-0">
-              <Info className="h-4 w-4 text-brand-strong flex-shrink-0 mt-0.5" />
-              <span>
-                These users have not been added yet. Review the list below and click{" "}
-                <span className="font-semibold">Add {counts.new} User{counts.new === 1 ? "" : "s"}</span> to add every Ready row. Existing, duplicate and invalid rows are always skipped.
-              </span>
-            </div>
+            {/* Helper line only when there is actually something to add —
+                "click Add 0 Users" reads as nonsense when every row is an
+                existing / duplicate / invalid one. */}
+            {counts.new > 0 && (
+              <p className="flex-shrink-0 text-2xs text-subtle">
+                Not added yet — click <span className="font-semibold text-heading">Add {counts.new} User{counts.new === 1 ? "" : "s"}</span> to add the “Yet to add” rows. Other rows are skipped.
+              </p>
+            )}
 
             <div className="flex-1 min-h-0 border border-hairline rounded-tile overflow-hidden">
               <div className="h-full overflow-auto">
@@ -801,17 +796,23 @@ export default function BulkUserModal({ isOpen, onClose, roles, existingUsers = 
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleCreate}
-                disabled={!canProceed || counts.new === 0 || busy}
-                className="h-9 px-4 text-xs font-semibold rounded-control"
+              <span
+                title={counts.new === 0 ? "Every row is an existing, duplicate or invalid user — upload a file with new emails to add users." : undefined}
               >
-                {busy ? (
-                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Creating…</>
-                ) : (
-                  <><UserPlus className="h-3.5 w-3.5" /> Add {counts.new} User{counts.new === 1 ? "" : "s"}</>
-                )}
-              </Button>
+                <Button
+                  onClick={handleCreate}
+                  disabled={!canProceed || counts.new === 0 || busy}
+                  className="h-9 px-4 text-xs font-semibold rounded-control"
+                >
+                  {busy ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Creating…</>
+                  ) : counts.new === 0 ? (
+                    <><Info className="h-3.5 w-3.5" /> No New Users to Add</>
+                  ) : (
+                    <><UserPlus className="h-3.5 w-3.5" /> Add {counts.new} User{counts.new === 1 ? "" : "s"}</>
+                  )}
+                </Button>
+              </span>
             </div>
           </DialogFooter>
         </DialogContent>

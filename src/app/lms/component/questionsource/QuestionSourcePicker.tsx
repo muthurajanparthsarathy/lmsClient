@@ -33,7 +33,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Check, FolderOpen } from 'lucide-react';
+import { Check, FolderOpen, Info } from 'lucide-react';
 
 export type QuestionSource = '' | 'scratch' | 'ai' | 'thirdParty' | 'custom';
 export type CustomSubSource = 'scratch' | 'ai' | 'thirdParty';
@@ -184,52 +184,79 @@ export const QuestionSourcePicker: React.FC<Props> = ({
     if (!isInheriting) commit([]);
   };
 
-  // Chip styling — reused as-is from the pre-existing row so this is the
-  // SAME chip visual users already saw when Custom was expanded.
+  // Spec checkbox row item — the chip chrome is gone: each option is a plain
+  // 15×15 orange-accent checkbox with a 12.3px label (demo Checkbox metrics).
   const chipStyle = (on: boolean): React.CSSProperties => ({
-    background: on ? D.orange + '15' : '#fff',
-    color: on ? D.orange : D.textMain,
-    border: `1px solid ${on ? D.orange : D.border}`,
+    background: 'transparent',
+    color: D.textMain,
+    border: 'none',
+    padding: 0,
+    gap: 7,
+    fontSize: 12.3,
+    fontWeight: on ? 600 : 500,
     cursor: 'pointer',
+    fontFamily: font,
   });
 
   const boxStyle = (on: boolean): React.CSSProperties => ({
-    border: `1.5px solid ${on ? D.orange : D.textMuted}`,
+    width: 15, height: 15, borderRadius: 4,
+    border: `1px solid ${on ? D.orange : D.textMuted}`,
     background: on ? D.orange : '#fff',
+    transition: 'all .15s',
   });
 
   return (
-    <div style={{ fontFamily: font }} data-testid={testId}>
-      <div className="flex flex-wrap items-center gap-3">
-        {label && (
-          <div className="flex items-center gap-1.5">
-            <FolderOpen size={12} style={{ color: D.textMuted }} />
-            <span
-              className="text-[11px] font-bold uppercase tracking-wide"
-              style={{ color: D.textMuted, fontFamily: font }}
-            >
-              {label}
-              {required && <span style={{ color: D.orange }}> *</span>}
-            </span>
-          </div>
-        )}
+    // Spec card: 1px #E9E5E1 border, 11px radius, white body; the label rides
+    // in a wash header (9px 13px, #FAF9F8, uppercase 11.2px/700 title).
+    <div
+      style={{
+        fontFamily: font,
+        border: '1px solid #E9E5E1',
+        borderRadius: 11,
+        background: '#fff',
+        overflow: 'hidden',
+      }}
+      data-testid={testId}
+    >
+      {label && (
+        <div
+          className="flex items-center"
+          style={{
+            padding: '9px 13px', background: '#FAF9F8',
+            borderBottom: '1px solid #F1EEEA', gap: 9,
+          }}
+        >
+          <FolderOpen size={12} style={{ color: D.textMuted }} />
+          <span
+            style={{
+              fontSize: 11.2, fontWeight: 700, letterSpacing: '0.04em',
+              textTransform: 'uppercase', color: '#3F4756', fontFamily: font,
+            }}
+          >
+            {label}
+            {required && <span style={{ color: D.orange }}> *</span>}
+          </span>
+        </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-2">
+      <div style={{ padding: 13 }}>
+        {/* Source checkboxes — one row, 16px gaps. */}
+        <div className="flex flex-wrap items-center" style={{ gap: 16 }}>
           {allowInherit && (
             <button
               type="button"
               aria-pressed={isInheriting}
               onClick={setInherit}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold"
+              className="inline-flex items-center"
               style={chipStyle(isInheriting)}
               title="Use whatever source is picked for the other part."
             >
               <span
                 aria-hidden="true"
-                className="inline-flex items-center justify-center w-3.5 h-3.5 rounded pointer-events-none"
+                className="inline-flex items-center justify-center flex-shrink-0 pointer-events-none"
                 style={boxStyle(isInheriting)}
               >
-                {isInheriting && <Check size={9} strokeWidth={3} style={{ color: '#fff' }} />}
+                {isInheriting && <Check size={10} strokeWidth={3} style={{ color: '#fff' }} />}
               </span>
               {inheritLabel}
             </button>
@@ -243,38 +270,45 @@ export const QuestionSourcePicker: React.FC<Props> = ({
                 type="button"
                 aria-pressed={on}
                 onClick={() => toggle(opt.value)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold"
+                className="inline-flex items-center"
                 style={chipStyle(on)}
               >
                 <span
                   aria-hidden="true"
-                  className="inline-flex items-center justify-center w-3.5 h-3.5 rounded pointer-events-none"
+                  className="inline-flex items-center justify-center flex-shrink-0 pointer-events-none"
                   style={boxStyle(on)}
                 >
-                  {on && <Check size={9} strokeWidth={3} style={{ color: '#fff' }} />}
+                  {on && <Check size={10} strokeWidth={3} style={{ color: '#fff' }} />}
                 </span>
                 {opt.label}
               </button>
             );
           })}
         </div>
-      </div>
 
-      {/* Trailing hints — same copy the old dropdown-flow surfaced, just now
-          driven off the derived state instead of the primary === 'custom'
-          branch. When the trainer ticks two or more sources, the numeric
-          distribution matrix rendered by the caller becomes required and
-          shows a running total there; no need to repeat that here. */}
-      {checked.length === 0 && !isInheriting && emptyHint && (
-        <p className="mt-2 text-[11px]" style={{ color: D.textMuted }}>
-          {emptyHint}
-        </p>
-      )}
-      {checked.length >= 2 && (
-        <p className="mt-2 text-[11px]" style={{ color: D.textMuted }}>
-          Combining {checked.length} sources — set the per-source count in the table below.
-        </p>
-      )}
+        {/* Trailing hints — same copy the old dropdown-flow surfaced, just now
+            driven off the derived state instead of the primary === 'custom'
+            branch. When the trainer ticks two or more sources, the numeric
+            distribution matrix rendered by the caller becomes required and
+            shows a running total there; no need to repeat that here. */}
+        {checked.length === 0 && !isInheriting && emptyHint && (
+          <p className="mt-2" style={{ fontSize: 11.4, lineHeight: 1.5, color: D.textMuted }}>
+            {emptyHint}
+          </p>
+        )}
+        {checked.length >= 2 && (
+          <div
+            className="mt-2 flex items-start"
+            style={{
+              gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11.4, lineHeight: 1.5,
+              background: '#EFF6FF', border: '1px solid #CFE0FB', color: '#1B4DA8',
+            }}
+          >
+            <Info size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>Combining {checked.length} sources — set the per-source count in the table below.</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

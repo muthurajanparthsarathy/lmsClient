@@ -759,3 +759,57 @@
 
 
 
+
+/* ═══ Global UI scale ══════════════════════════════════════════════════════
+   Renders the whole app ~5% smaller, so a machine at Windows display scaling
+   100% looks like one set to 95% — text, icons, padding, rows and controls
+   all shrink together, exactly as browser zoom would do it.
+
+   ONE knob: --ui-scale below. Set it to 1 to turn this off entirely; lower
+   it (.9) to go smaller, raise it to go bigger. Nothing else needs to move —
+   the compensations further down are all expressed in terms of it, but
+   --ui-scale-inv must be updated to match (it is 1 / --ui-scale).
+
+   Why `zoom` and not `transform: scale()`: zoom scales the layout itself, so
+   fixed-position overlays (modals, the route loader) still cover the real
+   viewport and percentage-based layouts still fill their parents. A
+   transform would visually shrink the page but leave every fixed overlay
+   mis-sized and hit-testing offset.
+
+   The one thing zoom does NOT get right is VIEWPORT UNITS: it scales those
+   too, so `100vh` would resolve to 90% of the screen and leave a dead strip
+   under every full-height shell. Everything below divides that back out.
+
+   Desktop only (>=768px): shrinking an already-small phone layout hurts
+   legibility. Below that breakpoint --ui-scale-inv stays 1, which makes all
+   the calc()s below no-ops, so mobile renders exactly as it did before. */
+:root {
+  --ui-scale: 1;
+  --ui-scale-inv: 1;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --ui-scale: 0.95;
+    /* 1 / --ui-scale — CSS can't invert a variable, so it's spelled out.
+       Keep these two in sync whenever the scale is retuned. */
+    --ui-scale-inv: 1.052632;
+  }
+
+  html {
+    zoom: var(--ui-scale);
+  }
+}
+
+/* Viewport-unit utilities, un-zoomed. Unlayered, so they beat Tailwind's
+   layered originals; multiplying by --ui-scale-inv (1 on mobile) restores
+   the true viewport size these are meant to mean. */
+.h-screen     { height: calc(100vh * var(--ui-scale-inv)); }
+.min-h-screen { min-height: calc(100vh * var(--ui-scale-inv)); }
+.max-h-screen { max-height: calc(100vh * var(--ui-scale-inv)); }
+.w-screen     { width: calc(100vw * var(--ui-scale-inv)); }
+.h-dvh        { height: calc(100dvh * var(--ui-scale-inv)); }
+.min-h-dvh    { min-height: calc(100dvh * var(--ui-scale-inv)); }
+.max-h-dvh    { max-height: calc(100dvh * var(--ui-scale-inv)); }
+.h-svh        { height: calc(100svh * var(--ui-scale-inv)); }
+.min-h-svh    { min-height: calc(100svh * var(--ui-scale-inv)); }

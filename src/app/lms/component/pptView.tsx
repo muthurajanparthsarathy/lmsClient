@@ -255,7 +255,7 @@ function ImageToolbar({ alignment, sizePercent, onAlignmentChange, onSizeChange,
 function MCQQuestionForm({
   onClose, onSave, initialSlideNumber = 1,
   fileId, fileName, entityType, entityId, tabType, subcategory, folderPath = [],
-  apiBaseUrl = "https://lmsserver-yeve.onrender.com", mcqMode = "default", sampleLink = "",
+  apiBaseUrl = "http://localhost:5533", mcqMode = "default", sampleLink = "",
   onLinkGenerated,
 }: any) {
 
@@ -801,7 +801,7 @@ export default function PPTViewer({
   totalSlides = 20,
   fileId = "", entityType = "", entityId = "",
   tabType = "", subcategory = "", folderPath = [],
-  apiBaseUrl = "https://lmsserver-yeve.onrender.com",
+  apiBaseUrl = "http://localhost:5533",
   initialMcqs = [],
   isTeacher = true, isStudent = false,
   sampleLiveLink = "https://example.com/live-mcq-sample",
@@ -860,7 +860,7 @@ export default function PPTViewer({
 
     ;(async () => {
       try {
-        const res = await fetch("https://lmsserver-yeve.onrender.com/api/ppt/convert", {
+        const res = await fetch("http://localhost:5533/api/ppt/convert", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ pptUrl }),

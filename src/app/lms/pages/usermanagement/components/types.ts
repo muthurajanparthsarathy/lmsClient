@@ -45,6 +45,15 @@ export interface User {
   phase?: string;
   serviceModel?: string;
   serviceMappingId?: string;
+  // Additional service enrolments beyond the legacy single serviceModel above
+  // (Reassign Users appends here). "All of a user's services" = the legacy
+  // fields unioned with this array.
+  services?: {
+    serviceMappingId?: string;
+    serviceModel?: string;
+    clientId?: string;
+    clientName?: string;
+  }[];
 }
 
 export interface UserFormData {

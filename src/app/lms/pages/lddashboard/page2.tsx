@@ -22,7 +22,7 @@ import {
 import LDLayout, { LDView, CourseOpt } from "../../component/ldshell/LDLayout";
 import ApprovalHierarchyModal from "../../component/ApprovalHierarchyModal";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
 const getToken = () =>
   typeof window === "undefined"
     ? ""

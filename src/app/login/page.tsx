@@ -198,7 +198,7 @@ const SmartCliffLogin = () => {
           if (loc) clientInfo.location = loc;
         }
       } catch { /* best effort — login is never blocked beyond the timeout */ }
-      const response = await fetch("https://lmsserver-yeve.onrender.com/user/login", {
+      const response = await fetch("http://localhost:5533/user/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...credentials, clientInfo }),
@@ -254,7 +254,7 @@ const SmartCliffLogin = () => {
           localStorage.setItem("smartcliff_roleId", "");
           localStorage.setItem("smartcliff_originalRole", "User");
         }
-        const verifyResponse = await fetch("https://lmsserver-yeve.onrender.com/user/verify-token", {
+        const verifyResponse = await fetch("http://localhost:5533/user/verify-token", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         });
@@ -481,8 +481,8 @@ const SmartCliffLogin = () => {
           /* ── Fixed, full-screen, NO scroll ── */
           position: fixed;
           inset: 0;
-          width: 100vw;
-          height: 100vh;
+          width: calc(100vw * var(--ui-scale-inv, 1));
+          height: calc(100vh * var(--ui-scale-inv, 1));
           overflow: hidden;
           font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--text-main);
@@ -916,7 +916,7 @@ const SmartCliffLogin = () => {
 
         /* ═══ Loader ═══ */
         .sc-loader {
-          width: 100vw; height: 100vh;
+          width: calc(100vw * var(--ui-scale-inv, 1)); height: calc(100vh * var(--ui-scale-inv, 1));
           display: flex; align-items: center; justify-content: center;
           background: #fff;
         }
@@ -957,7 +957,7 @@ const SmartCliffLogin = () => {
           .sc-page {
             position: relative;      /* allow natural height */
             height: auto;
-            min-height: 100vh;
+            min-height: calc(100vh * var(--ui-scale-inv, 1));
             overflow-y: auto;        /* page-level scroll only on small screens */
           }
 

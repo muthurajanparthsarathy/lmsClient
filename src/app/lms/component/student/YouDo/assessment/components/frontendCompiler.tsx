@@ -1,5 +1,7 @@
 "use client";
 import { getToken } from "@/lib/session";
+import { useAttemptSession } from "../useAttemptSession";
+import ConnectionStatusBanner from "../ConnectionStatusBanner";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
@@ -397,6 +399,21 @@ const FrontendCompiler: React.FC<FrontendCompilerProps> = ({
 }) => {
   const router = useRouter();
 
+  // Recovery & Resume — /start on mount, server-authoritative timer, offline
+  // queue for /submit-multiple-files writes. Skipped when embedded (parent
+  // owns lifecycle in Combined / Section-Based mode).
+  const attemptSession = useAttemptSession({
+    exerciseId: exerciseId || "",
+    courseId: courseId || "",
+    nodeId: entityId || "",
+    nodeType: entityType || "topics",
+    subcategory: subcategory || "",
+    category: "You_Do",
+    totalQuestions: Array.isArray(questions) ? questions.length : undefined,
+    durationMinutesHint: (exerciseData as any)?.exerciseInformation?.totalDuration || undefined,
+    enabled: !embedded && !!exerciseId && !!courseId,
+  });
+
   // ─── selectedLanguages → allowed file extensions ───────────────────────────
   // The exercise config (programmingSettings.selectedLanguages) caps which file
   // types a student can create. If selectedLanguages is empty/undefined, allow
@@ -616,8 +633,15 @@ const FrontendCompiler: React.FC<FrontendCompilerProps> = ({
           isTestSubmission: true,  // ← marks testSubmissions++
         };
 
+        // Enqueue through the recovery hook so an offline save survives
+        // reconnect. The direct axios call still fires below for the fast
+        // path when online — server dedupes by (userId, exerciseId, questionId).
+        if (!embedded && attemptSession.attempt) {
+          try { await attemptSession.saveAnswer({ questionId, body: savePayload, endpoint: '/courses/answers/submit-multiple-files' }); }
+          catch { /* fall through to direct write */ }
+        }
         await axios.post(
-          'https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files',
+          `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit-multiple-files`,
           savePayload,
           {
             headers: {
@@ -629,6 +653,8 @@ const FrontendCompiler: React.FC<FrontendCompilerProps> = ({
         );
       }
 
+      // Recovery hook: mark attempt terminal so a reopen doesn't resume.
+      if (!embedded) { try { await attemptSession.submit({ submitType: "USER" }); } catch {} }
       setIsTestSubmitted(true);
       try { sessionStorage.setItem('lms_submit_toast', `"${title}" submitted successfully`); } catch {}
       setTimeout(() => { performExit(); }, 800);
@@ -1383,7 +1409,7 @@ body {
     background-color: var(--bg-color);
     color: var(--text-color);
     line-height: 1.6;
-    min-height: 100vh;
+    min-height: calc(100vh * var(--ui-scale-inv, 1));
 }
 
 .container {
@@ -1628,6 +1654,37 @@ console.log('Project utilities available at window.projectUtils');`,
         lastModified: file.lastModified || new Date(),
         isDirty: false
       }));
+    }
+    // Code Setup's starterCode (html/css/javascript) — the trainer-authored
+    // starting point for THIS question — takes priority over the generic
+    // boilerplate below. No previous submission exists yet at this point
+    // (that case returned above), so this only applies to a fresh attempt.
+    const starter = questions[initialQuestionIndex]?.starterCode;
+    if (starter && (starter.html || starter.css || starter.javascript)) {
+      console.log("Setting initial files from question starterCode");
+      const starterFiles: FileType[] = [];
+      if (starter.html) {
+        starterFiles.push({
+          id: 'file-1-index-html', filename: 'index.html', content: starter.html,
+          language: 'html', path: '/index.html', folderPath: '/',
+          isEntryPoint: true, lastModified: new Date(),
+        });
+      }
+      if (starter.css) {
+        starterFiles.push({
+          id: 'file-2-styles-css', filename: 'styles.css', content: starter.css,
+          language: 'css', path: '/styles.css', folderPath: '/',
+          lastModified: new Date(),
+        });
+      }
+      if (starter.javascript) {
+        starterFiles.push({
+          id: 'file-3-script-js', filename: 'script.js', content: starter.javascript,
+          language: 'javascript', path: '/script.js', folderPath: '/',
+          lastModified: new Date(),
+        });
+      }
+      if (starterFiles.length > 0) return starterFiles;
     }
     console.log("Using default files");
     // Filter the pre-loaded defaults by the exercise's selectedLanguages so the
@@ -1935,7 +1992,7 @@ console.log('Project utilities available at window.projectUtils');`,
       try {
         const token = getToken() || localStorage.getItem('token') || '';
 
-        await axios.post('https://lmsserver-yeve.onrender.com/exercise/lock', {
+        await axios.post('http://localhost:5533/exercise/lock', {
           courseId,
           exerciseId,
           category,
@@ -2032,7 +2089,7 @@ console.log('Project utilities available at window.projectUtils');`,
 
     try {
       const token = getToken() || localStorage.getItem('token') || '';
-      await axios.post('https://lmsserver-yeve.onrender.com/exercise/lock', {
+      await axios.post('http://localhost:5533/exercise/lock', {
         courseId,
         exerciseId,
         category,
@@ -2428,7 +2485,7 @@ console.log('Project utilities available at window.projectUtils');`,
 
       try {
         const token = getToken() || localStorage.getItem('token') || '';
-        const response = await axios.get('https://lmsserver-yeve.onrender.com/exercise/status', {
+        const response = await axios.get('http://localhost:5533/exercise/status', {
           params: { courseId, exerciseId, category, subcategory },
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -2478,7 +2535,7 @@ console.log('Project utilities available at window.projectUtils');`,
   //     }
 
   //     const response = await fetch(
-  //       `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${questionId}&category=${category}`,
+  //       `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${questionId}&category=${category}`,
   //       {
   //         headers: {  
   //           'Authorization': `Bearer ${token}`,
@@ -3112,7 +3169,7 @@ console.log('Project utilities available at window.projectUtils');`,
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                min-height: 100vh;
+                min-height: calc(100vh * var(--ui-scale-inv, 1));
                 margin: 0;
                 padding: 20px;
             }
@@ -4022,8 +4079,14 @@ document.addEventListener('DOMContentLoaded', init${name.charAt(0).toUpperCase()
         ...(!embedded && isLastQuestion && { isTestSubmission: true }),
       };
 
+      // Enqueue via recovery hook first (offline safety), then direct
+      // axios call for immediate feedback. Server dedupes.
+      if (!embedded && attemptSession.attempt) {
+        try { await attemptSession.saveAnswer({ questionId, body: payload, endpoint: '/courses/answers/submit-multiple-files' }); }
+        catch { /* fall through to direct write */ }
+      }
       const response = await axios.post(
-        'https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files',
+        `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit-multiple-files`,
         payload,
         {
           headers: {
@@ -4116,7 +4179,7 @@ document.addEventListener('DOMContentLoaded', init${name.charAt(0).toUpperCase()
       try {
         const token = getToken() || localStorage.getItem('token') || '';
         if (!token) return;
-        const res = await fetch(`https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${qid}&category=${category}`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${qid}&category=${category}`, { headers: { Authorization: `Bearer ${token}` } });
         if (!res.ok) return;
         const data = await res.json();
         const sub = data?.success ? data?.data : null;
@@ -4943,6 +5006,8 @@ document.addEventListener('DOMContentLoaded', init${name.charAt(0).toUpperCase()
   // ---------------------------------------------------------------------------
   return (
     <div className="flex flex-col h-screen" style={{ backgroundColor: colors.background }}>
+      {/* Recovery banner — hidden in embedded mode (parent owns it). */}
+      {!embedded && <ConnectionStatusBanner netStatus={attemptSession.netStatus} queueCount={attemptSession.queueCount} />}
       <ToastContainer
         position="bottom-right"
         autoClose={3000}

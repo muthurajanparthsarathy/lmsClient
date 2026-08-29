@@ -274,7 +274,7 @@ const SHARED_HTML_CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; font-size: 16px; }
   html, body {
-    width: 100%; min-height: 100vh;
+    width: 100%; min-height: calc(100vh * var(--ui-scale-inv, 1));
     font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: #ffffff; color: #111827; line-height: 1.7;
   }

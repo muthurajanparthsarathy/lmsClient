@@ -23,6 +23,7 @@ import {
 } from '@/apiServices/serviceMappingService'
 import { MappingTable } from './MappingTable'
 import { MappingCardGrid } from './MappingCard'
+import CourseSearchResults, { buildClientCourseMatches } from './CourseSearchResults'
 import { MappingFilterPanel, EMPTY_FILTERS, type MappingFilters } from './MappingFilterPanel'
 import { groupCourses } from './mappingTree'
 import {
@@ -138,8 +139,29 @@ let lastMappingListPageSize = 25
 
 export default function MappingList({
     onOpen,
+    initialPage = 1,
+    onPageChange,
 }: {
     onOpen: (mapping: ServiceMapping) => void
+    /**
+     * Where to resume, and how to report moves — the page is REMEMBERED BY THE
+     * PARENT.
+     *
+     * Opening a mapping swaps the parent's stage, which unmounts this list, so
+     * a plain useState(1) reset on every "Manage → Back to clients" round trip
+     * however deep the user had drilled. The parent stays mounted for as long
+     * as the user is on Course Setup, so it can hand the page back.
+     *
+     * Read once, on mount: the page stays LOCAL state here because two places
+     * below update it during render (the filter reset and the out-of-range
+     * clamp), which is legal for a component's own state and not for a
+     * parent's. An effect mirrors it upward after commit instead.
+     *
+     * Deliberately not the URL and not module scope: both survive a reload,
+     * and a reload is expected to start over at page 1.
+     */
+    initialPage?: number
+    onPageChange?: (page: number) => void
 }) {
     const [search, setSearch] = useState('')
     const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -148,7 +170,7 @@ export default function MappingList({
     const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
     const [sortKey, setSortKey] = useState<string | null>(null)
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-    const [currentPage, setCurrentPage] = useState(1)
+    const [currentPage, setCurrentPage] = useState(initialPage)
     // Seed pageSize from the last mount's value (module-scope). Without
     // this, every remount started at 25 → queryKey changed on the very
     // next tick when auto-fit computed the real viewport pageSize → the
@@ -167,6 +189,12 @@ export default function MappingList({
     // Mirror every pageSize change into the module-scope memory so the next
     // mount starts with the same value — makes revisits instant cache hits.
     useEffect(() => { lastMappingListPageSize = pageSize }, [pageSize])
+
+    // And the page up to the parent, so it can hand it back when this list
+    // remounts after a mapping is closed. In an effect, not inline with the
+    // setters: updating a parent during this component's render is exactly the
+    // thing React warns about.
+    useEffect(() => { onPageChange?.(currentPage) }, [currentPage, onPageChange])
 
     // Typing is now a request, so it waits for a pause.
     useEffect(() => {
@@ -259,6 +287,21 @@ export default function MappingList({
         models: (facets?.serviceModels || []).map((s) => ({ value: s, label: s })),
         years: (facets?.years || []).map((s) => ({ value: s, label: s })),
     }), [facets])
+
+    // ── Course-search accordion state ────────────────────────────────────────
+    // While the search box holds a term AND that term matches course names on
+    // the page's rows, the table is swapped for per-client accordion sections
+    // (CourseSearchResults) showing only the matching clients with their
+    // matching courses, auto-expanded. Everything else about the list — the
+    // toolbar, the filters, pagination, the query itself — is untouched, and a
+    // term that matches rows by client/service name only (no course hit) keeps
+    // the normal table, so searching for a client works exactly as before.
+    const searchTerm = debouncedSearch.trim()
+    const courseMatchGroups = useMemo(
+        () => buildClientCourseMatches(rowVMs, searchTerm),
+        [rowVMs, searchTerm]
+    )
+    const courseSearchActive = searchTerm.length > 0 && courseMatchGroups.length > 0
 
     const activeFilterCount =
         (filters.client ? 1 : 0) + (filters.service ? 1 : 0) + (filters.model ? 1 : 0) +
@@ -808,7 +851,26 @@ export default function MappingList({
         }
     }
 
-    const emptyState = hasActiveFilters ? (
+    // While a search term is active, a zero-row page reads as "No courses
+    // found" — the search-first wording the course lookup flow expects. The
+    // filter/first-run empty states below are unchanged and still cover every
+    // non-search case.
+    const emptyState = searchTerm ? (
+        <EmptyState
+            icon={SearchX}
+            title="No courses found"
+            message={`Nothing matches "${searchTerm}". Try a different course name or keyword.`}
+            secondaryAction={
+                <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="h-9 px-3.5 rounded-control border border-hairline-strong bg-surface text-sm font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
+                >
+                    Clear search
+                </button>
+            }
+        />
+    ) : hasActiveFilters ? (
         <EmptyState
             icon={SearchX}
             title="No mappings match your filters"
@@ -1010,22 +1072,34 @@ export default function MappingList({
                     // silent refresh; matching that behaviour here.
                     className="mt-2 flex flex-1 min-h-0 flex-col"
                 >
-                    <MappingTable
-                        rows={rows}
-                        // Only show the skeleton when there is NO data on
-                        // screen. React Query's `placeholderData:
-                        // keepPreviousData` keeps the previous rows during
-                        // any background refetch, so `isLoading` alone
-                        // used to fire a full skeleton every time the
-                        // queryKey rotated even though rows were visible.
-                        isLoading={isLoading && rows.length === 0}
-                        skeletonRows={pageSize}
-                        sortKey={sortKey}
-                        sortDir={sortDir}
-                        onSort={handleSort}
-                        onOpen={onOpen}
-                        emptyState={emptyState}
-                    />
+                    {courseSearchActive ? (
+                        // Search-result state: matching clients as accordion
+                        // sections, auto-expanded, matching courses beneath.
+                        // The footer stays — the results are still the same
+                        // server-paginated rows the table would show.
+                        <CourseSearchResults
+                            groups={courseMatchGroups}
+                            term={searchTerm}
+                            onOpen={onOpen}
+                        />
+                    ) : (
+                        <MappingTable
+                            rows={rows}
+                            // Only show the skeleton when there is NO data on
+                            // screen. React Query's `placeholderData:
+                            // keepPreviousData` keeps the previous rows during
+                            // any background refetch, so `isLoading` alone
+                            // used to fire a full skeleton every time the
+                            // queryKey rotated even though rows were visible.
+                            isLoading={isLoading && rows.length === 0}
+                            skeletonRows={pageSize}
+                            sortKey={sortKey}
+                            sortDir={sortDir}
+                            onSort={handleSort}
+                            onOpen={onOpen}
+                            emptyState={emptyState}
+                        />
+                    )}
                     {footer}
                 </div>
             ) : (

@@ -29,7 +29,7 @@ import { youDoMcqApi, getEntityTypeFromNodeType } from "@/apiServices/pedagogyAn
 // the list refetches when the batch strip changes.
 import { withBatchBody, getActiveBatchId } from "@/apiServices/resourceBatch";
 import { toast } from "react-hot-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import AddQuestionViaDocument from "@/app/lms/component/AddQuestionViaDocument";
 import { questionBankService } from "@/apiServices/questionBankService";
 import TestYourSKillsQuestionBanklist from "./testyouskillscomponents/TestYourSKillsQuestionBanklist";
@@ -218,13 +218,18 @@ const DropItem: React.FC<{
     type="button" onClick={onClick}
     className="flex items-center gap-2 w-full px-2.5 py-2 text-[11px] font-semibold rounded-lg"
     style={{
-      color: color || T.textSub,
+      // Resting state is the dark tone this row used to reach only on hover.
+      // The old muted textSub made every item read as disabled.
+      color: color || T.textMain,
       borderTop: divider ? `1px solid ${T.border}` : "none",
       marginTop: divider ? 3 : 0,
       background: "transparent", transition: "all 0.12s",
     }}
-    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = color ? `${color}10` : T.pageBg; (e.currentTarget as HTMLElement).style.color = color || T.textMain; }}
-    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = color || T.textSub; }}
+    // Hover lands on the theme orange over its wash — the old neutral hover
+    // background (T.pageBg) was near-identical to the menu's own surface, so
+    // hovering barely registered.
+    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = color ? `${color}10` : T.orangeLight; (e.currentTarget as HTMLElement).style.color = color || T.orange; }}
+    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = color || T.textMain; }}
   >
     {icon}{label}
   </button>
@@ -1559,6 +1564,85 @@ const MockTestModal: React.FC<MockTestModalProps> = ({ isOpen, questions, onClos
   );
 };
 
+// ─── Shared query identity + fetcher ──────────────────────────────────────────
+// Module scope and EXPORTED so the resources page can warm this exact cache
+// entry while its node-level ring loader is still up — the component then
+// mounts onto a warm cache and paints instantly, with no second loader.
+
+export const testYourSkillsQueryKey = (nodeType: string, nodeId: string) => [
+  'testYourSkillsQuestions',
+  getEntityTypeFromNodeType(nodeType),
+  nodeId || '',
+  getActiveBatchId() || '',
+] as const;
+
+export const fetchTestYourSkillsQuestions = async (
+  nodeType: string,
+  nodeId: string,
+): Promise<QuestionRecord[]> => {
+  const entityType = getEntityTypeFromNodeType(nodeType);
+  let response: any;
+  try {
+    // This should get all questions under test_your_skills
+    response = await youDoMcqApi.getAllQuestions(entityType, nodeId);
+  } catch (err: any) {
+    // "Nothing here yet" is a valid empty list, not an error — cache it
+    // as [] so revisiting an empty node doesn't loop the loader either.
+    if (err.message?.includes('not found') || err.response?.status === 404) {
+      return [];
+    }
+    throw err;
+  }
+
+  // Handle different response structures
+  let raw: any[] = [];
+  if (response.data) {
+    raw = response.data;
+  } else if (response.questions) {
+    raw = response.questions;
+  } else if (Array.isArray(response)) {
+    raw = response;
+  }
+
+  const transformedQuestions: QuestionRecord[] = raw.map((q: any) => {
+    let title = "Untitled Question";
+
+    if (typeof q.mcqQuestionTitle === 'string') {
+      title = q.mcqQuestionTitle.replace(/<[^>]*>/g, '').trim();
+    } else if (Array.isArray(q.mcqQuestionTitle)) {
+      const textBlocks = q.mcqQuestionTitle
+        .filter((block: any) => block.type === 'text')
+        .map((block: any) => {
+          const value = block.value || '';
+          return value.replace(/<[^>]*>/g, '').trim();
+        })
+        .filter(Boolean)
+        .join(' ');
+      title = textBlocks || "Untitled Question";
+    } else if (q.mcqQuestionTitle && typeof q.mcqQuestionTitle === 'object') {
+      title = q.mcqQuestionTitle.value || q.mcqQuestionTitle.text || "Untitled Question";
+    }
+
+    return {
+      id: q._id || q.questionId,
+      testItemKey: q.testItemKey || "test_your_skills",
+      title: title,
+      type: q.mcqQuestionType || "multiple_choice",
+      duration: q.testSettings?.timeLimit || 60,
+      marks: q.mcqQuestionScore || 1,
+      level: q.mcqQuestionDifficulty || "medium",
+      status: q.isActive ? "active" : "draft",
+      createdAt: q.createdAt || new Date().toISOString(),
+      sequence: q.sequence || 0,
+      questionData: q,
+    };
+  });
+
+  return transformedQuestions.sort((a, b) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+};
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function TestYourSkills({
   nodeId,
@@ -1571,15 +1655,12 @@ export default function TestYourSkills({
   configuredLanguages,
   onRefresh,
 }: YouDoProps) {
-  // React Query cache — used ONLY to survive an unmount/remount cycle
-  // (switching We_Do → You_Do → back into Test Your Skills used to drop
-  // the local `questions` state and re-fire the network call, showing
-  // "Loading questions…" every time). On mount we seed local state from
-  // cache instantly (no loader) and refresh in the background; the cache
-  // is refreshed after every successful loadQuestions. Same pattern as
-  // ProblemSolving / Assessment.
-  const queryClient = useQueryClient();
-  const [questions, setQuestions] = useState<QuestionRecord[]>([]);
+  // The question list lives in the React Query cache (see the useQuery block
+  // below), keyed by (entityType, nodeId, batch). Every navigation path into
+  // Test Your Skills — We Do → You Do, Assessment → Test Your Skills, a
+  // syllabus node revisit — mounts onto the SAME key, so a revisit paints
+  // cached rows (including a cached EMPTY list) instantly with no loader,
+  // while React Query refreshes in the background when the data is stale.
   const [showModal, setShowModal] = useState(false);
   const [showCreateOptionModal, setShowCreateOptionModal] = useState(false);
   const [showMockTestModal, setShowMockTestModal] = useState(false);
@@ -1588,8 +1669,9 @@ export default function TestYourSkills({
   const [editingQuestionData, setEditingQuestionData] = useState<any>(null);
   const [openDrop, setOpenDrop] = useState<string | null>(null);
   const [dropUpward, setDropUpward] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Busy flag for MUTATION flows only (bulk delete, bank import, single
+  // delete, document import) — the query below owns the initial-load state.
+  const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [fullQuestionData, setFullQuestionData] = useState<any[]>([]);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -1820,7 +1902,7 @@ const handleBankQuestionsSelected = async (selectedQuestions: any[]) => {
         const path = getEntityPath(entityPath);
         
         // IMPORTANT: Use the same testItemKey "test_your_skills" for all questions
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com'}/you-do/createquestion/${path}/${nodeId}/you-do/${testItemKey}/mcq`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533'}/you-do/createquestion/${path}/${nodeId}/you-do/${testItemKey}/mcq`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
@@ -1875,120 +1957,52 @@ const getEntityPath = (entityType: string): string => {
   };
   return pathMap[entityType] || 'topics';
 };
-// Cache key for the Test Your Skills question list. Any two calls with
-// the same (entityType, entityId, batch) share a cached list, so remount
-// after a tab switch reads from memory instead of hitting the network.
-const tysCacheKey = (): readonly [string, string, string, string] => [
-  'testYourSkillsQuestions',
-  getEntityTypeFromNodeType(nodeType),
-  nodeId || '',
-  getActiveBatchId() || '',
-];
+// Whether the query can run at all — no node selected means an empty list,
+// never a spinner.
+const hasNode = !!nodeId?.trim();
 
-const loadQuestions = async (opts: { silent?: boolean } = {}) => {
-  if (!nodeId?.trim()) {
-    setQuestions([]);
-    setIsLoading(false);
-    return;
-  }
+// The Test Your Skills question list, owned by React Query. One key per
+// (entityType, entityId, batch): every page that navigates here lands on the
+// same key, so the cache is shared across all navigation paths. The active
+// batch is part of the key — switching the batch strip is a different list,
+// not a refetch of the same one.
+const {
+  data: questionsData,
+  isPending: isQuestionsPending,
+  error: questionsError,
+  refetch: refetchQuestions,
+} = useQuery<QuestionRecord[]>({
+  // Shared with the resources page's warm prefetch — see the exported
+  // testYourSkillsQueryKey / fetchTestYourSkillsQuestions at module scope.
+  queryKey: testYourSkillsQueryKey(nodeType, nodeId),
+  enabled: hasNode,
+  // Fresh for 30s: bouncing straight back re-renders from cache with no
+  // request at all. After that, a revisit still paints the cached rows
+  // instantly and refreshes silently in the background (isFetching), never
+  // returning to the full-page loader.
+  staleTime: 30 * 1000,
+  // Keep the list cached across long editing detours before it's collected.
+  gcTime: 30 * 60 * 1000,
+  refetchOnWindowFocus: false,
+  queryFn: () => fetchTestYourSkillsQuestions(nodeType, nodeId),
+});
 
-  // Silent path (fired from the cache-hit hydration below) — the previous
-  // rows are already on screen, so skip the loader flicker.
-  if (!opts.silent) setIsLoading(true);
-  setError(null);
-  try {
-    const entityType = getEntityTypeFromNodeType(nodeType);
-    // This should get all questions under test_your_skills
-    const response = await youDoMcqApi.getAllQuestions(entityType, nodeId);
-    
-    // Handle different response structures
-    let questionsData = [];
-    if (response.data) {
-      questionsData = response.data;
-    } else if (response.questions) {
-      questionsData = response.questions;
-    } else if (Array.isArray(response)) {
-      questionsData = response;
-    } else {
-      questionsData = [];
-    }
-    
-    setFullQuestionData(questionsData);
-    
-    const transformedQuestions: QuestionRecord[] = questionsData.map((q: any) => {
-      let title = "Untitled Question";
-      
-      if (typeof q.mcqQuestionTitle === 'string') {
-        title = q.mcqQuestionTitle.replace(/<[^>]*>/g, '').trim();
-      } else if (Array.isArray(q.mcqQuestionTitle)) {
-        const textBlocks = q.mcqQuestionTitle
-          .filter((block: any) => block.type === 'text')
-          .map((block: any) => {
-            const value = block.value || '';
-            return value.replace(/<[^>]*>/g, '').trim();
-          })
-          .filter(Boolean)
-          .join(' ');
-        title = textBlocks || "Untitled Question";
-      } else if (q.mcqQuestionTitle && typeof q.mcqQuestionTitle === 'object') {
-        title = q.mcqQuestionTitle.value || q.mcqQuestionTitle.text || "Untitled Question";
-      }
-      
-      return {
-        id: q._id || q.questionId,
-        testItemKey: q.testItemKey || "test_your_skills",
-        title: title,
-        type: q.mcqQuestionType || "multiple_choice",
-        duration: q.testSettings?.timeLimit || 60,
-        marks: q.mcqQuestionScore || 1,
-        level: q.mcqQuestionDifficulty || "medium",
-        status: q.isActive ? "active" : "draft",
-        createdAt: q.createdAt || new Date().toISOString(),
-        sequence: q.sequence || 0,
-        questionData: q,
-      };
-    });
-    
-    const sorted = transformedQuestions.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    
-    setQuestions(sorted);
-    // Persist into the React Query cache so a later remount at the same
-    // (node, batch) reads instantly without a loader.
-    queryClient.setQueryData<QuestionRecord[]>(tysCacheKey(), sorted);
+const questions = questionsData ?? [];
+// Full-page loader ONLY when there is no cached data AND the first request
+// for this key is in flight. A background refetch of stale data keeps the
+// cached rows on screen (isPending stays false once data exists).
+const isInitialLoading = hasNode && isQuestionsPending;
+const error = questionsError
+  ? ((questionsError as Error).message || "Failed to load questions")
+  : null;
 
-  } catch (err: any) {
-    console.error("Failed to load questions:", err);
-    setError(err.message || "Failed to load questions");
-    if (err.message?.includes('not found') || err.response?.status === 404) {
-      setQuestions([]);
-      setError(null);
-    }
-  } finally {
-    if (!opts.silent) setIsLoading(false);
-  }
+// Shared refresh hook for the mutation flows below (delete / import / save).
+// The `silent` option is obsolete — background refetches never show the
+// full-page loader anymore — but the signature is kept for callers.
+const loadQuestions = async (_opts: { silent?: boolean } = {}) => {
+  if (!hasNode) return;
+  await refetchQuestions();
 };
-
-  // Resources by Batch — the active batch is a dependency of this list, not
-  // just of the request. Without it the questions loaded for the previously
-  // selected batch stay on screen after the batch strip is switched, and the
-  // switch looks like it did nothing.
-  //
-  // Cache hit → paint immediately, then refresh silently in the background so
-  // the user never sees a loader on a revisit. Cache miss → fall through to
-  // the loud fetch (spinner + first paint).
-  useEffect(() => {
-    const cached = queryClient.getQueryData<QuestionRecord[]>(tysCacheKey());
-    if (cached && cached.length > 0) {
-      setQuestions(cached);
-      setIsLoading(false);
-      loadQuestions({ silent: true });
-    } else {
-      loadQuestions();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId, nodeType, getActiveBatchId()]);
 
   const loadQuestionsForModal = async () => {
     if (!nodeId?.trim()) return [];
@@ -2334,7 +2348,10 @@ const loadQuestions = async (opts: { silent?: boolean } = {}) => {
     transition: "background-color 0.15s",
   };
 
-  if (isLoading) {
+  // isInitialLoading: first-ever fetch for this (node, batch) — no cache yet.
+  // isLoading: a mutation flow (delete / import) explicitly asked for it.
+  // Background refetches set neither, so cached rows stay on screen.
+  if (isInitialLoading || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full" style={{ background: T.bg }}>
         <Loader2 size={32} className="animate-spin" style={{ color: T.green }} />

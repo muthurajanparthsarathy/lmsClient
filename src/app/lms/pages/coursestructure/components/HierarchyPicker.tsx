@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
     ArrowLeft, ChevronRight, GraduationCap, CircleCheck, Settings2, Network, Table2, Layers, BookOpen,
+    CalendarDays, UploadCloud, UsersRound, Check, Building2, Code2, CircleAlert,
 } from 'lucide-react'
 import type { ServiceMapping } from '@/apiServices/serviceMappingService'
 import { DataTable, type Column } from '../../../shared/listing/DataTable'
@@ -12,7 +13,7 @@ import CourseActionsMenu from './CourseActionsMenu'
 import ApprovalHierarchyModal from '../../../component/ApprovalHierarchyModal'
 import {
     buildBatchTree, buildPhaseTree, buildTree, groupCourses, looseCourses,
-    placementLabel, runsInLabel, unplacedCourses,
+    placementLabel, runsInLabel, unplacedCourses, PATH_SEP,
     type BatchNode, type CourseGroup, type DegreeNode, type PhaseFirstNode,
 } from './mappingTree'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -35,7 +36,7 @@ const SIZE = {
     course: 'text-sm',
 }
 
-type CourseStatus = { id: string; moduleCount: number; participantCount: number; courseCode: string; hasModuleHours?: boolean } | null
+type CourseStatus = { id: string; moduleCount: number; participantCount: number; exerciseCount?: number; courseCode: string; hasModuleHours?: boolean; hasProgramCalendar?: boolean } | null
 type ViewMode = 'tree' | 'table'
 
 // "Degree : B.E" — naming the level means the tree reads without the reader
@@ -60,7 +61,8 @@ function CourseCount({ n }: { n: number }) {
 function StatusPill({ status }: { status: CourseStatus }) {
     if (!status) {
         return (
-            <span className="inline-flex items-center h-[22px] px-2 rounded-chip bg-brand-100 text-brand-700 ring-1 ring-inset ring-brand-500/20 text-2xs font-medium whitespace-nowrap">
+            <span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-chip bg-brand-100 text-brand-700 ring-1 ring-inset ring-brand-500/20 text-2xs font-medium whitespace-nowrap">
+                <CircleAlert size={12} />
                 Not set up
             </span>
         )
@@ -88,6 +90,82 @@ function SetupButton({ onClick }: { onClick: () => void }) {
             <Settings2 size={12} /> Setup Course
         </button>
     )
+}
+
+function CourseFlowStepper({
+    structured,
+    total,
+}: {
+    structured: number
+    total: number
+}) {
+    const steps = [
+        { n: 1, title: 'Service Mapping', hint: 'Completed', icon: Check, state: 'done' },
+        { n: 2, title: 'Course Structure', hint: '', icon: Layers, state: 'current' },
+        { n: 3, title: 'Program Calendar', hint: 'Next', icon: CalendarDays, state: 'info' },
+        { n: 4, title: 'Upload Resources', hint: 'Next', icon: UploadCloud, state: 'info' },
+        { n: 5, title: 'User Enrollment', hint: 'Next', icon: UsersRound, state: 'info' },
+    ]
+
+    return (
+        <div className="rounded-xl border border-hairline bg-surface shadow-xs overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5">
+                {steps.map((step, index) => {
+                    const Icon = step.icon
+                    const done = step.state === 'done'
+                    const current = step.state === 'current'
+                    return (
+                        <div
+                            key={step.title}
+                            className={`relative flex min-w-0 items-center gap-2.5 px-3.5 py-3 border-b md:border-r md:last:border-r-0 xl:border-b-0 border-hairline ${
+                                current ? 'bg-brand-wash' : done ? 'bg-success-50/60' : 'bg-surface'
+                            }`}
+                        >
+                            <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${
+                                done
+                                    ? 'border-success-500/30 bg-surface text-success-600'
+                                    : current
+                                        ? 'border-brand-strong bg-surface text-brand-strong ring-2 ring-brand-500/10'
+                                        : 'border-hairline bg-ink-50 text-subtle'
+                            }`}>
+                                {done ? <Icon size={15} strokeWidth={3} /> : step.n}
+                            </span>
+                            <div className="min-w-0">
+                                <p className="truncate text-xs font-bold text-heading">{step.title}</p>
+                                {step.hint && (
+                                    <p className={`mt-0.5 flex items-center gap-1 truncate text-2xs font-medium ${
+                                        done ? 'text-success-600' : current ? 'text-brand-strong' : 'text-subtle'
+                                    }`}>
+                                        {step.hint}
+                                    </p>
+                                )}
+                            </div>
+                            {index < steps.length - 1 && (
+                                <span className="pointer-events-none absolute -right-1.5 top-1/2 z-[1] hidden h-3 w-3 -translate-y-1/2 rotate-45 border-r border-t border-hairline bg-inherit xl:block" />
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+        </div>
+    )
+}
+
+const actionBreadcrumbsFor = (course: CourseGroup) => {
+    const parts = course.path.split(PATH_SEP).map((p) => p.trim()).filter(Boolean)
+    const labels = parts.length === 4
+        ? ['Degree', 'Department', 'Section', 'Semester']
+        : parts.length === 3
+            ? ['Degree', 'Department', 'Semester']
+            : parts.length === 2
+                ? ['Batch', 'Phase']
+                : parts.length === 1
+                    ? ['Batch']
+                    : []
+    return [
+        ...parts.map((part, index) => `${labels[index] || 'Level'}: ${part}`),
+        `Course: ${course.courseName}`,
+    ]
 }
 
 function Collapsible({
@@ -352,6 +430,7 @@ export default function HierarchyPicker({
 
     const clientName = typeof mapping.client === 'string' ? '' : mapping.client?.clientCompany || 'Client'
     const configured = groups.filter((g) => statusFor(g.courseName, g.path)).length
+    const structured = groups.filter((g) => (statusFor(g.courseName, g.path)?.moduleCount || 0) > 0).length
 
     const actionsFor = (course: CourseGroup) => {
         const status = statusFor(course.courseName, course.path)
@@ -359,9 +438,10 @@ export default function HierarchyPicker({
             // CourseActionsMenu filters its own items and returns null when
             // the user is granted none of them — no wrapper check needed here.
             return (
-                <CourseActionsMenu
-                    status={status}
-                    onView={() => onView(withBatches(course))}
+            <CourseActionsMenu
+                status={status}
+                breadcrumbs={actionBreadcrumbsFor(course)}
+                onView={() => onView(withBatches(course))}
                     onEdit={() => onSetup(withBatches(course))}
                     onStructure={() => onCourseStructure(status.id)}
                     onResources={() => onCourseResources(status.id)}
@@ -393,7 +473,10 @@ export default function HierarchyPicker({
         const others = alsoIn ?? course.placements.slice(1).map(placementLabel)
         const status = statusFor(course.courseName, course.path)
         return (
-            <div className="flex items-center gap-3 py-2 flex-wrap pl-1 rounded-chip hover:bg-row-hover transition-colors">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-transparent py-2 pl-1 pr-2 transition-colors hover:border-hairline hover:bg-row-hover sm:flex-nowrap">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-wash text-brand-strong">
+                    <Code2 size={16} />
+                </span>
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className={`${SIZE.course} font-semibold text-heading truncate`}>
@@ -561,6 +644,8 @@ export default function HierarchyPicker({
                 </div>
             </div>
 
+            <CourseFlowStepper structured={structured} total={groups.length} />
+
             {groups.length === 0 ? (
                 <div className="bg-surface rounded-xl border border-hairline shadow-xs">
                     <EmptyState
@@ -599,7 +684,7 @@ export default function HierarchyPicker({
                     />
                 </div>
             ) : (
-                <div className="bg-surface rounded-xl border border-hairline shadow-xs px-4 sm:px-5 py-3 space-y-0.5">
+                <div className="bg-surface rounded-xl border border-hairline shadow-xs px-4 sm:px-5 py-4 space-y-0.5">
                     {tree.map((deg) => (
                         <Collapsible
                             key={deg.degree}
@@ -615,14 +700,24 @@ export default function HierarchyPicker({
                             {deg.departments.map((dept) => (
                                 <Collapsible
                                     key={dept.department}
-                                    header={<LevelLabel label="Department" value={dept.department} className={SIZE.department} />}
+                                    header={
+                                        <span className="flex items-center gap-2 min-w-0">
+                                            <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
+                                                <Building2 size={15} className="text-brand-strong" />
+                                            </span>
+                                            <LevelLabel label="Department" value={dept.department} className={SIZE.department} />
+                                        </span>
+                                    }
                                 >
                                     {dept.sections.map((sec) => {
                                         const semesters = sec.semesters.map((sem) => (
                                             <Collapsible
                                                 key={sem.semester}
                                                 header={
-                                                    <span className="flex items-baseline gap-2 min-w-0">
+                                                    <span className="flex items-center gap-2 min-w-0">
+                                                        <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
+                                                            <CalendarDays size={15} className="text-brand-strong" />
+                                                        </span>
                                                         <LevelLabel label="Semester" value={sem.semester} className={SIZE.semester} />
                                                         <CourseCount n={sem.courses.length} />
                                                     </span>
@@ -637,7 +732,14 @@ export default function HierarchyPicker({
                                         return sec.section ? (
                                             <Collapsible
                                                 key={sec.section}
-                                                header={<LevelLabel label="Section" value={sec.section} className={SIZE.semester} />}
+                                                header={
+                                                    <span className="flex items-center gap-2 min-w-0">
+                                                        <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
+                                                            <UsersRound size={15} className="text-brand-strong" />
+                                                        </span>
+                                                        <LevelLabel label="Section" value={sec.section} className={SIZE.semester} />
+                                                    </span>
+                                                }
                                             >
                                                 {semesters}
                                             </Collapsible>

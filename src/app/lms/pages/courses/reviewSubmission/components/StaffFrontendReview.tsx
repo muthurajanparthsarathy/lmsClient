@@ -182,7 +182,7 @@ const StaffFrontendReview: React.FC<StaffFrontendReviewProps> = ({
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            min-height: calc(100vh * var(--ui-scale-inv, 1));
             margin: 0;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -660,7 +660,7 @@ useEffect(() => {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                min-height: 100vh;
+                min-height: calc(100vh * var(--ui-scale-inv, 1));
                 margin: 0;
                 padding: 20px;
             }

@@ -1,8 +1,8 @@
 import React, { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle, ArrowRight, ArrowUpRight, Calendar, Check,
-  ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Clock, Info, Lock, Square,
+  ChevronDown, ChevronLeft, ChevronRight,
+  Clock, Lock, Square,
 } from 'lucide-react';
 import { D, FONT } from './tokens';
 
@@ -37,15 +37,15 @@ export const InfoTooltip: React.FC<{
     <div className="relative inline-block ml-1 align-middle">
       <button ref={btnRef} type="button"
         onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}
-        className="focus:outline-none transition-colors"
-        style={{ color: D.textHint }}
+        className="focus:outline-none inline-flex items-center justify-center rounded-full transition-colors"
+        style={{ width: 13, height: 13, border: '1px solid #D6D3D1', color: D.textHint, fontSize: 8.5, fontWeight: 700, lineHeight: 1, cursor: 'help', background: 'transparent' }}
         aria-label="Information">
-        <Info size={12} />
+        i
       </button>
       {show && (
         <div ref={tipRef}
-          className="fixed z-[9999] p-2.5 text-xs rounded-xl shadow-2xl leading-relaxed"
-          style={{ left: pos.left, top: pos.top, maxWidth: 'min(280px,calc(100vw - 40px))', width: 'max-content', background: D.textMain, color: '#fff', fontFamily: FONT }}>
+          className="fixed z-[9999] p-2.5 rounded-lg leading-relaxed"
+          style={{ left: pos.left, top: pos.top, maxWidth: 'min(280px,calc(100vw - 40px))', width: 'max-content', background: D.textMain, color: '#fff', fontSize: 11.4, boxShadow: '0 10px 30px rgba(15,23,42,0.12)', fontFamily: FONT }}>
           {content}
         </div>
       )}
@@ -75,13 +75,16 @@ export const OInput: React.FC<{
   };
 
   const baseClass = [
-    'w-full px-3 py-2 text-sm rounded-lg border transition-all duration-150 outline-none',
+    'w-full text-[12.6px] rounded-lg border transition-all duration-150 outline-none',
     'font-sans',
+    type === 'textarea'
+      ? 'min-h-[64px] px-[11px] py-[9px] leading-[1.5] resize-y'
+      : 'h-[34px] px-[11px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
     error && touched
-      ? 'border-red-300 bg-red-50/30 focus:border-red-400 focus:ring-1 focus:ring-red-100'
-      : 'border-[#eef0f4] bg-white focus:border-[#E8640C] focus:ring-1 focus:ring-[rgba(232,100,12,0.10)]',
-    disabled ? 'bg-[#f8fafc] text-[#94A3B8] cursor-not-allowed' : 'text-[#0F172A]',
-    readOnly ? 'bg-[#f8fafc] cursor-default text-[#94A3B8]' : '',
+      ? 'border-[#FBD3CE] bg-[#FFFCFC] focus:border-[#FBD3CE] focus:shadow-[0_0_0_3px_rgba(217,45,32,0.08)]'
+      : 'border-[#E9E5E1] bg-white focus:border-[#EE6A22] focus:shadow-[0_0_0_3px_rgba(238,106,34,0.13)]',
+    disabled ? 'bg-[#FAF9F8] text-[#6B7280] cursor-not-allowed' : 'text-[#1D2433]',
+    readOnly ? 'bg-[#FAF9F8] cursor-default text-[#6B7280]' : '',
     className,
   ].filter(Boolean).join(' ');
 
@@ -97,8 +100,8 @@ export const OInput: React.FC<{
         readOnly={readOnly}
         id={id}
         rows={2}
-        className={baseClass + ' resize-none leading-relaxed'} />
-      {error && touched && <p className="mt-1 text-xs" style={{ color: D.red }}>{error}</p>}
+        className={baseClass} />
+      {error && touched && <p className="mt-1 text-[11px]" style={{ color: D.red }}>{error}</p>}
     </div>
   );
   return (
@@ -114,7 +117,7 @@ export const OInput: React.FC<{
         readOnly={readOnly}
         id={id}
         className={baseClass} />
-      {error && touched && <p className="mt-1 text-xs" style={{ color: D.red }}>{error}</p>}
+      {error && touched && <p className="mt-1 text-[11px]" style={{ color: D.red }}>{error}</p>}
     </div>
   );
 };
@@ -184,16 +187,16 @@ export const ONumberInput: React.FC<{
         disabled={disabled}
         style={style}
         className={[
-          'w-full px-3 py-2 text-sm rounded-lg border transition-all duration-150 outline-none font-sans',
+          'w-full h-[34px] px-[11px] text-[12.6px] rounded-lg border transition-all duration-150 outline-none font-sans',
           error && touched
-            ? 'border-red-300 bg-red-50/30 focus:border-red-400 focus:ring-1 focus:ring-red-100'
-            : 'border-[#eef0f4] bg-white focus:border-[#E8640C] focus:ring-1 focus:ring-[rgba(232,100,12,0.10)]',
-          disabled ? 'bg-[#f8fafc] text-[#94A3B8] cursor-not-allowed' : 'text-[#0F172A]',
+            ? 'border-[#FBD3CE] bg-[#FFFCFC] focus:border-[#FBD3CE] focus:shadow-[0_0_0_3px_rgba(217,45,32,0.08)]'
+            : 'border-[#E9E5E1] bg-white focus:border-[#EE6A22] focus:shadow-[0_0_0_3px_rgba(238,106,34,0.13)]',
+          disabled ? 'bg-[#FAF9F8] text-[#6B7280] cursor-not-allowed' : 'text-[#1D2433]',
           className,
         ].filter(Boolean).join(' ')}
       />
       {error && touched && (
-        <p className="mt-1 text-xs" style={{ color: D.red }}>{error}</p>
+        <p className="mt-1 text-[11px]" style={{ color: D.red }}>{error}</p>
       )}
     </div>
   );
@@ -206,19 +209,20 @@ export const OToggle: React.FC<{
 }> = ({ enabled, onChange, label, description, className = '', inline = false }) => (
   <div className={className}>
     <div className={`flex items-center ${inline ? 'gap-2.5' : 'justify-between'}`}>
-      {label && <div className="text-sm font-semibold" style={{ color: D.textMain }}>{label}</div>}
+      {label && <div className="font-semibold" style={{ fontSize: 12.3, color: D.textMain }}>{label}</div>}
       <button type="button" role="switch" aria-checked={enabled} onClick={() => onChange(!enabled)}
-        className="relative inline-flex items-center h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 focus:outline-none p-[2px]"
-        style={{ background: enabled ? D.orange : '#e5e7eb' }}>
-        <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+        className="relative flex-shrink-0 cursor-pointer rounded-full focus:outline-none"
+        style={{ width: 35, height: 20, background: enabled ? D.emerald : '#DEDAD5', transition: 'background .16s' }}>
+        <span className="pointer-events-none absolute rounded-full bg-white"
+          style={{ width: 16, height: 16, top: 2, left: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transform: enabled ? 'translateX(15px)' : 'translateX(0)', transition: 'transform .16s' }} />
       </button>
       {inline && (
-        <span className="text-[10px] font-bold" style={{ color: enabled ? D.emerald : D.red }}>
+        <span className="text-[11px] font-bold" style={{ color: enabled ? D.emerald : D.textHint }}>
           {enabled ? 'On' : 'Off'}
         </span>
       )}
     </div>
-    {description && <div className="text-xs mt-0.5 leading-relaxed" style={{ color: D.textMuted }}>{description}</div>}
+    {description && <div className="text-[11px] mt-0.5 leading-relaxed" style={{ color: D.textMuted }}>{description}</div>}
   </div>
 );
 
@@ -254,8 +258,8 @@ export const PortalDropdown: React.FC<{
         style={{
           position: 'absolute', top: coords.top, left: coords.left,
           width: Math.max(coords.width, minWidth || 0), zIndex: 9999,
-          background: D.bg, border: `1px solid ${D.border}`, borderRadius: 12,
-          overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.12)',
+          background: '#fff', border: `1px solid ${D.border2}`, borderRadius: 8,
+          overflow: 'hidden', boxShadow: '0 10px 30px rgba(15,23,42,0.12)',
         }}>
         {children}
       </div>,
@@ -273,27 +277,28 @@ export const ExpandableSection: React.FC<{
   const handleToggle = () => { if (isExpanded && onCollapse) onCollapse(); onToggle(id); };
 
   return (
-    <div className="rounded-lg border overflow-hidden transition-all duration-200"
-      style={{ borderColor: isExpanded ? accent + '40' : D.border, background: D.bg }}>
+    <div className="rounded-[11px] border overflow-hidden transition-all duration-200"
+      style={{ borderColor: D.border2, background: '#fff' }}>
       <button type="button" onClick={handleToggle} aria-expanded={isExpanded}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left focus:outline-none transition-colors hover:bg-[#f8fafc]">
+        className="w-full flex items-center gap-2 px-[13px] py-[9px] text-left focus:outline-none transition-colors hover:bg-[#FAF9F8]"
+        style={isExpanded ? { background: D.surface } : undefined}>
         <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
           style={{ background: isExpanded ? accent + '15' : D.surface, color: isExpanded ? accent : D.textMuted }}>
           {icon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-bold" style={{ color: D.textMain, fontFamily: FONT }}>{title}</div>
-          <div className="text-[10px]" style={{ color: D.textMuted }}>{subtitle}</div>
+          <div className="font-bold" style={{ fontSize: 12.3, color: D.textSub, fontFamily: FONT }}>{title}</div>
+          <div className="text-[11px]" style={{ color: D.textMuted }}>{subtitle}</div>
         </div>
         {headerExtra && <span className="flex-shrink-0" onClick={e => e.stopPropagation()}>{headerExtra}</span>}
         <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all duration-200"
-          style={{ background: isExpanded ? accent + '15' : 'transparent', color: isExpanded ? accent : D.textMuted, transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          style={{ background: 'transparent', color: isExpanded ? accent : D.textMuted, transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
           <ChevronDown size={13} />
         </div>
       </button>
       {isExpanded && (
-        <div className="border-t px-3 py-2.5 animate-in fade-in slide-in-from-top-1 duration-150"
-          style={{ borderColor: accent + '25', background: '#fdfcfc' }}>
+        <div className="border-t p-[13px] animate-in fade-in slide-in-from-top-1 duration-150"
+          style={{ borderColor: D.border, background: '#fff' }}>
           {children}
         </div>
       )}
@@ -373,24 +378,26 @@ export const TimePicker: React.FC<{
       <button type="button"
         onClick={() => !disabled && setOpen(v => !v)}
         disabled={disabled}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-sm font-semibold transition-all"
+        className="flex items-center gap-2 rounded-lg border transition-all"
         style={{
-          borderColor: open ? D.orange : D.border,
-          background: D.bg,
+          height: 34, padding: '0 11px', fontSize: 12.6, fontWeight: 600,
+          borderColor: open ? D.orange : D.border2,
+          boxShadow: open ? `0 0 0 3px ${D.orangeMed}` : 'none',
+          background: '#fff',
           color: D.textMain,
           fontFamily: FONT
         }}>
-        <Clock size={13} style={{ color: D.orange }} />
+        <Clock size={13} style={{ color: D.textMuted }} />
         {fmt(value.hour, value.minute)}
-        <ChevronDown size={11} style={{ color: D.textMuted, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+        <ChevronDown size={12} strokeWidth={1.4} style={{ color: D.textMuted, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
       </button>
       {open && !disabled && (
-        <div className="absolute top-full left-0 mt-2 p-3 rounded-xl shadow-2xl border z-50"
-          style={{ background: D.bg, borderColor: D.border, width: 240 }}>
+        <div className="absolute top-full left-0 mt-2 p-3 rounded-lg border z-50"
+          style={{ background: '#fff', borderColor: D.border2, width: 240, boxShadow: '0 10px 30px rgba(15,23,42,0.12)' }}>
           <div className="flex gap-2">
             <div className="flex-1">
-              <div className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: D.textMuted }}>Hour</div>
-              <div className="h-28 overflow-y-auto rounded-lg border" style={{ borderColor: D.border }}>
+              <div className="font-bold uppercase mb-1" style={{ fontSize: 10.6, letterSpacing: '0.03em', color: '#57606E' }}>Hour</div>
+              <div className="h-28 overflow-y-auto rounded-lg border" style={{ borderColor: D.border2 }}>
                 {hours.map(hour => {
                   const active = tempHour === hour;
                   const isDisabled = isHourDisabled(hour);
@@ -403,8 +410,8 @@ export const TimePicker: React.FC<{
                       disabled={isDisabled}
                       className="w-full text-left px-2 py-1 text-xs transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{
-                        background: active ? D.orangeLight : 'transparent',
-                        color: active ? D.orange : isDisabled ? D.textHint : D.textSub,
+                        background: active ? '#FFF2E8' : 'transparent',
+                        color: active ? D.orangeDark : isDisabled ? D.textHint : D.textSub,
                         fontWeight: active ? 700 : 500,
                         fontFamily: FONT,
                         borderLeft: isCompareHour && !active ? `2px solid ${D.orange}` : 'none'
@@ -419,8 +426,8 @@ export const TimePicker: React.FC<{
               </div>
             </div>
             <div className="flex-1">
-              <div className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: D.textMuted }}>Minute</div>
-              <div className="h-28 overflow-y-auto rounded-lg border" style={{ borderColor: D.border }}>
+              <div className="font-bold uppercase mb-1" style={{ fontSize: 10.6, letterSpacing: '0.03em', color: '#57606E' }}>Minute</div>
+              <div className="h-28 overflow-y-auto rounded-lg border" style={{ borderColor: D.border2 }}>
                 {mins.map(minute => {
                   const active = tempMinute === minute;
                   const isDisabled = isMinuteDisabled(tempHour, minute);
@@ -433,8 +440,8 @@ export const TimePicker: React.FC<{
                       disabled={isDisabled}
                       className="w-full text-left px-2 py-1 text-xs transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                       style={{
-                        background: active ? D.orangeLight : 'transparent',
-                        color: active ? D.orange : isDisabled ? D.textHint : D.textSub,
+                        background: active ? '#FFF2E8' : 'transparent',
+                        color: active ? D.orangeDark : isDisabled ? D.textHint : D.textSub,
                         fontWeight: active ? 700 : 500,
                         fontFamily: FONT,
                         borderTop: isFirstEnabledMinute ? `1px dashed ${D.orange}` : 'none'
@@ -488,10 +495,10 @@ export const TimePicker: React.FC<{
 };
 
 // ─── SectionLabel ────────────────────────────────────────────────────────────
-export const SectionLabel: React.FC<{ children: React.ReactNode; required?: boolean; info?: string }> = ({ children, required, info }) => (
-  <div className="flex items-center gap-1 mb-1">
-    <label className="text-xs font-semibold" style={{ color: D.textSub, fontFamily: FONT }}>{children}</label>
-    {required && <span className="text-xs font-bold" style={{ color: D.orange }}>*</span>}
+export const SectionLabel: React.FC<{ children: React.ReactNode; required?: boolean; info?: string; className?: string }> = ({ children, required, info, className = '' }) => (
+  <div className={`flex items-center gap-1 mb-[5px] ${className}`}>
+    <label className="block font-semibold" style={{ fontSize: 11, color: '#4B5563', fontFamily: FONT }}>{children}</label>
+    {required && <span className="font-bold" style={{ fontSize: 11, color: D.orange }}>*</span>}
     {info && <InfoTooltip content={info} />}
   </div>
 );
@@ -508,27 +515,30 @@ export const ODropdown: React.FC<{
   return (
     <div className={`relative ${className}`}>
       <button ref={btnRef} type="button" onClick={() => !disabled && setOpen(v => !v)} disabled={disabled}
-        className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm font-semibold text-left transition-all outline-none"
+        className="w-full flex items-center justify-between rounded-lg border text-left transition-all outline-none"
         style={{
-          borderColor: open ? D.orange : error && touched ? D.red : D.border,
-          background: disabled ? D.surface : D.bg,
-          color: selected ? D.textMain : D.textMuted,
+          height: 34, padding: '0 11px', fontSize: 12.6, fontWeight: 500,
+          borderColor: open ? D.orange : error && touched ? '#FBD3CE' : D.border2,
+          background: disabled ? D.surface : error && touched ? '#FFFCFC' : '#fff',
+          color: disabled ? D.textMuted : selected ? D.textMain : D.textHint,
           fontFamily: FONT,
-          boxShadow: open ? `0 0 0 2px ${D.orangeLight}` : '',
+          boxShadow: open ? `0 0 0 3px ${D.orangeMed}` : '',
         }}>
         <span className="truncate">{selected?.label || placeholder}</span>
-        {!disabled && <ChevronDown size={14} style={{ color: D.textMuted, flexShrink: 0, transform: open ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }} />}
+        {!disabled && <ChevronDown size={12} strokeWidth={1.4} style={{ color: D.textMuted, flexShrink: 0, transform: open ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }} />}
         {disabled && <Lock size={12} style={{ color: D.textMuted, flexShrink: 0 }} />}
       </button>
-      {error && touched && <p className="mt-1 text-xs" style={{ color: D.red }}>{error}</p>}
+      {error && touched && <p className="mt-1 text-[11px]" style={{ color: D.red }}>{error}</p>}
       <PortalDropdown isOpen={open} onClose={() => setOpen(false)} triggerRef={btnRef}>
         <div className="py-1">
           {options.map(opt => (
             <button key={opt.value} type="button" onClick={() => { onChange(opt.value); setOpen(false); }}
-              className="w-full text-left px-3 py-2 text-sm font-semibold flex items-center justify-between transition-colors hover:bg-[#f8fafc]"
-              style={{ color: value === opt.value ? D.orange : D.textSub, fontFamily: FONT }}>
+              className="w-full text-left flex items-center justify-between transition-colors hover:bg-[#FAF9F8]"
+              style={value === opt.value
+                ? { padding: '8px 11px', fontSize: 12.6, fontWeight: 600, background: '#FFF2E8', color: D.orangeDark, fontFamily: FONT }
+                : { padding: '8px 11px', fontSize: 12.6, fontWeight: 500, color: D.textSub, fontFamily: FONT }}>
               {opt.label}
-              {value === opt.value && <Check size={13} style={{ color: D.orange }} />}
+              {value === opt.value && <Check size={13} style={{ color: D.orangeDark }} />}
             </button>
           ))}
         </div>
@@ -552,26 +562,27 @@ export const SpinField: React.FC<{
   };
 
   return (
-    <div className="flex flex-col items-center" style={{ width }}>
+    <div className="inline-flex items-stretch overflow-hidden rounded-[7px] border"
+      style={{ height: 30, borderColor: D.border2, background: disabled ? D.surface : '#fff' }}>
       <button type="button" disabled={disabled}
-        onClick={() => { const n = (value || min) < max ? (value || min) + 1 : min; onChange(n); }}
-        className="w-full flex items-center justify-center h-4 rounded-t border-x border-t transition-colors hover:bg-[#f8fafc] disabled:opacity-40"
-        style={{ borderColor: D.border }}>
-        <ChevronUp size={9} style={{ color: D.textMuted }} />
+        onClick={() => { const n = (value || min) > min ? (value || min) - 1 : max; onChange(n); }}
+        className="flex items-center justify-center flex-shrink-0 transition-colors text-[#6B7280] hover:bg-[#FFF2E8] hover:text-[#D65A16] disabled:opacity-40"
+        style={{ width: 25, fontSize: 13, fontWeight: 600, lineHeight: 1 }}>
+        &minus;
       </button>
       <input
         type="text" inputMode="numeric" value={raw} disabled={disabled}
         onChange={e => setRaw(e.target.value)}
         onBlur={e => commit(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') commit(raw); }}
-        className="w-full text-center border-x text-[11px] font-bold py-0.5 outline-none transition-all disabled:opacity-40"
-        style={{ borderColor: D.border, color: D.textMain, background: disabled ? D.surface : '#fff', fontFamily: FONT }}
+        className="text-center outline-none transition-all disabled:opacity-40"
+        style={{ width, fontSize: 12.5, fontWeight: 600, color: D.textMain, borderLeft: `1px solid ${D.border}`, borderRight: `1px solid ${D.border}`, background: disabled ? D.surface : '#fff', fontFamily: FONT }}
       />
       <button type="button" disabled={disabled}
-        onClick={() => { const n = (value || min) > min ? (value || min) - 1 : max; onChange(n); }}
-        className="w-full flex items-center justify-center h-4 rounded-b border-x border-b transition-colors hover:bg-[#f8fafc] disabled:opacity-40"
-        style={{ borderColor: D.border }}>
-        <ChevronDown size={9} style={{ color: D.textMuted }} />
+        onClick={() => { const n = (value || min) < max ? (value || min) + 1 : min; onChange(n); }}
+        className="flex items-center justify-center flex-shrink-0 transition-colors text-[#6B7280] hover:bg-[#FFF2E8] hover:text-[#D65A16] disabled:opacity-40"
+        style={{ width: 25, fontSize: 13, fontWeight: 600, lineHeight: 1 }}>
+        +
       </button>
     </div>
   );
@@ -585,8 +596,13 @@ export const MonthDropField: React.FC<{ value: number; disabled?: boolean; onCha
       value={value || ''}
       disabled={disabled}
       onChange={e => onChange(parseInt(e.target.value, 10))}
-      className="border rounded text-[11px] font-bold px-1 py-0 h-[46px] outline-none transition-all disabled:opacity-40 cursor-pointer"
-      style={{ borderColor: D.border, color: value ? D.textMain : D.textMuted, background: disabled ? D.surface : '#fff', fontFamily: FONT, width: 80 }}
+      className="border rounded-[7px] font-semibold outline-none transition-all disabled:opacity-40 cursor-pointer appearance-none"
+      style={{
+        height: 30, width: 84, padding: '0 24px 0 9px', fontSize: 12,
+        borderColor: D.border2, color: value ? D.textMain : D.textMuted,
+        background: `${disabled ? D.surface : '#fff'} url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat right 8px center`,
+        fontFamily: FONT,
+      }}
     >
       <option value="">Month</option>
       {months.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
@@ -653,9 +669,10 @@ export const DateRowPicker: React.FC<{
       <div className="flex items-center gap-2 px-3 py-2 flex-wrap">
         {toggleable && (
           <button type="button" onClick={onToggleEnable}
-            className="relative inline-flex items-center h-5 w-9 flex-shrink-0 rounded-full border-transparent transition-colors duration-200 p-[2px]"
-            style={{ background: isEnabled ? D.orange : '#e5e7eb' }}>
-            <span className={`inline-block h-[13px] w-[13px] transform rounded-full bg-white shadow transition-transform duration-200 ${isEnabled ? 'translate-x-[17px]' : 'translate-x-0'}`} />
+            className="relative flex-shrink-0 rounded-full cursor-pointer"
+            style={{ width: 35, height: 20, background: isEnabled ? D.emerald : '#DEDAD5', transition: 'background .16s' }}>
+            <span className="absolute rounded-full bg-white"
+              style={{ width: 16, height: 16, top: 2, left: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transform: isEnabled ? 'translateX(15px)' : 'translateX(0)', transition: 'transform .16s' }} />
           </button>
         )}
         <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -665,8 +682,8 @@ export const DateRowPicker: React.FC<{
           {icon === '↗' && <ArrowUpRight size={11} />}
         </div>
         <div className="w-[130px] flex-shrink-0 flex items-center gap-0.5">
-          <div className="text-[11px] font-bold leading-tight"
-            style={{ color: isEnabled ? '#000000' : D.textMuted, fontFamily: FONT }}>
+          <div className="leading-tight"
+            style={{ fontSize: 11.5, fontWeight: 600, color: isEnabled ? '#57606E' : D.textMuted, fontFamily: FONT }}>
             {label}
           </div>
           {tooltip && <InfoTooltip content={tooltip} side="right" />}
@@ -678,7 +695,7 @@ export const DateRowPicker: React.FC<{
             onChange={v => onUpdate(fieldKey, 'month', v)} />
           <SpinField value={year} min={2020} max={2099} width={50} disabled={!isEnabled} pad={4}
             onChange={v => onUpdate(fieldKey, 'year', v)} />
-          <div className="w-px h-8 flex-shrink-0 mx-0.5" style={{ background: D.border }} />
+          <div className="w-px h-6 flex-shrink-0 mx-0.5" style={{ background: D.border2 }} />
           <SpinField value={hour} min={0} max={23} width={34} disabled={!isEnabled} pad={2}
             onChange={v => onUpdate(fieldKey, 'hour', v)} />
           <span className="text-sm font-bold flex-shrink-0" style={{ color: D.textMuted }}>:</span>
@@ -694,10 +711,11 @@ export const DateRowPicker: React.FC<{
               setCalYear(year > 0 ? year : new Date().getFullYear());
               setActivePicker(isOpen('date') ? { field: null, type: null } : { field: fieldKey, type: 'date' });
             }}
-            className="w-8 h-[46px] rounded-lg flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40"
+            className="w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40"
             style={{
-              border: 'none',
-              background: isOpen('date') ? color + '10' : D.surface,
+              height: 30,
+              border: `1px solid ${D.border2}`,
+              background: isOpen('date') ? color + '10' : '#fff',
               color: isEnabled ? color : D.textMuted,
             }}>
             <Calendar size={13} />
@@ -706,9 +724,10 @@ export const DateRowPicker: React.FC<{
       </div>
       {isOpen('date') && (
         <div ref={pickerRef}
-          className="fixed z-[200] p-3 rounded-xl shadow-2xl"
+          className="fixed z-[200] p-3 rounded-[11px] border"
           style={{
-            background: D.bg, width: 270,
+            background: '#fff', borderColor: D.border2,
+            boxShadow: '0 10px 30px rgba(15,23,42,0.12)', width: 270,
             top: calBtnRef.current
               ? (pickerPos === 'bottom'
                 ? calBtnRef.current.getBoundingClientRect().bottom + window.scrollY + 6
@@ -723,7 +742,7 @@ export const DateRowPicker: React.FC<{
               className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-[#f4f5f7]" style={{ color: D.textMuted }}>
               <ChevronLeft size={13} />
             </button>
-            <span className="text-xs font-bold" style={{ color: '#000000', fontFamily: FONT }}>
+            <span className="font-bold" style={{ fontSize: 12.3, color: D.textMain, fontFamily: FONT }}>
               {monthsFull[calMonth - 1]} {calYear}
             </span>
             <button onClick={() => { if (calMonth === 12) { setCalMonth(1); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); }}
@@ -733,7 +752,7 @@ export const DateRowPicker: React.FC<{
           </div>
           <div className="grid grid-cols-7 gap-0.5 mb-1">
             {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-              <div key={d} className="text-center text-[9px] font-bold py-0.5" style={{ color: D.textHint }}>{d}</div>
+              <div key={d} className="text-center font-bold uppercase py-0.5" style={{ fontSize: 9.5, letterSpacing: '0.03em', color: '#57606E' }}>{d}</div>
             ))}
           </div>
           <div className="grid grid-cols-7 gap-0.5">
@@ -754,7 +773,7 @@ export const DateRowPicker: React.FC<{
                   className="h-7 w-7 mx-auto text-[11px] rounded-lg flex items-center justify-center transition-all"
                   style={{
                     background: sel ? color : 'transparent',
-                    color: sel ? '#fff' : dis ? D.textHint : '#000000',
+                    color: sel ? '#fff' : dis ? D.textHint : D.textMain,
                     cursor: !d || dis ? 'default' : 'pointer',
                     fontWeight: sel ? 700 : 500,
                     fontFamily: FONT,
@@ -784,7 +803,7 @@ export const DateRowPicker: React.FC<{
       )}
       {hasError && isTouched && (
         <div className="px-3 pb-2 flex items-center gap-1.5" style={{ color: D.red }}>
-          <AlertCircle size={11} /><p className="text-xs">{hasError}</p>
+          <AlertCircle size={11} /><p className="text-[11px]">{hasError}</p>
         </div>
       )}
     </div>
@@ -809,19 +828,19 @@ export const GradeRow = React.memo(({
       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color + '12', color }}>{icon}</div>
       <div>
         <div className="flex items-center gap-0.5">
-          <span className="text-xs font-semibold" style={{ color: D.textMain, fontFamily: FONT }}>{label}</span>
-          {!autoValue && !optional && <span className="text-xs font-bold" style={{ color: D.orange }}>*</span>}
+          <span className="font-semibold" style={{ fontSize: 12.3, color: D.textMain, fontFamily: FONT }}>{label}</span>
+          {!autoValue && !optional && <span className="font-bold" style={{ fontSize: 11, color: D.orange }}>*</span>}
           <InfoTooltip content={info} side="right" />
         </div>
-        {error && errorTouched && <p className="text-[10.5px] mt-0.5" style={{ color: D.red }}>{error}</p>}
+        {error && errorTouched && <p className="text-[11px] mt-0.5" style={{ color: D.red }}>{error}</p>}
       </div>
     </div>
     <div className="w-32 flex-shrink-0">
       {autoValue !== undefined ? (
         <div className="relative">
           <input disabled value={autoValue} placeholder="Auto"
-            className="w-full px-3 py-1.5 text-sm rounded-lg border"
-            style={{ borderColor: D.border, background: D.surface, color: D.textMuted }} />
+            className="w-full rounded-lg border"
+            style={{ height: 34, padding: '0 11px', fontSize: 12.6, borderColor: D.border2, background: D.surface, color: D.textMuted }} />
           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold" style={{ color: D.orange }}>Auto</span>
         </div>
       ) : (

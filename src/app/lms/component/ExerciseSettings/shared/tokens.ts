@@ -1,44 +1,41 @@
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 // Shared by ExerciseSettings.tsx (shell) and every extracted step component.
-// Aligned to Coursesidebar.tsx / Coursecontent.tsx palette so the modal feels
-// like part of the same product. Accent is #E8640C orange, surfaces are
-// Slate-tinted whites, type ramp uses the Slate scale (0F172A → 94A3B8).
+// Values are the exercise-creation-flow.html demo's design system verbatim —
+// warm greys on cream, orange #EE6A22 accent, system font stack. The KEYS are
+// unchanged so every existing `D.*` reference keeps working; only the values
+// moved to the demo palette.
 export const D = {
-  orange:      '#E8640C',
-  orangeLight: 'rgba(232,100,12,0.10)',
-  orangeMed:   'rgba(232,100,12,0.14)',
-  orangeGlow:  'rgba(232,100,12,0.18)',
-  orangeDark:  '#C8520A',
+  orange:      '#EE6A22',                  // --orange
+  orangeLight: 'rgba(238,106,34,0.10)',    // soft washes
+  orangeMed:   'rgba(238,106,34,0.13)',    // the demo's focus ring alpha
+  orangeGlow:  'rgba(238,106,34,0.15)',    // current-step halo
+  orangeDark:  '#D65A16',                  // --orange-dark
   bg:          '#ffffff',
-  surface:     '#f8fafc',
-  surface2:    '#f4f5f7',
-  border:      '#eef0f4',
-  border2:     '#e5e7eb',
-  textMain:    '#0F172A',
-  textSub:     '#334155',
-  textMuted:   '#475569',
-  textHint:    '#94A3B8',
-  emerald:     '#10b981',
-  blue:        '#3b82f6',
-  purple:      '#8b5cf6',
-  amber:       '#f59e0b',
-  red:         '#ef4444',
+  surface:     '#FAF9F8',                  // --wash (card headers, side panels)
+  surface2:    '#F5F3F1',                  // segmented-control track
+  border:      '#F1EEEA',                  // --soft (dividers)
+  border2:     '#E9E5E1',                  // --line (inputs, cards)
+  textMain:    '#1D2433',                  // --ink
+  textSub:     '#3F4756',                  // card titles / body
+  textMuted:   '#6B7280',                  // --muted
+  textHint:    '#9CA3AF',                  // --faint
+  emerald:     '#0F9D58',                  // --green (switch on, valid)
+  blue:        '#175CD3',                  // --blue
+  purple:      '#6941C6',                  // --purple
+  amber:       '#F0A415',                  // medium-level dot
+  red:         '#D92D20',                  // --red
 };
 
 // ─── Font injection (once) ───────────────────────────────────────────────────
-// Inter — same family used by Coursesidebar / Coursecontent.
+// The demo uses the native system stack — no webfont download is needed, so
+// this is now a no-op kept only because the shell still calls it.
 export const injectFonts = (() => {
   let injected = false;
   return () => {
     if (injected || typeof document === 'undefined') return;
     injected = true;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href =
-      'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
-    document.head.appendChild(link);
   };
 })();
 
-// Canonical font stack used throughout the modal (matches Coursesidebar).
-export const FONT = "'Poppins','DM Sans','Segoe UI',sans-serif";
+// Canonical font stack used throughout the modal — the demo's stack verbatim.
+export const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,'Helvetica Neue',Arial,sans-serif";
