@@ -35,6 +35,11 @@ interface Role { _id: string; renameRole: string; originalRole: string }
 interface BulkPermissionModalProps {
   isOpen: boolean; onClose: () => void; availableUsers: User[]
   roles: Role[]; basedOn: string | null; preSelectedUser?: User | null
+  // Users to open with already ticked — the caller's own multi-select handed
+  // over, so "select rows, then Permissions" does not ask for them twice.
+  // Ids rather than objects on purpose: the picker's user list loads lazily
+  // while this modal opens, and a selection keyed by id survives that wait.
+  preSelectedUserIds?: string[]
   // When provided, the catalog is limited to permissions whose id is in this
   // list — used to constrain bulk-assign to an institution's allow-list (set
   // by the Super Admin via Clients → Permission Management). Omit for the
@@ -158,9 +163,12 @@ function RoleDropdown({ roles, selected, onChange }: { roles: Role[]; selected: 
 
 // ─── MAIN COMPONENT ────────────────────────────────────────────────────────────
 
-export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, basedOn, preSelectedUser, allowedIds, allowedFunctions }: BulkPermissionModalProps) {
+export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, basedOn, preSelectedUser, preSelectedUserIds, allowedIds, allowedFunctions }: BulkPermissionModalProps) {
   // User selection
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([])
+  // Seeded once, in the initializer rather than an effect: this modal is
+  // mounted fresh on every open, and re-seeding on each render would undo any
+  // user the operator unticks here.
+  const [selectedUsers, setSelectedUsers] = useState<string[]>(() => preSelectedUserIds ?? [])
   const [searchTerm, setSearchTerm] = useState("")
   const [showFilters, setShowFilters] = useState(false)
   const [roleFilters, setRoleFilters] = useState<string[]>([])
@@ -252,10 +260,13 @@ export function BulkPermissionModal({ isOpen, onClose, availableUsers, roles, ba
   const allFilteredSelected = filteredUsers.length > 0 && filteredUsers.every(u => selectedUsers.includes(u.id))
 
   useEffect(() => {
+    // A handed-over multi-selection wins: the single-user path is how the row
+    // menu opens this, and the two never apply at once.
+    if (preSelectedUserIds?.length) return
     if (preSelectedUser && !selectedUsers.includes(preSelectedUser.id)) {
       setSelectedUsers([preSelectedUser.id])
     }
-  }, [preSelectedUser])
+  }, [preSelectedUser, preSelectedUserIds])
 
   const toggleUser = (id: string) => setSelectedUsers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
 

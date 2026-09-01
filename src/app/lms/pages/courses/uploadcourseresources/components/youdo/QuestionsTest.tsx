@@ -10,12 +10,12 @@ import {
   Search, Filter, Eye, Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import AddQuestionForm from '@/app/lms/component/student/YouDo/assessment/questionforms/AddQuestionForm';
-// Unified with We_Do — the rich picker (filters sidebar, Problem Type, slot
-// counter, list/grid toggle, Other Platform switch) that Assignment uses.
-// The older ~465-line You_Do-only picker is now unreferenced.
+// Unified with We_Do — the student-copy fork under
+// student/YouDo/assessment/questionforms/ was a stale duplicate with zero
+// unique features. Every callsite now points at the single canonical tree.
+import AddQuestionForm from '@/app/lms/component/questionforms/AddQuestionForm';
 import QuestionBankSelector from '@/app/lms/component/questionforms/mcq/QuestionBankSelector';
-import GenerateMCQAIQuestion from '@/app/lms/component/student/YouDo/assessment/questionforms/mcq/GenerateMCQAIQuestion';
+import GenerateMCQAIQuestion from '@/app/lms/component/questionforms/mcq/GenerateMCQAIQuestion';
 import AddQuestionViaDocument from '@/app/lms/component/AddQuestionViaDocument';
 import { exerciseApi } from '@/apiServices/exercise';
 import { questionApi } from '@/apiServices/question';

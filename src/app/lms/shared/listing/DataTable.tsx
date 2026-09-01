@@ -187,13 +187,13 @@ export function DataTable<T>({
                                     // designed (dark 10 px uppercase) but the
                                     // We_Do assignment header leaked the body
                                     // text-body colour + text-[12px] size.
-                                    className={`${c.className || 'px-3 text-left'} h-8 !text-[10px] !font-semibold uppercase tracking-wider !text-ink-600 align-middle bg-canvas border-b border-hairline`}
+                                    className={`${c.className || 'px-3 text-left'} h-10 !text-[12px] !font-semibold !text-ink-600 align-middle bg-canvas border-b border-hairline`}
                                 >
                                     {c.sortKey ? (
                                         <button
                                             type="button"
                                             onClick={() => onSort(c.sortKey as string)}
-                                            className="inline-flex items-center gap-1.5 uppercase tracking-wider hover:text-heading transition-colors duration-150"
+                                            className="inline-flex items-center gap-1.5 hover:text-heading transition-colors duration-150"
                                         >
                                             {c.label}
                                             {isSorted
@@ -309,7 +309,7 @@ export function DataTable<T>({
                                         // Users, Services, Course Setup) now share.
                                         <td
                                             key={c.key}
-                                            className={`${c.className || 'px-3'} h-11 align-middle text-[12px] text-body`}
+                                            className={`${c.className || 'px-3'} h-12 align-middle text-[13px] text-body`}
                                         >
                                             {c.render(row, i)}
                                         </td>

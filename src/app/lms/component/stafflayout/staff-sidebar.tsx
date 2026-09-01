@@ -334,7 +334,24 @@ export function StaffSidebar({ isCollapsed, setIsCollapsed }: StaffSidebarProps)
     )
   }, [nData])
 
-  const onRoute = (href: string) => pathname === href || pathname?.startsWith(href + "/")
+  // Every href the rail offers, parents and children alike — the pool a prefix
+  // match has to win against. Same rule as the admin rail; see the note there.
+  const allHrefs = sidebarItems.flatMap((item) => [
+    item.href,
+    ...(item.children || []).map((child) => child.href),
+  ]).filter(Boolean)
+
+  // Active when this href is the BEST match for the current path, not merely A
+  // match: the plain prefix test lit both Question Bank children at once,
+  // because Internal's href is a prefix of External's. Longest match wins.
+  const onRoute = (href: string) => {
+    if (!href || !pathname) return false
+    const matches = (h: string) => pathname === h || pathname.startsWith(h + "/")
+    if (!matches(href)) return false
+    return !allHrefs.some(
+      (other) => other !== href && other.length > href.length && matches(other),
+    )
+  }
 
   const handleItemClick = (item: SidebarItem) => {
     if (isMobile) setIsCollapsed(true)

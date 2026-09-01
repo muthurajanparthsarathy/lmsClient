@@ -8,7 +8,8 @@ import {
   Calendar, Hourglass, Lock, CheckCircle, Code,
   Info, Target, Settings, FileText, BarChart2, Shield, Cpu,
   Search, Filter, ChevronDown, ChevronLeft, ChevronRight, LayoutList,
-  MoreVertical, MessageSquare, Send, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown
+  MoreVertical, MessageSquare, Send, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown,
+  SlidersHorizontal,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { SectionStartPopup } from "./section-based-assessments"
@@ -1302,6 +1303,11 @@ export default function Assessments({
   const [filterLevel, setFilterLevel] = useState<string>("all")
   const [filterStatus, setFilterStatus] = useState<string[]>([])
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
+  // Staged copies used inside the Filter popover so chips don't apply
+  // until the student clicks Apply. Sync from applied on open.
+  const [stagedLevel, setStagedLevel] = useState<string>('all')
+  const [stagedDue, setStagedDue] = useState<'any' | 'week' | 'later'>('any')
+  const [filterDue, setFilterDue] = useState<'any' | 'week' | 'later'>('any')
   const [currentPage, setCurrentPage] = useState(1)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   // Rows shown per page are computed from the visible table-area height so the
@@ -1429,10 +1435,59 @@ export default function Assessments({
     }
   }, [showFilterDropdown])
 
+  // Sync staged filter state from applied whenever the popover opens.
+  // Cancel closes without touching applied; Apply commits staged.
+  useEffect(() => {
+    if (showFilterDropdown) {
+      setStagedLevel(filterLevel)
+      setStagedDue(filterDue)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showFilterDropdown])
+
   const showToast = (message: string, type: 'error' | 'warning' | 'success' = 'error') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3500)
   }
+
+  // Status chip counts — computed off the search-scoped list so All/
+  // Active/Submitted/Pending totals always match the row set the user
+  // will see when they click a chip.
+  const statusCounts = useMemo(() => {
+    const scoped = (exercises ?? []).filter((ex) => {
+      if (!searchQuery) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        ex.exerciseInformation?.exerciseName?.toLowerCase().includes(q) ||
+        ex.exerciseInformation?.exerciseId?.toLowerCase().includes(q)
+      )
+    })
+    let submitted = 0, active = 0, pending = 0
+    for (const ex of scoped) {
+      const avail = getExerciseAvailability(ex)
+      const testSubs = getTestSubmissions(ex, studentAnswers, method, subcategory)
+      const isCompleted = testSubs >= 1
+      if (isCompleted) submitted++
+      else if (avail.canStart) active++
+      else pending++
+    }
+    return { all: scoped.length, submitted, active, pending }
+  }, [exercises, searchQuery, studentAnswers, method, subcategory])
+
+  type ChipKey = 'all' | 'active' | 'submitted' | 'pending'
+  const activeChip: ChipKey =
+    filterStatus.length === 0 ? 'all'
+    : filterStatus.length === 1 && filterStatus[0] === 'active' ? 'active'
+    : filterStatus.length === 1 && filterStatus[0] === 'submitted' ? 'submitted'
+    : filterStatus.length === 1 && filterStatus[0] === 'not-submitted' ? 'pending'
+    : 'all'
+  const setChip = (k: ChipKey) => {
+    if (k === 'all') setFilterStatus([])
+    else if (k === 'active') setFilterStatus(['active'])
+    else if (k === 'submitted') setFilterStatus(['submitted'])
+    else if (k === 'pending') setFilterStatus(['not-submitted'])
+  }
+  const activeFilterCount = (filterLevel !== 'all' ? 1 : 0) + (filterDue !== 'any' ? 1 : 0)
 
   const filteredExercises = useMemo(
     () => {
@@ -1451,6 +1506,19 @@ export default function Assessments({
       // Apply level filter
       if (filterLevel !== "all") {
         result = result.filter(ex => ex.exerciseInformation.exerciseLevel === filterLevel)
+      }
+
+      // Apply due-date filter — `week` = end within 7 days from now,
+      // `later` = end more than 7 days out (or no end date at all).
+      if (filterDue !== "any") {
+        const now = Date.now()
+        const weekOut = now + 7 * 24 * 60 * 60 * 1000
+        result = result.filter((ex) => {
+          const endRaw = ex.availabilityPeriod?.endDate
+          const end = endRaw ? new Date(endRaw).getTime() : null
+          if (filterDue === "week") return end != null && end >= now && end <= weekOut
+          return end == null || end > weekOut
+        })
       }
 
       // Apply status filter
@@ -1499,11 +1567,11 @@ export default function Assessments({
         return sortDir === 'asc' ? cmp : -cmp
       })
     },
-    [exercises, searchQuery, filterLevel, filterStatus, studentAnswers, method, subcategory, sortColumn, sortDir]
+    [exercises, searchQuery, filterLevel, filterStatus, filterDue, studentAnswers, method, subcategory, sortColumn, sortDir]
   )
 
   // Reset to page 1 when filters change
-  useEffect(() => { setCurrentPage(1) }, [searchQuery, filterLevel, filterStatus.join(',')])
+  useEffect(() => { setCurrentPage(1) }, [searchQuery, filterLevel, filterStatus.join(','), filterDue])
 
   // Fit rows to the available height so the list doesn't scroll. This ref
   // wraps ONLY the scroll region (header + rows) — the TableFooter sits
@@ -1811,21 +1879,31 @@ export default function Assessments({
           student exercises list. No card chrome, horizontal gutter
           provides the breathing space. Header/toolbar: search anchored
           left, Filter on the right. */}
-      <div className="flex flex-col h-full bg-surface px-2 sm:px-3" style={{ fontFamily: LIST_FONT }}>
+      <div
+        className="flex flex-col h-full bg-surface"
+        style={{
+          fontFamily: LIST_FONT,
+          // Shared responsive gutter — matches TopBar / TabBar / We_Do
+          // assignment list so the You_Do assessments toolbar and table
+          // begin on the same vertical guideline as the primary nav.
+          paddingInline: 'clamp(16px, 2vw, 32px)',
+          width: '100%', maxWidth: 'none', marginInline: 0, boxSizing: 'border-box',
+        }}
+      >
 
-        {/* ── Toolbar: search (left) + filter (right). The "Total
-             Assessments N" title tile is dropped — that count already
-             appears in the pagination footer. ── */}
-        <div className="flex-none flex items-center gap-2 pt-1.5 pb-1.5 flex-wrap min-w-0">
-          {/* Search — anchors on the LEFT via flex-1 */}
-          <div className="relative flex-1 min-w-[220px] max-w-md">
+        {/* ── Toolbar — matches the We_Do assignments layout: search
+             (flex-1), segmented status control (All / Active /
+             Submitted / Pending), orange-outlined Filter button. ── */}
+        <div className="flex-none flex items-center gap-3 pt-2 pb-2 min-w-0">
+          {/* Search — grows via flex-1 to fill available width. */}
+          <div className="relative flex-1 min-w-[240px]">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
             <input
               type="text"
               placeholder="Search assessments…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 w-full pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+              className="h-9 w-full pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-[12.5px] text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchQuery && (
               <button
@@ -1839,76 +1917,165 @@ export default function Assessments({
             )}
           </div>
 
-          {/* Filter */}
-          <div className="relative" ref={filterRef}>
+          {/* Segmented status control — single container, hairline
+              dividers, circular count badges. Active segment = pale
+              orange bg + orange text + orange-tinted badge. */}
+          <div
+            role="tablist" aria-label="Filter by status"
+            className="inline-flex items-stretch h-9 rounded-control border border-hairline-strong bg-surface overflow-hidden shrink-0"
+          >
+            {([
+              { key: 'all' as const,       label: 'All',       count: statusCounts.all },
+              { key: 'active' as const,    label: 'Active',    count: statusCounts.active },
+              { key: 'submitted' as const, label: 'Submitted', count: statusCounts.submitted },
+              { key: 'pending' as const,   label: 'Pending',   count: statusCounts.pending },
+            ]).map((c, i) => {
+              const selected = activeChip === c.key
+              return (
+                <button
+                  key={c.key}
+                  type="button" role="tab" aria-selected={selected}
+                  onClick={() => setChip(c.key)}
+                  className={`inline-flex items-center gap-1.5 px-3 text-[12.5px] font-semibold transition-colors duration-150 ${
+                    selected ? 'text-brand-strong' : 'text-subtle hover:text-heading'
+                  } ${i > 0 ? 'border-l border-hairline' : ''}`}
+                  style={selected ? { background: '#FFF4EC' } : undefined}
+                >
+                  <span>{c.label}</span>
+                  <span
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10.5px] font-semibold tabular-nums ${
+                      selected ? 'text-brand-strong' : 'text-subtle'
+                    }`}
+                    style={{ background: selected ? '#FFE4CC' : '#F1F5F9' }}
+                  >
+                    {c.count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Filter — orange OUTLINE, sliders icon, badge counts only
+              in-popover filters (Level + Due Date). */}
+          <div className="relative shrink-0 ml-auto" ref={filterRef}>
             <button
               type="button"
-              onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 ${
-                (filterLevel !== 'all' || filterStatus.length > 0 || showFilterDropdown)
-                  ? 'border-brand text-brand-strong bg-brand-wash'
-                  : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'
-              }`}
+              onClick={() => setShowFilterDropdown(v => !v)}
+              aria-expanded={showFilterDropdown}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-control text-[12.5px] font-semibold transition-colors duration-150"
+              style={{ border: '1px solid #F97316', background: '#FFFFFF', color: '#F97316' }}
             >
-              <Filter size={13} />
+              <SlidersHorizontal size={14} />
               <span>Filter</span>
-              {(filterLevel !== 'all' || filterStatus.length > 0) && (
-                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
-                  {(filterLevel !== 'all' ? 1 : 0) + filterStatus.length}
+              {activeFilterCount > 0 && (
+                <span
+                  className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10.5px] font-bold text-white tabular-nums"
+                  style={{ background: '#F97316' }}
+                >
+                  {activeFilterCount}
                 </span>
               )}
-              <ChevronDown size={11} className={`transition-transform ${showFilterDropdown ? 'rotate-180' : ''}`} />
+              <ChevronDown size={14} className={`transition-transform ${showFilterDropdown ? 'rotate-180' : ''}`} />
             </button>
 
             {showFilterDropdown && (
-              <div className="absolute top-full right-0 mt-1.5 w-60 rounded-xl bg-white z-50 p-3 space-y-3"
-                style={{ border: '1px solid #e4e4ed', boxShadow: '0 8px 24px rgba(26,26,46,0.12)' }}>
-                <div>
-                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Level</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["all", "beginner", "intermediate", "advanced", "hard", "medium"].map(level => (
-                      <button key={level} onClick={() => setFilterLevel(level)}
-                        className="px-2 py-0.5 rounded-md text-2xs font-medium border transition-all"
-                        style={filterLevel === level
-                          ? { background: '#f97316', color: '#fff', borderColor: '#f97316', cursor: 'pointer' }
-                          : { background: '#fff', color: '#6b6b7e', borderColor: '#e4e4ed', cursor: 'pointer' }}>
-                        {level === "all" ? "All" : level.charAt(0).toUpperCase() + level.slice(1)}
-                      </button>
-                    ))}
-                  </div>
+              <div
+                className="absolute top-full right-0 mt-2 z-40 bg-surface rounded-xl border border-hairline-strong"
+                style={{
+                  width: 360,
+                  boxShadow: '0 14px 36px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.06)',
+                }}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 pt-4 pb-2">
+                  <span className="text-[15px] font-semibold text-heading">Filters</span>
+                  <button
+                    type="button"
+                    onClick={() => { setStagedLevel('all'); setStagedDue('any') }}
+                    className="text-[13px] font-semibold transition-colors duration-150"
+                    style={{ color: '#F97316', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  >
+                    Clear all
+                  </button>
                 </div>
-                <div>
-                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#8b8b9e' }}>Status</p>
-                  <div className="flex flex-wrap gap-1.5">
+
+                {/* Level — staged so nothing applies until Apply. */}
+                <div className="px-5 pt-2">
+                  <div className="text-[11px] font-semibold text-faint tracking-wide mb-2">LEVEL</div>
+                  <div className="flex flex-wrap gap-2">
                     {[
-                      { val: "active", label: "Active" },
-                      { val: "inactive", label: "Inactive" },
-                      { val: "submitted", label: "Submitted" },
-                      { val: "not-submitted", label: "Not Submitted" },
+                      { val: 'all',          label: 'Any' },
+                      { val: 'beginner',     label: 'Beginner' },
+                      { val: 'intermediate', label: 'Intermediate' },
+                      { val: 'advanced',     label: 'Advanced' },
                     ].map(({ val, label }) => {
-                      const selected = filterStatus.includes(val)
+                      const selected = stagedLevel === val
                       return (
-                        <button key={val}
-                          onClick={() => setFilterStatus(prev =>
-                            selected ? prev.filter(s => s !== val) : [...prev, val]
-                          )}
-                          className="px-2 py-0.5 rounded-md text-2xs font-medium border transition-all"
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setStagedLevel(val)}
+                          className="inline-flex items-center h-9 px-3.5 rounded-control text-[12.5px] font-semibold transition-colors duration-150"
                           style={selected
-                            ? { background: '#f97316', color: '#fff', borderColor: '#f97316', cursor: 'pointer' }
-                            : { background: '#fff', color: '#6b6b7e', borderColor: '#e4e4ed', cursor: 'pointer' }}>
+                            ? { border: '1px solid #F97316', background: '#FFF4EC', color: '#F97316' }
+                            : { border: '1px solid #E2E8F0', background: '#FFFFFF', color: '#475569' }}
+                        >
                           {label}
                         </button>
                       )
                     })}
                   </div>
                 </div>
-                {(filterLevel !== "all" || filterStatus.length > 0) && (
-                  <button onClick={() => { setFilterLevel("all"); setFilterStatus([]) }}
-                    className="w-full py-1.5 rounded-lg text-2xs font-medium transition-all"
-                    style={{ border: '1px solid #e4e4ed', color: '#6b6b7e', background: '#fafafa', cursor: 'pointer' }}>
-                    Clear Filters
+
+                {/* Due date */}
+                <div className="px-5 pt-4">
+                  <div className="text-[11px] font-semibold text-faint tracking-wide mb-2">DUE DATE</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { val: 'any' as const,  label: 'Any time' },
+                      { val: 'week' as const, label: 'Due this week' },
+                      { val: 'later' as const,label: 'Due later' },
+                    ].map(({ val, label }) => {
+                      const selected = stagedDue === val
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setStagedDue(val)}
+                          className="inline-flex items-center h-9 px-3.5 rounded-control text-[12.5px] font-semibold transition-colors duration-150"
+                          style={selected
+                            ? { border: '1px solid #F97316', background: '#FFF4EC', color: '#F97316' }
+                            : { border: '1px solid #E2E8F0', background: '#FFFFFF', color: '#475569' }}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="mt-4 border-t border-hairline flex items-center justify-end gap-2 px-5 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowFilterDropdown(false)}
+                    className="inline-flex items-center justify-center h-10 px-4 rounded-control text-[13px] font-semibold text-body bg-surface border border-hairline-strong hover:bg-row-hover transition-colors duration-150"
+                  >
+                    Cancel
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterLevel(stagedLevel)
+                      setFilterDue(stagedDue)
+                      setShowFilterDropdown(false)
+                    }}
+                    className="inline-flex items-center justify-center h-10 px-6 rounded-control text-[13px] font-semibold text-white transition-colors duration-150"
+                    style={{ background: '#F97316', border: 'none' }}
+                  >
+                    Apply filters
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1966,8 +2133,8 @@ export default function Assessments({
                     // width); the +50px we added to Action below comes out of
                     // here automatically thanks to `table-fixed`.
                     { label: 'Assessment Name', cls: 'px-3', key: 'name' as const },
-                    { label: 'Start Date', cls: 'w-[150px] pl-0 pr-2', key: 'start' as const },
-                    { label: 'End Date', cls: 'w-[150px] pl-0 pr-2', key: 'end' as const },
+                    { label: 'Available From', cls: 'w-[150px] pl-0 pr-2', key: 'start' as const },
+                    { label: 'Due Date', cls: 'w-[150px] pl-0 pr-2', key: 'end' as const },
                     { label: 'Level', cls: 'w-[100px] pl-0 pr-2', key: 'level' as const },
                     // Asymmetric padding shifts the centred "Status" label
                     // slightly right so it visually sits above the pill.
@@ -1976,17 +2143,18 @@ export default function Assessments({
                     // fit on one line without wrapping. Extra pl-8 (vs the
                     // px-3 cells use) shifts the centred "Action" label a
                     // bit to the right so it visually sits above the button.
-                    { label: 'Action', cls: 'w-[170px] pl-8 pr-3 text-center', key: null },
+                    { label: 'Action', cls: 'w-[170px] pl-3 pr-6 text-right', key: null },
                   ] as const).map(h => {
                     const isSorted = h.key && sortColumn === h.key
                     return (
                       <th key={h.label}
-                        // Header labels darkened from a very light grey
-                        // (#94a3b8) to slate-600 (#475569) so they read
-                        // clearly, and dropped to 10 px to match the
-                        // shared DataTable header size (was 11 px).
-                        className={`h-8 text-left select-none ${h.cls}`}
-                        style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', color: isSorted ? '#f97316' : '#4b5563', textTransform: 'uppercase' }}>
+                        // Title Case (not ALL CAPS) + 12px to match the
+                        // shared DataTable header rhythm and the We_Do
+                        // assignment list. Row height bumped from h-8
+                        // → h-10 so column labels read at the same
+                        // weight as their neighbouring cells.
+                        className={`h-10 text-left select-none ${h.cls}`}
+                        style={{ fontSize: 12, fontWeight: 600, color: isSorted ? '#f97316' : '#475569' }}>
                         {h.key ? (
                           <button
                             type="button"
@@ -2033,15 +2201,26 @@ export default function Assessments({
                   // it doesn't stack right next to the pagination bar and
                   // read as a doubled divider.
                   const isLastRow = idx === pagedExercises.length - 1
+                  const isActiveRow = availability.canStart && !isCompleted
+                  // Persistent 3px orange left rail on the currently-
+                  // active assessment (can be started, not yet
+                  // submitted) — matches the We_Do assignment list
+                  // "your next thing to do" indicator. Hover keeps its
+                  // orange inset so the rail thickens to 4px on hover.
+                  const railShadow = isActiveRow
+                    ? (isHovered ? 'inset 4px 0 0 #F97316' : 'inset 3px 0 0 #F97316')
+                    : (isHovered ? 'inset 3px 0 0 #F97316' : 'none')
                   return (
                     <tr key={exercise._id}
                       style={{
                         borderBottom: isLastRow ? 'none' : '1px solid #f0f0f5',
-                        background: isHovered
-                          ? 'linear-gradient(90deg, rgba(249,115,22,0.05) 0%, rgba(249,115,22,0.02) 100%)'
-                          : '#ffffff',
+                        background: isActiveRow
+                          ? '#FFF8F3'
+                          : isHovered
+                            ? 'linear-gradient(90deg, rgba(249,115,22,0.05) 0%, rgba(249,115,22,0.02) 100%)'
+                            : '#ffffff',
                         transition: 'background 0.15s ease, box-shadow 0.15s ease',
-                        boxShadow: isHovered ? 'inset 3px 0 0 #f97316' : 'none',
+                        boxShadow: railShadow,
                       }}
                       onMouseEnter={() => setHoveredRow(exercise._id)}
                       onMouseLeave={() => setHoveredRow(null)}>
@@ -2086,64 +2265,78 @@ export default function Assessments({
                         </span>
                       </td>
 
-                      {/* Level */}
+                      {/* Level — outlined pill matching the We_Do
+                          Assignment list. Neutral slate so a column
+                          full of identical "Intermediate" chips doesn't
+                          shout over the Status column. */}
                       <td className="pl-0 pr-2 h-11 align-middle text-[12px] text-body">
-                        <span>{diff.label}</span>
+                        <span className="inline-flex items-center text-2xs font-medium px-2 py-0.5 rounded-full border"
+                          style={{ background: '#FFFFFF', color: '#475569', borderColor: '#E2E8F0' }}>
+                          {diff.label}
+                        </span>
                       </td>
 
-                      {/* Status — communicates state via ICON + label so
-                          the signal survives colour-blind users and stays
-                          readable if the row bg ever tints. Three states,
-                          three icons:
-                            • Submitted     → CheckCircle (green)
-                            • Active        → Zap        (green)
-                            • Not Submitted → Lock       (grey)
-                          The dot chip that used to sit here relied on
-                          colour alone — the user asked for a non-colour
-                          cue, which shape provides. */}
+                      {/* Status — same seven-state model as the We_Do
+                          assignment list so `Missed` (expired without a
+                          submission) reads consistently across both
+                          screens. Icon + label carry the signal so
+                          state is never colour-only:
+                            • Upcoming        → Clock          (slate)
+                            • Active          → Zap            (green)
+                            • In Progress     → Zap            (orange)
+                            • Submitted       → CheckCircle    (green)
+                            • Missed          → AlertCircle    (red)
+                            • Closed          → Lock           (gray)  */}
                       <td className="pl-0 pr-2 h-11 align-middle text-center">
                         {(() => {
-                          const state = isCompleted
-                            ? 'submitted'
-                            : availability.canStart
-                              ? 'active'
-                              : 'not-submitted'
-                          const label = state === 'submitted'
-                            ? 'Submitted'
-                            : state === 'active'
-                              ? 'Active'
-                              : 'Not Submitted'
-                          const Icon = state === 'submitted'
-                            ? CheckCircle
-                            : state === 'active'
-                              ? Zap
-                              : Lock
-                          const isGreen = state !== 'not-submitted'
+                          type Kind = 'upcoming' | 'active' | 'in-progress' | 'submitted' | 'missed' | 'closed'
+                          let kind: Kind
+                          if (isCompleted) kind = 'submitted'
+                          else if (availability.status === 'upcoming') kind = 'upcoming'
+                          else if (availability.status === 'expired') kind = 'missed'
+                          else if (availability.canStart) {
+                            // No cheap per-question in-progress marker on
+                            // the assessments list; treat the "already-
+                            // attempted but not completed" case as In
+                            // Progress, everything else as Active.
+                            const attempted = hasExerciseBeenAttempted(exercise, studentAnswers, method, subcategory)
+                            kind = attempted ? 'in-progress' : 'active'
+                          }
+                          else kind = 'closed'
+
+                          const META: Record<Kind, { label: string; Icon: any; bg: string; fg: string }> = {
+                            upcoming:      { label: 'Upcoming',    Icon: Clock,        bg: '#EEF2F7', fg: '#475569' },
+                            active:        { label: 'Active',      Icon: Zap,          bg: '#ECFDF3', fg: '#15803D' },
+                            'in-progress': { label: 'In Progress', Icon: Zap,          bg: '#FFF4EC', fg: '#C2410C' },
+                            submitted:     { label: 'Submitted',   Icon: CheckCircle,  bg: '#ECFDF3', fg: '#15803D' },
+                            missed:        { label: 'Missed',      Icon: AlertCircle,  bg: '#FEF2F2', fg: '#B91C1C' },
+                            closed:        { label: 'Closed',      Icon: Lock,         bg: '#F1F5F9', fg: '#64748B' },
+                          }
+                          const m = META[kind]
                           return (
                             <span
                               className="inline-flex items-center gap-1.5 text-2xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap cursor-help"
                               title={
                                 !exercise.availabilityPeriod?.startDate && !exercise.availabilityPeriod?.endDate
                                   ? 'No schedule saved yet — open Settings → Schedule and click Save.'
-                                  : availability.message || (availability.canStart ? 'Open' : 'Not open')
+                                  : availability.message || m.label
                               }
-                              style={isGreen
-                                ? { background: '#ecfdf3', color: '#15803d' }
-                                : { background: '#f1f5f9', color: '#64748b' }}>
-                              <Icon size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-                              {label}
+                              style={{ background: m.bg, color: m.fg }}
+                            >
+                              <m.Icon size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                              {m.label}
                             </span>
                           )
                         })()}
                       </td>
 
                       {/* Action — primary write action (Start / Re Submit /
-                          Retake / Start Retest) + the three-dot menu, in
-                          the SAME visual slot on every row. The redundant
-                          "Submitted / Not Submitted" text is gone — the
-                          Status column above carries that state. */}
+                          Retake / Start Retest) + the three-dot menu.
+                          Centred horizontally so both the button and the
+                          kebab land in the same visual slot every row
+                          and align with the centred "Action" header. */}
                       <td className="px-3 h-11 align-middle">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {availability.canStart && !limitReached && (
                             <button
                               type="button"

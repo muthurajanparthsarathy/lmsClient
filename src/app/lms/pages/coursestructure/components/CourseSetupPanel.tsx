@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react'
+import { ArrowLeft, Loader2, Pencil, X } from 'lucide-react'
 import CourseSetupForm from './CourseSetupForm'
 import { transformTestConfigurationForBackend, transformTestConfigurationForFrontend } from '../../../component/Addcoursestructure/Step2CourseDetails'
 import { pedagogyStructureApi } from '@/apiServices/dynamicFields/pedagogyStructureService'
@@ -31,6 +31,7 @@ export default function CourseSetupPanel({
     readOnly = false,
     onBack,
     onEdit,
+    onCancelEdit,
     onSaved,
 }: {
     mapping: ServiceMapping
@@ -47,6 +48,11 @@ export default function CourseSetupPanel({
     // the editable form. Optional because plain View from the hierarchy may not
     // always want an edit affordance.
     onEdit?: () => void
+    // The way back out of edit mode without leaving the course: returns to the
+    // read-only face. The caller remounts the panel on the way, so whatever was
+    // typed and not saved is dropped and the saved record is read afresh —
+    // which is what "Cancel Edit" has to mean.
+    onCancelEdit?: () => void
     // The code rides along so the parent can treat it as taken immediately —
     // the refetch that would teach it the same thing lands after the user may
     // already have opened the next course's setup. The action says which save
@@ -382,15 +388,46 @@ export default function CourseSetupPanel({
         }
     }
 
+    // The view ⇄ edit switch, shown at the top of the form next to Expand all.
+    // Only a saved course has a read-only face to sit still in, so a first-time
+    // setup — which has nothing to view yet — never offers it.
+    const modeToggle = !(existingCourseId && canEditCourse) ? null : readOnly ? (
+        onEdit ? (
+            <button
+                type="button"
+                onClick={onEdit}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] border border-brand-500/40 bg-brand-wash text-brand-strong text-[12.5px] font-semibold hover:bg-brand-100 transition-colors"
+            >
+                <Pencil size={13} /> Edit Course
+            </button>
+        ) : null
+    ) : onCancelEdit ? (
+        <button
+            type="button"
+            onClick={onCancelEdit}
+            disabled={isSaving}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[10px] border border-ink-200 bg-white text-body text-[12.5px] font-semibold hover:bg-row-hover transition-colors disabled:opacity-50"
+        >
+            <X size={13} /> Cancel Edit
+        </button>
+    ) : null
+
+    // w-full below is load-bearing, not decoration. This panel is a flex ITEM
+    // (the stage wrapper is `flex flex-col`), and auto cross-axis margins —
+    // what mx-auto sets — switch OFF the flex stretch that would otherwise give
+    // it the container's width. Without w-full the panel sizes to its CONTENT
+    // and centres itself, so view mode (no TipTap toolbar) rendered far
+    // narrower than edit mode (whose toolbar sets a wide max-content) and sat
+    // pushed to the right. Same width both ways now.
     return (
-        <div className="px-3 sm:px-5 lg:px-7 py-4 sm:py-5 space-y-4 max-w-[1600px] mx-auto">
+        <div className="w-full px-3 sm:px-5 lg:px-7 py-4 sm:py-5 space-y-4 max-w-[1600px] mx-auto">
             <div>
                 <button
                     type="button"
                     onClick={onBack}
                     className="inline-flex items-center gap-1.5 text-[12px] text-subtle hover:text-heading transition-colors"
                 >
-                    <ArrowLeft size={14} /> Back to hierarchy
+                    <ArrowLeft size={14} /> Back to Course Action
                 </button>
                 {/* Where the user is: client, then the service that mapped the
                     course, then the course itself — with the exact hierarchy
@@ -456,6 +493,7 @@ export default function CourseSetupPanel({
                             setValidationErrors((prev) => ({ ...prev, batchResources: undefined }))
                         }}
                         readOnly={readOnly}
+                        headerActions={modeToggle}
                         fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
                         onFileSelect={handleFileSelect}
                         onDescriptionChange={(v: string) => setFormData((prev) => ({ ...prev, courseDescription: v }))}
@@ -482,7 +520,7 @@ export default function CourseSetupPanel({
                                         onClick={onEdit}
                                         className="inline-flex items-center gap-1.5 h-9 px-5 rounded-[10px] bg-gradient-to-b from-brand-400 to-brand-600 text-white text-[12.5px] font-semibold shadow-[0_4px_12px_rgba(240,112,31,0.28)] hover:brightness-105 active:scale-[0.98] transition-all"
                                     >
-                                        <Pencil size={13} /> Edit
+                                        <Pencil size={13} /> Edit Course
                                     </button>
                                 )}
                                 <button

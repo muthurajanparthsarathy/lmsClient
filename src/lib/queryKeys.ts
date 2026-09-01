@@ -62,6 +62,11 @@ export const queryKeys = {
     // invalidateQueries(['users'])) still reach this entry by prefix.
     profileStats: (institutionId: string | null, since: number) =>
       ["users", "profileStats", { institutionId, since }] as const,
+    // Users per role for the User Management count button (`?roleCounts=1`).
+    // Same "users" root as the rest, so the permission and roster
+    // invalidations already in place reach it by prefix.
+    roleCounts: (institutionId: string | null) =>
+      ["users", "roleCounts", { institutionId }] as const,
   },
   roles: {
     all: ["roles"] as const,

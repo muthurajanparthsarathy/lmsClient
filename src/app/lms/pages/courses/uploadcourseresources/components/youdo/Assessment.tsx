@@ -24,7 +24,8 @@ import CreateAssessmentModal from "./CreateAssessmentModal";
 import { exerciseApi, EntityType } from "@/apiServices/exercise";
 import { resubmitExerciseForApproval } from "@/apiServices/userService";
 import { useYouDoExercises } from "@/apiServices/hooks/useYouDoExercises";
-import AddQuestionForm from "@/app/lms/component/student/YouDo/assessment/questionforms/AddQuestionForm";
+// Unified with We_Do — see QuestionsTest.tsx for context.
+import AddQuestionForm from "@/app/lms/component/questionforms/AddQuestionForm";
 import QuestionsTest from "./QuestionsTest";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────

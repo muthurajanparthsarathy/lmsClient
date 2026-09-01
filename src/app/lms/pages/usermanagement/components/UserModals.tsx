@@ -69,6 +69,8 @@ interface UserModalsProps {
   setShowBulkUploadModal: (show: boolean) => void;
   showBulkPermissionModal: boolean;
   setShowBulkPermissionModal: (show: boolean) => void;
+  // The table's current row selection, handed to the bulk permission picker.
+  bulkPermissionUserIds?: string[];
   showViewDetailsModal: boolean;
   setShowViewDetailsModal: (show: boolean) => void;
   newUser: UserFormData;
@@ -115,6 +117,7 @@ export const UserModals: React.FC<UserModalsProps> = ({
   showPermissionModal, setShowPermissionModal,
   showBulkUploadModal, setShowBulkUploadModal,
   showBulkPermissionModal, setShowBulkPermissionModal,
+  bulkPermissionUserIds,
   showViewDetailsModal, setShowViewDetailsModal,
   newUser, setNewUser, newUserId, userToDelete,
   selectedUserForPermission, setSelectedUserForPermission,
@@ -1180,6 +1183,7 @@ export const UserModals: React.FC<UserModalsProps> = ({
           roles={roles}
           basedOn={basedOn}
           preSelectedUser={selectedUserForBulkPermissions}
+          preSelectedUserIds={bulkPermissionUserIds}
         />
       )}
     </>

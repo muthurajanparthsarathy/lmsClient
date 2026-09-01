@@ -28,7 +28,10 @@ import { type CourseGroup } from './components/mappingTree'
 
 type Stage =
     | { name: 'list' }
-    | { name: 'hierarchy'; mapping: ServiceMapping }
+    // `openActionsForCourseId` reopens one course's Course Actions modal on
+    // arrival — set when this stage is entered by backing out of that course's
+    // setup panel, so Back / Close return to the modal they came from.
+    | { name: 'hierarchy'; mapping: ServiceMapping; openActionsForCourseId?: string | null }
     // `courseId` pins the record when the stage is entered straight after a
     // save: the invalidated query has not refetched yet, so the id cannot be
     // looked up from the (stale) record list at that moment.
@@ -43,6 +46,12 @@ export default function CourseStructurePage() {
     const searchParams = useSearchParams()
     const queryClient = useQueryClient()
     const [stage, setStage] = useState<Stage>({ name: 'list' })
+    // Bumped when the setup panel leaves edit mode, to remount it. Cancel Edit
+    // has to drop whatever was typed and not saved, and the panel seeds its
+    // form from the record once on mount — so a fresh mount is the reset. Only
+    // this direction remounts: entering edit mode has nothing to throw away and
+    // should not flash the loading skeleton.
+    const [setupResetKey, setSetupResetKey] = useState(0)
 
     // Which page of the client list to come back to.
     //
@@ -220,6 +229,17 @@ export default function CourseStructurePage() {
     // different moves rather than the same animation twice.
     const dir = stage.name === 'list' ? -1 : 1
 
+    // The course record the setup stage is working on. Needed twice — as the
+    // panel's existingCourseId, and as the row whose Course Actions modal
+    // reopens when the user backs out of the panel — so it is resolved once
+    // here rather than spelled out again inside the handler.
+    const setupCourseId = stage.name !== 'setup' ? null : (
+        stage.courseId
+        || sessionIds[sessionKeyFor(clientIdOf(stage.mapping), stage.mapping._id, stage.course.courseName, stage.course.path)]
+        || courseStatusFor(clientIdOf(stage.mapping), stage.mapping._id, stage.course.courseName, stage.course.path)?.id
+        || null
+    )
+
     return (
         <DashboardLayout>
             {/* No page-canvas background at all: the shell's white workspace
@@ -227,13 +247,24 @@ export default function CourseStructurePage() {
                 flex-1 chain propagate down to the table, so pagination lands
                 at the true viewport bottom instead of leaving an empty band. */}
             <div className="h-full min-h-0 flex flex-col">
+                {/* Stage transition: fade only, no horizontal slide.
+                    Previously used `x: dir * 16 → 0 → dir * -16` with
+                    mode="wait", so opening a heavy destination like
+                    Course setup showed the old panel sliding left, then
+                    the new panel sliding in from the right (~400ms of
+                    horizontal shuffle) which read as jank (2026-08-30
+                    user report — "first in center then going left").
+                    Fade-only keeps a subtle transition without moving
+                    layout, so nothing looks like it's flying. `dir` is
+                    still computed above so the old slide can be
+                    restored with one line if the fade feels too flat. */}
                 <AnimatePresence mode="wait" initial={false}>
                     <motion.div
                         key={stage.name}
-                        initial={{ opacity: 0, x: dir * 16 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: dir * -16 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15, ease: 'easeOut' }}
                         className="flex flex-1 min-h-0 flex-col"
                     >
                         {stage.name === 'list' && (
@@ -271,6 +302,7 @@ export default function CourseStructurePage() {
                             <HierarchyPicker
                                 mapping={stage.mapping}
                                 statusFor={(courseName, coursePath) => courseStatusFor(clientIdOf(stage.mapping), stage.mapping._id, courseName, coursePath)}
+                                openActionsForCourseId={stage.openActionsForCourseId}
                                 // Clear the deep-link param too — left in the URL
                                 // it would re-open this hierarchy the moment the
                                 // list mounts, making Back to clients a no-op.
@@ -310,20 +342,27 @@ export default function CourseStructurePage() {
 
                         {stage.name === 'setup' && (
                             <CourseSetupPanel
+                                key={`setup-${setupResetKey}`}
                                 mapping={stage.mapping}
                                 course={stage.course}
-                                existingCourseId={stage.courseId
-                                    || sessionIds[sessionKeyFor(clientIdOf(stage.mapping), stage.mapping._id, stage.course.courseName, stage.course.path)]
-                                    || courseStatusFor(clientIdOf(stage.mapping), stage.mapping._id, stage.course.courseName, stage.course.path)?.id
-                                    || null}
+                                existingCourseId={setupCourseId}
                                 existingCourseIds={existingCourseIds}
                                 readOnly={stage.readOnly}
-                                onBack={() => setStage({ name: 'hierarchy', mapping: stage.mapping })}
+                                // Back to Course Action / Close / Cancel all land
+                                // on the modal this panel was opened from, not on
+                                // the bare tree behind it.
+                                onBack={() => setStage({ name: 'hierarchy', mapping: stage.mapping, openActionsForCourseId: setupCourseId })}
                                 // From the READ-ONLY FORM (the hierarchy's View
                                 // action), Edit reopens the same course editable.
                                 // The student-facing preview stage below has its
                                 // own separate Edit.
                                 onEdit={() => setStage({ ...stage, readOnly: false })}
+                                // Back to the read-only face, reading the saved
+                                // record again — see setupResetKey above.
+                                onCancelEdit={() => {
+                                    setStage({ ...stage, readOnly: true })
+                                    setSetupResetKey((k) => k + 1)
+                                }}
                                 onSaved={(courseId, courseCode, action) => {
                                     if (courseCode) setSessionCodes((prev) => [...prev, courseCode])
                                     if (courseId) {

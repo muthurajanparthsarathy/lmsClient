@@ -20,6 +20,7 @@ import {
     Course
 } from '../.../../../../../apiServices/studentcoursepage';
 import { courseStructuresSummaryQuery } from '@/apiServices/createCourseStucture';
+import { businessModelFullName } from '@/features/clientmanagement/lib';
 import DashboardLayout from '../../component/layout';
 import { StaffLayout } from '../../component/stafflayout/staff-layout';
 import { StudentLayout } from '../../component/student/student-layout';
@@ -480,8 +481,15 @@ export default function GradePage() {
         setClientsPage(1);
     }
 
+    // Both the search AND the model filter go to the server. Filtering this
+    // list in the browser is not an option: the endpoint is paged, so a local
+    // filter would narrow only the rows on screen while the count chip and the
+    // pager went on describing the whole unfiltered set.
     const clientsPageQuery = useClientsPage(
-        { search: searchTerm.trim() || undefined },
+        {
+            search: searchTerm.trim() || undefined,
+            businessModel: selectedCategory !== 'All' ? selectedCategory : undefined,
+        },
         clientsPage,
         clientsPageSize,
     );
@@ -589,9 +597,13 @@ export default function GradePage() {
         }
         // Admin — depends on the current level.
         if (level === 'clients') {
-            const set = new Set<string>();
-            clientBuckets.forEach((c) => c.serviceTypes.forEach((s) => set.add(s)));
-            return Array.from(set);
+            // Straight from the response facet, which lists every model in the
+            // WHOLE result set rather than just the page on screen. The old
+            // source here was clientBuckets, derived from the course summary --
+            // and that query is disabled at this level, so it was always empty
+            // and the dropdown fell back to a hardcoded list of course topics
+            // no client is ever tagged with.
+            return clientsPageData?.facets?.businessModels ?? [];
         }
         if (level === 'services') {
             const set = new Set<string>();
@@ -602,25 +614,46 @@ export default function GradePage() {
         const set = new Set<string>();
         scopedCoursesForMapping.forEach((c) => { if (c.courseLevel) set.add(c.courseLevel); });
         return Array.from(set);
-    }, [isAdmin, level, displayedCourses, clientBuckets, serviceBuckets, scopedCoursesForMapping]);
+    }, [isAdmin, level, displayedCourses, clientsPageData, serviceBuckets, scopedCoursesForMapping]);
 
     useEffect(() => {
         if (uniqueServiceTypes.length > 0) {
             setCategories(["All", ...uniqueServiceTypes]);
         } else {
-            setCategories(defaultCategories);
+            // Only the non-admin path still needs the placeholder list; every
+            // admin level derives its options from real data now.
+            setCategories(isAdmin ? ["All"] : defaultCategories);
         }
-    }, [uniqueServiceTypes]);
+    }, [uniqueServiceTypes, isAdmin]);
+
+    // The Clients filter is the one place where the value SENT and the text
+    // SHOWN differ: the server matches on the code ("B2I"), while the row and
+    // this dropdown read the full name ("business to institution").
+    const filterOptions = useMemo(
+        () => categories.map((c) => ({
+            value: c,
+            label: isAdmin && level === 'clients' && c !== 'All' ? businessModelFullName(c) : c,
+        })),
+        [categories, isAdmin, level],
+    );
+
+    // The control means something different at each level, so a selection made
+    // on one must not survive into the next -- a model code left applied to the
+    // Services list matches no service and would silently empty the screen.
+    const [lastFilterLevel, setLastFilterLevel] = useState<Level>(level);
+    if (lastFilterLevel !== level) {
+        setLastFilterLevel(level);
+        if (selectedCategory !== 'All') setSelectedCategory('All');
+    }
 
     const filteredCourses = useFilteredCourses(displayedCourses, filters);
 
     // ── Admin: level-scoped filtered rows ───────────────────────────────────
     // Clients rows come STRAIGHT from the paginated /client-management/getAll
-    // (useClientsPage), so no client-side filtering is applied — the search
-    // ships as a query param and the server returns just that page's slice.
-    // Category is a client-side hint only and doesn't have a stable meaning
-    // for the client list (there is no service-type stored on the client), so
-    // it's ignored here.
+    // (useClientsPage): BOTH the search and the business-model filter ship as
+    // query params and the server returns just that page's slice, already
+    // filtered. There is nothing to narrow again here — and narrowing locally
+    // would desynchronise the visible rows from the count chip and the pager.
     const filteredClients: Client[] = clientsList;
 
     const filteredServices = useMemo(() => {
@@ -1018,8 +1051,8 @@ export default function GradePage() {
                             value={selectedCategory}
                             onChange={(e) => setSelectedCategory(e.target.value)}
                         >
-                            {categories.map(category => (
-                                <option key={category} value={category}>{category}</option>
+                            {filterOptions.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
                         </select>
                     </div>

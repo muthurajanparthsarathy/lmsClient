@@ -7,7 +7,7 @@ import {
   Loader2, RefreshCw, FileText, Download, Clock, CalendarDays,
   BookOpen, PenLine, GraduationCap, Printer, X,
 } from 'lucide-react';
-import { StaffLayout } from '@/app/lms/component/stafflayout/staff-layout';
+import { AdminOrStaffLayout } from '@/app/lms/component/AdminOrStaffLayout';
 import {
   ReportSession, CourseOption, ReportFilters, fetchCourseReportAll,
 } from '@/apiServices/activityLog';
@@ -464,7 +464,7 @@ export default function CourseLogReportPage() {
   const bannerEmail = isSingleStudent ? selStudentEmail : `${stats.students} student${stats.students !== 1 ? 's' : ''}`;
 
   return (
-    <StaffLayout fullBleed>
+    <AdminOrStaffLayout fullBleed>
       <style jsx global>{`
         .rpt-page * { font-family: ${FONT}; }
         .rpt-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -930,7 +930,7 @@ export default function CourseLogReportPage() {
           </div>
         </div>
       )}
-    </StaffLayout>
+    </AdminOrStaffLayout>
   );
 }
 

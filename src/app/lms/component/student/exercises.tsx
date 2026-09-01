@@ -465,6 +465,105 @@ function getExerciseAvailability(exercise: Exercise): {
   }
 }
 
+// ─── Assignment-state resolver ───────────────────────────────────────────────
+// Reduces the raw availability + submission signals to ONE of seven states
+// so the Status pill and Action cell always agree on what the row is doing.
+// Ordering is important: higher-priority terminal states (submitted/graded)
+// win over transient window states (upcoming/active).
+export type AssignmentStateKind =
+  | 'upcoming' | 'active' | 'in-progress'
+  | 'submitted' | 'graded' | 'missed' | 'closed'
+
+export interface AssignmentStateInfo {
+  kind: AssignmentStateKind
+  label: string
+  Icon: any
+  tone: { bg: string; fg: string }
+  /** Short hint the Upcoming action cell shows next to the lock icon. */
+  actionHint?: string
+}
+
+function resolveAssignmentState(
+  exercise: Exercise,
+  studentAnswers?: ExercisesProps['studentAnswers'],
+  method?: string,
+  subcategory?: string,
+): AssignmentStateInfo {
+  const testSubs = getTestSubmissions(exercise, studentAnswers, method, subcategory)
+  const isCompleted = testSubs >= 1
+  const availability = getExerciseAvailability(exercise)
+
+  // Terminal (post-submission) states win. Server doesn't currently expose
+  // a per-student "graded" flag on this shape — treat all submissions as
+  // Submitted for now; the resolver stays ready to promote to Graded once
+  // that field lands (check `exercise.answers?.[i]?.gradedAt` etc.).
+  if (isCompleted) {
+    return {
+      kind: 'submitted',
+      label: 'Submitted',
+      Icon: CheckCircle,
+      tone: { bg: '#ECFDF3', fg: '#15803D' },
+    }
+  }
+
+  // Availability window drives the pre-submission states.
+  if (availability.status === 'upcoming') {
+    const startDate = (exercise as any)?.availabilityPeriod?.startDate
+    const openHint = startDate ? `Opens ${formatShortDate(startDate)}` : 'Not yet open'
+    return {
+      kind: 'upcoming',
+      label: 'Upcoming',
+      Icon: Clock,
+      tone: { bg: '#EEF2F7', fg: '#475569' },
+      actionHint: openHint,
+    }
+  }
+  if (availability.status === 'expired') {
+    return {
+      kind: 'missed',
+      label: 'Missed',
+      Icon: AlertCircle,
+      tone: { bg: '#FEF2F2', fg: '#B91C1C' },
+    }
+  }
+
+  // Available now — split Active vs In Progress on whether the student
+  // has started but not submitted yet (localStorage marker from the editor).
+  if (availability.canStart) {
+    const inProgress = getExerciseAttemptData(exercise._id).inProgress
+    if (inProgress) {
+      return {
+        kind: 'in-progress',
+        label: 'In Progress',
+        Icon: Zap,
+        tone: { bg: '#FFF4EC', fg: '#C2410C' },
+      }
+    }
+    return {
+      kind: 'active',
+      label: 'Active',
+      Icon: Zap,
+      tone: { bg: '#ECFDF3', fg: '#15803D' },
+    }
+  }
+
+  // Anything else — closed for any reason we don't have a specific name for.
+  return {
+    kind: 'closed',
+    label: 'Closed',
+    Icon: Lock,
+    tone: { bg: '#F1F5F9', fg: '#64748B' },
+  }
+}
+
+// Short "23 Aug" style date for the Upcoming action hint. Falls back to the
+// full formatter when the input is unparseable.
+function formatShortDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+  } catch { return formatDate(iso) }
+}
+
 function hasExerciseBeenAttempted(
   exercise: Exercise,
   studentAnswers?: ExercisesProps['studentAnswers'],
@@ -632,12 +731,23 @@ interface PopupProps {
   submissionAttempts?: number
   isRetake?: boolean
   breadcrumb?: string[]
+  // Pedagogy method drives the CTA noun — We_Do → assignment, You_Do →
+  // assessment, I_Do → exercise. The launcher already has it as `method`
+  // (any casing / separator), so accept any string here and normalise below.
+  method?: string
 }
 
 function StartExercisePopup({
   exercise, onConfirm, onClose, availability,
-  hasAttempted, limitReached, testSubmissions, submissionAttempts, isRetake, breadcrumb,
+  hasAttempted, limitReached, testSubmissions, submissionAttempts, isRetake, breadcrumb, method,
 }: PopupProps) {
+  // Normalise pedagogy method → CTA noun. Accepts every casing/separator
+  // the codebase uses (We_Do / we-do / wedo / "we do").
+  const methodKey = (method || '').toLowerCase().replace(/[_\s-]+/g, '')
+  const activityNoun: 'assignment' | 'assessment' | 'exercise' =
+    methodKey === 'wedo' ? 'assignment'
+    : methodKey === 'youdo' ? 'assessment'
+    : 'exercise'
   const ex = exercise as any
   const typeInfo = getExerciseTypeInfo(exercise)
   const totalQ = getTotalQuestions(exercise)
@@ -666,356 +776,387 @@ function StartExercisePopup({
   const showSampleCases = progCfg?.showSampleCases ?? false
   const questionFlow = progCfg?.questionFlow ?? null
 
-  const statusConfig = limitReached
-    ? { bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0', text: `All ${submissionAttempts} attempt${(submissionAttempts ?? 1) > 1 ? 's' : ''} used — completed` }
-    : availability.status === 'available'
-    ? { bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0', text: availability.message }
-    : availability.status === 'late-attempt'
-    ? { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa', text: `⚠ ${availability.message}` }
-    : availability.status === 'grace-period'
-    ? { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa', text: availability.message }
-    : availability.status === 'upcoming'
-    ? { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe', text: availability.message }
-    : { bg: '#fef2f2', color: '#b91c1c', border: '#fecaca', text: availability.message }
+  // ── Details-card content, resolved from what the exercise actually carries.
+  // The prior "Topics" chip row conflated four different fields (languages,
+  // module, difficulty, pedagogy method + activity) into one dense strip
+  // that read as random tags. Splitting each into its own labeled row makes
+  // the pane meaningful: Module (Core Programming), Language (Python),
+  // Difficulty (Beginner). Method + activity are already conveyed by the
+  // pedagogy chip beside the assignment title, so they're dropped here.
+  const languageLabel = languages.length
+    ? languages.map((l) => l.replace(/\b\w/g, (m) => m.toUpperCase())).join(', ')
+    : ''
+  const difficultyLabel = ex.exerciseInformation?.exerciseLevel
+    ? String(ex.exerciseInformation.exerciseLevel).replace(/^./, (c: string) => c.toUpperCase())
+    : ''
 
-  // ── Right-column content, resolved from what the exercise actually carries ──
-  // The column is only rendered when at least one of these exists — an empty
-  // "Details" pane next to a full left column reads as a broken layout.
-  const description: string = ex.exerciseInformation?.description || ''
-  const instructions: string = ex.assessmentContent?.instructions || ex.instructions || ''
-  // Tags are DERIVED, never authored: the languages the exercise is configured
-  // for, its module, its difficulty, and the pedagogy path it was filed under
-  // (the last two breadcrumb crumbs — "we do" / "assignment").
-  const tags: string[] = Array.from(new Set([
-    ...languages,
-    ...(selectedModule ? [selectedModule] : []),
-    ...(ex.exerciseInformation?.exerciseLevel
-      ? [String(ex.exerciseInformation.exerciseLevel).replace(/^./, (c: string) => c.toUpperCase())]
-      : []),
-    ...((breadcrumb ?? []).slice(-2).map(c => c.replace(/\b\w/g, m => m.toUpperCase()))),
-  ].filter(Boolean)))
-  const hasDetails = !!(selectedModule || description || instructions || tags.length)
+  // ── Building blocks (spec-matched: 40px icon squares, larger label/value) ─
 
-  // Author-written HTML from the TipTap description field. Sanitised before it
-  // reaches dangerouslySetInnerHTML — the field is trainer-authored, not
-  // trusted markup.
-  const safeHtml = (html: string) =>
-    typeof window === 'undefined'
-      ? ''
-      : DOMPurify.sanitize(html, {
-          ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'code', 'pre', 'blockquote'],
-          ALLOWED_ATTR: ['href', 'target', 'rel'],
-        })
-
-  // ── Building blocks ────────────────────────────────────────────────────────
-
-  const IconBadge = ({ icon: Icon, tint, size = 30 }: { icon: any; tint: string; size?: number }) => (
+  const IconBadge = ({ icon: Icon, tint, size = 34 }: { icon: any; tint: string; size?: number }) => (
     <span style={{
       width: size, height: size, borderRadius: 8, flexShrink: 0,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       background: `${tint}1a`, color: tint,
     }}>
-      <Icon style={{ width: size * 0.47, height: size * 0.47 }} />
+      <Icon style={{ width: Math.round(size * 0.46), height: Math.round(size * 0.46) }} />
     </span>
   )
 
-  const SectionHead = ({ icon, children }: { icon: any; children: React.ReactNode }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-      <IconBadge icon={icon} tint="#f97316" size={24} />
-      <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{children}</span>
-    </div>
-  )
-
-  // Icon · label · value row (left column)
-  const R = ({ icon, label, value }: { icon: any; label: string; value: React.ReactNode }) => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '8px 0', borderBottom: '1px solid #f1f5f9',
-    }}>
-      <IconBadge icon={icon} tint="#6366f1" size={26} />
-      <span style={{ fontSize: 12, color: '#64748b', flex: 1, minWidth: 0 }}>{label}</span>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', textAlign: 'right', minWidth: 0, wordBreak: 'break-word' }}>
-        {value}
-      </div>
-    </div>
-  )
-
-  // Stat / date tile — the paired cards under Questions Overview and Schedule
-  const Tile = ({ icon, tint, label, value }: { icon: any; tint: string; label: string; value: React.ReactNode }) => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 9,
-      padding: '10px 11px', border: '1px solid #e8ecf2', borderRadius: 10, background: '#fff',
-    }}>
-      <IconBadge icon={icon} tint={tint} size={30} />
+  const StatItem = ({ icon, tint, label, value }: { icon: any; tint: string; label: string; value: React.ReactNode }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+      <IconBadge icon={icon} tint={tint} size={34} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 10.5, color: '#64748b', marginBottom: 2 }}>{label}</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{value}</div>
+        <div style={{ fontSize: 12, color: '#667085', lineHeight: 1.2 }}>{label}</div>
+        <div style={{ fontSize: 14.5, fontWeight: 600, color: '#101828', marginTop: 2, wordBreak: 'break-word' }}>{value}</div>
       </div>
     </div>
   )
 
-  const DetailLabel = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>{children}</div>
+  // Labeled row used in the Details card: compact 2-line block with a
+  // tiny gray label above a heavier dark value. Uniform typography with
+  // the header StatItems so the two cards read as one system.
+  const DetailRow = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div>
+      <div style={{ fontSize: 11.5, color: '#667085', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: '#101828', wordBreak: 'break-word' }}>{value}</div>
+    </div>
   )
+
+  // Topic-chip palette. Two specific slugs get the accent tints called out in
+  // the spec ("Core Programming" → orange, "We-Do" → green); everything else
+  // uses a restrained pale-neutral treatment so the row does not read as a
+  // rainbow.
+  const chipStyle = (kind: 'neutral' | 'orange' | 'green'): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center',
+    padding: '5px 12px', borderRadius: 999,
+    fontSize: 12, fontWeight: 500,
+    border: kind === 'neutral'
+      ? '1px solid #E4E7EC'
+      : `1px solid ${kind === 'orange' ? '#FFE0CC' : '#BBF7D0'}`,
+    background: kind === 'neutral' ? '#F4F5F7' : kind === 'orange' ? '#FFF4EC' : '#ECFDF3',
+    color: kind === 'neutral' ? '#344054' : kind === 'orange' ? '#B23A00' : '#046C4E',
+  })
+  const topicKindFor = (t: string): 'neutral' | 'orange' | 'green' => {
+    const lc = t.toLowerCase()
+    if (lc.includes('core')) return 'orange'
+    if (lc === 'we-do' || lc === 'we do' || lc === 'wedo') return 'green'
+    return 'neutral'
+  }
+
+  const breadCrumbLine = (breadcrumb ?? []).filter(Boolean).join(' / ')
+
+  // Availability drives the primary button's label and disabled state, so
+  // there is no separate footer banner — the label carries the story.
+  type BtnState = { label: string; icon: React.ReactNode; disabled: boolean }
+  const buttonState: BtnState = limitReached
+    ? { label: 'Already Completed', icon: <CheckCircle style={{ width: 16, height: 16 }} />, disabled: true }
+    : availability.status === 'late-attempt' && availability.canStart
+    ? { label: 'Start Late Attempt', icon: <Play style={{ width: 16, height: 16, fill: 'white' }} />, disabled: false }
+    : availability.canStart
+    ? {
+        // The "Graded" chip beside the name already conveys grading, so
+        // the CTA drops that adjective. The noun follows pedagogy method:
+        // We_Do → assignment, You_Do → assessment, I_Do → exercise.
+        label: isRetake
+          ? (isPractice ? 'Retake practice' : `Retake ${activityNoun}`)
+          : (isPractice ? 'Start practice'  : `Start ${activityNoun}`),
+        icon: <Play style={{ width: 16, height: 16, fill: 'white' }} />,
+        disabled: false,
+      }
+    : availability.status === 'upcoming'
+    ? { label: 'Not Yet Open', icon: <Calendar style={{ width: 16, height: 16 }} />, disabled: true }
+    : { label: 'Expired', icon: <Lock style={{ width: 16, height: 16 }} />, disabled: true }
+
+  // ── Escape dismiss + return focus. The ResumeModal that ships alongside
+  // does not wire Escape, but the launch modal is graded and the primary
+  // action is destructive-adjacent, so we handle it here explicitly. Focus
+  // returns to the element that opened the modal — a StrictMode-safe pattern
+  // that just re-focuses whatever was active before mount.
+  const primaryBtnRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    const opener = typeof document !== 'undefined'
+      ? (document.activeElement as HTMLElement | null)
+      : null
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    primaryBtnRef.current?.focus()
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      // Give the caller a beat to unmount before restoring focus, otherwise
+      // React re-renders can steal it back.
+      setTimeout(() => opener?.focus?.(), 0)
+    }
+  }, [onClose])
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sap-title"
       style={{
         position: 'fixed', inset: 0, zIndex: 99999,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-        background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+        background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)',
+        fontFamily: LIST_FONT,
       }}
       onClick={onClose}
     >
       <div
-        className="sep-shell"
-        style={{
-          width: '100%', maxWidth: hasDetails ? 720 : 440,
-          borderRadius: 16, background: '#ffffff',
-          boxShadow: '0 24px 60px rgba(15,23,42,0.18), 0 0 0 1px rgba(15,23,42,0.05)',
-          animation: 'popIn .22s cubic-bezier(.34,1.56,.64,1)',
-          maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        }}
+        className="sap-shell"
         onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 'min(1120px, calc(100vw - 32px))',
+          maxHeight: 'calc(100vh - 32px)',
+          background: '#fff', borderRadius: 16, overflow: 'hidden',
+          border: '1px solid #E4E7EC',
+          boxShadow: '0 20px 48px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.04)',
+          display: 'flex', flexDirection: 'column',
+          animation: 'sapPopIn .22s cubic-bezier(.34,1.56,.64,1)',
+        }}
       >
-        {/* Top accent bar */}
-        <div style={{ height: 3, flexShrink: 0, background: isGraded ? '#f97316' : '#0891b2' }} />
-
-        {/* Header — type glyph + breadcrumb + title + close */}
-        <div style={{
-          padding: '12px 16px', borderBottom: '1px solid #eef1f5',
-          display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+        {/* HEADER — compact: orange code glyph + breadcrumb + title + chips + close */}
+        <div className="sap-header" style={{
+          display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px',
+          borderBottom: '1px solid #E4E7EC', background: '#fff', flexShrink: 0,
         }}>
-          <span style={{
-            width: 34, height: 34, borderRadius: 9, flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: isGraded ? '#f97316' : '#0891b2', color: '#fff',
+          <span aria-hidden="true" style={{
+            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            background: '#FF641A', color: '#fff',
           }}>
-            <Code2 className="w-4 h-4" />
+            <Code2 style={{ width: 20, height: 20 }} />
           </span>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            {breadcrumb && breadcrumb.filter(Boolean).length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
-                {breadcrumb.filter(Boolean).map((crumb, i) => (
-                  <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {i > 0 && <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, lineHeight: 1 }}>&gt;</span>}
-                    <span style={{
-                      fontSize: 11.5, color: '#475569', fontWeight: 600, whiteSpace: 'nowrap',
-                      maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}>{crumb}</span>
-                  </span>
-                ))}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {breadCrumbLine && (
+              <div className="sap-breadcrumb" style={{
+                fontSize: 12, color: '#667085', lineHeight: 1.3, marginBottom: 3,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {breadCrumbLine}
               </div>
             )}
-            <div style={{
-              fontSize: 16, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {exercise.exerciseInformation.exerciseName}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h2 id="sap-title" style={{
+                fontSize: 17, fontWeight: 700, color: '#101828', lineHeight: 1.2,
+                margin: 0, wordBreak: 'break-word',
+              }}>
+                {exercise.exerciseInformation.exerciseName}
+              </h2>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 999,
+                fontSize: 11, fontWeight: 600,
+                background: isGraded ? '#ECFDF3' : '#EFF6FF', color: isGraded ? '#12B76A' : '#175CD3',
+                border: `1px solid ${isGraded ? '#BBF7D0' : '#BFDBFE'}`,
+              }}>
+                {isGraded ? 'Graded' : 'Non-Graded'}
+              </span>
+              {exercise.exerciseInformation.exerciseId && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', padding: '2px 9px', borderRadius: 999,
+                  fontSize: 11, fontWeight: 500, color: '#344054', background: '#F4F5F7',
+                  border: '1px solid #E4E7EC',
+                }}>
+                  {exercise.exerciseInformation.exerciseId}
+                </span>
+              )}
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label="Close assignment details"
+            className="sap-close"
             style={{
-              width: 30, height: 30, borderRadius: '50%', border: '1px solid #e2e8f0',
-              background: '#f8fafc', color: '#64748b', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              width: 32, height: 32, borderRadius: '50%',
+              border: '1px solid #E4E7EC', background: '#fff', color: '#667085',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
             }}
           >
-            <X className="w-4 h-4" />
+            <X style={{ width: 16, height: 16 }} />
           </button>
         </div>
 
-        {/* Body — two columns; collapses to one on a narrow viewport */}
-        <div
-          className={hasDetails ? 'sep-body sep-body--split' : 'sep-body'}
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
-        >
-          {/* ── Left: the exercise's own facts ── */}
-          <div style={{ padding: '14px 16px' }}>
-            <SectionHead icon={FileText}>Assignment Information</SectionHead>
-            <div style={{ marginBottom: 16 }}>
-              <R icon={Info} label="Assignment ID" value={exercise.exerciseInformation.exerciseId || exercise._id} />
-              <R icon={FileText} label="Assignment Name" value={exercise.exerciseInformation.exerciseName} />
-              <R
-                icon={Target}
-                label="Graded"
-                value={
-                  <span style={{
-                    padding: '4px 11px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
-                    background: isGraded ? '#ecfdf5' : '#eff6ff',
-                    color: isGraded ? '#15803d' : '#1d4ed8',
-                    border: `1px solid ${isGraded ? '#bbf7d0' : '#bfdbfe'}`,
-                  }}>
-                    {isGraded ? 'Graded' : 'Non-Graded'}
-                  </span>
-                }
-              />
-            </div>
+        {/* BODY — 12-col grid; no inner scroll at standard desktop, the compact
+            paddings keep everything inside the viewport. `min-height: 0` still
+            lets the modal scroll if the viewport is genuinely too small. */}
+        <div className="sap-body" style={{
+          // No inner scroll — the labeled Details rows are compact enough
+          // that everything fits inside the 100vh - 32px shell at any
+          // sensible viewport. Overflow stays 'auto' as a defensive
+          // fallback for extremely short viewports (< ~500px tall).
+          minHeight: 0, overflow: 'visible',
+          background: '#F7F8FA', padding: 16,
+        }}>
+          <div className="sap-grid" style={{
+            display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
+            gap: 14, alignItems: 'stretch',
+          }}>
+            {/* ── Assignment overview (8-col) ── */}
+            <section className="sap-card" style={{
+              background: '#fff', border: '1px solid #E4E7EC', borderRadius: 12,
+              padding: 18, display: 'flex', flexDirection: 'column', gap: 14,
+            }}>
+              <header style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText style={{ width: 16, height: 16, color: '#FF641A' }} aria-hidden="true" />
+                <h3 style={{ fontSize: 14.5, fontWeight: 700, color: '#101828', margin: 0 }}>
+                  Assignment overview
+                </h3>
+              </header>
 
-            <SectionHead icon={HelpCircle}>Questions Overview</SectionHead>
-            <div className="sep-pair" style={{ marginBottom: 16 }}>
-              <Tile icon={FileText} tint="#6366f1" label="Total Questions" value={totalQ || '—'} />
-              <Tile icon={Clock} tint="#10b981" label="Duration" value={duration ? formatDuration(duration) : '—'} />
-            </div>
-
-            <SectionHead icon={Calendar}>Schedule</SectionHead>
-            <div className="sep-pair">
-              <Tile
-                icon={Calendar} tint="#6366f1" label="Start Date"
-                value={exercise.availabilityPeriod?.startDate ? formatDateTime(exercise.availabilityPeriod.startDate) : '—'}
-              />
-              <Tile
-                icon={Calendar} tint="#6366f1" label="End Date"
-                value={exercise.availabilityPeriod?.endDate ? formatDateTime(exercise.availabilityPeriod.endDate) : '—'}
-              />
-            </div>
-            {exercise.availabilityPeriod?.gracePeriodAllowed && exercise.availabilityPeriod?.gracePeriodDate && (
-              <div style={{ marginTop: 12 }}>
-                <Tile
-                  icon={Hourglass} tint="#f97316" label="Grace Period"
-                  value={formatDateTime(exercise.availabilityPeriod.gracePeriodDate)}
-                />
+              <div className="sap-stat-row" style={{
+                display: 'grid', gridTemplateColumns: '1fr 1px 1fr', columnGap: 18, alignItems: 'center',
+              }}>
+                <StatItem icon={FileText} tint="#6C63FF" label="Total questions" value={totalQ || '—'} />
+                <div className="sap-vdiv" style={{ height: '60%', minHeight: 26, width: 1, background: '#E4E7EC', margin: '0 auto' }} aria-hidden="true" />
+                <StatItem icon={Clock} tint="#12B76A" label="Duration" value={duration ? formatDuration(duration) : '—'} />
               </div>
-            )}
-          </div>
 
-          {/* ── Right: module, description, instructions, tags ── */}
-          {hasDetails && (
-            <div className="sep-right" style={{ padding: '14px 16px' }}>
-              <SectionHead icon={BookOpen}>Details</SectionHead>
+              <div style={{ height: 1, background: '#E4E7EC' }} aria-hidden="true" />
 
-              {selectedModule && (
-                <div style={{ marginBottom: 18 }}>
-                  <DetailLabel>Module</DetailLabel>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{selectedModule}</div>
-                </div>
-              )}
-
-              {description && (
-                <div style={{ marginBottom: 18, paddingTop: 16, borderTop: '1px solid #eef1f5' }}>
-                  <DetailLabel>Description</DetailLabel>
-                  <div
-                    className="sep-rich"
-                    style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.65 }}
-                    dangerouslySetInnerHTML={{ __html: safeHtml(description) }}
+              <div>
+                <h4 style={{ fontSize: 12.5, fontWeight: 700, color: '#101828', margin: '0 0 12px' }}>
+                  Schedule
+                </h4>
+                <div className="sap-stat-row" style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1px 1fr', columnGap: 18, alignItems: 'center',
+                }}>
+                  <StatItem
+                    icon={Calendar} tint="#6C63FF" label="Starts"
+                    value={exercise.availabilityPeriod?.startDate ? formatDateTime(exercise.availabilityPeriod.startDate) : '—'}
+                  />
+                  <div className="sap-vdiv" style={{ height: '60%', minHeight: 26, width: 1, background: '#E4E7EC', margin: '0 auto' }} aria-hidden="true" />
+                  <StatItem
+                    icon={Calendar} tint="#12B76A" label="Ends"
+                    value={exercise.availabilityPeriod?.endDate ? formatDateTime(exercise.availabilityPeriod.endDate) : '—'}
                   />
                 </div>
-              )}
+              </div>
+            </section>
 
-              {instructions && (
-                <div style={{ marginBottom: 18, paddingTop: 16, borderTop: '1px solid #eef1f5' }}>
-                  <DetailLabel>Instructions</DetailLabel>
-                  <div
-                    className="sep-rich"
-                    style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.65 }}
-                    dangerouslySetInnerHTML={{ __html: safeHtml(instructions) }}
-                  />
+            {/* ── Details (4-col) ── */}
+            <section className="sap-card" style={{
+              background: '#fff', border: '1px solid #E4E7EC', borderRadius: 12,
+              padding: 18, display: 'flex', flexDirection: 'column', gap: 12,
+            }}>
+              <header style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <BookOpen style={{ width: 16, height: 16, color: '#FF641A' }} aria-hidden="true" />
+                <h3 style={{ fontSize: 14.5, fontWeight: 700, color: '#101828', margin: 0 }}>
+                  Details
+                </h3>
+              </header>
+
+              {/* Two-column labeled rows — Module + Language + Difficulty
+                  each get their own row instead of collapsing into a mixed
+                  Topics chip strip. Empty fields drop out entirely so a
+                  language-agnostic MCQ exercise doesn't render an empty
+                  "Language: —" placeholder. */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <DetailRow label="Module" value={selectedModule || '—'} />
+                {languageLabel && <DetailRow label="Language" value={languageLabel} />}
+                {difficultyLabel && <DetailRow label="Difficulty" value={difficultyLabel} />}
+              </div>
+              <div style={{ height: 1, background: '#E4E7EC' }} aria-hidden="true" />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <IconBadge icon={Calendar} tint="#12B76A" size={34} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, color: '#667085' }}>Available until</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: '#101828', marginTop: 1 }}>
+                    {exercise.availabilityPeriod?.endDate ? formatDateTime(exercise.availabilityPeriod.endDate) : '—'}
+                  </div>
                 </div>
-              )}
+              </div>
 
-              {tags.length > 0 && (
-                <div style={{ paddingTop: 16, borderTop: '1px solid #eef1f5' }}>
-                  <DetailLabel>Tags</DetailLabel>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                    {tags.map((t, i) => {
-                      const palette = [
-                        { bg: '#eef2ff', fg: '#4338ca' },
-                        { bg: '#fff7ed', fg: '#c2410c' },
-                        { bg: '#eff6ff', fg: '#1d4ed8' },
-                        { bg: '#ecfdf5', fg: '#15803d' },
-                      ][i % 4]
-                      return (
-                        <span key={`${t}-${i}`} style={{
-                          padding: '5px 11px', borderRadius: 999, fontSize: 11.5, fontWeight: 600,
-                          background: palette.bg, color: palette.fg,
-                        }}>
-                          {t}
-                        </span>
-                      )
-                    })}
+              {exercise.availabilityPeriod?.gracePeriodAllowed && exercise.availabilityPeriod?.gracePeriodDate && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <IconBadge icon={Hourglass} tint="#FF641A" size={34} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11.5, color: '#667085' }}>Grace period ends</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#101828', marginTop: 1 }}>
+                      {formatDateTime(exercise.availabilityPeriod.gracePeriodDate)}
+                    </div>
                   </div>
                 </div>
               )}
-            </div>
-          )}
+            </section>
+          </div>
         </div>
 
-        {/* Footer — availability banner, then the actions */}
-        <div style={{
-          padding: '10px 16px 13px', borderTop: '1px solid #eef1f5',
-          background: '#fafbfc', flexShrink: 0,
+        {/* FOOTER — Cancel + primary Begin. The button label carries any
+            availability story ("Not Yet Open" / "Expired") — no separate banner
+            is repeated here per the launch-modal spec. */}
+        <div className="sap-footer" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+          gap: 10, padding: '10px 20px', background: '#fff',
+          borderTop: '1px solid #E4E7EC', flexShrink: 0,
         }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            fontSize: 12, fontWeight: 600,
-            padding: '8px 12px', borderRadius: 8, marginBottom: 10,
-            background: statusConfig.bg, color: statusConfig.color, border: `1px solid ${statusConfig.border}`,
-          }}>
-            <Calendar className="w-4 h-4" style={{ flexShrink: 0 }} />
-            {statusConfig.text}
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={onClose}
-              style={{
-                flex: '0 0 auto', minWidth: 118, padding: '10px 0', borderRadius: 9,
-                fontSize: 12.5, fontWeight: 600,
-                color: '#475569', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              disabled={!canProceed}
-              style={{
-                flex: 1, padding: '10px 0', borderRadius: 9, fontSize: 13, fontWeight: 700,
-                color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: 8, border: 'none', cursor: canProceed ? 'pointer' : 'not-allowed',
-                opacity: canProceed ? 1 : 0.5,
-                background: !canProceed ? '#94a3b8'
-                  : availability.status === 'late-attempt' ? '#f97316'
-                  : availability.status === 'grace-period' ? '#f97316'
-                  : isGraded ? '#f97316' : '#0891b2',
-              }}
-            >
-              {limitReached
-                ? <><CheckCircle className="w-4 h-4" />Already Completed</>
-                : availability.status === 'late-attempt' && availability.canStart
-                ? <><Play className="w-4 h-4" style={{ fill: 'white' }} />Start Late Attempt</>
-                : availability.canStart
-                ? <><Play className="w-4 h-4" style={{ fill: 'white' }} />{isRetake ? (isPractice ? 'Retake Practice' : isGraded ? 'Retake Graded Exercise' : 'Retake Exercise') : (isPractice ? 'Start Practice' : isGraded ? 'Begin Graded Exercise' : 'Start Exercise')}</>
-                : availability.status === 'upcoming'
-                ? <><Calendar className="w-4 h-4" />Not Yet Open</>
-                : <><Lock className="w-4 h-4" />Expired</>
-              }
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="sap-btn-cancel"
+            style={{
+              minWidth: 96, height: 38, padding: '0 16px', borderRadius: 8,
+              border: '1px solid #E4E7EC', background: '#fff', color: '#344054',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            ref={primaryBtnRef}
+            type="button"
+            onClick={onConfirm}
+            disabled={buttonState.disabled}
+            className="sap-btn-primary"
+            style={{
+              minWidth: 200, height: 38, padding: '0 18px', borderRadius: 8,
+              background: buttonState.disabled ? '#94A3B8' : '#FF641A',
+              color: '#fff', border: 'none',
+              fontSize: 13.5, fontWeight: 700,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              cursor: buttonState.disabled ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {buttonState.icon}
+            {buttonState.label}
+          </button>
         </div>
       </div>
 
       <style>{`
-        @keyframes popIn {
-          from { opacity:0; transform:scale(.92) translateY(8px) }
-          to   { opacity:1; transform:scale(1) translateY(0) }
+        @keyframes sapPopIn {
+          from { opacity: 0; transform: scale(0.96) translateY(6px); }
+          to   { opacity: 1; transform: scale(1)   translateY(0);   }
         }
-        .sep-body--split { display: grid; grid-template-columns: 1.65fr 1fr; align-items: start; }
-        .sep-right { border-left: 1px solid #eef1f5; }
-        .sep-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .sep-rich p { margin: 0 0 8px }
-        .sep-rich p:last-child { margin-bottom: 0 }
-        .sep-rich ul, .sep-rich ol { margin: 0; padding-left: 18px }
-        .sep-rich li { margin-bottom: 5px }
-        /* One column once the split stops earning its keep — the right pane
-           moves below the left instead of squeezing both. */
-        @media (max-width: 720px) {
-          .sep-body--split { grid-template-columns: 1fr; }
-          .sep-right { border-left: none; border-top: 1px solid #eef1f5; }
+        .sap-close:hover { background: #F9FAFB; }
+        .sap-close:focus-visible { outline: 2px solid #FF641A; outline-offset: 2px; }
+        .sap-btn-cancel:hover { background: #F9FAFB; }
+        .sap-btn-cancel:focus-visible { outline: 2px solid #FF641A; outline-offset: 2px; }
+        .sap-btn-primary:not(:disabled):hover { background: #E45510; }
+        .sap-btn-primary:focus-visible { outline: 2px solid #101828; outline-offset: 2px; }
+
+        /* Tablet — trim padding further; two columns still fit while width allows */
+        @media (max-width: 1080px) {
+          .sap-body { padding: 14px !important; }
+          .sap-card { padding: 16px !important; }
         }
-        @media (max-width: 520px) {
-          .sep-pair { grid-template-columns: 1fr; }
+
+        /* Stack the two cards below 900px */
+        @media (max-width: 900px) {
+          .sap-grid { grid-template-columns: 1fr !important; }
+        }
+
+        /* Mobile — nearly full-screen, stacked stat rows, full-width footer */
+        @media (max-width: 640px) {
+          .sap-shell { max-width: 100% !important; max-height: 100vh !important; border-radius: 0 !important; }
+          .sap-header { padding: 12px !important; gap: 10px !important; }
+          .sap-body { padding: 12px !important; }
+          .sap-card { padding: 14px !important; gap: 12px !important; }
+          .sap-stat-row { grid-template-columns: 1fr !important; row-gap: 12px !important; }
+          .sap-vdiv { display: none !important; }
+          .sap-footer { flex-direction: column-reverse !important; padding: 12px !important; }
+          .sap-footer button { width: 100% !important; min-width: 0 !important; }
         }
       `}</style>
     </div>
@@ -1155,6 +1296,15 @@ export default function Exercises({
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [filterLevel, setFilterLevel] = useState<string>("all")
   const [filterStatus, setFilterStatus] = useState<string[]>([])
+  // Due-date scope for the Filter popover. `any` = no restriction.
+  // `week` = end date within the next 7 days from now (inclusive).
+  // `later` = end date more than 7 days out or no end date at all.
+  const [filterDue, setFilterDue] = useState<'any' | 'week' | 'later'>('any')
+  // Staged copies used inside the Filter popover so chip clicks don't
+  // update the list until the student hits Apply filters. Reset from
+  // the applied values whenever the popover opens. Cancel discards.
+  const [stagedLevel, setStagedLevel] = useState<string>('all')
+  const [stagedDue, setStagedDue] = useState<'any' | 'week' | 'later'>('any')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
@@ -1182,6 +1332,18 @@ export default function Exercises({
     }
   }, [showFilterDropdown])
 
+  // Sync staged filter state from the applied values whenever the
+  // popover opens. Cancel closes without touching applied; Apply
+  // commits staged → applied. This is the "don't change the list until
+  // you press Apply" behaviour the user asked for.
+  useEffect(() => {
+    if (showFilterDropdown) {
+      setStagedLevel(filterLevel)
+      setStagedDue(filterDue)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showFilterDropdown])
+
 const showToast = (message: string, type: 'error' | 'warning' = 'error') => {
   setToast({ message, type })
   setTimeout(() => setToast(null), 3500)
@@ -1203,6 +1365,22 @@ const filteredExercises = useMemo(
     // Apply level filter
     if (filterLevel !== "all") {
       result = result.filter(ex => ex.exerciseInformation.exerciseLevel === filterLevel)
+    }
+
+    // Apply due-date filter — `week` = end within 7 days from now,
+    // `later` = end more than 7 days out (or no end date at all).
+    if (filterDue !== "any") {
+      const now = Date.now()
+      const weekOut = now + 7 * 24 * 60 * 60 * 1000
+      result = result.filter((ex) => {
+        const endRaw = ex.availabilityPeriod?.endDate
+        const end = endRaw ? new Date(endRaw).getTime() : null
+        if (filterDue === "week") {
+          return end != null && end >= now && end <= weekOut
+        }
+        // 'later'
+        return end == null || end > weekOut
+      })
     }
     
     // Apply status filter
@@ -1251,7 +1429,7 @@ const filteredExercises = useMemo(
       return sortDir === 'asc' ? cmp : -cmp
     })
   },
-  [exercises, searchQuery, filterLevel, filterStatus, studentAnswers, method, subcategory, sortColumn, sortDir]
+  [exercises, searchQuery, filterLevel, filterStatus, filterDue, studentAnswers, method, subcategory, sortColumn, sortDir]
 )
 
 // Dynamically compute rows per page from the actual table-body area height.
@@ -1277,7 +1455,54 @@ useEffect(() => {
 }, [])
 
 // Reset to page 1 when filters change
-useEffect(() => { setCurrentPage(1) }, [searchQuery, filterLevel, filterStatus.join(',')])
+useEffect(() => { setCurrentPage(1) }, [searchQuery, filterLevel, filterStatus.join(','), filterDue])
+
+// Status chip counts for the toolbar — computed off the same base list
+// the table renders from (config-gated + search-scoped) so the chip
+// totals always match the number of rows the user will actually see.
+// "Active" = row Status column reads Active. "Submitted" = row Status
+// reads Submitted. "Pending" = row Status reads Not Submitted (upcoming
+// / expired / never attempted).
+const statusCounts = useMemo(() => {
+  const scoped = exercises.filter(ex => isExerciseFullyConfigured(ex)).filter((ex) => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      ex.exerciseInformation.exerciseName?.toLowerCase().includes(q) ||
+      ex.exerciseInformation.exerciseId?.toLowerCase().includes(q)
+    )
+  })
+  let active = 0
+  let submitted = 0
+  let pending = 0
+  scoped.forEach((ex) => {
+    const availability = getExerciseAvailability(ex)
+    const testSubs = getTestSubmissions(ex, studentAnswers, method, subcategory)
+    if (testSubs >= 1) submitted++
+    else if (availability.canStart) active++
+    else pending++
+  })
+  return { all: scoped.length, active, submitted, pending }
+}, [exercises, searchQuery, studentAnswers, method, subcategory])
+
+// Which chip is currently pressed. Derived from filterStatus so the
+// dropdown Filter panel and the chip row stay in sync — a chip click
+// replaces the multi-select entirely, and clicking All clears it.
+const activeChip: 'all' | 'active' | 'submitted' | 'pending' = (() => {
+  if (filterStatus.length === 0) return 'all'
+  if (filterStatus.length === 1) {
+    if (filterStatus[0] === 'active') return 'active'
+    if (filterStatus[0] === 'submitted') return 'submitted'
+    if (filterStatus[0] === 'not-submitted') return 'pending'
+  }
+  return 'all'
+})()
+const setChip = (chip: 'all' | 'active' | 'submitted' | 'pending') => {
+  if (chip === 'all') setFilterStatus([])
+  else if (chip === 'active') setFilterStatus(['active'])
+  else if (chip === 'submitted') setFilterStatus(['submitted'])
+  else setFilterStatus(['not-submitted'])
+}
 
 const ITEMS_PER_PAGE = itemsPerPage
 const totalPages   = Math.max(1, Math.ceil(filteredExercises.length / ITEMS_PER_PAGE))
@@ -1296,14 +1521,14 @@ const getPageNums = (): (number | '...')[] => {
 
 const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   e.stopPropagation()
-  
+
   // ← ADD THIS BLOCK
   const totalQ = getTotalQuestions(exercise)
   if (totalQ === 0) {
     showToast('This exercise has not been configured yet. Please contact your instructor.')
     return
   }
-  
+
   const submissionAttempts = getSubmissionAttempts(exercise)
   const testSubmissions = getTestSubmissions(exercise, studentAnswers, method, subcategory)
   const isCompleted = testSubmissions >= 1
@@ -1312,6 +1537,53 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
 
   if (limitReached) {
     // All attempts used — no more starts.
+    return
+  }
+
+  // Fresh We_Do start → the standalone pre-start page replaces the old
+  // StartExercisePopup modal. Retake / in-progress-resume still go through
+  // the popup / resume dialog because they carry a confirmation payload
+  // (reset progress / resume the draft) that only the modal exposes.
+  const methodKey = (method || '').toLowerCase().replace(/[_\s-]+/g, '')
+  const isFreshWeDoStart = methodKey === 'wedo' && !isRetake
+  if (isFreshWeDoStart) {
+    const { inProgress } = getExerciseAttemptData(exercise._id)
+    if (inProgress) {
+      setResumeModalExercise(exercise)
+      return
+    }
+    try {
+      const stash = {
+        exercise,
+        context: {
+          courseId,
+          courseName: (exercise as any)?.courseName || '',
+          nodeId: (selectedItem as any)?.id || '',
+          nodeName: (selectedItem as any)?.title || '',
+          nodeType: (selectedItem as any)?.type || '',
+          method: method || 'we-do',
+          category: 'We_Do',
+          subcategory: subcategory || '',
+          hierarchy: (currentHierarchy && currentHierarchy.length > 0 ? currentHierarchy : hierarchy) || [],
+        },
+      }
+      localStorage.setItem('wedo_test_intro_' + exercise._id, JSON.stringify(stash))
+    } catch { /* quota */ }
+    const qs = new URLSearchParams({ exerciseId: exercise._id })
+    // Open the pre-start instructions page in a NEW TAB so the
+    // course list stays where the student left it, matching the
+    // "Start opens a fresh workspace" flow the user asked for.
+    // `noopener,noreferrer` prevents the new tab from having a
+    // reference back to this window.
+    if (typeof window !== 'undefined') {
+      window.open(
+        `/lms/pages/courses/coursesdetailedview/wedo/instructions?${qs.toString()}`,
+        '_blank',
+        'noopener,noreferrer',
+      )
+    } else {
+      router.push(`/lms/pages/courses/coursesdetailedview/wedo/instructions?${qs.toString()}`)
+    }
     return
   }
 
@@ -1378,8 +1650,16 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   }
 
   // ── Filter/toolbar bookkeeping shared with the DataTable render ──
-  const hasActiveFilters = !!searchQuery || filterLevel !== "all" || filterStatus.length > 0
-  const activeFilterCount = (filterLevel !== "all" ? 1 : 0) + filterStatus.length
+  // Active-filter strip visibility. Status filtering moved to the
+  // segmented control (which shows its own selected state), so it no
+  // longer counts as an "applied filter" for the summary strip. Level
+  // and Due Date are the two popover-applied filters that the strip
+  // surfaces with removable chips.
+  const hasActiveFilters = !!searchQuery || filterLevel !== "all" || filterDue !== "any"
+  // Status filter lives OUTSIDE the popover now (segmented control),
+  // so the "1 active filter" badge on the Filter button only counts the
+  // in-popover filters (Level + Due Date).
+  const activeFilterCount = (filterLevel !== "all" ? 1 : 0) + (filterDue !== "any" ? 1 : 0)
   const hasAnyExercises = !!exercises && exercises.filter(ex => isExerciseFullyConfigured(ex)).length > 0
 
   // ── Columns for the shared DataTable (matches Client Management styling) ──
@@ -1392,14 +1672,14 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
     {
       key: 'num',
       label: '#',
-      className: 'w-[4%] pl-4 pr-2 text-left text-[12px] text-faint tabular-nums align-middle whitespace-nowrap',
+      className: 'w-[4%] pl-4 pr-2 text-left text-[13px] text-faint tabular-nums align-middle whitespace-nowrap',
       skeletonWidth: '20px',
       render: (_ex, i) => startIdx + i + 1,
     },
     {
       key: 'id',
       label: 'ID',
-      className: 'w-[9%] px-3 text-left align-middle text-[12px] text-subtle',
+      className: 'w-[9%] px-3 text-left align-middle text-[13px] text-subtle',
       skeletonWidth: '40px',
       render: (ex) => (
         <span className="font-mono truncate block" title={ex.exerciseInformation.exerciseId}>
@@ -1411,25 +1691,26 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'name',
       label: 'Assignment Name',
       sortKey: 'name',
-      className: 'w-[22%] px-3 text-left align-middle text-[12px] text-body',
+      className: 'w-[18%] px-3 text-left align-middle text-[13.5px]',
       skeletonWidth: '80%',
       render: (ex) => {
         const name = ex.exerciseInformation.exerciseName || 'N/A'
-        // Font-weight dropped from `font-medium text-heading` to plain
-        // row-body weight so the row reads as one uniform line — same
-        // rhythm the We_Do assignments list uses. Description subtitle
-        // dropped: it was making the row taller than the other cells
-        // and produced the mixed-font look the trainer complained about.
+        // Assignment name is the primary label in the row — kept the
+        // heading color + slight size bump, but dropped semibold →
+        // medium. Weight + color + size stacked all three of the same
+        // hierarchy signals, which read as "the whole column is bold".
+        // Medium is enough to distinguish it from the regular-weight
+        // ID / date cells without over-emphasising.
         return (
-          <span className="block truncate" title={name}>{name}</span>
+          <span className="block truncate font-medium text-heading" title={name}>{name}</span>
         )
       },
     },
     {
       key: 'start',
-      label: 'Start Date',
+      label: 'Available From',
       sortKey: 'start',
-      className: 'w-[18%] px-3 text-left align-middle text-[12px] text-body',
+      className: 'w-[18%] px-3 text-left align-middle text-[13px] text-body',
       skeletonWidth: '75%',
       render: (ex) => (
         <span className="flex items-center gap-1 whitespace-nowrap"
@@ -1443,9 +1724,9 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
     },
     {
       key: 'end',
-      label: 'End Date',
+      label: 'Due Date',
       sortKey: 'end',
-      className: 'w-[18%] px-3 text-left align-middle text-[12px] text-body',
+      className: 'w-[18%] px-3 text-left align-middle text-[13px] text-body',
       skeletonWidth: '75%',
       render: (ex) => (
         <span className="flex items-center gap-1 whitespace-nowrap"
@@ -1461,12 +1742,17 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'level',
       label: 'Level',
       sortKey: 'level',
-      className: 'w-[8%] px-3 text-left align-middle text-[12px] text-body',
+      className: 'w-[8%] px-3 text-left align-middle text-[13px] text-body',
       render: (ex) => {
+        // Quiet neutral outlined badge — the difficulty tint used to
+        // paint the row green (Beginner) five times in a row, which was
+        // the loudest thing in the list even though it conveyed nothing
+        // actionable. Neutral slate keeps the label readable without
+        // stealing focus from Status / Action.
         const d = getDifficultyStyle(ex.exerciseInformation.exerciseLevel)
         return (
-          <span className="inline-flex items-center text-2xs font-semibold tracking-wide px-2 py-0.5 rounded-full border"
-            style={{ background: d.bg, color: d.color, borderColor: d.border }}>
+          <span className="inline-flex items-center text-2xs font-medium px-2 py-0.5 rounded-full border"
+            style={{ background: '#FFFFFF', color: '#475569', borderColor: '#E2E8F0' }}>
             {d.label}
           </span>
         )
@@ -1476,37 +1762,18 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       key: 'status',
       label: 'Status',
       sortKey: 'status',
-      // Wider so "Not Submitted" fits without wrapping.
-      className: 'w-[10%] px-3 text-left align-middle text-[12px] text-body',
+      // Wider so "In Progress" fits without wrapping.
+      className: 'w-[11%] px-3 text-left align-middle text-[13px] text-body',
       render: (ex) => {
-        const canStart = getExerciseAvailability(ex).canStart
-        const testSubmissions = getTestSubmissions(ex, studentAnswers, method, subcategory)
-        const isCompleted = testSubmissions >= 1
-        // Status communicates state via ICON + label — the shape is the
-        // primary cue (accessible to colour-blind viewers) and colour is
-        // secondary. Same rule as the You_Do assessments list:
-        //   • Submitted     → CheckCircle (green)
-        //   • Active        → Zap        (green)
-        //   • Not Submitted → Lock       (grey)
-        const state = isCompleted
-          ? 'submitted'
-          : canStart
-            ? 'active'
-            : 'not-submitted'
-        const label = state === 'submitted'
-          ? 'Submitted'
-          : state === 'active'
-            ? 'Active'
-            : 'Not Submitted'
-        const Icon = state === 'submitted' ? CheckCircle : state === 'active' ? Zap : Lock
-        const isGreen = state !== 'not-submitted'
+        const s = resolveAssignmentState(ex, studentAnswers, method, subcategory)
+        // Semantic colours per state — restrained pale backgrounds so
+        // five rows in a column don't shout. Every state uses an icon +
+        // label so meaning isn't carried by colour alone.
         return (
           <span className="inline-flex items-center gap-1.5 text-2xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-            style={isGreen
-              ? { background: '#ecfdf3', color: '#15803d' }
-              : { background: '#f1f5f9', color: '#64748b' }}>
-            <Icon size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-            {label}
+            style={{ background: s.tone.bg, color: s.tone.fg }}>
+            <s.Icon size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+            {s.label}
           </span>
         )
       },
@@ -1514,47 +1781,65 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
     {
       key: 'action',
       label: 'Action',
-      // Action column carries JUST the primary write action (Start / Re
-      // Submit) and the three-dot menu. The "Submitted / Not Submitted"
-      // text that used to sit here is dropped — that state already reads
-      // off the Status column above, and repeating it here squashed the
-      // three-dot menu and made the cell feel cramped.
-      className: 'w-[11%] pl-2 pr-4 text-center align-middle text-[12px] text-body whitespace-nowrap',
+      // Fixed width, centred content, uniform button footprint so every
+      // row's action lands in the same visual slot.
+      className: 'w-[13%] pl-6 pr-6 text-center align-middle text-[13px] text-body whitespace-nowrap',
       render: (ex) => {
-        const availability = getExerciseAvailability(ex)
-        const isGraded = ex.isGraded !== false
-        const submissionAttempts = getSubmissionAttempts(ex)
-        const testSubmissions = getTestSubmissions(ex, studentAnswers, method, subcategory)
-        const isCompleted = testSubmissions >= 1
-        const limitReached = testSubmissions >= submissionAttempts
-        const canRetake = isCompleted && !limitReached && availability.canStart
+        const s = resolveAssignmentState(ex, studentAnswers, method, subcategory)
 
-        // A single primary control (or nothing) sits on the left; the
-        // three-dot menu always sits on the right so it lands in the
-        // same visual slot for every row. `justify-end` with a small
-        // gap keeps the layout tidy — earlier `flex-col` per-row
-        // stacking made "Not Submitted" rows shorter than others.
-        return (
-          <div className="flex items-center justify-end gap-1.5">
-            {availability.canStart && !limitReached && (
-              <button
-                type="button"
-                onClick={e => handleStartClick(ex, e)}
-                className="inline-flex items-center h-7 px-2.5 text-2xs font-semibold rounded-control transition-colors duration-150"
-                style={canRetake
-                  ? { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', cursor: 'pointer' }
-                  : isGraded
-                    ? { background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', cursor: 'pointer' }
-                    : { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', cursor: 'pointer' }}
-              >
-                {canRetake ? 'Re Submit' : 'Start'}
+        // Shared button classes so Start / Continue / View Submission /
+        // View Feedback all render at identical dimensions. Bumped from
+        // h-7/w-112/text-2xs → h-9/w-[128px]/text-[13px] so the row CTA
+        // sits at a comfortable click target and matches the toolbar
+        // rhythm (36px controls) instead of looking shrunken.
+        const btnBase = 'inline-flex items-center justify-center gap-1.5 h-9 w-[128px] text-[13px] font-semibold rounded-control transition-colors duration-150'
+        const primary: React.CSSProperties = { background: '#F97316', color: '#FFFFFF', border: 'none', cursor: 'pointer' }
+        const secondary: React.CSSProperties = { background: '#FFFFFF', color: '#F97316', border: '1px solid #F97316', cursor: 'pointer' }
+
+        // "Upcoming" — no interaction yet, just a quiet lock + open-date
+        // reminder so the empty cell doesn't look like missing data.
+        if (s.kind === 'upcoming') {
+          return (
+            <div className="flex items-center justify-center gap-1.5 text-2xs text-subtle whitespace-nowrap">
+              <Lock size={12} style={{ flexShrink: 0 }} />
+              <span>{s.actionHint || 'Not yet open'}</span>
+            </div>
+          )
+        }
+        if (s.kind === 'active') {
+          return (
+            <div className="flex items-center justify-center">
+              <button type="button" onClick={e => handleStartClick(ex, e)} className={btnBase} style={primary}>
+                Start
               </button>
-            )}
-            <RowActionsMenu
-              exercise={ex}
-              onGrade={handleGradeClick}
-              isGradeEnabled={hasExerciseBeenAttempted(ex, studentAnswers, method, subcategory)}
-            />
+            </div>
+          )
+        }
+        if (s.kind === 'in-progress') {
+          return (
+            <div className="flex items-center justify-center">
+              <button type="button" onClick={e => handleStartClick(ex, e)} className={btnBase} style={primary}>
+                Continue
+              </button>
+            </div>
+          )
+        }
+        if (s.kind === 'submitted' || s.kind === 'graded') {
+          // Both submitted + graded route to the same grader screen —
+          // labelled "Grade" per the user's rename.
+          return (
+            <div className="flex items-center justify-center">
+              <button type="button" onClick={e => handleGradeClick(ex, e)} className={btnBase} style={secondary}>
+                Grade
+              </button>
+            </div>
+          )
+        }
+        // 'missed' | 'closed' — centred muted em dash so students see
+        // "no action possible" rather than a suspicious empty cell.
+        return (
+          <div className="flex items-center justify-center text-subtle" aria-label="No action available">
+            —
           </div>
         )
       },
@@ -1618,6 +1903,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
           testSubmissions={getTestSubmissions(popupExercise.exercise, studentAnswers, method, subcategory)}
           submissionAttempts={getSubmissionAttempts(popupExercise.exercise)}
           isRetake={popupExercise.isRetake}
+          method={method}
           breadcrumb={[
             ...(hierarchy.length > 0 ? hierarchy : currentHierarchy),
             method ? method.replace(/_/g, ' ') : undefined,
@@ -1643,21 +1929,32 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
              so nothing wastes space around the search / list. ── */}
       <div
         ref={cardRef}
-        className="flex flex-col h-full min-h-0 bg-surface overflow-hidden px-2 sm:px-3"
-        style={{ fontFamily: LIST_FONT }}
+        // Shared responsive gutter matching TopBar + TabBar so the
+        // search field's left edge aligns with Overview and the
+        // Assignment tab across every viewport width. Container fills
+        // the viewport — no fixed max-width, no centred narrow column.
+        className="flex flex-col h-full min-h-0 bg-surface overflow-hidden"
+        style={{
+          fontFamily: LIST_FONT,
+          paddingInline: 'clamp(16px, 2vw, 32px)',
+          width: '100%', maxWidth: 'none', marginInline: 0,
+          boxSizing: 'border-box',
+        }}
       >
 
-        {/* ── Toolbar — small vertical padding so the search row hugs
-             the list header below it instead of floating with a big gap. ── */}
-        <div className="flex-none flex items-center gap-2 pt-1.5 pb-1.5 flex-wrap min-w-0">
-          <div className="relative flex-1 min-w-[220px] max-w-md">
+        {/* ── Toolbar — one clean row, 36px controls, 12px gaps.
+             Search left · status segmented control middle · Filter right.
+             Status filtering lives ONLY in the segmented control; the
+             Filter popover carries Level + Due Date. ── */}
+        <div className="flex-none flex items-center gap-3 pt-2 pb-2 min-w-0">
+          <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-faint pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search assignments…"
-              className="w-full h-8 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-xs text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
+              className="w-full h-9 pl-8 pr-8 rounded-control border border-hairline-strong bg-surface text-[12.5px] text-body placeholder:text-faint focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition-colors duration-150"
             />
             {searchQuery && (
               <button
@@ -1671,70 +1968,118 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             )}
           </div>
 
-          <div className="relative" ref={filterRef}>
+          {/* Status segmented control — 36px, one continuous rounded
+              container with hairline dividers between segments and
+              circular count badges. Selected = pale-orange bg + orange
+              text + orange-tinted badge. */}
+          <div
+            role="tablist" aria-label="Filter by status"
+            className="inline-flex items-stretch h-9 rounded-control border border-hairline-strong bg-surface overflow-hidden shrink-0"
+          >
+            {([
+              { key: 'all' as const,       label: 'All',       count: statusCounts.all },
+              { key: 'active' as const,    label: 'Active',    count: statusCounts.active },
+              { key: 'submitted' as const, label: 'Submitted', count: statusCounts.submitted },
+              { key: 'pending' as const,   label: 'Pending',   count: statusCounts.pending },
+            ]).map((c, i) => {
+              const selected = activeChip === c.key
+              return (
+                <button
+                  key={c.key}
+                  type="button" role="tab" aria-selected={selected}
+                  onClick={() => setChip(c.key)}
+                  className={`inline-flex items-center gap-1.5 px-3 text-[12.5px] font-semibold transition-colors duration-150 ${
+                    selected ? 'text-brand-strong' : 'text-subtle hover:text-heading'
+                  } ${i > 0 ? 'border-l border-hairline' : ''}`}
+                  style={selected ? { background: '#FFF4EC' } : undefined}
+                >
+                  <span>{c.label}</span>
+                  <span
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10.5px] font-semibold tabular-nums ${
+                      selected ? 'text-brand-strong' : 'text-subtle'
+                    }`}
+                    style={{ background: selected ? '#FFE4CC' : '#F1F5F9' }}
+                  >
+                    {c.count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="relative shrink-0 ml-auto" ref={filterRef}>
             <button
               type="button"
               onClick={() => setShowFilterDropdown((v) => !v)}
               aria-expanded={showFilterDropdown}
-              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border text-xs font-medium transition-colors duration-150 ${
-                activeFilterCount > 0 || showFilterDropdown
-                  ? 'border-brand text-brand-strong bg-brand-wash'
-                  : 'border-hairline-strong bg-surface text-body hover:bg-row-hover hover:text-heading'
-              }`}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-control text-[12.5px] font-semibold transition-colors duration-150"
+              style={{
+                border: '1px solid #F97316',
+                background: '#FFFFFF',
+                color: '#F97316',
+              }}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               <span>Filter</span>
               {activeFilterCount > 0 && (
-                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-2xs font-bold text-white tabular-nums">
+                <span
+                  className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10.5px] font-bold text-white tabular-nums"
+                  style={{ background: '#F97316' }}
+                >
                   {activeFilterCount}
                 </span>
               )}
-              <ChevronDown className={`w-3 h-3 transition-transform ${showFilterDropdown ? 'rotate-180' : ''}`} />
+              {showFilterDropdown
+                ? <ChevronDown className="w-3.5 h-3.5 rotate-180 transition-transform" />
+                : <ChevronDown className="w-3.5 h-3.5 transition-transform" />}
             </button>
 
             {showFilterDropdown && (
-              <div className="absolute top-full right-0 mt-1.5 w-64 rounded-xl bg-surface z-40 p-3 space-y-3 border border-hairline-strong shadow-lg">
-                <div>
-                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2 text-subtle">Level</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {['all', 'beginner', 'intermediate', 'advanced', 'hard', 'medium'].map((level) => (
-                      <button
-                        key={level}
-                        type="button"
-                        onClick={() => setFilterLevel(level)}
-                        className={`px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors duration-150 ${
-                          filterLevel === level
-                            ? 'bg-brand-strong text-white border-brand-strong'
-                            : 'bg-surface text-body border-hairline-strong hover:border-line-hover hover:text-heading'
-                        }`}
-                      >
-                        {level === 'all' ? 'All' : level.charAt(0).toUpperCase() + level.slice(1)}
-                      </button>
-                    ))}
-                  </div>
+              <div
+                className="absolute top-full right-0 mt-2 z-40 bg-surface rounded-xl border border-hairline-strong"
+                style={{
+                  width: 360,
+                  boxShadow: '0 14px 36px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.06)',
+                }}
+              >
+                {/* Header — Clear all now resets STAGED values only; the
+                    list stays as-is until the student hits Apply. */}
+                <div className="flex items-center justify-between px-5 pt-4 pb-2">
+                  <span className="text-[15px] font-semibold text-heading">Filters</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStagedLevel('all')
+                      setStagedDue('any')
+                    }}
+                    className="text-[13px] font-semibold transition-colors duration-150"
+                    style={{ color: '#F97316', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  >
+                    Clear all
+                  </button>
                 </div>
-                <div>
-                  <p className="text-2xs font-semibold uppercase tracking-wider mb-2 text-subtle">Status</p>
-                  <div className="flex flex-wrap gap-1.5">
+
+                {/* Level — chip clicks write to STAGED state so the list
+                    doesn't move until Apply. */}
+                <div className="px-5 pt-2">
+                  <div className="text-[11px] font-semibold text-faint tracking-wide mb-2">LEVEL</div>
+                  <div className="flex flex-wrap gap-2">
                     {[
-                      { val: 'active', label: 'Active' },
-                      { val: 'inactive', label: 'Inactive' },
-                      { val: 'submitted', label: 'Submitted' },
-                      { val: 'not-submitted', label: 'Not Submitted' },
+                      { val: 'all',          label: 'Any' },
+                      { val: 'beginner',     label: 'Beginner' },
+                      { val: 'intermediate', label: 'Intermediate' },
+                      { val: 'advanced',     label: 'Advanced' },
                     ].map(({ val, label }) => {
-                      const selected = filterStatus.includes(val)
+                      const selected = stagedLevel === val
                       return (
                         <button
                           key={val}
                           type="button"
-                          onClick={() =>
-                            setFilterStatus((prev) => (selected ? prev.filter((s) => s !== val) : [...prev, val]))
-                          }
-                          className={`px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors duration-150 ${
-                            selected
-                              ? 'bg-brand-strong text-white border-brand-strong'
-                              : 'bg-surface text-body border-hairline-strong hover:border-line-hover hover:text-heading'
-                          }`}
+                          onClick={() => setStagedLevel(val)}
+                          className="inline-flex items-center h-9 px-3.5 rounded-control text-[12.5px] font-semibold transition-colors duration-150"
+                          style={selected
+                            ? { border: '1px solid #F97316', background: '#FFF4EC', color: '#F97316' }
+                            : { border: '1px solid #E2E8F0', background: '#FFFFFF', color: '#475569' }}
                         >
                           {label}
                         </button>
@@ -1742,18 +2087,56 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
                     })}
                   </div>
                 </div>
-                {(filterLevel !== 'all' || filterStatus.length > 0) && (
+
+                {/* Due date — same staged pattern. */}
+                <div className="px-5 pt-4">
+                  <div className="text-[11px] font-semibold text-faint tracking-wide mb-2">DUE DATE</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { val: 'any' as const,  label: 'Any time' },
+                      { val: 'week' as const, label: 'Due this week' },
+                      { val: 'later' as const,label: 'Due later' },
+                    ].map(({ val, label }) => {
+                      const selected = stagedDue === val
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setStagedDue(val)}
+                          className="inline-flex items-center h-9 px-3.5 rounded-control text-[12.5px] font-semibold transition-colors duration-150"
+                          style={selected
+                            ? { border: '1px solid #F97316', background: '#FFF4EC', color: '#F97316' }
+                            : { border: '1px solid #E2E8F0', background: '#FFFFFF', color: '#475569' }}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Footer — Cancel discards staged; Apply commits it. */}
+                <div className="mt-4 border-t border-hairline flex items-center justify-end gap-2 px-5 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowFilterDropdown(false)}
+                    className="inline-flex items-center justify-center h-10 px-4 rounded-control text-[13px] font-semibold text-body bg-surface border border-hairline-strong hover:bg-row-hover transition-colors duration-150"
+                  >
+                    Cancel
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setFilterLevel('all')
-                      setFilterStatus([])
+                      setFilterLevel(stagedLevel)
+                      setFilterDue(stagedDue)
+                      setShowFilterDropdown(false)
                     }}
-                    className="w-full py-1.5 rounded-control text-2xs font-medium border border-hairline-strong text-subtle bg-canvas hover:text-heading transition-colors duration-150"
+                    className="inline-flex items-center justify-center h-10 px-6 rounded-control text-[13px] font-semibold text-white transition-colors duration-150"
+                    style={{ background: '#F97316', border: 'none' }}
                   >
-                    Clear Filters
+                    Apply filters
                   </button>
-                )}
+                </div>
               </div>
             )}
           </div>
@@ -1763,9 +2146,9 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
               type="button"
               onClick={onShowHeader}
               title="Show header"
-              className="inline-flex items-center justify-center size-8 rounded-control border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors duration-150"
+              className="inline-flex items-center justify-center size-9 rounded-control border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors duration-150"
             >
-              <Eye size={13} />
+              <Eye size={14} />
             </button>
           )}
         </div>
@@ -1799,28 +2182,25 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
                 </button>
               </span>
             )}
-            {filterStatus.map((s) => (
-              <span
-                key={s}
-                className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong"
-              >
-                {s === 'not-submitted' ? 'Not Submitted' : s.charAt(0).toUpperCase() + s.slice(1)}
+            {filterDue !== 'any' && (
+              <span className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-1.5 rounded-full border border-brand-500/30 bg-brand-wash text-xs font-medium text-brand-strong">
+                {filterDue === 'week' ? 'Due this week' : 'Due later'}
                 <button
                   type="button"
-                  aria-label={`Remove ${s} filter`}
-                  onClick={() => setFilterStatus((prev) => prev.filter((x) => x !== s))}
+                  aria-label="Clear due date filter"
+                  onClick={() => setFilterDue('any')}
                   className="inline-flex size-4 items-center justify-center rounded-full hover:bg-brand-500/20 transition-colors duration-150"
                 >
                   <X size={11} />
                 </button>
               </span>
-            ))}
+            )}
             <button
               type="button"
               onClick={() => {
                 setSearchQuery('')
                 setFilterLevel('all')
-                setFilterStatus([])
+                setFilterDue('any')
               }}
               className="text-xs font-medium text-subtle hover:text-heading transition-colors duration-150 ml-0.5"
             >
@@ -1841,7 +2221,24 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             isLoading={false}
             isFiltered={hasActiveFilters}
             fixedLayout
+            // `fillHeight` restored — the panel is a flex column, the
+            // table needs flex:1 so the "Showing X of Y" + pager row
+            // stays pinned to the panel's bottom (standard listing
+            // behaviour). Empty space between the last row and the
+            // pager is expected when the current page has fewer rows
+            // than the viewport can show.
             fillHeight
+            // All rows stay white. Only the CURRENTLY-ACTIVE assignment
+            // (available to start now, not yet submitted) gets a subtle
+            // 3px orange left rail so a student's eye lands on their
+            // next thing to do. Submitted / Not Submitted rows carry no
+            // background tint — the Status badge conveys the state.
+            rowClassName={(ex) => {
+              const availability = getExerciseAvailability(ex)
+              const testSubs = getTestSubmissions(ex, studentAnswers, method, subcategory)
+              const isActive = availability.canStart && testSubs === 0
+              return isActive ? 'border-l-[3px] border-l-[#F97316]' : 'border-l-[3px] border-l-transparent'
+            }}
             emptyTitle={hasAnyExercises ? 'No exercises found' : 'No exercises yet'}
             emptyHint={
               hasAnyExercises

@@ -34,6 +34,10 @@ export type SetupFormProps = {
     batchResources: { sameForAllBatches: boolean; batchwiseElements: string[] }
     onBatchResources: (next: { sameForAllBatches: boolean; batchwiseElements: string[] }) => void
     readOnly: boolean
+    // Rendered in the same row as Expand all, to its left. The panel puts its
+    // view ⇄ edit switch here so the control sits with the fields it governs
+    // instead of at the far bottom of a long form.
+    headerActions?: React.ReactNode
     fileInputRef: React.RefObject<HTMLInputElement>
     onFileSelect: (file: File) => void
     onDescriptionChange: (value: string) => void
@@ -291,6 +295,7 @@ export default function CourseSetupForm({
     batchResources,
     onBatchResources,
     readOnly,
+    headerActions,
     fileInputRef,
     onFileSelect,
     onDescriptionChange,
@@ -406,7 +411,8 @@ export default function CourseSetupForm({
 
     return (
         <div ref={rootRef} className="font-sans bg-white">
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end gap-3">
+                {headerActions}
                 <button
                     type="button"
                     onClick={toggleAll}

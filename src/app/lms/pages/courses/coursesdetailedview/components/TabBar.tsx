@@ -515,18 +515,26 @@ export const MainTabs: React.FC<MainTabsProps> = ({
               onClick={() => handleTabClick(tab.key, isOverview, subs)}
               style={{
                 flex: '0 0 auto',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                // Label sinks to the BOTTOM of the tall (48px) TopBar
+                // button so its underline sits right next to the
+                // horizontal hairline — same visual rhythm as the
+                // shorter Assignment tab.
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 6,
                 padding: '0 14px',
                 height: '100%',
                 fontSize: 14,
                 fontWeight: 500,
+                // Underline moved OFF the button — now lives on the
+                // inner label span so it hugs the text width (same rule
+                // as the Assignment subcategory tab). Prevents the
+                // orange rule from stretching across the button's full
+                // click area.
                 border: 'none',
-                borderBottom: isSel ? '3px solid #F97316' : '3px solid transparent',
                 background: 'transparent',
                 color: isSel ? '#F97316' : isDis ? '#B3BAC5' : '#111827',
                 cursor: isDis ? 'not-allowed' : 'pointer',
                 opacity: isDis ? 0.45 : 1,
-                transition: 'color 0.2s ease, border-color 0.2s ease',
+                transition: 'color 0.2s ease',
                 whiteSpace: 'nowrap',
                 borderRadius: 0,
                 boxShadow: 'none',
@@ -539,19 +547,34 @@ export const MainTabs: React.FC<MainTabsProps> = ({
                 if (!isSel) e.currentTarget.style.color = isDis ? '#B3BAC5' : '#111827'
               }}
             >
-              {tab.key !== 'Overview' && (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 16, height: 16, borderRadius: 6,
-                  background: 'transparent',
-                  flexShrink: 0,
-                  opacity: isSel ? 1 : 0.6,
-                  transition: 'opacity 0.2s ease',
-                }}>
-                  {tab.icon}
-                </span>
-              )}
-              <span style={{ display: 'inline-block' }}>{tab.label}</span>
+              {/* Label wrapper carries the 3px orange underline that
+                  hugs the icon+text width and sits directly on top of
+                  the TopBar's own borderBottom (marginBottom: -1). */}
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                // Larger padding pushes the LABEL text upward from the
+                // bottom of the button while the underline stays near
+                // the horizontal line (marginBottom does the "little
+                // above" lift). Text now sits a comfortable distance
+                // above the underline instead of hugging it.
+                paddingBottom: 8,
+                borderBottom: isSel ? '3px solid #F97316' : '3px solid transparent',
+                marginBottom: 2,
+              }}>
+                {tab.key !== 'Overview' && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: 16, height: 16, borderRadius: 6,
+                    background: 'transparent',
+                    flexShrink: 0,
+                    opacity: isSel ? 1 : 0.6,
+                    transition: 'opacity 0.2s ease',
+                  }}>
+                    {tab.icon}
+                  </span>
+                )}
+                <span style={{ display: 'inline-block' }}>{tab.label}</span>
+              </span>
             </button>
           </React.Fragment>
         )
@@ -596,6 +619,9 @@ export const TabBar: React.FC<TabBarProps> = ({
   return (
     <div style={{
       flexShrink: 0, background: '#FFF7ED',
+      // Edge-to-edge hairline sits on the OUTER wrapper (not the
+      // padded row) so the line spans the full viewport width, exactly
+      // like the TopBar's own borderBottom under I Do / We Do / You Do.
       borderBottom: `1px solid ${T.border}`,
       fontFamily: FONT_PRIMARY, WebkitFontSmoothing: 'antialiased',
     }}>
@@ -603,22 +629,27 @@ export const TabBar: React.FC<TabBarProps> = ({
       {activeTab && activeTab !== "Overview" && (subcategories[activeTab as TabKey] ?? []).length > 0 && (
       <div style={{
         display: 'flex', alignItems: 'flex-end', gap: 6,
-        padding: '5px 12px 0px 12px',
+        // Shared responsive gutter — matches TopBar + toolbar. Vertical
+        // padding kept as-is (5px top, 0 bottom) so the active
+        // underline sits flush on the row's own hairline divider.
+        paddingBlock: '5px 0px',
+        paddingInline: 'clamp(16px, 2vw, 32px)',
+        width: '100%', boxSizing: 'border-box',
         position: 'relative',
         overflowX: 'auto', scrollbarWidth: 'none',
         background: '#ffffff',
+        // Row's own borderBottom draws the edge-to-edge hairline below
+        // Assessment / Test Your Skills — same rule that sits under I Do
+        // / We Do / You Do above. Previously we leaned on the outer
+        // wrapper's border, but when the third-level row rendered
+        // beneath, the wrapper's border sat at the very bottom and the
+        // subcategory row appeared to have no line under it.
+        borderBottom: `1px solid ${T.border}`,
         animation: 'subcategorySlide 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
       }}>
-        {/* Divider line (aligned with left/right padding) */}
-        <div style={{
-          position: 'absolute',
-          left: 12,
-          right: 12,
-          bottom: 0,
-          height: 1,
-          background: '#eef2f7',
-          pointerEvents: 'none',
-        }} />
+        {/* No inner divider — the outer wrapper's borderBottom carries
+            the full-width hairline already, and the active-tab underline
+            below sits directly on top of it. */}
           {(subcategories[activeTab as TabKey] ?? []).map((sub, idx) => {
             const tabCfg = TAB_CFG[activeTab as TabKey]
             const isActive = activeSubcategory === sub.key
@@ -644,7 +675,10 @@ export const TabBar: React.FC<TabBarProps> = ({
     fontSize: 13.5,
     fontWeight: 500,
     border: 'none',
-    borderBottom: isActive ? '3px solid #F97316' : '3px solid transparent',
+    // Underline moved OFF the button (used to be `borderBottom` on
+    // this element, which stretched under the full padded click area
+    // — the user wants it to start exactly under the "A" of the
+    // label). It now lives on the inner label span below.
     background: 'transparent',
     color: isActive ? '#F97316' : '#111827',
     cursor: 'pointer',
@@ -667,20 +701,31 @@ export const TabBar: React.FC<TabBarProps> = ({
     }
   }}
 >
-  {sub.label}
-  {/* Show count badge if available */}
-  {sub.component?.subItems?.length > 0 && (
-    <span style={{
-      marginLeft: 6,
-      padding: '1px 6px',
-      borderRadius: 10,
-      fontSize: '12.5px', fontWeight: 700,
-      background: isActive ? 'rgba(249,115,22,0.12)' : '#f1f5f9',
-      color: isActive ? '#F97316' : '#64748b',
-    }}>
-      {sub.component.subItems.length}
-    </span>
-  )}
+  {/* Label span carries the 3px orange underline so it hugs the
+      text width — starts exactly under the first letter, ends at
+      the last, never bleeds into the button's click padding. The
+      1px negative margin drops the underline onto the row's
+      hairline instead of sitting a pixel above it. */}
+  <span style={{
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    paddingBottom: 6,
+    borderBottom: isActive ? '3px solid #F97316' : '3px solid transparent',
+    marginBottom: -1,
+  }}>
+    {sub.label}
+    {/* Show count badge if available */}
+    {sub.component?.subItems?.length > 0 && (
+      <span style={{
+        padding: '1px 6px',
+        borderRadius: 10,
+        fontSize: '12.5px', fontWeight: 700,
+        background: isActive ? 'rgba(249,115,22,0.12)' : '#f1f5f9',
+        color: isActive ? '#F97316' : '#64748b',
+      }}>
+        {sub.component.subItems.length}
+      </span>
+    )}
+  </span>
 </button>
               </React.Fragment>
             )
@@ -688,24 +733,31 @@ export const TabBar: React.FC<TabBarProps> = ({
         </div>
       )}
 
-      {/* Third-level row (You Do → Assessment → Mock / Final) — identical style to the subcategory row */}
+      {/* Third-level row (You Do → Assessment → Mock / Final) — shares
+          the same clamp gutter as the subcategory row above so Mock
+          starts on the exact same left guideline as Test Your Skills /
+          Assessment / the TopBar Overview tab / the toolbar search. */}
       {thirdLevel && thirdLevel.tabs.length > 0 && (
         <div style={{
           display: 'flex', alignItems: 'flex-end', gap: 6,
-          padding: '5px 12px 0px 12px',
+          paddingBlock: '5px 0px',
+          paddingInline: 'clamp(16px, 2vw, 32px)',
+          width: '100%', boxSizing: 'border-box',
           position: 'relative',
           overflowX: 'auto', scrollbarWidth: 'none',
           background: '#ffffff',
           animation: 'subcategorySlide 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
         }}>
-          {/* Divider line (aligned with left/right padding) */}
+          {/* Divider line (aligned with left/right padding) — matches
+              TopBar borderBottom so the row's hairline reads the same
+              weight/color as the primary nav's. */}
           <div style={{
             position: 'absolute',
-            left: 12,
-            right: 12,
+            left: 'clamp(16px, 2vw, 32px)',
+            right: 'clamp(16px, 2vw, 32px)',
             bottom: 0,
             height: 1,
-            background: '#eef2f7',
+            background: T.border,
             pointerEvents: 'none',
           }} />
           {thirdLevel.tabs.map((sub, idx) => {

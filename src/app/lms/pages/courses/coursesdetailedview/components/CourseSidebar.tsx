@@ -114,7 +114,9 @@ export const CourseSidebar: React.FC<CourseSidebarProps> = ({
           Leads with the course (icon + name + module count), matching the
           upload-resources sidebar, not the app brand. The chevron collapses
           the rail (same control as the L&D brand card). */}
-      <div className="flex-shrink-0 px-3 pt-3 pb-1.5">
+      {/* pt-4 = 16px — sits close to the top of the rail with just a
+          little breathing room. */}
+      <div className="flex-shrink-0 px-3 pt-4 pb-1.5">
         <div className="flex items-center gap-2.5 rounded-[14px] border border-[#E4E7EC] bg-white px-3 py-2 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
           <div
             className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center flex-shrink-0 shadow-sm"

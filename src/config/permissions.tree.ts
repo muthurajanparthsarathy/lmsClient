@@ -101,7 +101,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
   container("admin", "Admin", { icon: "ShieldCheck", children: [
     page("admin-dashboard", "admindashboard", "Admin Dashboard",
       { icon: "Home", color: "indigo", aliases: ["admindashboard"], defaultSelected: true }),
-
     // POC console landing page.
     //
     // It sits in the ADMIN bucket because that is the tab an admin uses when
@@ -126,7 +125,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
       description: "Point-of-Contact console — courses, learners, clients and services inside the POC's own scope",
       aliases: ["pocdashboard", "poc-dashboard", "admin-pocdashboard"],
     }),
-
     page("admin-usermanagement", "usermanagement", "User Management", {
       icon: "Users", color: "blue",
       description: "Manage users and access",
@@ -141,7 +139,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
         fn("Export User",       { defaultSelected: true }),
       ],
     }),
-
     container("admin-businessmanagement", "Business Management", {
       icon: "Briefcase", children: [
         page("admin-clientmanagement", "clientmanagement", "Client Management", {
@@ -175,7 +172,6 @@ export const PERMISSION_TREE: PermissionNode[] = [
         }),
       ],
     }),
-
     // Course Management is a single page, so it sits at the top level rather
     // than inside a same-named container — the name here is what
     // storedFromSelection() writes to `permissionName`, and what the sidebar
@@ -198,10 +194,35 @@ export const PERMISSION_TREE: PermissionNode[] = [
         fn("Feedback",             { aliases: ["Add Feedback"] }),
       ],
     }),
-
+    page("admin-notification", "notifications", "Notification",
+      { icon: "Bell", color: "amber" }),
     page("admin-approvals", "approvals", "Approvals",
       { icon: "ClipboardCheck", color: "amber" }),
-
+    page("admin-attendancemanagement", "attendancemanagement", "Attendance Management",
+      { icon: "UserCheck", color: "indigo" }),
+    page("admin-grades", "grades", "Grades",
+      { icon: "GraduationCap", color: "emerald" }),
+    // The standalone Performance Report at /lms/pages/reports/performance —
+    // the same report the L&D console owns, rendered without the L&D shell.
+    // That page already chooses its shell by role, so an admin granted this
+    // lands on it inside the admin rail.
+    //
+    // No functions: it is one screen you either hold or you don't, like Grades
+    // and Attendance above it. The staff shells keep showing their own
+    // "Report" entry unconditionally (the page scopes itself to the trainer's
+    // own courses), and their dedupe on href means an account holding this
+    // grant as well does not get a second row.
+    page("admin-reports", "reports", "Report", {
+      icon: "BarChart3", color: "indigo",
+      description: "Performance across clients, courses and learners",
+    }),
+    page("admin-calendar", "calendar", "Calendar", {
+      icon: "Calendar", color: "emerald", aliases: ["calendar"],
+      children: [
+        fn("My Calendar",     { defaultSelected: true }),
+        fn("Manage Holidays", { defaultSelected: true }),
+      ],
+    }),
     // Question Bank is a CONTAINER with two grantable pages under it, so the
     // modal reads the same shape the sidebar renders:
     //
@@ -242,37 +263,32 @@ export const PERMISSION_TREE: PermissionNode[] = [
         }),
       ],
     }),
-
-    page("admin-grades", "grades", "Grades",
-      { icon: "GraduationCap", color: "emerald" }),
-
-    page("admin-calendar", "calendar", "Calendar", {
-      icon: "Calendar", color: "emerald", aliases: ["calendar"],
-      children: [
-        fn("My Calendar",     { defaultSelected: true }),
-        fn("Manage Holidays", { defaultSelected: true }),
+    // System Settings — the same grouping the SIDEBAR already builds at its
+    // tail (systemSettingsMerge in app/lms/shared/ui/navItems.ts), mirrored
+    // here so the shape an admin ticks in the modal is the shape the user then
+    // sees in the rail. Previously these two sat loose at the top level while
+    // the rail grouped them, so the two views disagreed.
+    //
+    // A CONTAINER, exactly like Business Management above: UI-only, never
+    // persisted. Both page ids below are unchanged, so every grant already
+    // issued against them keeps resolving and no migration is needed.
+    container("admin-systemsettings", "System Settings", {
+      icon: "Settings", children: [
+        page("admin-dynamic-field-settings", "dynamicfieldsettings", "Dynamic Field Setting", {
+          icon: "Settings2", color: "slate",
+          children: [
+            fn("Service Modal"),
+            fn("Course Category"),
+            fn("Pedagogy"),
+            fn("Degree Management"),
+          ],
+        }),
+        // No functions on purpose: the audit log is one screen you either hold
+        // or you don't, so it stays a flat row — same as Grades or Attendance.
+        page("admin-auditlogs", "logs", "Audit Logs",
+          { icon: "Activity", color: "slate" }),
       ],
     }),
-
-    page("admin-attendancemanagement", "attendancemanagement", "Attendance Management",
-      { icon: "UserCheck", color: "indigo" }),
-
-    page("admin-dynamic-field-settings", "dynamicfieldsettings", "Dynamic Field Setting", {
-      icon: "Settings2", color: "slate",
-      children: [
-        fn("Service Modal"),
-        fn("Course Category"),
-        fn("Pedagogy"),
-        fn("Degree Management"),
-      ],
-    }),
-
-    page("admin-notification", "notifications", "Notification",
-      { icon: "Bell", color: "amber" }),
-
-    page("admin-auditlogs", "logs", "Audit Logs",
-      { icon: "Activity", color: "slate" }),
-
     page("admin-profile", "profile", "Profile",
       { icon: "GraduationCap", color: "emerald" }),
   ]}),

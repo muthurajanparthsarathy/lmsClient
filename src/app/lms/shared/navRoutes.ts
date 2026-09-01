@@ -43,6 +43,9 @@ export const canonicalPermissionKey = (key: string | undefined): string => {
 // at a folder named after its key.
 export const PERMISSION_ROUTES: Record<string, string> = {
     feedback: "/lms/pages/coursestructure/feedback",
+    // There is no /lms/pages/reports landing page — the module IS the
+    // performance report, which lives one level down.
+    reports: "/lms/pages/reports/performance",
     pocdashboard: "/lms/pages/poc/dashboard",
     questionbanksexternal: "/lms/pages/questionbanks/external",
 };
@@ -60,6 +63,9 @@ export const PERMISSION_ROUTE_GROUPS: Record<string, string[]> = {
     // /lms/pages/poc/* is the POC console; the POC Dashboard module owns all
     // of it, including any page added there later.
     pocdashboard: ["/lms/pages/poc"],
+    // Likewise the Report module owns /lms/pages/reports/*, so a second report
+    // added there is covered by the same grant without touching the gate.
+    reports: ["/lms/pages/reports"],
 };
 
 /** Every route prefix a permission key opens (its page + any owned group). */
@@ -148,12 +154,17 @@ export const SIDEBAR_TITLE_OVERRIDES: Record<string, string> = {
     attendancemanagement: "Attendance Management",
     grades: "Grade",
     "log-activity": "Log Activity",
-    // Both dashboards are just "Dashboard" in the rail — it is the console's
-    // own landing page and the role is already on screen. They keep their
-    // distinct catalog names in the permission modal, where an admin does have
-    // to tell "POC Dashboard" and "Staff Dashboard" apart.
-    // (admindashboard and studentdashboard are deliberately NOT here — those
-    // rails still read "Admin Dashboard" / "Student Dashboard".)
+    // A console's own landing page is just "Dashboard" in its rail — the role
+    // is already on screen above it. All of them keep their distinct CATALOG
+    // names in the permission modal, where an admin does have to tell "Admin
+    // Dashboard" from "POC Dashboard" and "Staff Dashboard".
+    //
+    // These overrides only apply when the rail carries ONE dashboard:
+    // makeSidebarTitler below falls back to the full name as soon as an
+    // account holds two, so an admin who also has the POC console still sees
+    // them apart. (studentdashboard stays out — that rail reads "Student
+    // Dashboard".)
+    admindashboard: "Dashboard",
     pocdashboard: "Dashboard",
     dashboard: "Dashboard",
 };

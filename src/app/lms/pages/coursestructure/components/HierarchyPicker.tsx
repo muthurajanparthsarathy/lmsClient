@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
     ArrowLeft, ChevronRight, GraduationCap, CircleCheck, Settings2, Network, Table2, Layers, BookOpen,
@@ -304,6 +304,41 @@ function CourseWithBatches({
     )
 }
 
+// Where a Course Actions card leaves word that its modal should come back.
+//
+// Every card navigates to its own route, and those routes go "back" in three
+// different ways — router.back() on the Program Calendar, a hardcoded push on
+// Feedback and Participants, a plain <Link> on the course structure page. A
+// return URL would have to be threaded through all of them. A note in
+// sessionStorage costs none of that and is read the same way whichever route
+// the user came back by, including the browser's own Back button.
+const REOPEN_KEY = 'courseActions.reopenFor'
+// Long enough to cover a real detour into one of those pages, short enough
+// that a note left behind and forgotten cannot pop a modal out of nowhere.
+const REOPEN_TTL_MS = 15 * 60 * 1000
+
+function rememberReopenIntent(courseId: string) {
+    try {
+        sessionStorage.setItem(REOPEN_KEY, JSON.stringify({ courseId, at: Date.now() }))
+    } catch {
+        // Private mode / storage disabled: the modal just won't reopen.
+    }
+}
+
+/** Reads the note and clears it — it is good for exactly one return. */
+function consumeReopenIntent(): string | null {
+    try {
+        const raw = sessionStorage.getItem(REOPEN_KEY)
+        if (!raw) return null
+        sessionStorage.removeItem(REOPEN_KEY)
+        const note = JSON.parse(raw) as { courseId?: string; at?: number }
+        if (!note?.courseId || !note.at || Date.now() - note.at > REOPEN_TTL_MS) return null
+        return note.courseId
+    } catch {
+        return null
+    }
+}
+
 export default function HierarchyPicker({
     mapping,
     statusFor,
@@ -314,6 +349,7 @@ export default function HierarchyPicker({
     onCourseStructure,
     onCourseResources,
     onCourseEnrollment,
+    openActionsForCourseId,
 }: {
     mapping: ServiceMapping
     statusFor: (courseName: string, coursePath: string) => CourseStatus
@@ -324,7 +360,27 @@ export default function HierarchyPicker({
     onCourseStructure: (courseId: string) => void
     onCourseResources: (courseId: string) => void
     onCourseEnrollment: (courseId: string) => void
+    // The course whose Course Actions modal should be open on arrival — set
+    // when the user came back here from that course's setup panel.
+    openActionsForCourseId?: string | null
 }) {
+    // Which course's Course Actions modal should be open right now. Three
+    // things write to it, and the menu opens on the flip to its own id: the
+    // page's hand-off when the user backs out of the setup panel (seeded
+    // below), the sessionStorage note left by a card that navigated away, and
+    // the Set Approval tile handing control back after its dialog closes.
+    const [autoOpenActionsId, setAutoOpenActionsId] = useState<string | null>(openActionsForCourseId ?? null)
+    // The note is consumed in an effect rather than a useState initializer:
+    // clearing it is a side effect, and StrictMode runs initializers twice —
+    // the second pass would find it already gone.
+    const noteReadRef = useRef(false)
+    useEffect(() => {
+        if (noteReadRef.current) return
+        noteReadRef.current = true
+        const noted = consumeReopenIntent()
+        if (noted) setAutoOpenActionsId((current) => current ?? noted)
+    }, [])
+
     const [view, setView] = useState<ViewMode>('tree')
     // Local state for the "Set Approval" modal — the ApprovalHierarchyModal
     // is a single mount per hierarchy page. Row actions just set which course
@@ -432,14 +488,24 @@ export default function HierarchyPicker({
     const configured = groups.filter((g) => statusFor(g.courseName, g.path)).length
     const structured = groups.filter((g) => (statusFor(g.courseName, g.path)?.moduleCount || 0) > 0).length
 
+    // A course can sit under more than one node (the batch tree repeats it,
+    // which is what `alsoIn` names), so only the FIRST row that matches is
+    // allowed to auto-open — otherwise backing out of that course would stack
+    // two identical dialogs. A plain let, not a ref: it must reset on every
+    // render pass, and it is only ever read at mount anyway.
+    let autoOpenClaimed = false
     const actionsFor = (course: CourseGroup) => {
         const status = statusFor(course.courseName, course.path)
         if (status) {
+            const autoOpen = !autoOpenClaimed && Boolean(autoOpenActionsId) && autoOpenActionsId === status.id
+            if (autoOpen) autoOpenClaimed = true
             // CourseActionsMenu filters its own items and returns null when
             // the user is granted none of them — no wrapper check needed here.
             return (
             <CourseActionsMenu
                 status={status}
+                autoOpen={autoOpen}
+                onBeforeNavigate={() => rememberReopenIntent(status.id)}
                 breadcrumbs={actionBreadcrumbsFor(course)}
                 onView={() => onView(withBatches(course))}
                     onEdit={() => onSetup(withBatches(course))}
@@ -447,7 +513,14 @@ export default function HierarchyPicker({
                     onResources={() => onCourseResources(status.id)}
                     onCalendar={() => onProgramCalendar(status.id)}
                     onEnrollment={() => onCourseEnrollment(status.id)}
-                    onApproval={() => setApprovalFor({ id: status.id, name: course.courseName })}
+                    // Clearing the signal first matters: the menu opens on the
+                    // flip to this id, so without a false in between, setting
+                    // the same id a second time would not register and the
+                    // modal would stay shut on the second visit.
+                    onApproval={() => {
+                        setAutoOpenActionsId(null)
+                        setApprovalFor({ id: status.id, name: course.courseName })
+                    }}
                 />
             )
         }
@@ -644,7 +717,12 @@ export default function HierarchyPicker({
                 </div>
             </div>
 
-            <CourseFlowStepper structured={structured} total={groups.length} />
+            {/* CourseFlowStepper (Service Mapping → Course Structure →
+                Program Calendar → Upload Resources → User Enrollment) was
+                removed 2026-08-30 per user request — the 5-step navigation
+                bar duplicated context the sidebar already provides. The
+                component definition is kept in this file (unused) so we
+                can restore it easily if the decision reverses. */}
 
             {groups.length === 0 ? (
                 <div className="bg-surface rounded-xl border border-hairline shadow-xs">
@@ -831,7 +909,13 @@ export default function HierarchyPicker({
             {approvalFor && (
                 <ApprovalHierarchyModal
                     open
-                    onClose={() => setApprovalFor(null)}
+                    // Closing the approval dialog puts the Course Actions
+                    // modal back, rather than dropping the user on the tree.
+                    onClose={() => {
+                        const courseId = approvalFor.id
+                        setApprovalFor(null)
+                        setAutoOpenActionsId(courseId)
+                    }}
                     courseId={approvalFor.id}
                     courseName={approvalFor.name}
                     clientName={clientName}

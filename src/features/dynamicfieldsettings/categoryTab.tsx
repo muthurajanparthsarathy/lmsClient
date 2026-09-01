@@ -54,10 +54,15 @@ interface ModulePermissions {
 
 interface Column<T> {
   key: string;
-  label: string;
+  // A node, not just a string: the selection column puts a checkbox in
+  // the header. The shared UserTable already types it this way.
+  label: React.ReactNode;
   width: string;
   align: "left" | "center" | "right";
   renderCell?: (item: T) => React.ReactNode;
+  // Keeps a click inside the cell (the row checkbox) from also firing the
+  // table's row-click handler. Mirrors the shared UserTable's ColumnConfig.
+  stopRowClick?: boolean;
 }
 
 interface ActionButtons {
@@ -81,6 +86,10 @@ export default function CategoryManagementPage() {
   );
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // Ids rather than rows: selection survives paging, and the row objects
+  // are replaced wholesale every time the query refetches.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newCategoryId, setNewCategoryId] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -260,14 +269,48 @@ export default function CategoryManagementPage() {
 
   const deleteMutation = useMutation({
     mutationFn: categoryService.deleteCategory,
-    onSuccess: () => {
+    // `id` is the mutation variable — the row just deleted may also have
+    // been ticked, and leaving it in the set would keep it in the count.
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       setShowDeleteModal(false);
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       toast.success("Category deleted successfully");
     },
     onError: (error) => {
       toast.error("Failed to delete category");
       console.error("Error deleting category:", error);
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    // There is no bulk endpoint, so this is N deletes. allSettled rather
+    // than all: one category that refuses to go (still attached to a
+    // course) must not abandon the rest half-done, and the toast needs the
+    // counts to say what actually happened.
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(
+        ids.map((id) => categoryService.deleteCategory(id)),
+      );
+      return { total: ids.length, failed: results.filter((r) => r.status === 'rejected').length };
+    },
+    onSuccess: ({ total, failed }) => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      setShowBulkDeleteModal(false);
+      setSelectedIds(new Set());
+      const noun = (n: number) => (n === 1 ? "category" : "categories");
+      if (failed === 0) toast.success(`${total} ${noun(total)} deleted`);
+      else if (failed === total) toast.error(`Could not delete ${failed === 1 ? "that category" : `any of the ${total} categories`}`);
+      else toast.warning(`${total - failed} of ${total} deleted — ${failed} could not be removed`);
+    },
+    onError: (error) => {
+      toast.error("Failed to delete the selected categories");
+      console.error("Error bulk-deleting categories:", error);
     },
   });
 
@@ -334,8 +377,75 @@ export default function CategoryManagementPage() {
     resetForm();
   };
 
+  const currentCategories = categoriesData?.categories || [];
+  const pagination = categoriesData?.pagination || {
+    currentPage: 1,
+    totalPages: 1,
+    totalCategories: 0,
+    hasNextPage: false,
+    hasPrevPage: false,
+  };
+
+  // Selection is over the CURRENT PAGE for the header toggle, but the set
+  // itself spans pages — tick three here, page on, tick two more, delete
+  // all five.
+  const pageIds: string[] = currentCategories.map((c: Category) => c._id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const somePageSelected = pageIds.some((id) => selectedIds.has(id));
+
+  const toggleOne = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const togglePage = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+
+  const CHECKBOX_CLASS =
+    "h-4 w-4 cursor-pointer accent-brand-600 align-middle disabled:cursor-not-allowed";
+
   // Table columns
   const columns: Column<Category>[] = [
+    // Offered only to someone who can actually delete — a checkbox whose
+    // only action is unavailable is just a dead control.
+    ...(canDelete
+      ? [{
+          key: "_select",
+          // The header toggles THIS PAGE only. A control that silently
+          // selected all 66 from a 5-row view, sitting next to a delete
+          // button, is a trap.
+          label: (
+            <input
+              type="checkbox"
+              aria-label={allPageSelected ? "Clear selection on this page" : "Select all on this page"}
+              checked={allPageSelected}
+              ref={(el) => { if (el) el.indeterminate = !allPageSelected && somePageSelected; }}
+              onChange={togglePage}
+              className={CHECKBOX_CLASS}
+            />
+          ),
+          width: "44px",
+          align: "center" as const,
+          stopRowClick: true,
+          renderCell: (category: Category) => (
+            <input
+              type="checkbox"
+              aria-label={`Select ${category.categoryName}`}
+              checked={selectedIds.has(category._id)}
+              onChange={() => toggleOne(category._id)}
+              className={CHECKBOX_CLASS}
+            />
+          ),
+        }]
+      : []),
     {
       key: "categoryName",
       label: "Name",
@@ -398,15 +508,6 @@ export default function CategoryManagementPage() {
     ...(canDelete ? { delete: handleDelete } : {}),
   };
 
-  const currentCategories = categoriesData?.categories || [];
-  const pagination = categoriesData?.pagination || {
-    currentPage: 1,
-    totalPages: 1,
-    totalCategories: 0,
-    hasNextPage: false,
-    hasPrevPage: false,
-  };
-
   const isFiltered = Boolean(debouncedSearchTerm);
   const showEmpty = !isLoading && currentCategories.length === 0;
   const savePending = createMutation.isPending || updateMutation.isPending;
@@ -438,6 +539,32 @@ export default function CategoryManagementPage() {
             <CountPill value={pagination.totalCategories} label="categories" />
           }
         />
+
+        {/* Selection bar — only on screen while something is ticked, so the
+            toolbar keeps its usual shape the rest of the time. */}
+        {selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-hairline bg-brand-wash/60 px-4 py-2.5">
+            <span className="text-sm font-semibold text-heading tabular-nums">
+              {selectedIds.size} selected
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowBulkDeleteModal(true)}
+                disabled={bulkDeleteMutation.isPending}
+              >
+                {bulkDeleteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                Delete selected
+              </Button>
+            </div>
+          </div>
+        )}
 
         {showEmpty ? (
           isFiltered ? (
@@ -625,6 +752,16 @@ export default function CategoryManagementPage() {
       </Modal>
 
       {/* Delete confirmation */}
+      <ConfirmDeleteModal
+        open={showBulkDeleteModal}
+        onClose={() => setShowBulkDeleteModal(false)}
+        onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
+        title={`Delete ${selectedIds.size} ${selectedIds.size === 1 ? "category" : "categories"}?`}
+        message="Deleting a category does not delete its courses, but they will no longer be grouped under it. This cannot be undone."
+        isPending={bulkDeleteMutation.isPending}
+        confirmLabel={`Delete ${selectedIds.size}`}
+      />
+
       <ConfirmDeleteModal
         open={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}

@@ -77,7 +77,12 @@ export const TopBar: React.FC<TopBarProps> = ({ items, onAIClick, onSummaryClick
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
-      padding: '0 20px', height: 48,
+      // Shared responsive gutter — Overview + Assignment tab + search
+      // toolbar all begin on the same vertical guideline. `clamp` gives
+      // 16px on mobile, ~2vw on tablet, 32px on wide desktop. No fixed
+      // max-width — the container fills the viewport width.
+      paddingInline: 'clamp(16px, 2vw, 32px)',
+      height: 48, width: '100%', boxSizing: 'border-box',
       background: T.bg, flexShrink: 0,
       position: 'relative', borderBottom: `1px solid ${T.border}`
     }}>

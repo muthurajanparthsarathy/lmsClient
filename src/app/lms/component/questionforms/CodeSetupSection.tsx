@@ -322,6 +322,13 @@ export interface CodeSetupSectionProps {
   headerNote?: React.ReactNode;
   /** Custom Starter warning (e.g. missing function name). */
   customStarterWarning?: React.ReactNode;
+  /**
+   * When true, hide the internal "Code Setup" title header. Set by callers
+   * that render their own numbered section header ("3. Code") above the
+   * component and don't want the duplicate. Default false keeps the header
+   * so existing callers (Frontend / SQL / legacy Programming) are unchanged.
+   */
+  hideHeader?: boolean;
 }
 
 export const CodeSetupSection: React.FC<CodeSetupSectionProps> = ({
@@ -339,16 +346,26 @@ export const CodeSetupSection: React.FC<CodeSetupSectionProps> = ({
   generatedStarter,
   headerNote,
   customStarterWarning,
+  hideHeader,
 }) => {
   const stacked = useIsStacked();
   const [expanded, setExpanded] = useState<null | 'starter' | 'solution'>(null);
   // Programming variant only respects startingExperience — SQL keeps legacy.
   const exp = variant === 'programming' ? (startingExperience || 'custom') : 'custom';
 
+  // Language options the teacher can pick from. Use ONLY what the exercise
+  // configured (programmingSettings.selectedLanguages). If nothing was
+  // configured, fall back to the single currently-selected `language` — NOT
+  // the full list of 5 — so a mis-configured exercise doesn't accidentally
+  // let the teacher pick a language the students never see.
+  // Historical note: this used to fall back to ['Python','JavaScript','Java',
+  // 'C++','C'] which rendered a bogus 5-item dropdown on every exercise that
+  // hadn't populated selectedLanguages yet (2026-08-30 user report).
   const langList = useMemo(() => {
     if (variant === 'sql') return ['SQL'];
-    return (languages && languages.length > 0) ? languages : ['Python', 'JavaScript', 'Java', 'C++', 'C'];
-  }, [languages, variant]);
+    if (languages && languages.length > 0) return languages;
+    return language ? [language] : ['Python'];
+  }, [languages, variant, language]);
 
   const currentLang = variant === 'sql' ? 'SQL' : (language || langList[0] || 'Python');
 
@@ -371,7 +388,7 @@ export const CodeSetupSection: React.FC<CodeSetupSectionProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <SectionHeader />
+        {hideHeader ? <span /> : <SectionHeader />}
         {variant === 'programming' && langList.length > 1 && onLanguageChange && (
           <select
             value={currentLang}

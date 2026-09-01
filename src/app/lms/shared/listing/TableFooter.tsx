@@ -24,9 +24,9 @@ export default function TableFooter({
     // Kept for API compatibility with the many existing callers even though
     // the row-size / count strip is no longer rendered — dropping the props
     // would break every listing page.
-    from: _from,
-    to: _to,
-    total: _total,
+    from,
+    to,
+    total,
     pageSize: _pageSize,
     onPageSize: _onPageSize,
 }: {
@@ -40,13 +40,27 @@ export default function TableFooter({
     onPage: (p: number) => void
 }) {
     const pages = pageWindow(currentPage, totalPages)
+    const showCount = total > 0
+    const showPager = totalPages > 1
 
     return (
-        // Just the centred pager row — nothing else. Reference footer has
-        // no page-size selector, no "Showing X of Y" strip, no options
-        // toggle. flex-wrap so a full page-number window reflows on narrow
-        // screens instead of being clipped.
-        <div className="flex flex-wrap items-center justify-center gap-2 px-4 sm:px-5 py-1.5">
+        // "Showing X–Y of Total" on the left, pager on the right. The
+        // pager itself is HIDDEN when there's only one page — showing
+        // a disabled Prev/Next pair plus a single non-interactive "1"
+        // just added visual noise. The count strip stays so the user
+        // still knows how many results are in view.
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-1.5">
+            {/* Left: result count. Hidden if the caller doesn't pass a total. */}
+            {showCount && (
+                <div className="text-xs text-subtle tabular-nums">
+                    Showing {from}–{to} of {total}
+                </div>
+            )}
+            {!showCount && <span aria-hidden="true" />}
+
+            {/* Right: pager — only when there's more than one page. */}
+            {showPager && (
+            <div className="flex flex-wrap items-center gap-2">
             <button
                 type="button"
                 onClick={() => onPage(currentPage - 1)}
@@ -67,11 +81,16 @@ export default function TableFooter({
                         type="button"
                         onClick={() => onPage(p)}
                         aria-current={p === currentPage ? 'page' : undefined}
+                        // Brighter brand orange for the active page — the
+                        // shared `brand-strong` token maps to the 700 shade
+                        // (brown-orange) which read too muted next to the
+                        // rest of the toolbar.
                         className={`w-8 h-8 rounded-control text-sm font-semibold tabular-nums flex items-center justify-center transition-colors duration-150 ${
                             p === currentPage
-                                ? 'bg-brand-strong text-white shadow-xs'
+                                ? 'text-white shadow-xs'
                                 : 'border border-hairline-strong bg-surface text-subtle hover:border-line-hover hover:text-heading'
                         }`}
+                        style={p === currentPage ? { background: '#F97316' } : undefined}
                     >
                         {p}
                     </button>
@@ -88,6 +107,8 @@ export default function TableFooter({
                 <span>Next</span>
                 <ChevronRight size={13} />
             </button>
+            </div>
+            )}
         </div>
     )
 }

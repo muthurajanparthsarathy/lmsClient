@@ -18,9 +18,11 @@ import DataTable, { type Column, type SortDir } from '@/app/lms/shared/listing/D
 import TableFooter from '@/app/lms/shared/listing/TableFooter'
 import { EmptyState, SkeletonCards, pageEnter } from '@/app/lms/shared/ui'
 import ClientFilterPanel from './ClientFilterPanel'
+import { useQueryClient } from '@tanstack/react-query'
 import {
     useClientsPage, useClientNames, fetchClientsForExport, useCreateClient, useUpdateClient,
     useDeleteClient, useToggleClientStatus,
+    clientManagementKeys,
     type Client, type ClientInput,
 } from '@/apiServices/clientManagementService'
 import {
@@ -30,7 +32,7 @@ import {
 } from './lib'
 import ClientFormModal from './ClientFormModal'
 import ClientDetailsDrawer from './ClientDetailsDrawer'
-import { DeleteConfirmModal } from './ConfirmDialogs'
+import { ClientCreatedSuccessModal, DeleteConfirmModal } from './ConfirmDialogs'
 import ClientCards from './ClientCards'
 import { Can } from '@/components/permissions/Can'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -78,6 +80,7 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     const router = useRouter()
 
 
+    const queryClient = useQueryClient()
     const createClient = useCreateClient()
     const updateClient = useUpdateClient()
     const deleteClientMut = useDeleteClient()
@@ -94,6 +97,10 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
     const tableCardRef = useRef<HTMLDivElement | null>(null)
     const [autoFitPageSize, setAutoFitPageSize] = useState(true)
     const [showForm, setShowForm] = useState<boolean>(false)
+    // "Client added" success dialog. When set, the small success modal
+    // renders with a "Create service" button that hands off to the Service
+    // Mapping page with this client pre-selected (2026-08-30 flow tweak).
+    const [createdClient, setCreatedClient] = useState<{ id: string; name: string } | null>(null)
     // Company names only, for the Add/Edit form's inline duplicate check —
     // which cannot be answered from a single page. Loaded only while that form
     // is open, so the listing never pays for it. (The server enforces the same
@@ -661,9 +668,13 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
 
     const handleEdit = (id: string) => loadClientIntoForm(id, 'edit')
 
-    // The eye icon opens a dedicated read-only details view (not the edit wizard)
+    // "View details" now navigates to the dedicated client-details PAGE
+    // (/lms/pages/clientmanagement/<id>) added 2026-08-30 — was previously
+    // a right-side drawer opened via setDetailsClientId. The drawer state
+    // is kept so any deep code path that toggles it directly still works,
+    // but the row kebab and quick-actions link out to the page instead.
     const handleView = (id: string) => {
-        setDetailsClientId(id)
+        router.push(`/lms/pages/clientmanagement/${encodeURIComponent(id)}`)
     }
     const detailsClient = detailsClientId
         ? currentUsers.find((c) => c._id === detailsClientId) ?? null
@@ -818,7 +829,43 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             )
         } else {
             createClient.mutate(payload, {
-                onSuccess: () => { notify.success('Client added successfully'); setShowForm(false) },
+                onSuccess: (data: any) => {
+                    // Response is either `{ _id, clientCompany, … }` or wrapped
+                    // as `{ data: { _id, … } }` depending on the server envelope.
+                    // Strip both shapes and fall back to the form payload's own
+                    // name if the response omits it, so the success dialog
+                    // ALWAYS has something to display.
+                    const doc = data?.data && typeof data.data === 'object' ? data.data : data
+                    const newId: string | undefined = doc?._id || doc?.id
+                    const newName: string = doc?.clientCompany || payload?.clientCompany || 'The client'
+                    setShowForm(false)
+                    if (newId) {
+                        // Seed the shared useClients() cache with the new
+                        // client immediately (2026-08-30). Without this
+                        // the Service Mapping wizard's client selector
+                        // opens with a clientId that isn't in the still-
+                        // stale list, so no client label shows until the
+                        // invalidation-triggered refetch lands ~200-500ms
+                        // later — the user sees "no client selected" for
+                        // that window. Prepending here means the wizard's
+                        // `clients.find(c => c._id === value)` succeeds on
+                        // the very first render.
+                        queryClient.setQueryData<Client[] | undefined>(
+                            clientManagementKeys.lists(),
+                            (prev) => {
+                                const list = Array.isArray(prev) ? prev : []
+                                if (list.some(c => c._id === newId)) return list
+                                return [doc as Client, ...list]
+                            },
+                        )
+                        // Success dialog with "Create service" hand-off.
+                        setCreatedClient({ id: newId, name: newName })
+                    } else {
+                        // No id came back — fall back to the plain toast so
+                        // the user still gets confirmation.
+                        notify.success('Client added successfully')
+                    }
+                },
                 onError: (er: any) => notify.error(er?.message || 'Failed to add client'),
             })
         }
@@ -953,7 +1000,9 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             className: 'no-print w-[8%] pl-2 pr-4 sm:pr-5 text-right whitespace-nowrap align-middle py-3',
             skeletonWidth: '20px',
             render: (client) => {
-                const anyKebab = canView || canEdit || canNewMapping || canToggle || canDelete
+                // Kebab always renders now — "View details" is unconditional so
+                // there is always at least one item to show (2026-08-30).
+                const anyKebab = true
                 const isActive = client.status === 'active'
                 const isToggling = togglingClientId === client._id
                 // Only surface the "view all contacts" affordance when there
@@ -974,24 +1023,39 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                                         drawer as View details, but the label tells the
                                         reader why they should open it. Shown only when
                                         the row actually has more than the primary. */}
-                                    {canView && hasSecondary && (
+                                    {/* "View details" is now UNGATED — the drawer it
+                                        opens only shows fields already visible in the
+                                        row (name, contact, status, business model), so
+                                        the "View Full Details" permission was over-
+                                        cautious and hid the item from admins that
+                                        didn't happen to have that specific tick set.
+                                        2026-08-30 user report — "view details need in
+                                        three dots". "View all contacts" stays behind
+                                        the same visibility rule (only when the client
+                                        has more than one contact) but no longer needs
+                                        canView either. */}
+                                    {hasSecondary && (
                                         <DropdownMenuItem onClick={() => handleView(client._id)} className="cursor-pointer">
                                             <Eye className="text-brand-strong" /> View all contacts
                                         </DropdownMenuItem>
                                     )}
-                                    {canView && (
-                                        <DropdownMenuItem onClick={() => handleView(client._id)} className="cursor-pointer">
-                                            <Eye className="text-brand-strong" /> View details
-                                        </DropdownMenuItem>
-                                    )}
+                                    <DropdownMenuItem onClick={() => handleView(client._id)} className="cursor-pointer">
+                                        <Eye className="text-brand-strong" /> View details
+                                    </DropdownMenuItem>
                                     {canEdit && (
                                         <DropdownMenuItem onClick={() => handleEdit(client._id)} className="cursor-pointer">
                                             <Pencil /> Edit
                                         </DropdownMenuItem>
                                     )}
                                     {canNewMapping && (
+                                        // Label reads "Create service" to match the
+                                        // sibling action in the Service Mapping table
+                                        // (2026-08-30 rename). Same handler, same
+                                        // "map a new service for this client" intent —
+                                        // just the user-facing wording aligned across
+                                        // the two rows that create service mappings.
                                         <DropdownMenuItem onClick={() => handleNewMapping(client._id)} className="cursor-pointer">
-                                            <Layers className="text-brand-strong" /> New Mapping
+                                            <Layers className="text-brand-strong" /> Create service
                                         </DropdownMenuItem>
                                     )}
                                     {canToggle && (
@@ -1314,6 +1378,38 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                 isLoading={isDeleting}
                 onConfirm={confirmDelete}
                 onCancel={() => setDeleteModal({ open: false, clientId: null, clientName: '' })}
+            />
+
+            {/* Client-added success dialog.
+                  "Done"           → the new full details PAGE (with
+                                     ?created=1 so the toast fires there —
+                                     matches the mockup where the toast
+                                     lives on the details view, not on the
+                                     list)
+                  "Create service" → Service Mapping page with the new
+                                     client already selected in the New
+                                     Mapping wizard (unchanged)
+                Only shown for CREATE, never for UPDATE. */}
+            <ClientCreatedSuccessModal
+                open={!!createdClient}
+                clientName={createdClient?.name || ''}
+                canCreateService={canNewMapping}
+                onCreateService={() => {
+                    if (createdClient) {
+                        const id = createdClient.id
+                        setCreatedClient(null)
+                        handleNewMapping(id)
+                    }
+                }}
+                onClose={() => {
+                    if (createdClient) {
+                        const id = createdClient.id
+                        setCreatedClient(null)
+                        router.push(`/lms/pages/clientmanagement/${encodeURIComponent(id)}?created=1`)
+                    } else {
+                        setCreatedClient(null)
+                    }
+                }}
             />
 
             {/* Client details drawer (with quick actions) */}

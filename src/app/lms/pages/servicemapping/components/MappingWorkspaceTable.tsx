@@ -118,10 +118,20 @@ export function MappingWorkspaceTable({
   maxBodyHeight,
   fillHeight = false,
 }: MappingWorkspaceTableProps) {
-  const anyKebab = canView || canEdit || canDelete;
-  // #, Client, Services, Business Model, Service Model, Status, Row actions
-  //   (Manage + Map buttons + kebab all live inside one right-side cell)
-  const COL_SPAN = 7;
+  // Actions cell is now a single 3-dot kebab (2026-08-30 user request —
+  // "action single column, three dots instead of map service text").
+  // The old "+ Map service" and "Manage" text-buttons moved INTO the kebab
+  // as "Create service" (canMap) and "Edit service" (canEdit) menu items,
+  // pinned to the top of the dropdown so the primary actions still land
+  // first. anyKebab now includes canMap + canEdit so the kebab renders
+  // even when a user only has those two permissions.
+  const anyKebab = canView || canEdit || canDelete || canMap;
+  // #, Client, Services, Business Model, Service Model, Row actions
+  //   (all row actions inside one right-side kebab). Status column was
+  // removed 2026-08-30 per user request — active/inactive still managed
+  // via the detail panel; onToggleStatus / togglingId props are kept in
+  // the API so callers (page.tsx) don't need to change.
+  const COL_SPAN = 6;
 
   return (
     <div
@@ -140,7 +150,6 @@ export function MappingWorkspaceTable({
             <th className={`${HEAD_CELL} text-left`}>Service Name</th>
             <th className={`${HEAD_CELL} text-left`}>Business Model</th>
             <th className={`${HEAD_CELL} text-left`}><SortButton label="Service Model" columnKey="model" active={sortKey === "model"} dir={sortDir} onSort={onSort} /></th>
-            <th className={`${HEAD_CELL} text-left`}><SortButton label="Status" columnKey="status" active={sortKey === "status"} dir={sortDir} onSort={onSort} /></th>
             <th className={`${HEAD_CELL} no-print w-[260px] pr-5 text-right`}>Actions</th>
           </tr>
         </thead>
@@ -159,7 +168,6 @@ export function MappingWorkspaceTable({
                 <td className="px-3 h-[64px] align-middle"><div className="h-3 w-40 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} /></td>
                 <td className="px-3 h-[64px] align-middle"><div className="h-5 w-24 rounded-chip bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} /></td>
                 <td className="px-3 h-[64px] align-middle"><div className="h-3 w-10 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} /></td>
-                <td className="px-3 h-[64px] align-middle"><div className="h-6 w-20 rounded-chip bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} /></td>
                 <td className="pr-5 pl-3 h-[64px] align-middle"><div className="ml-auto h-7 w-48 rounded-chip bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} /></td>
               </tr>
             ))
@@ -221,55 +229,43 @@ export function MappingWorkspaceTable({
                     )}
                   </td>
 
-                  <td className="px-3 h-[64px] align-middle"><StatusToggle vm={vm} busy={togglingId === vm.id} onToggle={() => onToggleStatus(vm)} /></td>
-
                   <td className="no-print pr-5 pl-3 h-[64px] align-middle text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <div className="inline-flex items-center gap-1.5">
-                      {canMap && (
-                        <button
-                          type="button"
-                          onClick={() => onMapService(vm)}
-                          title="Add a new service mapping for this client"
-                          className="inline-flex items-center gap-1 h-7 px-2 rounded-chip border border-brand-500/30 bg-brand-wash text-brand-strong text-2xs font-semibold hover:bg-brand-100 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-                        >
-                          <Plus size={12} /> Map service
-                        </button>
-                      )}
-                      {canEdit && (
-                        <button
-                          type="button"
-                          onClick={() => onEdit(vm)}
-                          title="Manage this service — edit models, hierarchy and courses"
-                          className="inline-flex items-center gap-1 h-7 px-2 rounded-chip border border-hairline-strong bg-surface text-body text-2xs font-semibold hover:bg-row-hover hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-                        >
-                          <Settings2 size={12} /> Manage
-                        </button>
-                      )}
-                      {anyKebab && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button type="button" aria-label="More actions" className="inline-flex size-7 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 data-[state=open]:bg-ink-100 data-[state=open]:text-heading">
-                              <MoreVertical size={15} />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" sideOffset={4} className="w-48">
-                            {canView && (
-                              <DropdownMenuItem onClick={() => onSelect(vm)} className="text-xs cursor-pointer"><Eye className="h-3.5 w-3.5" /> View details</DropdownMenuItem>
-                            )}
-                            {canView && (
-                              <DropdownMenuItem onClick={() => onViewClient(vm)} className="text-xs cursor-pointer"><Eye className="h-3.5 w-3.5" /> View client mappings</DropdownMenuItem>
-                            )}
-                            {canDelete && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => onDelete(vm)} variant="destructive" className="text-xs cursor-pointer"><Trash2 className="h-3.5 w-3.5" /> Delete this service</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onDeleteSeveral(vm)} variant="destructive" className="text-xs cursor-pointer"><Trash2 className="h-3.5 w-3.5" /> Delete several…</DropdownMenuItem>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
+                    {/* Single 3-dot kebab — the row's primary actions
+                        ("Create service", "Edit service") now live at the
+                        top of this menu instead of as separate text-buttons
+                        on the row. Keeps the cell narrow and the row hover
+                        state clean. */}
+                    {anyKebab && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button type="button" aria-label="Row actions" className="inline-flex size-7 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 data-[state=open]:bg-ink-100 data-[state=open]:text-heading">
+                            <MoreVertical size={15} />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" sideOffset={4} className="w-48">
+                          {canMap && (
+                            <DropdownMenuItem onClick={() => onMapService(vm)} className="text-xs cursor-pointer"><Plus className="h-3.5 w-3.5" /> Create service</DropdownMenuItem>
+                          )}
+                          {canEdit && (
+                            <DropdownMenuItem onClick={() => onEdit(vm)} className="text-xs cursor-pointer"><Settings2 className="h-3.5 w-3.5" /> Edit service</DropdownMenuItem>
+                          )}
+                          {(canMap || canEdit) && (canView || canDelete) && <DropdownMenuSeparator />}
+                          {canView && (
+                            <DropdownMenuItem onClick={() => onSelect(vm)} className="text-xs cursor-pointer"><Eye className="h-3.5 w-3.5" /> View details</DropdownMenuItem>
+                          )}
+                          {canView && (
+                            <DropdownMenuItem onClick={() => onViewClient(vm)} className="text-xs cursor-pointer"><Eye className="h-3.5 w-3.5" /> View client mappings</DropdownMenuItem>
+                          )}
+                          {canDelete && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => onDelete(vm)} variant="destructive" className="text-xs cursor-pointer"><Trash2 className="h-3.5 w-3.5" /> Delete this service</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => onDeleteSeveral(vm)} variant="destructive" className="text-xs cursor-pointer"><Trash2 className="h-3.5 w-3.5" /> Delete several…</DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </td>
                 </motion.tr>
               );

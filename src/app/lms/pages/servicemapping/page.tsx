@@ -5381,7 +5381,13 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                     {
                                         key: 'businessModel',
                                         label: 'Business Model',
-                                        className: 'w-[14%] px-3 text-left align-middle',
+                                        // Column widths reflowed 2026-08-30 after the
+                                        // "Active" column was removed and the two Action
+                                        // buttons were merged into one kebab: Client 40 +
+                                        // Business Model 25 + Services 15 + Actions 16 = 96
+                                        // (+ 4% #). Business Model gets the extra room
+                                        // freed by the removed columns.
+                                        className: 'w-[25%] px-3 text-left align-middle',
                                         skeletonWidth: '60%',
                                         render: (row) => {
                                             const bm = row.client.businessModel
@@ -5394,7 +5400,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                     {
                                         key: 'servicesCount',
                                         label: 'Services',
-                                        className: 'w-[9%] px-3 text-left align-middle',
+                                        className: 'w-[15%] px-3 text-left align-middle',
                                         skeletonWidth: '40px',
                                         render: (row) => {
                                             const total = aggServiceCount(row)
@@ -5405,56 +5411,57 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                         },
                                     },
                                     {
-                                        key: 'active',
-                                        label: 'Active',
-                                        className: 'w-[9%] px-3 text-left align-middle',
-                                        skeletonWidth: '90px',
+                                        // Consolidated Actions column — replaces the old
+                                        // separate "Action" (+ Map Services) and "Manage"
+                                        // text-buttons with a single 3-dot kebab whose
+                                        // first option is "Create service" (was + Map
+                                        // Services) and second is "Edit service" (was
+                                        // Manage). Matches the row-level pattern the
+                                        // user asked for elsewhere in the app. Old
+                                        // "Active" column (active/total count) was
+                                        // removed alongside this — active/total is still
+                                        // visible inside the Manage → detail view.
+                                        key: 'actions',
+                                        label: 'Actions',
+                                        className: 'w-[16%] no-print pl-3 pr-4 sm:pr-5 text-right whitespace-nowrap align-middle',
+                                        skeletonWidth: '32px',
                                         render: (row) => {
-                                            const active = aggActiveCount(row)
-                                            const total = aggServiceCount(row)
+                                            if (!canMap && !canView) {
+                                                return <span className="text-xs text-line-muted">—</span>
+                                            }
                                             return (
-                                                <span className="text-body tabular-nums">{active}/{total}</span>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <button
+                                                            type="button"
+                                                            aria-label="Row actions"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="inline-flex size-7 items-center justify-center rounded-chip text-subtle hover:bg-ink-100 hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 data-[state=open]:bg-ink-100 data-[state=open]:text-heading"
+                                                        >
+                                                            <MoreVertical size={15} />
+                                                        </button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" sideOffset={4} className="w-44">
+                                                        {canMap && (
+                                                            <DropdownMenuItem
+                                                                onClick={(e) => { e.stopPropagation(); openCreate(row._id) }}
+                                                                className="text-xs cursor-pointer"
+                                                            >
+                                                                <Plus className="h-3.5 w-3.5" /> Create service
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                        {canView && (
+                                                            <DropdownMenuItem
+                                                                onClick={(e) => { e.stopPropagation(); setDetailsClientId(row._id) }}
+                                                                className="text-xs cursor-pointer"
+                                                            >
+                                                                <Settings2 className="h-3.5 w-3.5" /> Edit service
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
                                             )
                                         },
-                                    },
-                                    {
-                                        key: 'action',
-                                        label: 'Action',
-                                        // Split the former Actions column into two —
-                                        // one header per button, so the labels map
-                                        // 1:1 to what's rendered below.
-                                        className: 'w-[16%] no-print px-3 text-center whitespace-nowrap align-middle',
-                                        skeletonWidth: '110px',
-                                        render: (row) => (
-                                            canMap ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => { e.stopPropagation(); openCreate(row._id) }}
-                                                    title="Map a new service for this client"
-                                                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-brand-500/30 bg-brand-wash text-brand-strong text-2xs font-semibold hover:bg-brand-100 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-                                                >
-                                                    <Plus size={12} /> Map Services
-                                                </button>
-                                            ) : <span className="text-xs text-line-muted">—</span>
-                                        ),
-                                    },
-                                    {
-                                        key: 'manage',
-                                        label: 'Manage',
-                                        className: 'w-[16%] no-print pl-3 pr-4 sm:pr-5 text-center whitespace-nowrap align-middle',
-                                        skeletonWidth: '80px',
-                                        render: (row) => (
-                                            canView ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => { e.stopPropagation(); setDetailsClientId(row._id) }}
-                                                    title="Manage this client's services — grouped by service model"
-                                                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip border border-hairline-strong bg-surface text-body text-2xs font-semibold hover:bg-row-hover hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-                                                >
-                                                    <Settings2 size={12} /> Manage
-                                                </button>
-                                            ) : <span className="text-xs text-line-muted">—</span>
-                                        ),
                                     },
                                 ]}
                             />

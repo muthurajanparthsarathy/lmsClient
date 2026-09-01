@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Terminal as TerminalIcon, Trash2, Clock, CornerDownLeft } from "lucide-react"
+import { Clock, CornerDownLeft } from "lucide-react"
 
 export interface TermLine {
   id: string
@@ -25,21 +25,25 @@ interface RunTerminalProps {
   onSubmitInput?: (text: string) => void
 }
 
+// Light-theme terminal — no dark surfaces on the student workspace per the
+// redesign. Kinds get accessible foreground colors on a cool-gray background;
+// nothing communicates status by color alone (each line still uses the same
+// prefix marker for stdin and the row keeps its semantics).
 const colorFor = (kind: TermLine["kind"]): string => {
   switch (kind) {
     case "stderr":
-    case "error": return "#f87171"
-    case "success": return "#34d399"
+    case "error": return "#B42318"
+    case "success": return "#12A765"
     case "system":
-    case "info": return "#93c5fd"
-    case "stdin": return "#fbbf24"
-    default: return "#e5e7eb"
+    case "info": return "#175CD3"
+    case "stdin": return "#B54708"
+    default: return "#172033"
   }
 }
 
 export default function RunTerminal(props: RunTerminalProps) {
   const {
-    lines, running, stdin, lastRuntimeMs, onStdinChange, onClear,
+    lines, running, lastRuntimeMs, onClear,
     interactive, awaitingInput, inputPrompt, onSubmitInput,
   } = props
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -62,26 +66,27 @@ export default function RunTerminal(props: RunTerminalProps) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0" style={{ background: "#0f172a", fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 flex-shrink-0 border-b" style={{ borderColor: "#1e293b" }}>
-        <div className="flex items-center gap-2">
-          <TerminalIcon size={13} className="text-emerald-400" />
-          <span className="text-2xs font-semibold uppercase tracking-wide text-gray-300">Terminal</span>
-          {running && <span className="text-2xs text-amber-300 animate-pulse">running…</span>}
-        </div>
-        <div className="flex items-center gap-3">
+    <div className="flex flex-col h-full min-h-0" style={{ background: "#F3F6FA", fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+      {/* Header — only the run status + runtime remain. The Terminal
+          label and Clear control live on the outer BottomPanel tab strip,
+          so a duplicate trash icon here was appearing twice. */}
+      {(running || lastRuntimeMs != null) && (
+        <div className="flex items-center justify-end gap-3 px-3 py-1.5 flex-shrink-0 border-b" style={{ borderColor: "#D9E1EA", background: "#fff" }}>
+          {running && <span className="text-xs animate-pulse" style={{ color: "#B54708" }}>running…</span>}
           {lastRuntimeMs != null && (
-            <span className="flex items-center gap-1 text-2xs text-gray-400"><Clock size={11} /> {lastRuntimeMs} ms</span>
+            <span className="flex items-center gap-1 text-xs" style={{ color: "#667085" }}>
+              <Clock size={11} /> {lastRuntimeMs} ms
+            </span>
           )}
-          <button onClick={onClear} title="Clear" className="text-gray-400 hover:text-gray-200"><Trash2 size={12} /></button>
         </div>
-      </div>
+      )}
 
       {/* Output */}
-      <div ref={scrollRef} className="flex-1 overflow-auto px-3 py-2 text-xs leading-relaxed">
+      <div ref={scrollRef} className="flex-1 overflow-auto px-3 py-2 text-xs leading-relaxed" style={{ color: "#172033" }}>
         {lines.length === 0 ? (
-          <div className="text-gray-500">Ready. Press Run to execute your program.</div>
+          <div style={{ color: "#667085", fontFamily: "'Poppins',sans-serif" }}>
+            Ready — run your code to see output.
+          </div>
         ) : (
           lines.map((l) => (
             <pre key={l.id} className="whitespace-pre-wrap break-words m-0" style={{ color: colorFor(l.kind) }}>
@@ -92,16 +97,17 @@ export default function RunTerminal(props: RunTerminalProps) {
       </div>
 
       {/* Live console input line — only rendered when the running program is
-          actually waiting for input. The old batch stdin textarea was removed
-          on user request; Python uses the live input above, other languages
-          run without stdin (Piston still accepts an empty stdin). */}
+          actually waiting for input. Kept light-themed to match the workspace. */}
       {interactive && (
-        <div className="flex-shrink-0 border-t px-3 py-2" style={{ borderColor: "#1e293b" }}>
+        <div className="flex-shrink-0 border-t px-3 py-2" style={{ borderColor: "#D9E1EA", background: "#fff" }}>
           <div
             className="flex items-center gap-2 rounded px-2 py-1.5"
-            style={{ background: awaitingInput ? "#1e293b" : "#172033", border: `1px solid ${awaitingInput ? "#22c55e" : "#334155"}` }}
+            style={{
+              background: awaitingInput ? "#F0FDF4" : "#F3F6FA",
+              border: `1px solid ${awaitingInput ? "#12A765" : "#D9E1EA"}`,
+            }}
           >
-            <span className="text-xs flex-shrink-0" style={{ color: awaitingInput ? "#fbbf24" : "#64748b", fontFamily: "ui-monospace, monospace" }}>
+            <span className="text-xs flex-shrink-0" style={{ color: awaitingInput ? "#B54708" : "#94A3B8", fontFamily: "ui-monospace, monospace" }}>
               {awaitingInput ? (inputPrompt?.trim() ? inputPrompt : "❯") : "waiting for program…"}
             </span>
             <input
@@ -112,9 +118,10 @@ export default function RunTerminal(props: RunTerminalProps) {
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitLive() } }}
               placeholder={awaitingInput ? "type your input and press Enter" : ""}
               className="flex-1 bg-transparent outline-none text-xs"
-              style={{ color: "#e5e7eb", fontFamily: "ui-monospace, monospace" }}
+              style={{ color: "#172033", fontFamily: "ui-monospace, monospace" }}
+              aria-label="Program input"
             />
-            <CornerDownLeft size={12} style={{ color: awaitingInput ? "#22c55e" : "#475569" }} />
+            <CornerDownLeft size={12} style={{ color: awaitingInput ? "#12A765" : "#94A3B8" }} />
           </div>
         </div>
       )}

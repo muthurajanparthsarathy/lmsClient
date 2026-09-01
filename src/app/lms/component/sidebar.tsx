@@ -149,8 +149,30 @@ export function Sidebar({ className }: SidebarProps) {
     const userRoleLabel = currentUser?.role?.renameRole || currentUser?.role?.originalRole || 'User';
     const userInitial = (currentUser?.firstName?.charAt(0) || 'U').toUpperCase();
 
-    const onRoute = (href: string) =>
-        pathname === href || pathname?.startsWith(href + '/');
+    // Every href the rail offers, parents and children alike — the pool a
+    // prefix match has to win against.
+    const allHrefs = sidebarItems.flatMap((item) => [
+        item.href,
+        ...(item.children || []).map((child) => child.href),
+    ]).filter(Boolean);
+
+    // Active when this href is the BEST match for the current path, not merely
+    // A match.
+    //
+    // The plain prefix test lit BOTH Question Bank children at once: Internal
+    // is /lms/pages/questionbanks and External is /lms/pages/questionbanks/
+    // external, so opening External also satisfied Internal's prefix. Letting
+    // the LONGEST matching href win gives the highlight to the more specific
+    // route alone, and leaves a parent whose own page has no rail sibling
+    // (Course Management over /lms/pages/coursestructure/pedagogy2) still lit.
+    const onRoute = (href: string) => {
+        if (!href || !pathname) return false;
+        const matches = (h: string) => pathname === h || pathname.startsWith(h + '/');
+        if (!matches(href)) return false;
+        return !allHrefs.some(
+            (other) => other !== href && other.length > href.length && matches(other),
+        );
+    };
 
     const navGroups = groupSidebarItems(sidebarItems);
 

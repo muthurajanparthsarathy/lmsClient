@@ -26,4002 +26,56 @@ import { toast } from 'react-toastify';
 // pins as the server codeJudge.
 import { runOnPiston, type RunResult } from '@/lib/pistonClient';
 import { normalizeLanguage, type SupportedLanguage } from '@/lib/codeLanguages';
-// ─── FONT INJECTION ───────────────────────────────────────────────────────────
-const injectFonts = (() => {
-  let injected = false;
-  return () => {
-    if (injected || typeof document === 'undefined') return;
-    injected = true;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href =
-      'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap';
-    document.head.appendChild(link);
-    const style = document.createElement('style');
-    style.textContent = `
-      /* ─── LMS DESIGN TOKENS ─────────────────────────────────────────────── */
-      :root {
-        --lms-orange:        #F27757;
-        --lms-orange-dark:   #e0623f;
-        --lms-orange-glow:   rgba(242,119,87,0.22);
-        --lms-orange-light:  rgba(242,119,87,0.08);
-        --lms-orange-50:     #FEF3EF;
-        --lms-orange-100:    #FDDDD4;
-        --lms-text-main:     #1a1a2e;
-        --lms-text-sec:      #3a3a52;
-        --lms-text-muted:    #55556e;
-        --lms-text-hint:     #9a9ab0;
-        --lms-border:        #e4e4ed;
-        --lms-border-hover:  #d0d0de;
-        --lms-bg-white:      #ffffff;
-        --lms-bg-surface:    #f7f7fb;
-        --lms-bg-surface2:   #f0f0f7;
-        --lms-success:       #16a34a;
-        --lms-success-bg:    #f0fdf4;
-        --lms-success-bdr:   #bbf7d0;
-        --lms-danger:        #e53e3e;
-        --lms-danger-bg:     #fff5f5;
-        --lms-danger-bdr:    #fed7d7;
-        --lms-info:          #F97316;
-        --lms-info-bg:       #FFF7ED;
-        --lms-info-bdr:      #FED7AA;
-        --lms-warning:       #d97706;
-        --lms-warning-bg:    #fffbeb;
-        --lms-warning-bdr:   #fde68a;
-        --lms-violet:        #7c3aed;
-        --lms-violet-bg:     #f5f3ff;
-        --lms-violet-bdr:    #ddd6fe;
-        --lms-teal:          #0d9488;
-        --lms-radius-sm:     8px;
-        --lms-radius-md:     10px;
-        --lms-radius-lg:     14px;
-        --lms-font:          'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
-        --lms-shadow-sm:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-        --lms-shadow-md:     0 4px 14px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
-      }
 
-      .prog-root { font-family: var(--lms-font) !important; }
-      .prog-root .font-mono { font-family: ui-monospace, monospace; }
-
-      ::-webkit-scrollbar { width: 4px; height: 4px; }
-      ::-webkit-scrollbar-track { background: transparent; }
-      ::-webkit-scrollbar-thumb { background: var(--lms-border); border-radius: 4px; }
-
-      /* ─── BREADCRUMB ────────────────────────────────────────────────────── */
-      .lms-breadcrumb-sep { color: var(--lms-orange); margin: 0 3px; font-weight: 700; font-size: 13px; font-family: var(--lms-font); }
-      .lms-crumb {
-        position: relative; font-family: var(--lms-font);
-        font-size: 12.5px; font-weight: 600; cursor: default;
-      }
-      .lms-crumb[data-tip]:hover::before {
-        content: attr(data-tip);
-        position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-        background: #1a1a2e; color: #ffffff !important;
-        font-family: var(--lms-font); font-size: 10px; font-weight: 700;
-        white-space: nowrap; padding: 4px 9px; border-radius: 5px;
-        pointer-events: none; z-index: 9999;
-        letter-spacing: 0.04em; box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-      }
-      .lms-crumb[data-tip]:hover::after {
-        content: '';
-        position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%);
-        border: 5px solid transparent; border-bottom-color: #1a1a2e;
-        pointer-events: none; z-index: 9999;
-      }
-
-      /* ─── BUTTONS ───────────────────────────────────────────────────────── */
-      .lms-btn {
-        display: inline-flex; align-items: center; gap: 6px;
-        padding: 6px 14px; border-radius: var(--lms-radius-md);
-        font-family: var(--lms-font); font-size: 12.5px; font-weight: 600;
-        border: 1.5px solid; cursor: pointer; transition: all 0.15s;
-        white-space: nowrap;
-      }
-      .lms-btn-orange {
-        background: var(--lms-orange); color: white; border-color: transparent;
-        box-shadow: 0 2px 8px var(--lms-orange-glow);
-      }
-      .lms-btn-orange:hover:not(:disabled) {
-        background: var(--lms-orange-dark);
-        box-shadow: 0 3px 12px rgba(242,119,87,0.35); transform: translateY(-1px);
-      }
-      .lms-btn-orange:disabled { opacity: 0.55; cursor: not-allowed; }
-      .lms-btn-ghost-orange {
-        background: var(--lms-bg-white); color: #c85a30;
-        border-color: #f2b9a3;
-      }
-      .lms-btn-ghost-orange:hover { background: var(--lms-orange-50); }
-      .lms-btn-ghost-violet {
-        background: var(--lms-bg-white); color: var(--lms-violet);
-        border-color: var(--lms-violet-bdr);
-      }
-      .lms-btn-ghost-violet:hover { background: var(--lms-violet-bg); }
-      .lms-btn-slate {
-        background: var(--lms-bg-white); color: var(--lms-text-sec);
-        border-color: var(--lms-border);
-      }
-      .lms-btn-slate:hover { background: var(--lms-bg-surface2); }
-
-      /* ─── ICON BUTTON ───────────────────────────────────────────────────── */
-      .lms-icon-btn {
-        width: 32px; height: 32px; border: 1.5px solid; border-radius: var(--lms-radius-sm);
-        display: flex; align-items: center; justify-content: center;
-        cursor: pointer; transition: all 0.15s; background: none; flex-shrink: 0;
-      }
-      .lms-icon-btn-red { border-color: var(--lms-danger-bdr); background: var(--lms-danger-bg); color: var(--lms-danger); }
-      .lms-icon-btn-red:hover { background: #fed7d7; }
-
-      /* ─── HEADER LOGO ───────────────────────────────────────────────────── */
-      .lms-header-logo-mark {
-        width: 34px; height: 34px; background: var(--lms-orange);
-        border-radius: 9px; display: flex; align-items: center;
-        justify-content: center; flex-shrink: 0;
-        box-shadow: 0 3px 10px var(--lms-orange-glow);
-      }
-
-      /* ─── BADGES ────────────────────────────────────────────────────────── */
-      .lms-badge {
-        display: inline-flex; align-items: center; gap: 5px;
-        padding: 4px 10px; border-radius: 20px;
-        font-size: 11.5px; font-weight: 600; border: 1.5px solid;
-        font-family: var(--lms-font);
-      }
-      .lms-badge-amber { background: var(--lms-warning-bg); color: var(--lms-warning); border-color: var(--lms-warning-bdr); }
-      .lms-badge-violet { background: var(--lms-violet-bg); color: var(--lms-violet); border-color: var(--lms-violet-bdr); }
-      .lms-badge-green { background: var(--lms-success-bg); color: var(--lms-success); border-color: var(--lms-success-bdr); }
-      .lms-badge-orange { background: var(--lms-orange-50); color: #c85a30; border-color: var(--lms-orange-100); }
-      .lms-badge-indigo { background: var(--lms-info-bg); color: var(--lms-info); border-color: var(--lms-info-bdr); }
-
-      /* ─── PROGRESS BAR ──────────────────────────────────────────────────── */
-      .lms-progress-bar { height: 6px; background: var(--lms-bg-surface2); border-radius: 3px; overflow: hidden; margin-top: 8px; }
-      .lms-progress-fill { height: 100%; border-radius: 3px; background: var(--lms-orange); transition: width 0.4s; }
-
-      /* ─── SIDEBAR ───────────────────────────────────────────────────────── */
-      .lms-sidebar-section-title {
-        display: flex; align-items: center; gap: 7px;
-        font-size: 12px; font-weight: 700; color: var(--lms-text-main);
-        margin-bottom: 10px; font-family: var(--lms-font);
-      }
-      .lms-marks-row {
-        display: flex; align-items: center; justify-content: space-between; padding: 3.5px 0;
-      }
-      .lms-marks-label { font-size: 12px; font-weight: 600; color: var(--lms-text-sec); font-family: var(--lms-font); }
-      .lms-marks-value { font-size: 12.5px; font-weight: 700; font-family: var(--lms-font); }
-.lms-detail-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 3px 0;
-}
-  
-.lms-detail-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--lms-text-sec);
-  text-transform: none;
-  letter-spacing: 0.01em;
-  font-family: var(--lms-font);
-}
-    .lms-detail-value {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--lms-text-main);
-  font-family: var(--lms-font);
-}
-
-
-/* ─── MODAL ─────────────────────────────────────────────────────────── */
-      .lms-modal-backdrop {
-        position: fixed; inset: 0; z-index: 200;
-        background: rgba(26,26,46,0.45); backdrop-filter: blur(3px);
-        display: flex; align-items: center; justify-content: center; padding: 16px;
-      }
-      .lms-modal {
-        background: var(--lms-bg-white); border-radius: var(--lms-radius-lg);
-        box-shadow: 0 20px 60px rgba(0,0,0,0.18); max-width: 420px; width: 100%;
-        border: 1.5px solid var(--lms-border); overflow: hidden;
-      }
-      .lms-modal-header {
-        display: flex; align-items: center; gap: 10px;
-        padding: 14px 18px; border-bottom: 1.5px solid var(--lms-border);
-      }
-      .lms-modal-icon {
-        width: 32px; height: 32px; border-radius: var(--lms-radius-sm);
-        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-      }
-      .lms-modal-body { padding: 16px 18px; }
-
-      /* ─── SECTION LABEL ─────────────────────────────────────────────────── */
-      .lms-section-label {
-        font-size: 10.5px; font-weight: 700; color: var(--lms-text-main);
-        text-transform: uppercase; letter-spacing: 0.07em;
-        font-family: var(--lms-font); margin-bottom: 8px;
-      }
-      .lms-section-label.lms-label-err { color: var(--lms-danger) !important; }
-
-      /* ─── DARK SIDEBAR SCROLLBAR ────────────────────────────────────────── */
-      .lms-sidebar-scroll { scrollbar-width: thin; scrollbar-color: #8e8ea0 var(--lms-bg-surface2); }
-      .lms-sidebar-scroll::-webkit-scrollbar { width: 6px; }
-      .lms-sidebar-scroll::-webkit-scrollbar-track { background: var(--lms-bg-surface2); border-radius: 3px; }
-      .lms-sidebar-scroll::-webkit-scrollbar-thumb { background: #8e8ea0; border-radius: 3px; }
-      .lms-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #6b6b7e; }
-
-      /* ─── SAVE BUTTON ───────────────────────────────────────────────────── */
-      .lms-save-btn {
-        flex: 1; padding: 8px 0; border-radius: var(--lms-radius-md);
-        border: none; background: var(--lms-orange); color: white;
-        font-family: var(--lms-font); font-size: 12.5px; font-weight: 700;
-        cursor: pointer; transition: all 0.15s;
-        box-shadow: 0 2px 8px var(--lms-orange-glow);
-        display: flex; align-items: center; justify-content: center; gap: 6px;
-      }
-      .lms-save-btn:hover:not(:disabled) { background: var(--lms-orange-dark); box-shadow: 0 3px 12px rgba(242,119,87,0.35); }
-      .lms-save-btn:disabled { background: #d4d4e2; box-shadow: none; cursor: not-allowed; }
-
-      .lms-cancel-btn {
-        padding: 8px 16px; border-radius: var(--lms-radius-md);
-        border: 1.5px solid var(--lms-border); background: var(--lms-bg-white);
-        color: var(--lms-text-sec); font-family: var(--lms-font);
-        font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all 0.15s;
-      }
-      .lms-cancel-btn:hover { background: var(--lms-bg-surface2); }
-
-      /* ─── NAV BUTTONS ───────────────────────────────────────────────────── */
-      .lms-nav-btn {
-        display: inline-flex; align-items: center; gap: 5px;
-        padding: 7px 14px; border-radius: var(--lms-radius-md);
-        font-family: var(--lms-font); font-size: 12.5px; font-weight: 600;
-        border: 1.5px solid var(--lms-border); background: var(--lms-bg-white);
-        color: var(--lms-text-sec); cursor: pointer; transition: all 0.15s;
-      }
-      .lms-nav-btn:hover:not(:disabled) { background: var(--lms-bg-surface); border-color: var(--lms-border-hover); }
-      .lms-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-      .lms-nav-btn-primary {
-        background: var(--lms-orange) !important; color: white !important;
-        border-color: transparent !important;
-        box-shadow: 0 2px 8px var(--lms-orange-glow);
-      }
-      .lms-nav-btn-primary:hover:not(:disabled) {
-        background: var(--lms-orange-dark) !important;
-        box-shadow: 0 3px 12px rgba(242,119,87,0.35) !important;
-        transform: translateY(-1px);
-      }
-
-      /* ─── FORM INPUTS ───────────────────────────────────────────────────── */
-      .lms-input {
-        width: 100%; padding: 9px 12px; font-size: 13.5px;
-        border-radius: var(--lms-radius-md); border: 1.5px solid var(--lms-border);
-        background: var(--lms-bg-white); color: var(--lms-text-main);
-        font-family: var(--lms-font); outline: none;
-        transition: border-color 0.15s, box-shadow 0.15s;
-      }
-      .lms-input:focus { border-color: var(--lms-orange); box-shadow: 0 0 0 3px var(--lms-orange-light); }
-      .lms-input::placeholder { color: var(--lms-text-hint); font-weight: 400; }
-      .lms-input:disabled { background: var(--lms-bg-surface); color: var(--lms-text-muted); cursor: not-allowed; }
-      .lms-input.err { border-color: var(--lms-danger); background: #fff5f5; }
-
-      .lms-textarea {
-        width: 100%; padding: 9px 12px; font-size: 13.5px;
-        border-radius: var(--lms-radius-md); border: 1.5px solid var(--lms-border);
-        background: var(--lms-bg-white); color: var(--lms-text-main);
-        font-family: var(--lms-font); outline: none; resize: none;
-        transition: border-color 0.15s, box-shadow 0.15s; line-height: 1.6;
-      }
-      .lms-textarea:focus { border-color: var(--lms-orange); box-shadow: 0 0 0 3px var(--lms-orange-light); }
-      .lms-textarea::placeholder { color: var(--lms-text-hint); font-weight: 400; }
-      .lms-textarea:disabled { background: var(--lms-bg-surface); color: var(--lms-text-muted); cursor: not-allowed; }
-      .lms-textarea.err { border-color: var(--lms-danger); background: #fff5f5; }
-      .lms-textarea.mono { font-family: ui-monospace, monospace; font-size: 12px; }
-
-      /* ─── FORMAT BUTTON ─────────────────────────────────────────────────── */
-      .lms-fmt-btn {
-        padding: 5px; border: none; background: none; cursor: pointer;
-        color: var(--lms-text-muted); border-radius: 7px; transition: all 0.12s;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 12px; font-family: var(--lms-font);
-      }
-      .lms-fmt-btn:hover { background: var(--lms-bg-surface2); color: var(--lms-text-main); }
-      .lms-fmt-btn.active { background: var(--lms-orange-100); color: #c85a30; }
-
-      /* ─── CONTENT EDITABLE PLACEHOLDER ──────────────────────────────────── */
-      [data-placeholder]:empty:before {
-        content: attr(data-placeholder);
-        color: var(--lms-text-hint, #aaa);
-        pointer-events: none;
-        font-weight: 400;
-      }
-
-      /* ─── PROG CONTENT TOOLBAR ─────────────────────────────────────────────── */
-      .prog-toolbar-btn {
-        display: inline-flex; align-items: center; gap: 4px;
-        padding: 4px 9px; border-radius: 6px; font-size: 11px; font-weight: 600;
-        border: 1.5px solid var(--lms-border); background: var(--lms-bg-white);
-        color: var(--lms-text-sec); cursor: pointer; transition: all 0.13s;
-        font-family: var(--lms-font);
-      }
-      .prog-toolbar-btn:hover:not(:disabled) { border-color: var(--lms-orange); color: var(--lms-orange); background: var(--lms-orange-50); }
-      .prog-toolbar-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-      /* ─── DIFF PILL (sidebar diff rows) ────────────────────────────────── */
-      .lms-diff-row-active-easy   { background: #f0fdf4; border: 2px solid #bbf7d0; }
-      .lms-diff-row-active-medium { background: #fffbeb; border: 2px solid #fde68a; }
-      .lms-diff-row-active-hard   { background: #fff5f5; border: 2px solid #fed7d7; }
-      .lms-diff-row-idle          { background: var(--lms-bg-surface); border: 1.5px solid var(--lms-border); cursor: pointer; }
-      .lms-diff-row-idle:hover    { border-color: var(--lms-border-hover); background: var(--lms-bg-surface2); }
-
-      @keyframes lms-slide-in-right {
-        from { transform: translateX(110%); opacity: 0; }
-        to   { transform: translateX(0);    opacity: 1; }
-      }
-      @keyframes lms-toast-slide-in {
-        from { opacity: 0; transform: translateX(60px); }
-        to   { opacity: 1; transform: translateX(0); }
-      }
-    `;
-    document.head.appendChild(style);
-  };
-})();
-
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-export interface ProgrammingQuestionFormProps {
-  exerciseData: any;
-  tabType: string;
-  initialData?: any;
-  isEditing?: boolean;
-  onClose: () => void;
-  onSave: (data: any) => Promise<any>;
-  onDeleteQuestion?: (questionId: string) => Promise<any>;
-  isSaving: boolean;
-  saveProgress: number;
-  saveMessage: string;
-  lockedDifficulty?: 'easy' | 'medium' | 'hard';
-  onEditExercise?: () => void;
-  sectionData?: any;
-  // Bank questions to pre-load into the flow on open (review-then-save).
-  initialBankQuestions?: any[];
-  // Source tag stamped on initialBankQuestions ('scratch-bank' | 'thirdParty').
-  // Set by the caller that opened the bank picker (Other Platform vs Question Bank).
-  initialBankSource?: string;
-  approval?: any;
-  approvalContext?: { entityType: string; entityId: string; tabType: 'We_Do' | 'You_Do'; subcategory: string; exerciseId: string; questionId: string };
-  onQueryResolved?: () => void;
-  /**
-   * When set, the form auto-opens the matching source modal on mount so the
-   * teacher lands on the right authoring surface (AI generator / bank picker)
-   * instead of a blank editor. 'manual' leaves the form open normally.
-   *   'ai'         → opens the AI generator
-   *   'bank'       → opens the Question Bank picker
-   *   'thirdParty' → treated as bank for now (Third Party provider search
-   *                   opens inside the bank/provider UI)
-   *   'manual' | undefined → normal blank-form landing
-   */
-  autoOpenSource?: 'manual' | 'ai' | 'bank' | 'thirdParty';
-}
-
-interface TC {
-  id: string;
-  input: string;
-  expectedOutput: string;
-  isHidden: boolean;
-  isSample: boolean;
-  description: string;
-  // Function-mode structured inputs: { paramName: valueLiteral }. Coexists with
-  // input/expectedOutput so a question can flip between modes without data loss
-  // and legacy full-program TCs still work when read back.
-  functionInputs?: Record<string, string>;
-}
-
-// Function-contract parameter (name + language-agnostic data type)
-interface FunctionParam { id: string; name: string; type: string; }
-
-interface FunctionContract {
-  functionName: string;
-  returnType: string;
-  params: FunctionParam[];
-}
-
-interface FlowQuestion {
-  __localId: string;
-  _id?: string;
-  title: string;                               // always plain string (server compat)
-  description: any;                            // array of ProgContentBlock[] on server, or legacy object
-  difficulty: string;
-  score: number;
-  testCases: any[];
-  constraints: string[];
-  hints: any[];
-  timeLimit: number;
-  memoryLimit: number;
-  questionType: string;
-  isSaved: boolean;
-  isDirty?: boolean;
-  isPreExisting?: boolean;
-  // Per-question source tag: 'scratch-manual' | 'scratch-bank' | 'ai' | 'thirdParty:<providerId>' | null.
-  // Survives to the DB via mkPayload → onSave → API.
-  source?: string | null;
-  // Section-based exercises: which section this question belongs to.
-  sectionId?: string | null;
-  // Origin id of the Question Bank doc this was imported from — null for
-  // authored questions. Persisted so re-importing the same bank question is
-  // rejected as a duplicate (client picker + server validateQuestionQuota).
-  bankQuestionId?: string | null;
-  // Per-question AI test case count (evaluationMethod 'ai' + perQuestion mode);
-  // null = not set / legacy questions.
-  aiTestCasesCount?: number | null;
-  // Link questions: ONE external URL replaces the authored content — students
-  // get the URL in an iframe instead of the question+compiler workspace.
-  isLinkQuestion?: boolean;
-  questionLink?: string;
-  // Code Setup — Starter is shown to students when an attempt begins.
-  // Solution is the reference solution used for validation; never leaks to the learner UI.
-  starterCode?: string;
-  solutionCode?: string;
-  codeSetupLanguage?: string;
-  // ── Execution Setup ────────────────────────────────────────────────────
-  // Absent on legacy questions → dbQuestionToFlow defaults executionType to
-  // 'fullProgram' so existing stdin/stdout test cases keep working.
-  executionType?: 'function' | 'fullProgram';
-  functionContract?: FunctionContract;
-  // Blank editor / auto-generated skeleton / teacher-provided custom starter.
-  // Absent → 'blank' for fullProgram and 'generated' for function (see hydration).
-  startingExperience?: 'blank' | 'generated' | 'custom';
-}
-
-type Diff = 'easy' | 'medium' | 'hard';
-
-type ProgContentBlock =
-  | { id: string; type: 'text'; value: string }
-  | { id: string; type: 'image'; url: string; alignment: 'left' | 'center' | 'right'; sizePercent: number }
-  | { id: string; type: 'code'; value: string; language: string; bgColor: string };
-
-const mkProgTextBlock = (id?: string): ProgContentBlock => ({ id: id || `pb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'text', value: '' });
-const mkProgCodeBlock = (id?: string): ProgContentBlock => ({ id: id || `pb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'code', value: '', language: 'python', bgColor: '#f5f5f5' });
-
-const descToBlocks = (description: any): ProgContentBlock[] => {
-  if (!description) return [mkProgTextBlock()];
-
-  const mkId = () =>
-    `pb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-  const normalizeBlock = (b: any): ProgContentBlock => ({
-    ...b,
-    id: b.id || mkId(),
-  });
-
-  // 1. Pure array — ideal case (description IS the blocks array)
-  if (Array.isArray(description) && description.length > 0) {
-    return description.map(normalizeBlock);
-  }
-
-  // 2. contentBlocks array — standard stored shape
-  if (
-    description.contentBlocks &&
-    Array.isArray(description.contentBlocks) &&
-    description.contentBlocks.length > 0
-  ) {
-    return description.contentBlocks.map(normalizeBlock);
-  }
-
-  // 3. text is an array of blocks — the bug shape already in DB
-  if (Array.isArray(description.text) && description.text.length > 0) {
-    return description.text.map(normalizeBlock);
-  }
-
-  // 4. Legacy: text is a plain string + optional imageUrl
-  const blocks: ProgContentBlock[] = [];
-  const textVal =
-    typeof description === 'string'
-      ? description
-      : typeof description.text === 'string'
-        ? description.text
-        : '';
-  if (textVal.trim()) {
-    blocks.push({ id: mkId(), type: 'text', value: textVal });
-  }
-  if (description.imageUrl) {
-    blocks.push({
-      id: `pb-img-${mkId()}`,
-      type: 'image',
-      url: description.imageUrl,
-      alignment: description.imageAlignment || 'center',
-      sizePercent: description.imageSizePercent || 60,
-    });
-  }
-  return blocks.length > 0 ? blocks : [mkProgTextBlock()];
-};
-
-const blocksToDescription = (blocks: ProgContentBlock[]): any => {
-  const textParts = blocks
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).value)
-    .join('\n')
-    .trim();
-  const imgBlock = blocks.find(b => b.type === 'image') as any;
-  return {
-    contentBlocks: blocks,          // ← always store full blocks here
-    text: textParts,                // ← always a plain string, never array
-    imageUrl: imgBlock?.url || null,
-    imageAlignment: imgBlock?.alignment || 'left',
-    imageSizePercent: imgBlock?.sizePercent || 100,
-  };
-};
-
-// ─── Title blocks helpers ─────────────────────────────────────────────────────
-const titleToBlocks = (title: any): ProgContentBlock[] => {
-  if (Array.isArray(title) && title.length > 0) {
-    return title.map((b: any) => ({ ...b, id: b.id || `tb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }));
-  }
-  if (typeof title === 'string' && title) {
-    return [{ id: `tb-${Date.now()}`, type: 'text', value: title }];
-  }
-  return [mkProgTextBlock()];
-};
-
-const getTitleText = (blocks: ProgContentBlock[]): string => {
-  const raw = blocks.filter(b => b.type === 'text').map(b => (b as any).value).join(' ').trim();
-  return raw.replace(/<[^>]*>/g, '').trim();
-};
-
-const fmtMark = (n: number): string => parseFloat(n.toFixed(2)).toString();
-
-// ─── Difficulty Styles ──────────────────────────────────────────────────────────
-
-const DS: Record<string, any> = {
-  easy: {
-    bg: '#f0fdf4', border: '#bbf7d0', text: '#16a34a', dot: '#16a34a',
-    bar: '#16a34a', solid: { background: '#16a34a', color: 'white' },
-    pill: { background: '#f0fdf4', color: '#16a34a', border: '1.5px solid #bbf7d0' },
-    badgeBg: '#f0fdf4', badgeColor: '#16a34a', badgeBorder: '#bbf7d0',
-  },
-  medium: {
-    bg: '#fffbeb', border: '#fde68a', text: '#d97706', dot: '#d97706',
-    bar: '#d97706', solid: { background: '#d97706', color: 'white' },
-    pill: { background: '#fffbeb', color: '#d97706', border: '1.5px solid #fde68a' },
-    badgeBg: '#fffbeb', badgeColor: '#d97706', badgeBorder: '#fde68a',
-  },
-  hard: {
-    bg: '#fff5f5', border: '#fed7d7', text: '#e53e3e', dot: '#e53e3e',
-    bar: '#e53e3e', solid: { background: '#e53e3e', color: 'white' },
-    pill: { background: '#fff5f5', color: '#e53e3e', border: '1.5px solid #fed7d7' },
-    badgeBg: '#fff5f5', badgeColor: '#e53e3e', badgeBorder: '#fed7d7',
-  },
-};
-
-// ─── Helpers ────────────────────────────────────────────────────────────────────
-
-const mkLocalId = () => `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-const mkTC = (i: number): TC => ({
-  id: `tc-${Date.now()}-${i}`,
-  input: '',
-  expectedOutput: '',
-  isHidden: false,
-  isSample: i === 0,
-  description: `Test Case ${i + 1}`,
-});
-
-// ─── Execution Setup — helpers ─────────────────────────────────────────────
-// Language-aware type catalogue. The label used in the UI matches the language
-// idiom (Python "integer[]" vs Java "int[]"). Serialized as-is; the wrapper
-// builders below map it to real syntax when they emit the driver.
-const EXEC_DATA_TYPES: Record<string, string[]> = {
-  Python:     ['integer', 'decimal', 'boolean', 'string', 'integer[]', 'decimal[]', 'string[]', 'custom'],
-  JavaScript: ['integer', 'decimal', 'boolean', 'string', 'integer[]', 'decimal[]', 'string[]', 'custom'],
-  Java:       ['int', 'double', 'boolean', 'String', 'int[]', 'double[]', 'String[]', 'custom'],
-  'C++':      ['int', 'double', 'bool', 'string', 'vector<int>', 'vector<double>', 'vector<string>', 'custom'],
-  C:          ['int', 'double', '_Bool', 'char*', 'int*', 'double*', 'char**', 'custom'],
-};
-// Case/alias-tolerant language canonicaliser. Existing exercises store their
-// selected language as lowercase 'python' / 'javascript' etc., while the UI
-// selector uses the capitalised label ('Python') — everywhere execution-setup
-// helpers compare against a language, they MUST route through this first, or
-// they silently return empty strings (blank signature, blank starter).
-const normalizeExecLang = (lang: string): string => {
-  const s = (lang || '').toString().trim().toLowerCase();
-  if (s === 'python' || s === 'py' || s === 'python3') return 'Python';
-  if (s === 'javascript' || s === 'js' || s === 'node' || s === 'nodejs' || s === 'typescript' || s === 'ts') return 'JavaScript';
-  if (s === 'java') return 'Java';
-  if (s === 'c++' || s === 'cpp' || s === 'cplusplus') return 'C++';
-  if (s === 'c') return 'C';
-  return lang || 'Python';
-};
-const execDataTypesFor = (lang: string): string[] => EXEC_DATA_TYPES[normalizeExecLang(lang)] || EXEC_DATA_TYPES.Python;
-
-const mkFunctionContract = (): FunctionContract => ({
-  functionName: '',
-  returnType: 'integer',
-  params: [],
-});
-
-const mkFunctionParam = (i: number = 0): FunctionParam => ({
-  id: `fp-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`,
-  name: `p${i + 1}`,
-  type: 'integer',
-});
-
-// Language-aware signature (single line) shown as a preview inside the contract.
-function execSignatureFor(lang: string, contract: FunctionContract): string {
-  const L = normalizeExecLang(lang);
-  const fname = contract.functionName || 'solve';
-  const params = contract.params.map(p => ({ name: p.name || '?', type: p.type || 'string' }));
-  if (L === 'Python')     return `def ${fname}(${params.map(p => `${p.name}: ${p.type}`).join(', ')}) -> ${contract.returnType}:`;
-  if (L === 'JavaScript') return `function ${fname}(${params.map(p => `/* ${p.type} */ ${p.name}`).join(', ')}) /* -> ${contract.returnType} */ {`;
-  if (L === 'Java')       return `public ${jType(contract.returnType)} ${fname}(${params.map(p => `${jType(p.type)} ${p.name}`).join(', ')}) {`;
-  if (L === 'C++')        return `${cppType(contract.returnType)} ${fname}(${params.map(p => `${cppType(p.type)} ${p.name}`).join(', ')}) {`;
-  if (L === 'C')          return `${cType(contract.returnType)} ${fname}(${params.map(p => `${cType(p.type)} ${p.name}`).join(', ')}) {`;
-  return `def ${fname}(${params.map(p => `${p.name}: ${p.type}`).join(', ')}) -> ${contract.returnType}:`;
-}
-function jType(t: string): string { return ({ integer:'int', decimal:'double', boolean:'boolean', string:'String', 'integer[]':'int[]', 'decimal[]':'double[]', 'string[]':'String[]', custom:'Object' } as any)[t] || t; }
-function cppType(t: string): string { return ({ integer:'int', decimal:'double', boolean:'bool', string:'std::string', 'integer[]':'std::vector<int>', 'decimal[]':'std::vector<double>', 'string[]':'std::vector<std::string>', custom:'auto' } as any)[t] || t; }
-function cType(t: string): string { return ({ integer:'int', decimal:'double', boolean:'int', string:'char*', 'integer[]':'int*', 'decimal[]':'double*', 'string[]':'char**' } as any)[t] || t; }
-
-// Auto-generated starter skeleton (Generated Starter mode). Always safe —
-// students see this as the initial editor content; it's never used to grade.
-function execGeneratedStarter(lang: string, contract: FunctionContract): string {
-  const L = normalizeExecLang(lang);
-  const sig = execSignatureFor(L, contract);
-  if (L === 'Python')     return `${sig}\n    # Write your code here\n    pass`;
-  if (L === 'JavaScript') return `${sig}\n  // Write your code here\n}`;
-  if (L === 'Java')       return `class Solution {\n    ${sig}\n        // Write your code here\n        return ${jDefault(contract.returnType)};\n    }\n}`;
-  if (L === 'C++')        return `${sig}\n    // Write your code here\n    return ${cppDefault(contract.returnType)};\n}`;
-  if (L === 'C')          return `${sig}\n    /* Write your code here */\n    return ${cDefault(contract.returnType)};\n}`;
-  // Fallback: Python-style skeleton so the editor never renders empty.
-  return `${sig}\n    # Write your code here\n    pass`;
-}
-function jDefault(t: string): string { return ({ integer:'0', decimal:'0.0', boolean:'false', string:'""', 'integer[]':'new int[0]', 'decimal[]':'new double[0]', 'string[]':'new String[0]' } as any)[t] || 'null'; }
-function cppDefault(t: string): string { return ({ integer:'0', decimal:'0.0', boolean:'false', string:'""', 'integer[]':'{}', 'decimal[]':'{}', 'string[]':'{}' } as any)[t] || '{}'; }
-function cDefault(t: string): string { return ({ integer:'0', decimal:'0.0', boolean:'0', string:'""' } as any)[t] || '0'; }
-
-// Conceptual driver preview shown to the teacher. String, not executed —
-// mirrors the real wrapper the run flow prepends to the submission.
-function execDriverPreview(lang: string, contract: FunctionContract): string {
-  const L = normalizeExecLang(lang);
-  const fname = contract.functionName || 'solve';
-  const argNames = contract.params.map(p => p.name || 'x');
-  if (L === 'Python')
-    return `# hidden driver — auto-generated at run time\nimport json, sys\n_tc = json.loads(sys.stdin.read())\n_ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')})\nprint(json.dumps(_ret))`;
-  if (L === 'JavaScript')
-    return `// hidden driver — auto-generated at run time\nconst _tc = JSON.parse(require('fs').readFileSync(0, 'utf8'));\nconst _ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')});\nconsole.log(JSON.stringify(_ret));`;
-  if (L === 'Java')
-    return `// hidden driver — auto-generated at run time\n// Reads {"p1":..,"p2":..} from stdin, calls new Solution().${fname}(...)\n// and prints the returned value.`;
-  if (L === 'C++')
-    return `// hidden driver — auto-generated at run time\n// Reads {"p1":..,"p2":..} from stdin, calls ${fname}(...)\n// and prints the returned value.`;
-  if (L === 'C')
-    return `/* hidden driver — auto-generated at run time */\n/* Reads {"p1":..,"p2":..} from stdin, calls ${fname}(...) and prints the return */`;
-  return `# hidden driver — auto-generated at run time\n# Reads a JSON test case from stdin, calls ${fname}(...) and prints the return.`;
-}
-
-// The REAL wrapper prepended to the student's submission when running function
-// mode. Only Python + JavaScript are fully wrapped — Java/C++/C fall back to
-// a compile-warning payload because a generic wrapper requires full JSON→type
-// deserialization the teacher can't customise here. The Run modal surfaces
-// this limitation clearly.
-function execBuildFunctionRunPayload(lang: string, contract: FunctionContract, solution: string): { source: string; supported: boolean } {
-  const L = normalizeExecLang(lang);
-  const fname = contract.functionName || 'solve';
-  const argNames = contract.params.map(p => p.name || 'x');
-  if (L === 'Python') {
-    const src = `${solution}\n\nif __name__ == "__main__":\n    import json, sys\n    _tc = json.loads(sys.stdin.read())\n    _ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')})\n    print(json.dumps(_ret))\n`;
-    return { source: src, supported: true };
-  }
-  if (L === 'JavaScript') {
-    const src = `${solution}\n\n(function(){\n  const _tc = JSON.parse(require('fs').readFileSync(0, 'utf8'));\n  const _ret = ${fname}(${argNames.map(n => `_tc[${JSON.stringify(n)}]`).join(', ')});\n  console.log(JSON.stringify(_ret));\n})();\n`;
-    return { source: src, supported: true };
-  }
-  return { source: solution, supported: false };
-}
-
-// Best-effort coerce of a teacher-authored literal into a real JS value so it
-// can be shipped to Piston as JSON. Accepts JSON, then numbers, then booleans,
-// then bare arrays with number literals, else returns the trimmed string.
-function coerceTcInput(raw: string): any {
-  const s = (raw ?? '').trim();
-  if (s === '') return '';
-  try { return JSON.parse(s); } catch {}
-  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
-  if (/^-?\d*\.\d+$/.test(s)) return parseFloat(s);
-  if (s === 'true' || s === 'false') return s === 'true';
-  return s;
-}
-function tcInputsToPayload(tc: TC, params: FunctionParam[]): Record<string, any> {
-  const out: Record<string, any> = {};
-  params.forEach(p => { out[p.name] = coerceTcInput((tc.functionInputs || {})[p.name] || ''); });
-  return out;
-}
-
-const dbQuestionToFlow = (q: any): FlowQuestion => {
-  // Normalize description into clean ProgContentBlock[] array
-  const normalizeDescription = (desc: any): ProgContentBlock[] => {
-    const mkId = () => `pb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const normalizeBlock = (b: any): ProgContentBlock => ({ ...b, id: b.id || mkId() });
-
-    if (!desc) return [mkProgTextBlock()];
-
-    // Pure array
-    if (Array.isArray(desc) && desc.length > 0) return desc.map(normalizeBlock);
-
-    // contentBlocks array
-    if (desc.contentBlocks && Array.isArray(desc.contentBlocks) && desc.contentBlocks.length > 0)
-      return desc.contentBlocks.map(normalizeBlock);
-
-    // text is array of blocks (bug shape in DB)
-    if (Array.isArray(desc.text) && desc.text.length > 0)
-      return desc.text.map(normalizeBlock);
-
-    // Legacy: plain string + optional imageUrl
-    const blocks: ProgContentBlock[] = [];
-    const textVal = typeof desc === 'string' ? desc : (typeof desc.text === 'string' ? desc.text : '');
-    if (textVal.trim()) blocks.push({ id: mkId(), type: 'text', value: textVal });
-    if (desc.imageUrl) blocks.push({
-      id: `pb-img-${mkId()}`,
-      type: 'image',
-      url: desc.imageUrl,
-      alignment: desc.imageAlignment || 'center',
-      sizePercent: desc.imageSizePercent || 60,
-    });
-    return blocks.length > 0 ? blocks : [mkProgTextBlock()];
-  };
-
-  return {
-    __localId: q._id ? `db-${q._id}` : mkLocalId(),
-    _id: q._id,
-    title: Array.isArray(q.title)
-      ? (q.title as any[]).filter((b: any) => b.type === 'text').map((b: any) => b.value).join(' ').trim()
-      : (q.title || ''),
-    description: normalizeDescription(q.description), // ← always a clean ProgContentBlock[]
-    difficulty: q.difficulty || 'medium',
-    score: q.score || q.points || 0,
-    testCases: q.testCases || [],
-    constraints: q.constraints || [],
-    hints: q.hints || [],
-    timeLimit: q.timeLimit || 2000,
-    memoryLimit: q.memoryLimit || 256,
-    questionType: 'programming',
-    isSaved: true,
-    isDirty: false,
-    isPreExisting: true,
-    isLinkQuestion: q.isLinkQuestion === true,
-    questionLink: q.questionLink || '',
-    starterCode: typeof q.starterCode === 'string' ? q.starterCode : '',
-    solutionCode: typeof q.solutionCode === 'string' ? q.solutionCode : '',
-    codeSetupLanguage: typeof q.codeSetupLanguage === 'string' ? q.codeSetupLanguage : undefined,
-    // ── Execution setup — backward-compat: legacy questions default to fullProgram ──
-    executionType: (q.executionType === 'function' || q.executionType === 'fullProgram')
-      ? q.executionType
-      : 'fullProgram',
-    functionContract: q.functionContract && typeof q.functionContract === 'object'
-      ? {
-          functionName: typeof q.functionContract.functionName === 'string' ? q.functionContract.functionName : '',
-          returnType: typeof q.functionContract.returnType === 'string' ? q.functionContract.returnType : 'integer',
-          params: Array.isArray(q.functionContract.params)
-            ? q.functionContract.params.map((p: any, i: number) => ({
-                id: p?.id || `fp-${Date.now()}-${i}-${Math.random().toString(36).slice(2,5)}`,
-                name: typeof p?.name === 'string' ? p.name : `p${i+1}`,
-                type: typeof p?.type === 'string' ? p.type : 'integer',
-              }))
-            : [],
-        }
-      : mkFunctionContract(),
-    startingExperience: (q.startingExperience === 'blank' || q.startingExperience === 'generated' || q.startingExperience === 'custom')
-      ? q.startingExperience
-      : (q.executionType === 'function' ? 'generated' : 'blank'),
-  };
-};
-
-// ─── Inline Inputs ─────────────────────────────────────────────────────────────
-
-const TA: React.FC<{
-  value: string; onChange: (v: string) => void; onBlur?: () => void;
-  placeholder?: string; rows?: number; mono?: boolean; err?: boolean; disabled?: boolean;
-}> = ({ value, onChange, onBlur, placeholder, rows = 3, mono, err, disabled }) => (
-  <textarea
-    value={value}
-    onChange={e => onChange(e.target.value)}
-    onBlur={onBlur}
-    placeholder={placeholder}
-    rows={rows}
-    disabled={disabled}
-    className={`lms-textarea${mono ? ' mono' : ''}${err ? ' err' : ''}`}
-  />
-);
-
-const NI: React.FC<{
-  value: number; onChange: (v: number) => void; onBlur?: () => void;
-  min?: number; max?: number; disabled?: boolean; cls?: string; err?: boolean;
-}> = ({ value, onChange, onBlur, min = 0, max = 9999, disabled, cls = '', err }) => {
-  const [v, sv] = useState(value === 0 ? '' : String(value));
-  useEffect(() => { sv(value === 0 ? '' : String(value)); }, [value]);
-  return (
-    <input
-      type="text"
-      inputMode="numeric"
-      value={v}
-      disabled={disabled}
-      onChange={e => {
-        const r = e.target.value;
-        if (/^\d*\.?\d*$/.test(r)) {
-          sv(r);
-          const n = parseFloat(r);
-          if (!isNaN(n) && n >= min && n <= max) onChange(n);
-          if (r === '') onChange(0);
-        }
-      }}
-      onBlur={() => {
-        const n = parseFloat(v);
-        if (isNaN(n) || n < min) { sv(String(min)); onChange(min); }
-        onBlur?.();
-      }}
-      className={`lms-input${err ? ' err' : ''} ${cls}`}
-      style={{ width: cls.includes('w-') ? undefined : '100%' }}
-    />
-  );
-};
-
-// ─── IMAGE UPLOAD MODAL (for title image insertion) ───────────────────────────
-
-const ProgImageUploadModal: React.FC<{
-  onUpload: (url: string) => void;
-  onClose: () => void;
-}> = ({ onUpload, onClose }) => {
-  const [tab, setTab] = useState<'upload' | 'url'>('upload');
-  const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
-  const [urlValue, setUrlValue] = useState('');
-  const [urlError, setUrlError] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const doUpload = async (file: File) => {
-    if (!file.type.startsWith('image/')) { setError('Please select an image file.'); return; }
-    setUploading(true); setError('');
-    try {
-      const token = getToken();
-      const fd = new FormData();
-      fd.append('image', file);
-      const res = await fetch('http://localhost:5533/upload/question-image', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || 'Upload failed');
-      onUpload(json.url);
-    } catch (e: any) {
-      setError(e.message || 'Upload failed. Please try again.');
-      setUploading(false);
-    }
-  };
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) doUpload(file);
-  };
-
-  const handleInsertUrl = () => {
-    const trimmed = urlValue.trim();
-    if (!trimmed) { setUrlError('Please enter an image URL.'); return; }
-    if (!/^https?:\/\/.+/i.test(trimmed)) { setUrlError('URL must start with http:// or https://'); return; }
-    setUrlError('');
-    onUpload(trimmed);
-  };
-
-  const TAB_STYLE = (active: boolean): React.CSSProperties => ({
-    fontFamily: 'var(--lms-font)', fontSize: 13, fontWeight: active ? 700 : 500,
-    color: active ? 'var(--lms-orange)' : 'var(--lms-text-sec)',
-    borderBottom: active ? '2px solid var(--lms-orange)' : '2px solid transparent',
-    paddingBottom: 10, paddingTop: 10, paddingLeft: 4, paddingRight: 4,
-    background: 'none', cursor: 'pointer', transition: 'all 0.15s',
-  });
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: 'rgba(26,26,46,0.45)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
-        style={{ border: '1px solid var(--lms-border)' }}>
-        <div className="flex items-center justify-between px-5 pt-4 pb-0">
-          <span className="text-sm font-bold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Insert Image</span>
-          <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 transition-colors">
-            <X className="h-4 w-4" style={{ color: 'var(--lms-text-muted)' }} />
-          </button>
-        </div>
-        <div className="flex items-center gap-5 px-5 border-b" style={{ borderColor: 'var(--lms-border)' }}>
-          <button type="button" style={TAB_STYLE(tab === 'upload')} onClick={() => { setTab('upload'); setError(''); }}>Upload</button>
-          <button type="button" style={TAB_STYLE(tab === 'url')} onClick={() => { setTab('url'); setUrlError(''); }}>By URL</button>
-        </div>
-        <div className="p-5">
-          {tab === 'upload' ? (
-            <>
-              <div
-                onDragOver={e => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={onDrop}
-                className="flex flex-col items-center justify-center gap-3 rounded-xl py-9 transition-all"
-                style={{ border: `2px dashed ${dragging ? 'var(--lms-orange)' : 'var(--lms-border)'}`, background: dragging ? 'var(--lms-orange-light)' : 'var(--lms-bg-surface)' }}>
-                {uploading ? (
-                  <>
-                    <Loader className="h-8 w-8 animate-spin" style={{ color: 'var(--lms-orange)' }} />
-                    <span className="text-sm font-medium" style={{ color: 'var(--lms-text-sec)', fontFamily: 'var(--lms-font)' }}>Uploading…</span>
-                  </>
-                ) : (
-                  <>
-                    <CloudUpload className="h-8 w-8" style={{ color: dragging ? 'var(--lms-orange)' : 'var(--lms-text-hint)' }} />
-                    <div className="text-center">
-                      <p className="text-sm font-semibold" style={{ color: 'var(--lms-text-main)', fontFamily: 'var(--lms-font)' }}>Drag & drop image here</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>PNG, JPG, GIF, WEBP supported</p>
-                    </div>
-                    <div className="flex items-center gap-2 w-full px-4">
-                      <div className="flex-1 h-px" style={{ background: 'var(--lms-border)' }} />
-                      <span className="text-xs" style={{ color: 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)' }}>or</span>
-                      <div className="flex-1 h-px" style={{ background: 'var(--lms-border)' }} />
-                    </div>
-                    <button type="button" onClick={() => inputRef.current?.click()}
-                      className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"
-                      style={{ background: 'var(--lms-orange)', color: '#fff', fontFamily: 'var(--lms-font)' }}>
-                      Browse Files
-                    </button>
-                    <input ref={inputRef} type="file" accept="image/*" className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) doUpload(f); e.target.value = ''; }} />
-                  </>
-                )}
-              </div>
-              {error && (
-                <div className="mt-2.5 flex items-center gap-1.5 text-xs" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />{error}
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-xs mb-3" style={{ color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>
-                Only use images that you have the license to use.
-              </p>
-              <div className="flex gap-2">
-                <input type="text" value={urlValue}
-                  onChange={e => { setUrlValue(e.target.value); if (urlError) setUrlError(''); }}
-                  onKeyDown={e => { if (e.key === 'Enter') handleInsertUrl(); }}
-                  placeholder="Paste URL of image..."
-                  autoFocus
-                  className="flex-1 px-3 py-2 text-sm rounded-lg border outline-none transition-all"
-                  style={{ borderColor: urlError ? 'var(--lms-danger)' : 'var(--lms-border)', fontFamily: 'var(--lms-font)', color: 'var(--lms-text-main)' }}
-                />
-              </div>
-              {urlError && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: 'var(--lms-danger)', fontFamily: 'var(--lms-font)' }}>
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />{urlError}
-                </div>
-              )}
-              <div className="flex justify-end mt-4">
-                <button type="button" onClick={handleInsertUrl}
-                  className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"
-                  style={{ background: urlValue.trim() ? 'var(--lms-orange)' : 'var(--lms-border)', color: urlValue.trim() ? '#fff' : 'var(--lms-text-hint)', fontFamily: 'var(--lms-font)', cursor: urlValue.trim() ? 'pointer' : 'default' }}>
-                  Insert Image
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ─── PROGRAMMING DESCRIPTION EDITOR ──────────────────────────────────────────
-
-const PROG_CODE_THEMES = [
-  { label: 'Light', bg: '#f5f5f5' }, { label: 'Dark', bg: '#1e1e1e' },
-  { label: 'Dracula', bg: '#282a36' }, { label: 'Monokai', bg: '#272822' },
-];
-
-const ProgImageBlock: React.FC<{
-  block: ProgContentBlock & { type: 'image' };
-  onUpdate: (patch: Partial<ProgContentBlock>) => void;
-  onRemove: () => void;
-  disabled?: boolean;
-}> = ({ block, onUpdate, onRemove, disabled }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [liveSize, setLiveSize] = useState(block.sizePercent || 60);
-  const startX = useRef(0);
-  const startSize = useRef(0);
-  const side = useRef<'left' | 'right'>('right');
-
-  useEffect(() => { setLiveSize(block.sizePercent || 60); }, [block.sizePercent]);
-
-  const onMouseDown = (e: React.MouseEvent, s: 'left' | 'right') => {
-    if (disabled) return;
-    e.preventDefault(); e.stopPropagation();
-    startX.current = e.clientX;
-    startSize.current = liveSize;
-    side.current = s;
-    setDragging(true);
-
-    const onMove = (ev: MouseEvent) => {
-      const parentW = containerRef.current?.parentElement?.clientWidth || 600;
-      const dx = ev.clientX - startX.current;
-      const delta = (dx / parentW) * 100;
-      const newSize = Math.min(100, Math.max(10,
-        side.current === 'right' ? startSize.current + delta : startSize.current - delta
-      ));
-      setLiveSize(Math.round(newSize));
-    };
-    const onUp = (ev: MouseEvent) => {
-      const parentW = containerRef.current?.parentElement?.clientWidth || 600;
-      const dx = ev.clientX - startX.current;
-      const delta = (dx / parentW) * 100;
-      const newSize = Math.min(100, Math.max(10,
-        side.current === 'right' ? startSize.current + delta : startSize.current - delta
-      ));
-      const final = Math.round(newSize);
-      setLiveSize(final);
-      onUpdate({ sizePercent: final } as any);
-      setDragging(false);
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-
-  const justify = block.alignment === 'left' ? 'flex-start' : block.alignment === 'right' ? 'flex-end' : 'center';
-
-  // Same diagonal arrow as MCQ
-  const DiagArrow = ({ rotate }: { rotate: number }) => (
-    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: `rotate(${rotate}deg)`, display: 'block', pointerEvents: 'none' }}>
-      <line x1="1" y1="9" x2="9" y2="1" stroke="var(--lms-orange)" strokeWidth="1.8" strokeLinecap="round" />
-      <polyline points="5,1 9,1 9,5" fill="none" stroke="var(--lms-orange)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points="5,9 1,9 1,5" fill="none" stroke="var(--lms-orange)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-
-  const cornerBase: React.CSSProperties = {
-    position: 'absolute', width: 16, height: 16, background: 'white',
-    border: '1.5px solid var(--lms-orange)', borderRadius: 3, zIndex: 10,
-    userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    opacity: (hovered || dragging) && !disabled ? 1 : 0,
-    transition: 'opacity 0.15s', boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-  };
-
-  return (
-    <div style={{ display: 'flex', justifyContent: justify, position: 'relative', margin: '4px 0' }}
-      ref={containerRef}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}>
-      <div style={{ width: `${liveSize}%`, position: 'relative', transition: dragging ? 'none' : 'width 0.1s', minWidth: 60 }}>
-        <img src={block.url} alt="" draggable={false}
-          style={{ width: '100%', height: 'auto', borderRadius: 8, border: `1.5px solid ${dragging ? 'var(--lms-orange)' : 'var(--lms-border)'}`, display: 'block', userSelect: 'none', pointerEvents: 'none' }} />
-
-        {/* Drag corner handles — exactly like MCQ */}
-        {!disabled && <>
-          <div style={{ ...cornerBase, top: -7, left: -7, cursor: 'nwse-resize' }} onMouseDown={e => onMouseDown(e, 'left')}><DiagArrow rotate={0} /></div>
-          <div style={{ ...cornerBase, top: -7, right: -7, cursor: 'nesw-resize' }} onMouseDown={e => onMouseDown(e, 'right')}><DiagArrow rotate={90} /></div>
-          <div style={{ ...cornerBase, bottom: -7, left: -7, cursor: 'nesw-resize' }} onMouseDown={e => onMouseDown(e, 'left')}><DiagArrow rotate={90} /></div>
-          <div style={{ ...cornerBase, bottom: -7, right: -7, cursor: 'nwse-resize' }} onMouseDown={e => onMouseDown(e, 'right')}><DiagArrow rotate={0} /></div>
-        </>}
-
-        {/* Size badge while dragging */}
-        {dragging && (
-          <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.65)', color: 'white', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, fontFamily: 'var(--lms-font)', pointerEvents: 'none', zIndex: 20 }}>
-            {liveSize}%
-          </div>
-        )}
-
-        {/* Alignment + remove on hover */}
-        {!disabled && (
-          <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 4, zIndex: 20, opacity: (hovered || dragging) ? 1 : 0, transition: 'opacity 0.15s' }}>
-            {(['left', 'center', 'right'] as const).map(a => (
-              <button key={a} type="button" onClick={() => onUpdate({ alignment: a } as any)}
-                style={{ width: 22, height: 22, borderRadius: 5, border: '1.5px solid', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--lms-font)', background: block.alignment === a ? 'var(--lms-orange)' : 'white', borderColor: block.alignment === a ? 'var(--lms-orange)' : 'var(--lms-border)', color: block.alignment === a ? 'white' : 'var(--lms-text-muted)' }}>
-                {a[0].toUpperCase()}
-              </button>
-            ))}
-            <button type="button" onClick={onRemove}
-              style={{ width: 22, height: 22, borderRadius: 5, border: '1.5px solid var(--lms-danger-bdr)', background: 'var(--lms-danger-bg)', color: 'var(--lms-danger)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <X size={11} />
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const ProgCodeBlock: React.FC<{
-  block: ProgContentBlock & { type: 'code' };
-  onUpdate: (patch: Partial<ProgContentBlock>) => void;
-  onRemove: () => void;
-  disabled?: boolean;
-}> = ({ block, onUpdate, onRemove, disabled }) => {
-  const isDark = ['#1e1e1e', '#282a36', '#272822', '#2e3440'].includes(block.bgColor);
-  const textColor = isDark ? '#d4d4d4' : '#1a1a2e';
-  return (
-    <div style={{ position: 'relative', borderRadius: 8, border: `1.5px solid ${isDark ? '#3a3a3a' : '#e2e2e2'}`, background: block.bgColor, overflow: 'hidden', margin: '4px 0' }}>
-      {!disabled && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 10px', borderBottom: `1px solid ${isDark ? '#3a3a3a' : '#e2e2e2'}`, flexWrap: 'wrap' }}>
-          {PROG_CODE_THEMES.map(t => (
-            <button key={t.bg} type="button" onClick={() => onUpdate({ bgColor: t.bg } as any)}
-              style={{ padding: '2px 8px', borderRadius: 4, border: `1.5px solid ${block.bgColor === t.bg ? 'var(--lms-orange)' : 'var(--lms-border)'}`, background: t.bg, color: ['#1e1e1e', '#282a36', '#272822'].includes(t.bg) ? '#d4d4d4' : '#1a1a2e', fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--lms-font)' }}>
-              {t.label}
-            </button>
-          ))}
-          <select value={block.language} onChange={e => onUpdate({ language: e.target.value } as any)}
-            style={{ marginLeft: 'auto', fontFamily: 'ui-monospace,monospace', fontSize: 10, border: `1.5px solid ${isDark ? '#555' : 'var(--lms-border)'}`, borderRadius: 4, padding: '2px 6px', background: isDark ? '#2a2a2a' : 'white', color: isDark ? '#d4d4d4' : '#1a1a2e', cursor: 'pointer' }}>
-            {['python', 'javascript', 'java', 'cpp', 'c', 'csharp', 'typescript', 'sql', 'bash', 'other'].map(l => <option key={l} value={l}>{l}</option>)}
-          </select>
-          <button type="button" onClick={onRemove}
-            style={{ width: 22, height: 22, borderRadius: 4, border: '1.5px solid var(--lms-danger-bdr)', background: 'var(--lms-danger-bg)', color: 'var(--lms-danger)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <X size={11} />
-          </button>
-        </div>
-      )}
-      <textarea
-        value={block.value}
-        onChange={e => onUpdate({ value: e.target.value } as any)}
-        disabled={disabled}
-        placeholder="// Write code here…"
-        rows={5}
-        style={{ width: '100%', background: 'transparent', border: 'none', color: textColor, fontFamily: 'ui-monospace,monospace', fontSize: 12.5, lineHeight: 1.6, padding: '10px 12px', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
-      />
-    </div>
-  );
-};
-
-
-
-// FIND and REPLACE entire ProgCodeBlock component with:
-
-function highlightAutoP(code: string, bgColor: string): string {
-  const dark = ['#1e1e1e', '#282a36', '#272822', '#2e3440'].includes(bgColor);
-  const kwC = dark ? '#569cd6' : '#0000ff';
-  const strC = dark ? '#ce9178' : '#a31515';
-  const cmtC = '#6a9955';
-  const numC = dark ? '#b5cea8' : '#098658';
-  const kw = [
-    '#include', 'float', 'int', 'char', 'double', 'void', 'return',
-    'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue',
-    'function', 'let', 'const', 'var', 'class', 'import', 'export', 'default',
-    'new', 'this', 'typeof', 'true', 'false', 'null', 'undefined', 'async', 'await',
-    'printf', 'scanf', 'main',
-  ];
-  return code
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/(\/\/.*$)/gm, `<span style="color:${cmtC}">$1</span>`)
-    .replace(/(\/\*[\s\S]*?\*\/)/g, `<span style="color:${cmtC}">$1</span>`)
-    .replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, `<span style="color:${strC}">$1</span>`)
-    .replace(/\b(\d+\.?\d*)\b/g, `<span style="color:${numC}">$1</span>`)
-    .replace(
-      new RegExp(`\\b(${kw.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'g'),
-      `<span style="color:${kwC};font-weight:600">$1</span>`
-    );
-}
-
-const PROG_CODE_THEMES_MCQ = [
-  { label: 'Light', bg: '#f5f5f5' },
-  { label: 'Dark', bg: '#1e1e1e' },
-  { label: 'Dracula', bg: '#282a36' },
-  { label: 'Monokai', bg: '#272822' },
-  { label: 'Solarized', bg: '#fdf6e3' },
-  { label: 'Nord', bg: '#2e3440' },
-];
-
-const ProgCodeBlockMCQ: React.FC<{
-  block: ProgContentBlock & { type: 'code' };
-  onUpdate: (patch: Partial<ProgContentBlock>) => void;
-  onRemove: () => void;
-  disabled?: boolean;
-}> = ({ block, onUpdate, onRemove, disabled }) => {
-  const [editing, setEditing] = React.useState(true);
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-  const savedWidth = (block as any).width;
-  const savedHeight = (block as any).height;
-  const [liveWidth, setLiveWidth] = React.useState<number | undefined>(savedWidth);
-  const [liveHeight, setLiveHeight] = React.useState<number | undefined>(savedHeight);
-  const bg = block.bgColor || '#f5f5f5';
-  const isDark = ['#1e1e1e', '#282a36', '#272822', '#2e3440'].includes(bg);
-  const textColor = isDark ? '#d4d4d4' : '#1a1a2e';
-
-  return (
-    <div
-      className="relative my-2 group/code"
-      style={{
-        borderRadius: 8,
-        border: `1.5px solid ${isDark ? '#3a3a3a' : '#e2e2e2'}`,
-        background: bg,
-        overflow: 'visible',
-        display: 'inline-block',
-        width: liveWidth ? `${liveWidth}px` : 'fit-content',
-        minWidth: 200,
-        maxWidth: 'none',
-        position: 'relative',
-      }}
-    >
-      {/* Remove button */}
-      {!disabled && (
-        <button
-          type="button"
-          onClick={onRemove}
-          style={{
-            position: 'absolute', top: 7, right: 10, zIndex: 10,
-            background: isDark ? '#ffffff' : '#eb0303',
-            border: `1px solid ${isDark ? '#444' : '#d0d0d0'}`,
-            borderRadius: 6, padding: '3px 6px', fontSize: 10,
-            color: isDark ? '#000000' : '#ffffff',
-            cursor: 'pointer', display: 'flex', alignItems: 'center',
-            opacity: 0, transition: 'opacity 0.15s',
-          }}
-          className="group-hover/code:!opacity-100"
-        >
-          <X size={10} />
-        </button>
-      )}
-
-      {/* Code area */}
-      {editing && !disabled ? (
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <textarea
-            ref={textareaRef}
-            value={block.value}
-            onChange={e => onUpdate({ value: e.target.value } as any)}
-            onMouseMove={() => {
-              if (textareaRef.current) {
-                setLiveWidth(textareaRef.current.offsetWidth);
-                setLiveHeight(textareaRef.current.offsetHeight);
-              }
-            }}
-            onBlur={() => {
-              if (textareaRef.current) {
-                const w = textareaRef.current.offsetWidth;
-                const h = textareaRef.current.offsetHeight;
-                setLiveWidth(w); setLiveHeight(h);
-                onUpdate({ width: w, height: h } as any);
-              }
-              setEditing(false);
-            }}
-            placeholder="// Write your code here…"
-            spellCheck={false}
-            autoFocus
-            style={{
-              display: 'block',
-              width: liveWidth ? `${liveWidth}px` : '400px',
-              height: liveHeight ? `${liveHeight}px` : '120px',
-              minWidth: 200, background: 'transparent', border: 'none',
-              outline: 'none', padding: '10px 14px', fontSize: 13, lineHeight: 1.7,
-              fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-              color: textColor, resize: 'both', overflow: 'auto',
-              boxSizing: 'border-box', whiteSpace: 'pre', minHeight: 42,
-            }}
-          />
-          <div style={{
-            position: 'absolute', bottom: 4, right: 4, pointerEvents: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 18, height: 18, borderRadius: 4,
-            background: 'var(--lms-orange)', opacity: 0.85, zIndex: 10,
-          }}>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M9 1L1 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-              <path d="M9 5L5 9" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-              <path d="M9 9H5V5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            </svg>
-          </div>
-        </div>
-      ) : (
-        <pre
-          onClick={() => { if (!disabled) setEditing(true); }}
-          style={{
-            margin: 0, padding: '10px 14px', fontSize: 13, lineHeight: 1.7,
-            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-            color: textColor, whiteSpace: 'pre', cursor: disabled ? 'default' : 'text',
-            display: 'block',
-            width: savedWidth ? `${savedWidth}px` : '100%',
-            height: savedHeight ? `${savedHeight}px` : undefined,
-            minWidth: 200, background: 'transparent', overflowX: 'auto',
-          }}
-          dangerouslySetInnerHTML={{ __html: highlightAutoP(block.value || '', bg) }}
-        />
-      )}
-
-      {/* Bottom toolbar */}
-      {!disabled && (
-        <div
-          className="group-hover/code:!opacity-100"
-          style={{
-            opacity: 0, transition: 'opacity 0.15s',
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '5px 10px',
-            borderTop: `1px solid ${isDark ? '#3a3a3a' : '#e2e2e2'}`,
-            background: isDark ? 'rgba(255,255,255,0.04)' : '#fafafa',
-          }}
-        >
-          {PROG_CODE_THEMES_MCQ.map(theme => (
-            <button
-              key={theme.label}
-              type="button"
-              title={theme.label}
-              onClick={() => onUpdate({ bgColor: theme.bg } as any)}
-              style={{
-                width: 14, height: 14, borderRadius: '50%',
-                background: theme.bg,
-                border: bg === theme.bg ? '2px solid var(--lms-orange)' : `2px solid ${isDark ? '#555' : '#d0d0d0'}`,
-                cursor: 'pointer', flexShrink: 0, transition: 'transform 0.1s',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.3)')}
-              onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
-            />
-          ))}
-          <div style={{ width: 1, height: 12, background: isDark ? '#444' : '#e0e0e0', margin: '0 2px' }} />
-          <input
-            type="text"
-            value={block.language || ''}
-            onChange={e => onUpdate({ language: e.target.value } as any)}
-            style={{
-              fontSize: 10, fontFamily: 'monospace',
-              color: isDark ? '#888' : '#999',
-              background: 'transparent', border: 'none', outline: 'none', width: 70,
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-};
-
-
-
-const ProgDescEditor: React.FC<{
-  blocks: ProgContentBlock[];
-  onChange: (blocks: ProgContentBlock[]) => void;
-  disabled?: boolean;
-  hasError?: boolean;
-  resetKey?: number;
-}> = ({ blocks, onChange, disabled, hasError, resetKey }) => {
-  const mkId = () => `pb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const [showImgModal, setShowImgModal] = React.useState(false);
-  const [fmtState, setFmtState] = React.useState({ bold: false, italic: false, underline: false });
-  const editRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
-  const lastSetValues = React.useRef<Map<string, string>>(new Map());
-
-  // Clear lastSetValues cache when question changes so stale IDs don't skip DOM updates
-  React.useEffect(() => {
-    lastSetValues.current.clear();
-  }, [resetKey]);
-
-  const updateBlock = (id: string, patch: Partial<ProgContentBlock>) => {
-    onChange(blocks.map(b => b.id === id ? ({ ...b, ...patch } as ProgContentBlock) : b));
-  };
-  const removeBlock = (id: string) => {
-    const next = blocks.filter(b => b.id !== id);
-    onChange(next.length > 0 ? next : [{ id: mkId(), type: 'text', value: '' }]);
-  };
-
-  // Sync HTML value to contentEditable without resetting cursor
-  React.useEffect(() => {
-    blocks.forEach(b => {
-      if (b.type !== 'text') return;
-      const el = editRefs.current.get(b.id);
-      if (!el) return;
-      const html = (b as any).value || '';
-      if (lastSetValues.current.get(b.id) === html) return;
-      el.innerHTML = html;
-      lastSetValues.current.set(b.id, html);
-    });
-  });
-
-  const trackFmt = () => {
-    setFmtState({
-      bold: document.queryCommandState('bold'),
-      italic: document.queryCommandState('italic'),
-      underline: document.queryCommandState('underline'),
-    });
-  };
-
-  const applyFmt = (cmd: string) => {
-    document.execCommand(cmd);
-    trackFmt();
-    const focused = document.activeElement as HTMLDivElement;
-    if (focused) {
-      const entry = [...editRefs.current.entries()].find(([, el]) => el === focused);
-      if (entry) {
-        const [id] = entry;
-        const html = focused.innerHTML;
-        lastSetValues.current.set(id, html);
-        updateBlock(id, { value: html } as any);
-      }
-    }
-  };
-
-  const hasImage = blocks.some(b => b.type === 'image');
-
-  return (
-    <div>
-      {/* Toolbar — above text area */}
-      {!disabled && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 0 6px' }}>
-          <button type="button" className="lms-fmt-btn" title="Bold"
-            onMouseDown={e => { e.preventDefault(); applyFmt('bold'); }}
-            style={{ fontWeight: 700, color: fmtState.bold ? 'var(--lms-orange)' : undefined, background: fmtState.bold ? 'rgba(255,107,53,0.08)' : undefined }}>
-            B
-          </button>
-          <button type="button" className="lms-fmt-btn" title="Italic"
-            onMouseDown={e => { e.preventDefault(); applyFmt('italic'); }}
-            style={{ fontStyle: 'italic', color: fmtState.italic ? 'var(--lms-orange)' : undefined, background: fmtState.italic ? 'rgba(255,107,53,0.08)' : undefined }}>
-            I
-          </button>
-          <button type="button" className="lms-fmt-btn" title="Underline"
-            onMouseDown={e => { e.preventDefault(); applyFmt('underline'); }}
-            style={{ textDecoration: 'underline', color: fmtState.underline ? 'var(--lms-orange)' : undefined, background: fmtState.underline ? 'rgba(255,107,53,0.08)' : undefined }}>
-            U
-          </button>
-          <div style={{ width: 1, height: 16, background: 'var(--lms-border)', margin: '0 2px' }} />
-          <button type="button" className="lms-fmt-btn" title="Insert code block"
-            onClick={() => onChange([...blocks, { id: mkId(), type: 'code', value: '', language: 'python', bgColor: '#f5f5f5' }])}>
-            <Code size={13} />
-          </button>
-          <button type="button" className="lms-fmt-btn"
-            title={hasImage ? 'Remove existing image first' : 'Insert image'}
-            disabled={hasImage}
-            style={{ opacity: hasImage ? 0.4 : 1, cursor: hasImage ? 'not-allowed' : 'pointer' }}
-            onClick={() => { if (!hasImage) setShowImgModal(true); }}>
-            <Image size={13} />
-          </button>
-        </div>
-      )}
-      {/* Blocks */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {blocks.map((b) => {
-          if (b.type === 'text') return (
-            <div
-              key={b.id}
-              ref={el => { if (el) editRefs.current.set(b.id, el); else editRefs.current.delete(b.id); }}
-              contentEditable={!disabled}
-              suppressContentEditableWarning
-              data-placeholder="Describe the problem clearly. Include input/output format and examples."
-              onInput={e => {
-                const html = (e.currentTarget as HTMLDivElement).innerHTML;
-                lastSetValues.current.set(b.id, html);
-                updateBlock(b.id, { value: html } as any);
-              }}
-              onKeyUp={trackFmt}
-              onMouseUp={trackFmt}
-              style={{
-                fontFamily: 'var(--lms-font)',
-                fontSize: 15,
-                fontWeight: 500,
-                lineHeight: 1.65,
-                color: 'var(--lms-text-main)',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: `2px solid ${disabled ? 'var(--lms-border)' : 'var(--lms-text-main)'}`,
-                borderRadius: 0,
-                outline: 'none',
-                width: '100%',
-                padding: '4px 0 6px',
-                minHeight: 80,
-                cursor: disabled ? 'not-allowed' : 'text',
-                boxSizing: 'border-box',
-                wordBreak: 'break-word',
-              }}
-            />
-          );
-          if (b.type === 'image') return (
-            <ProgImageBlock key={b.id} block={b as any} onUpdate={patch => updateBlock(b.id, patch)} onRemove={() => removeBlock(b.id)} disabled={disabled} />
-          );
-          if (b.type === 'code') return (
-            <ProgCodeBlockMCQ key={b.id} block={b as any} onUpdate={patch => updateBlock(b.id, patch)} onRemove={() => removeBlock(b.id)} disabled={disabled} />
-          );
-          return null;
-        })}
-      </div>
-      {showImgModal && (
-        <ProgImageUploadModal
-          onUpload={url => {
-            onChange([...blocks, { id: mkId(), type: 'image', url, alignment: 'center', sizePercent: 70 }]);
-            setShowImgModal(false);
-          }}
-          onClose={() => setShowImgModal(false)}
-        />
-      )}
-    </div>
-  );
-};
-
-// ─── PROGRAMMING TITLE EDITOR ─────────────────────────────────────────────────
-
-const ProgTitleEditor: React.FC<{
-  blocks: ProgContentBlock[];
-  onChange: (blocks: ProgContentBlock[]) => void;
-  disabled?: boolean;
-  hasError?: boolean;
-  titleRef?: React.RefObject<HTMLTextAreaElement | null>;
-}> = ({ blocks, onChange, disabled, hasError, titleRef }) => {
-  const [showImgModal, setShowImgModal] = useState(false);
-  const mkId = () => `tb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-  const updateBlock = (id: string, patch: Partial<ProgContentBlock>) =>
-    onChange(blocks.map(b => b.id === id ? ({ ...b, ...patch } as ProgContentBlock) : b));
-
-  const removeBlock = (id: string) => {
-    const next = blocks.filter(b => b.id !== id);
-    onChange(next.length > 0 ? next : [{ id: mkId(), type: 'text', value: '' }]);
-  };
-
-  const addCodeBlock = () =>
-    onChange([...blocks, { id: mkId(), type: 'code', value: '', language: 'python', bgColor: '#f5f5f5' }]);
-
-  const hasImage = blocks.some(b => b.type === 'image');
-
-  const handleInsertImage = () => {
-    if (hasImage) return; // only one image allowed
-    setShowImgModal(true);
-  };
-
-  const onImageUploaded = (url: string) => {
-    onChange([...blocks, { id: mkId(), type: 'image', url, alignment: 'center', sizePercent: 70 }]);
-    setShowImgModal(false);
-  };
-
-  return (
-    <div>
-      {/* Toolbar — icons above title (same style as MCQ) */}
-      {!disabled && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 0.5, marginBottom: 6 }}>
-          {/* Code block */}
-          <button type="button" className="lms-fmt-btn" onClick={addCodeBlock} title="Insert code block">
-            <Code className="h-3.5 w-3.5" />
-          </button>
-          {/* Image — only one allowed */}
-          <button type="button" className="lms-fmt-btn" onClick={handleInsertImage}
-            title={hasImage ? 'Remove existing image first' : 'Insert image'}
-            style={{ opacity: hasImage ? 0.4 : 1, cursor: hasImage ? 'not-allowed' : 'pointer' }}>
-            <Image className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Image upload modal */}
-      {showImgModal && (
-        <ProgImageUploadModal
-          onUpload={onImageUploaded}
-          onClose={() => setShowImgModal(false)}
-        />
-      )}
-
-      {/* Blocks */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, border: `1.5px solid ${hasError ? 'var(--lms-danger)' : 'transparent'}`, borderRadius: hasError ? 8 : 0 }}>
-        {blocks.map((b) => {
-          if (b.type === 'text') return (
-            <textarea
-              key={b.id}
-              ref={blocks.indexOf(b) === 0 ? (titleRef as any) : undefined}
-              value={(b as any).value}
-              onChange={e => updateBlock(b.id, { value: e.target.value } as any)}
-              disabled={disabled}
-              placeholder="Enter a clear, descriptive question title…"
-              rows={1}
-              style={{
-                fontFamily: 'var(--lms-font)', fontSize: 15, fontWeight: 500,
-                color: 'var(--lms-text-main)',
-                background: 'transparent', border: 'none',
-                borderBottom: `2px solid ${disabled ? 'var(--lms-border)' : 'var(--lms-text-main)'}`,
-                borderRadius: 0, outline: 'none', width: '100%', padding: '4px 0',
-                opacity: disabled ? 0.6 : 1, cursor: disabled ? 'not-allowed' : 'text',
-                resize: 'none', overflow: 'hidden', lineHeight: 1.4, boxSizing: 'border-box',
-              }}
-              onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }}
-            />
-          );
-          if (b.type === 'image') return (
-            <ProgImageBlock key={b.id} block={b as any} onUpdate={patch => updateBlock(b.id, patch)} onRemove={() => removeBlock(b.id)} disabled={disabled} />
-          );
-          if (b.type === 'code') return (
-            <ProgCodeBlockMCQ key={b.id} block={b as any} onUpdate={patch => updateBlock(b.id, patch)} onRemove={() => removeBlock(b.id)} disabled={disabled} />
-          );
-          return null;
-        })}
-      </div>
-    </div>
-  );
-};
-
-// ─── PROGRAMMING MOCK MODAL ───────────────────────────────────────────────────
-
-const PISTON_API_URL_MOCK = process.env.NEXT_PUBLIC_PISTON_URL || "https://emkc.org/api/v2/piston/execute";
-
-const getPistonLangMock = (lang: string): { language: string; version: string } => {
-  const map: Record<string, { language: string; version: string }> = {
-    javascript: { language: 'javascript', version: '18.15.0' },
-    python: { language: 'python', version: '3.10.0' },
-    java: { language: 'java', version: '15.0.2' },
-    cpp: { language: 'cpp', version: '10.2.0' },
-    c: { language: 'c', version: '10.2.0' },
-    csharp: { language: 'csharp', version: '6.12.0' },
-    typescript: { language: 'typescript', version: '5.0.3' },
-  };
-  return map[lang.toLowerCase()] || { language: 'javascript', version: '18.15.0' };
-};
-
-interface ConsoleLine {
-  id: string;
-  type: 'output' | 'error' | 'input' | 'system';
-  text: string;
-}
-
-const ProgrammingMockModal: React.FC<{
-  questions: FlowQuestion[];
-  selectedLanguages: string[];
-  onClose: () => void;
-  exerciseIsGraded?: boolean;
-}> = ({ questions, selectedLanguages, onClose, exerciseIsGraded = true }) => {
-  const [idx, setIdx] = useState(0);
-  const [code, setCode] = useState('');
-  const [lang, setLang] = useState(selectedLanguages[0]?.toLowerCase() || 'python');
-  const [consoleLines, setConsoleLines] = useState<ConsoleLine[]>([]);
-  const [consoleInput, setConsoleInput] = useState('');
-  const [waitingForInput, setWaitingForInput] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
-  const [pyodideReady, setPyodideReady] = useState(false);
-  const pyodideRef = useRef<any>(null);
-  const codeRef = useRef<HTMLTextAreaElement>(null);
-  const consoleEndRef = useRef<HTMLDivElement>(null);
-  const consoleInputRef = useRef<HTMLInputElement>(null);
-  const inputResolverRef = useRef<((v: string) => void) | null>(null);
-
-  const q = questions[idx];
-
-  const qTitleBlocks: ProgContentBlock[] = [{ id: 'title-text', type: 'text', value: typeof q?.title === 'string' ? q.title : 'Untitled' }];
-
-  const descBlocks: ProgContentBlock[] = q?.description && ((q.description as any).contentBlocks || (q.description as any).blocks)
-    ? ((q.description as any).contentBlocks || (q.description as any).blocks)
-    : [{ id: 'desc-text', type: 'text', value: typeof q?.description === 'object' ? (q?.description as any)?.text || '' : q?.description || '' }];
-
-  const sampleTcs = q?.testCases?.filter((t: any) => t.isSample && (t.input?.trim() || t.expectedOutput?.trim())) || [];
-  const hasConstraints = q?.constraints?.filter((c: string) => c.trim()).length > 0;
-  const hasDescription = descBlocks.some(b => b.type !== 'text' || (b as any).value?.trim());
-
-  useEffect(() => {
-    if (lang === 'python' && !pyodideReady && !pyodideRef.current) {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js';
-      script.onload = async () => {
-        try {
-          const pyodide = await (window as any).loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.23.4/full/' });
-          pyodideRef.current = pyodide;
-          setPyodideReady(true);
-        } catch (e) { console.warn('Pyodide load error:', e); }
-      };
-      document.head.appendChild(script);
-    }
-  }, [lang]);
-
-  useEffect(() => { consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [consoleLines]);
-  useEffect(() => { if (waitingForInput) consoleInputRef.current?.focus(); }, [waitingForInput]);
-
-  useEffect(() => {
-    setCode('');
-    setConsoleLines([]);
-    setWaitingForInput(false);
-    setIsRunning(false);
-    inputResolverRef.current = null;
-    if (lang === 'python') setConsoleInput('');
-  }, [idx, lang]);
-
-  const mkLineId = () => `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const appendLine = (type: ConsoleLine['type'], text: string) => {
-    setConsoleLines(prev => [...prev, { id: mkLineId(), type, text }]);
-  };
-  const streamText = async (text: string, type: 'output' | 'error' = 'output') => {
-    if (!text) return;
-    const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i] !== '' || i < lines.length - 1) {
-        appendLine(type, lines[i]);
-        await new Promise(r => setTimeout(r, 35));
-      }
-    }
-  };
-  const submitInput = () => {
-    if (!waitingForInput || !inputResolverRef.current) return;
-    const val = consoleInput;
-    appendLine('input', val);
-    setConsoleInput('');
-    setWaitingForInput(false);
-    const resolve = inputResolverRef.current;
-    inputResolverRef.current = null;
-    resolve(val);
-  };
-
-  const executeCode = async () => {
-    if (!code.trim()) { appendLine('system', '⚠ Please write some code first.'); return; }
-    setConsoleLines([{ id: mkLineId(), type: 'system', text: `▶ Running ${lang}…` }]);
-    setIsRunning(true);
-    setWaitingForInput(false);
-    inputResolverRef.current = null;
-    try {
-      if (lang === 'python') {
-        if (!pyodideReady || !pyodideRef.current) {
-          appendLine('system', '⌛ Python runtime loading… Please wait and try again.');
-          setIsRunning(false);
-          return;
-        }
-        pyodideRef.current.setStdin({
-          readline: () => new Promise<string>(resolve => {
-            setWaitingForInput(true);
-            inputResolverRef.current = (val: string) => resolve(val + '\n');
-          })
-        });
-        const outLines: string[] = [];
-        const errLines: string[] = [];
-        pyodideRef.current.setStdout({ batched: (s: string) => { outLines.push(s); } });
-        pyodideRef.current.setStderr({ batched: (s: string) => { errLines.push(s); } });
-        try {
-          const runPromise = pyodideRef.current.runPythonAsync(code);
-          const flushInterval = setInterval(() => {
-            if (outLines.length > 0) {
-              const pending = outLines.splice(0);
-              pending.forEach(s => {
-                s.split('\n').forEach((line, i, arr) => {
-                  if (line !== '' || i < arr.length - 1) {
-                    setConsoleLines(prev => [...prev, { id: mkLineId(), type: 'output', text: line }]);
-                  }
-                });
-              });
-            }
-          }, 50);
-          await runPromise;
-          clearInterval(flushInterval);
-          const remaining = outLines.splice(0);
-          for (const s of remaining) await streamText(s, 'output');
-          for (const s of errLines) await streamText(s, 'error');
-          appendLine('system', '✓ Process finished (exit 0)');
-        } catch (e: any) {
-          const remaining = outLines.splice(0);
-          for (const s of remaining) await streamText(s, 'output');
-          await streamText(e.message || String(e), 'error');
-          appendLine('system', '✗ Process exited with error');
-        }
-      } else {
-        const stdinVal = consoleInput;
-        const pistonLang = getPistonLangMock(lang);
-        const resp = await fetch(PISTON_API_URL_MOCK, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            language: pistonLang.language, version: pistonLang.version,
-            files: [{ name: 'main', content: code }],
-            stdin: stdinVal, args: [],
-            compile_timeout: 10000, run_timeout: 8000,
-            compile_memory_limit: -1, run_memory_limit: -1,
-          }),
-        });
-        const data = await resp.json();
-        if (data.run) {
-          const out = (data.run.output || '').trim();
-          const err = (data.run.stderr || '').trim();
-          if (out) await streamText(out, 'output');
-          if (err) await streamText(err, 'error');
-          if (!out && !err) appendLine('system', '(no output)');
-          appendLine('system', `✓ Process finished (exit ${data.run.code ?? 0})`);
-        } else {
-          appendLine('error', 'Execution failed — unexpected API response');
-        }
-      }
-    } catch (e: any) {
-      appendLine('error', `Network error: ${e.message}`);
-    } finally {
-      setIsRunning(false);
-      setWaitingForInput(false);
-      inputResolverRef.current = null;
-    }
-  };
-
-  const diffStyle = DS[q?.difficulty] || DS.medium;
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 300, display: 'flex', flexDirection: 'column',
-      background: '#f5f5f5', overflow: 'hidden', fontFamily: 'var(--lms-font)'
-    }}>
-
-      {/* ── TOP NAV ── */}
-      <div style={{
-        flexShrink: 0, height: 44, borderBottom: '1px solid #e5e5e5', display: 'flex',
-        alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', background: '#ffffff'
-      }}>
-        {/* Left: logo + title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 26, height: 26, borderRadius: 6, background: 'var(--lms-orange)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-          }}>
-            <Code size={13} style={{ color: 'white' }} />
-          </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#333', fontFamily: 'var(--lms-font)', letterSpacing: 0.2 }}>
-            Mock Preview
-          </span>
-        </div>
-
-        {/* Center: question pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          {questions.map((qItem, i) => {
-            const ds = DS[qItem.difficulty] || DS.medium;
-            const isActive = i === idx;
-            return (
-              <button key={i} onClick={() => setIdx(i)}
-                style={{
-                  height: 26, minWidth: 26, padding: '0 8px', borderRadius: 6,
-                  border: `1.5px solid ${isActive ? ds.border : '#e5e5e5'}`,
-                  background: isActive ? ds.bg : '#f8f8f8',
-                  color: isActive ? ds.text : '#666',
-                  fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                  fontFamily: 'var(--lms-font)', transition: 'all 0.15s',
-                  display: 'flex', alignItems: 'center', gap: 4,
-                }}>
-                {i + 1}
-                {qItem.difficulty && <span style={{ fontSize: 9, opacity: 0.8, textTransform: 'capitalize' }}>{qItem.difficulty[0]}</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right: lang select + close */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <select value={lang} onChange={e => setLang(e.target.value)}
-            style={{
-              fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 600,
-              border: '1px solid #e5e5e5', borderRadius: 6, padding: '4px 8px',
-              background: '#ffffff', color: '#333', cursor: 'pointer', outline: 'none'
-            }}>
-            {selectedLanguages.length > 0
-              ? selectedLanguages.map(l => <option key={l} value={l.toLowerCase()}>{l}</option>)
-              : ['Python', 'JavaScript', 'Java', 'C++'].map(l => <option key={l} value={l.toLowerCase()}>{l}</option>)}
-          </select>
-          <button onClick={onClose}
-            style={{
-              width: 28, height: 28, borderRadius: 6, border: '1px solid #e5e5e5',
-              background: '#f8f8f8', color: '#666', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s'
-            }}>
-            <X size={13} />
-          </button>
-        </div>
-      </div>
-
-      {/* ── BODY ── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-
-        {/* ── LEFT: Problem Panel ── */}
-        <div style={{
-          width: '42%', flexShrink: 0, borderRight: '1px solid #e5e5e5',
-          display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#ffffff'
-        }}>
-
-          {/* Panel content — all in one like LeetCode */}
-          <div className="lms-sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '24px 20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-
-              {/* Title row */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 600, color: '#999' }}>
-                    {idx + 1} / {questions.length}
-                  </span>
-                  {q?.difficulty && (
-                    <span style={{ ...diffStyle.pill, fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, textTransform: 'capitalize' }}>
-                      {q.difficulty}
-                    </span>
-                  )}
-                  {exerciseIsGraded && q?.score > 0 && (
-                    <span style={{ fontSize: 10, color: '#999', fontFamily: 'var(--lms-font)' }}>
-                      {q.score} pts
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {qTitleBlocks.map((b, bi) => {
-                    if (b.type === 'text' && (b as any).value?.trim()) return (
-                      <h2 key={bi} dangerouslySetInnerHTML={{ __html: (b as any).value }} style={{ fontFamily: 'var(--lms-font)', fontSize: 20, fontWeight: 800, color: '#1a1a2e', lineHeight: 1.3, margin: 0 }} />
-                    );
-                    if (b.type === 'image') return (
-                      <div key={bi} style={{ display: 'flex', justifyContent: (b as any).alignment === 'right' ? 'flex-end' : (b as any).alignment === 'center' ? 'center' : 'flex-start' }}>
-                        <img src={(b as any).url} alt="" style={{ width: `${(b as any).sizePercent || 60}%`, borderRadius: 8, border: '1px solid #e5e5e5' }} />
-                      </div>
-                    );
-                    if (b.type === 'code') {
-                      const isDk = ['#1e1e1e', '#282a36', '#272822'].includes((b as any).bgColor);
-                      return <pre key={bi} style={{ background: (b as any).bgColor || '#f5f5f5', color: isDk ? '#d4d4d4' : '#1a1a2e', fontFamily: 'ui-monospace,monospace', fontSize: 12, padding: '10px 14px', borderRadius: 8, margin: 0, overflowX: 'auto' }}>{(b as any).value}</pre>;
-                    }
-                    return null;
-                  })}
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{ height: 1, background: '#e5e5e5' }} />
-
-              {/* Description blocks */}
-              {hasDescription && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {descBlocks.map((b, bi) => {
-                    if (b.type === 'text') {
-                      const val = (b as any).value?.trim();
-                      if (!val) return null;
-                      return <p key={bi} style={{ fontFamily: 'var(--lms-font)', fontSize: 13.5, lineHeight: 1.8, color: '#4a4a4a', margin: 0, whiteSpace: 'pre-wrap' }}>{val}</p>;
-                    }
-                    if (b.type === 'image') return (
-                      <div key={bi} style={{ display: 'flex', justifyContent: (b as any).alignment === 'left' ? 'flex-start' : (b as any).alignment === 'right' ? 'flex-end' : 'center' }}>
-                        <img src={(b as any).url} alt="" style={{ width: `${(b as any).sizePercent || 70}%`, borderRadius: 8, border: '1px solid #e5e5e5' }} />
-                      </div>
-                    );
-                    if (b.type === 'code') {
-                      const isDark = ['#1e1e1e', '#282a36', '#272822'].includes((b as any).bgColor);
-                      return <pre key={bi} style={{ background: (b as any).bgColor || '#f5f5f5', color: isDark ? '#d4d4d4' : '#1a1a2e', fontFamily: 'ui-monospace,monospace', fontSize: 12.5, padding: '14px 16px', borderRadius: 10, overflowX: 'auto', margin: 0, lineHeight: 1.6 }}>{(b as any).value}</pre>;
-                    }
-                    return null;
-                  })}
-                </div>
-              )}
-
-              {/* Examples */}
-              {sampleTcs.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {sampleTcs.map((tc: any, ti: number) => (
-                    <div key={ti}>
-                      <p style={{ fontFamily: 'var(--lms-font)', fontSize: 13, fontWeight: 700, color: '#1a1a2e', marginBottom: 10 }}>
-                        Example {ti + 1}
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {tc.input?.trim() && (
-                          <div style={{ background: '#f8f8f8', borderRadius: 8, padding: '10px 14px', border: '1px solid #e5e5e5' }}>
-                            <p style={{ fontFamily: 'var(--lms-font)', fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Input</p>
-                            <pre style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12.5, color: '#1a1a2e', margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{tc.input}</pre>
-                          </div>
-                        )}
-                        {tc.expectedOutput?.trim() && (
-                          <div style={{ background: '#f8f8f8', borderRadius: 8, padding: '10px 14px', border: '1px solid #e5e5e5' }}>
-                            <p style={{ fontFamily: 'var(--lms-font)', fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Output</p>
-                            <pre style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12.5, color: '#1a1a2e', margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{tc.expectedOutput}</pre>
-                          </div>
-                        )}
-                        {tc.explanation?.trim() && (
-                          <div style={{ padding: '8px 12px', borderLeft: '3px solid #e5e5e5', background: '#fafafa', borderRadius: '0 6px 6px 0' }}>
-                            <p style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: '#666', margin: 0, lineHeight: 1.6 }}>
-                              <strong style={{ color: '#333' }}>Explanation: </strong>{tc.explanation}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Constraints */}
-              {hasConstraints && (
-                <div>
-                  <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                    Constraints
-                  </p>
-                  <ul style={{ paddingLeft: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6, listStyle: 'none' }}>
-                    {q.constraints.filter((c: string) => c.trim()).map((c: string, ci: number) => (
-                      <li key={ci} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        <span style={{ color: 'var(--lms-orange)', fontSize: 12, marginTop: 1, flexShrink: 0 }}>•</span>
-                        <code style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12.5, color: '#3a3a52', lineHeight: 1.6 }}>{c}</code>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-            </div>
-          </div>
-        </div>
-
-        {/* ── RIGHT: Editor + Console ── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fefefe' }}>
-
-          {/* Editor toolbar */}
-          <div style={{
-            flexShrink: 0, padding: '0 14px', height: 40, borderBottom: '1px solid #e5e5e5',
-            display: 'flex', alignItems: 'center', gap: 8, background: '#ffffff'
-          }}>
-            <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11, color: '#999' }}>
-              solution.{lang === 'python' ? 'py' : lang === 'javascript' ? 'js' : lang === 'java' ? 'java' : lang === 'cpp' ? 'cpp' : lang}
-            </span>
-            {lang === 'python' && !pyodideReady && (
-              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10, color: '#d97706', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Loader2 size={10} className="animate-spin" /> Loading runtime…
-              </span>
-            )}
-            {lang === 'python' && pyodideReady && (
-              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10, color: '#16a34a', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} /> Ready
-              </span>
-            )}
-            <button onClick={executeCode} disabled={isRunning}
-              style={{
-                marginLeft: lang === 'python' ? 8 : 'auto',
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '5px 14px', borderRadius: 6, border: 'none',
-                background: isRunning ? '#e5e5e5' : 'var(--lms-orange)',
-                color: isRunning ? '#999' : 'white',
-                fontFamily: 'var(--lms-font)', fontSize: 11.5, fontWeight: 700,
-                cursor: isRunning ? 'not-allowed' : 'pointer', transition: 'all 0.15s',
-              }}>
-              {isRunning ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
-              {isRunning ? 'Running…' : 'Run'}
-            </button>
-          </div>
-
-          {/* Code editor */}
-          <textarea
-            ref={codeRef}
-            value={code}
-            onChange={e => setCode(e.target.value)}
-            placeholder={`// Write your ${lang} solution here…`}
-            style={{
-              flex: 1, background: '#fefefe', border: 'none', outline: 'none',
-              color: '#1a1a2e', fontFamily: 'ui-monospace, "Courier New", monospace',
-              fontSize: 13.5, lineHeight: 1.7, padding: '16px 18px',
-              resize: 'none', boxSizing: 'border-box', tabSize: 2,
-              borderBottom: '1px solid #e5e5e5',
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Tab') {
-                e.preventDefault();
-                const start = e.currentTarget.selectionStart;
-                const end = e.currentTarget.selectionEnd;
-                const val = e.currentTarget.value;
-                setCode(val.substring(0, start) + '  ' + val.substring(end));
-                setTimeout(() => { if (codeRef.current) { codeRef.current.selectionStart = codeRef.current.selectionEnd = start + 2; } }, 0);
-              }
-            }}
-          />
-
-          {/* Console */}
-          <div style={{ flexShrink: 0, height: 220, display: 'flex', flexDirection: 'column', background: '#fafafa' }}>
-            <div style={{
-              flexShrink: 0, padding: '0 14px', height: 34, borderBottom: '1px solid #e5e5e5',
-              display: 'flex', alignItems: 'center', gap: 8
-            }}>
-              <div style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: isRunning ? '#16a34a' : waitingForInput ? '#d97706' : '#ccc',
-                transition: 'background 0.2s'
-              }} />
-              <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 10.5, fontWeight: 600, color: '#999' }}>
-                {waitingForInput ? 'stdin' : isRunning ? 'running' : 'console'}
-              </span>
-              {lang !== 'python' && !isRunning && (
-                <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10, color: '#ccc' }}>· provide stdin below then run</span>
-              )}
-              {consoleLines.length > 0 && (
-                <button onClick={() => setConsoleLines([])}
-                  style={{
-                    marginLeft: 'auto', fontFamily: 'var(--lms-font)', fontSize: 10,
-                    color: '#999', background: 'none', border: 'none',
-                    cursor: 'pointer', padding: '2px 6px', borderRadius: 4, transition: 'color 0.15s'
-                  }}>
-                  clear
-                </button>
-              )}
-            </div>
-
-            <div style={{
-              flex: 1, overflowY: 'auto', padding: '8px 14px',
-              fontFamily: 'ui-monospace, monospace', fontSize: 12,
-              lineHeight: 1.7, scrollbarWidth: 'thin'
-            }}>
-              {consoleLines.length === 0 && !isRunning && (
-                <span style={{ color: '#ccc', fontStyle: 'italic', fontSize: 11 }}>
-                  {lang !== 'python' ? 'Provide stdin below, then run…' : 'Run your code to see output here…'}
-                </span>
-              )}
-              {consoleLines.map(line => (
-                <div key={line.id} style={{
-                  color: line.type === 'error' ? '#dc2626' : line.type === 'input' ? '#FB923C' : line.type === 'system' ? '#999' : '#1a1a2e',
-                  display: 'flex', alignItems: 'flex-start', gap: 6,
-                }}>
-                  <span style={{ flexShrink: 0, opacity: 0.6, fontSize: 10, marginTop: 2 }}>
-                    {line.type === 'input' ? '›' : line.type === 'error' ? '✗' : line.type === 'system' ? '#' : '$'}
-                  </span>
-                  <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line.text || '\u00A0'}</span>
-                </div>
-              ))}
-              <div ref={consoleEndRef} />
-            </div>
-
-            {/* Input area */}
-            {lang === 'python' ? (
-              <div style={{
-                flexShrink: 0, borderTop: `1px solid ${waitingForInput ? '#FB923C' : '#e5e5e5'}`,
-                background: waitingForInput ? '#FFF7ED' : '#fafafa',
-                padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.15s'
-              }}>
-                <span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12, fontWeight: 700, color: waitingForInput ? '#FB923C' : '#ccc', flexShrink: 0 }}>›</span>
-                <input
-                  ref={consoleInputRef}
-                  value={consoleInput}
-                  onChange={e => setConsoleInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') submitInput(); }}
-                  placeholder={waitingForInput ? 'Type input and press Enter…' : 'Waiting for input()…'}
-                  disabled={!waitingForInput}
-                  style={{
-                    flex: 1, fontFamily: 'ui-monospace,monospace', fontSize: 12,
-                    background: 'transparent', border: 'none', outline: 'none',
-                    color: '#1a1a2e', opacity: waitingForInput ? 1 : 0.3
-                  }}
-                />
-                {waitingForInput && (
-                  <button onClick={submitInput}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                      padding: '3px 10px', borderRadius: 5, border: '1px solid #FB923C',
-                      background: '#FB923C', color: 'white', fontFamily: 'var(--lms-font)',
-                      fontSize: 11, fontWeight: 600, cursor: 'pointer'
-                    }}>
-                    Enter ↵
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div style={{ flexShrink: 0, borderTop: '1px solid #e5e5e5', background: '#fafafa', padding: '6px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ fontFamily: 'var(--lms-font)', fontSize: 9, fontWeight: 700, color: '#ccc', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Stdin</span>
-                <textarea
-                  value={consoleInput}
-                  onChange={e => setConsoleInput(e.target.value)}
-                  placeholder={'5\n3\nhello\n...'}
-                  rows={2}
-                  disabled={isRunning}
-                  style={{
-                    width: '100%', fontFamily: 'ui-monospace,monospace', fontSize: 11.5,
-                    background: '#ffffff', border: '1px solid #e5e5e5', borderRadius: 5,
-                    outline: 'none', color: '#1a1a2e', padding: '5px 8px',
-                    resize: 'none', boxSizing: 'border-box', opacity: isRunning ? 0.4 : 1
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── FOOTER ── */}
-      <div style={{
-        flexShrink: 0, borderTop: '1px solid #e5e5e5', padding: '8px 16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff'
-      }}>
-        <button onClick={() => { if (idx > 0) setIdx(idx - 1); }} disabled={idx === 0}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 12px',
-            borderRadius: 6, border: '1px solid #e5e5e5', background: '#f8f8f8',
-            color: idx === 0 ? '#ccc' : '#666', fontSize: 11, fontWeight: 600,
-            cursor: idx === 0 ? 'not-allowed' : 'pointer', fontFamily: 'var(--lms-font)', transition: 'all 0.15s'
-          }}>
-          <ChevronLeft size={12} /> Prev
-        </button>
-        <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: '#999' }}>
-          <span style={{ color: 'var(--lms-orange)', fontWeight: 700 }}>{idx + 1}</span>
-          <span style={{ margin: '0 4px' }}>/</span>
-          {questions.length}
-        </span>
-        {idx < questions.length - 1 ? (
-          <button onClick={() => setIdx(idx + 1)}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 12px',
-              borderRadius: 6, border: '1px solid #e5e5e5', background: '#f8f8f8',
-              color: '#666', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-              fontFamily: 'var(--lms-font)', transition: 'all 0.15s'
-            }}>
-            Next <ChevronRight size={12} />
-          </button>
-        ) : (
-          <button onClick={onClose}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 14px',
-              borderRadius: 6, border: 'none', background: 'var(--lms-orange)',
-              color: 'white', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'var(--lms-font)'
-            }}>
-            <Check size={12} /> Done
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ─── BREADCRUMB ───────────────────────────────────────────────────────────────
-
-const capFirst = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-
-const QuestionFormBreadcrumb: React.FC<{
-  hierarchyData: any; tabType?: string; subcategory?: string; subcategoryLabel?: string;
-  exerciseName?: string; actionLabel: string; questionLabel: string;
-}> = ({ hierarchyData, exerciseName, actionLabel, questionLabel }) => {
-  const Sep = () => <li><span className="lms-breadcrumb-sep">»</span></li>;
-
-  return (
-    <nav style={{ fontFamily: 'var(--lms-font)' }}>
-      <ol className="flex items-center flex-wrap gap-y-0.5">
-        {hierarchyData?.courseName && (
-          <><li><span className="lms-crumb" data-tip="Course" style={{ color: 'var(--lms-text-sec)' }}>{capFirst(hierarchyData.courseName)}</span></li><Sep /></>
-        )}
-        {exerciseName && (
-          <><li><span className="lms-crumb" data-tip="Exercise" style={{ color: 'var(--lms-text-main)', verticalAlign: 'bottom' }}><span style={{ maxWidth: 140, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{capFirst(exerciseName)}</span></span></li><Sep /></>
-        )}
-        <li>
-          <span style={{ fontFamily: 'var(--lms-font)', fontSize: 12.5, fontWeight: 700, color: 'var(--lms-text-main)' }}>
-            {capFirst(actionLabel)}
-            {questionLabel && questionLabel !== actionLabel && (
-              <span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--lms-text-muted)', fontFamily: 'var(--lms-font)' }}>· {questionLabel}</span>
-            )}
-          </span>
-        </li>
-      </ol>
-    </nav>
-  );
-};
-
-// ─── MODALS ───────────────────────────────────────────────────────────────────
-
-const CloseConfirmDialog: React.FC<{
-  hasUnsavedChanges: boolean; hasSavedQuestions: boolean;
-  onConfirm: () => void; onCancel: () => void;
-}> = ({ hasUnsavedChanges, hasSavedQuestions, onConfirm, onCancel }) => (
-  <div className="lms-modal-backdrop">
-    <div className="lms-modal">
-      <div className="lms-modal-header" style={{ background: hasUnsavedChanges ? 'var(--lms-warning-bg)' : 'var(--lms-bg-surface)' }}>
-        <div className="lms-modal-icon" style={{ background: hasUnsavedChanges ? 'var(--lms-warning-bg)' : 'var(--lms-bg-surface2)', border: `1.5px solid ${hasUnsavedChanges ? 'var(--lms-warning-bdr)' : 'var(--lms-border)'}` }}>
-          <X size={16} style={{ color: hasUnsavedChanges ? 'var(--lms-warning)' : 'var(--lms-text-sec)' }} />
-        </div>
-        <div>
-          <h2 style={{ fontFamily: 'var(--lms-font)', fontSize: 14, fontWeight: 700, color: 'var(--lms-text-main)' }}>
-            {hasUnsavedChanges ? 'Unsaved Changes' : 'Close Form?'}
-          </h2>
-          <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', marginTop: 2 }}>
-            {hasUnsavedChanges ? 'You have unsaved changes' : 'Are you sure you want to close?'}
-          </p>
-        </div>
-      </div>
-      <div className="lms-modal-body">
-        <p style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-text-sec)', lineHeight: 1.6 }}>
-          {hasUnsavedChanges
-            ? <><span>The current question has </span><strong style={{ color: 'var(--lms-warning)' }}>unsaved changes</strong><span> that will be lost if you close now.</span>{hasSavedQuestions && <span style={{ display: 'block', marginTop: 8, color: 'var(--lms-text-muted)' }}>Previously saved questions will remain intact.</span>}</>
-            : hasSavedQuestions ? <>Are you sure you want to close? Your saved questions will remain intact.</>
-              : <>Are you sure you want to close this form? No questions have been saved yet.</>
-          }
-        </p>
-        {hasUnsavedChanges && (
-          <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', background: 'var(--lms-warning-bg)', border: '1.5px solid var(--lms-warning-bdr)', borderRadius: 'var(--lms-radius-md)' }}>
-            <AlertTriangle size={12} style={{ color: 'var(--lms-warning)', marginTop: 2, flexShrink: 0 }} />
-            <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-warning)' }}>
-              Tip: Click <strong>Cancel</strong> to go back and save your changes first.
-            </p>
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button onClick={onCancel} className="lms-cancel-btn" style={{ flex: 1 }}>Keep Editing</button>
-          <button onClick={onConfirm} className="lms-btn lms-btn-orange" style={{ flex: 1, justifyContent: 'center', background: hasUnsavedChanges ? 'var(--lms-warning)' : 'var(--lms-text-main)', boxShadow: 'none', borderColor: 'transparent' }}>
-            <X size={13} />{hasUnsavedChanges ? 'Discard & Close' : 'Yes, Close'}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-const EditExerciseConfirmDialog: React.FC<{
-  exerciseName?: string; onConfirm: () => void; onCancel: () => void;
-}> = ({ exerciseName, onConfirm, onCancel }) => (
-  <div className="lms-modal-backdrop">
-    <div className="lms-modal">
-      <div className="lms-modal-header" style={{ background: 'var(--lms-orange-50)', borderBottom: '1.5px solid var(--lms-orange-100)' }}>
-        <div className="lms-modal-icon" style={{ background: 'var(--lms-orange-100)', border: '1.5px solid var(--lms-orange-100)' }}>
-          <Settings size={16} style={{ color: 'var(--lms-orange)' }} />
-        </div>
-        <div>
-          <h2 style={{ fontFamily: 'var(--lms-font)', fontSize: 14, fontWeight: 700, color: 'var(--lms-text-main)' }}>Edit Exercise Settings?</h2>
-          <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', marginTop: 2 }}>This will close the question form</p>
-        </div>
-      </div>
-      <div className="lms-modal-body">
-        <p style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-text-sec)', lineHeight: 1.6 }}>
-          Do you want to edit the settings for <strong style={{ color: 'var(--lms-text-main)' }}>"{exerciseName || 'this exercise'}"</strong>?
-          <span style={{ display: 'block', marginTop: 8, color: 'var(--lms-text-muted)' }}>The question form will be closed and you'll be taken to the exercise settings. Any unsaved question changes will be lost.</span>
-        </p>
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button onClick={onCancel} className="lms-cancel-btn" style={{ flex: 1 }}>Cancel</button>
-          <button onClick={onConfirm} className="lms-btn lms-btn-ghost-orange" style={{ flex: 1, justifyContent: 'center' }}>
-            <Settings size={13} /> Yes, Edit Exercise
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-const DiffSwitchDialog: React.FC<{
-  fromDiff: Diff; toDiff: Diff; remainingInTo: number; onConfirm: (d: Diff) => void; onCancel: () => void;
-}> = ({ fromDiff, toDiff, remainingInTo, onConfirm, onCancel }) => {
-  const toDS = DS[toDiff]; const fromDS = DS[fromDiff];
-  return (
-    <div className="lms-modal-backdrop">
-      <div className="lms-modal">
-        <div className="lms-modal-header">
-          <div className="lms-modal-icon" style={{ background: 'var(--lms-info-bg)', border: '1.5px solid var(--lms-info-bdr)' }}>
-            <ArrowLeftRight size={16} style={{ color: 'var(--lms-info)' }} />
-          </div>
-          <div>
-            <h2 style={{ fontFamily: 'var(--lms-font)', fontSize: 14, fontWeight: 700, color: 'var(--lms-text-main)' }}>Switch Difficulty?</h2>
-            <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', marginTop: 2 }}>You're about to change the active difficulty</p>
-          </div>
-        </div>
-        <div className="lms-modal-body">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 'var(--lms-radius-md)', background: fromDS.bg, border: `1.5px solid ${fromDS.border}` }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: fromDS.dot, flexShrink: 0 }} />
-              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 700, color: fromDS.text, textTransform: 'capitalize' }}>{fromDiff}</span>
-              <span style={{ fontSize: 10, color: 'var(--lms-text-muted)', marginLeft: 'auto' }}>Current</span>
-            </div>
-            <ArrowRight size={14} style={{ color: 'var(--lms-text-hint)', flexShrink: 0 }} />
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 'var(--lms-radius-md)', background: toDS.bg, border: `2px solid ${toDS.border}` }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: toDS.dot, flexShrink: 0 }} />
-              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 700, color: toDS.text, textTransform: 'capitalize' }}>{toDiff}</span>
-            </div>
-          </div>
-          <div style={{ padding: '10px 12px', background: 'var(--lms-bg-surface)', border: '1.5px solid var(--lms-border)', borderRadius: 'var(--lms-radius-md)' }}>
-            <p style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-text-sec)', lineHeight: 1.6 }}>
-              Switching to <strong style={{ color: toDS.text, textTransform: 'capitalize' }}>{toDiff}</strong>{' '}
-              {remainingInTo > 0
-                ? <>will start adding questions for that difficulty. <span style={{ display: 'block', marginTop: 4, color: 'var(--lms-text-muted)' }}>{remainingInTo} Question{remainingInTo !== 1 ? 's' : ''} remaining.</span></>
-                : <>will take you to existing <strong style={{ color: toDS.text, textTransform: 'capitalize' }}>{toDiff}</strong> questions to review or update.</>
-              }
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button onClick={() => onCancel()} className="lms-cancel-btn" style={{ flex: 1 }}>Cancel</button>
-            <button onClick={() => onConfirm(toDiff)} className="lms-btn" style={{ flex: 1, justifyContent: 'center', ...toDS.solid, border: 'none', boxShadow: 'none' }}>
-              <Check size={13} /> Switch to <span style={{ textTransform: 'capitalize', marginLeft: 2 }}>{toDiff}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const DeleteConfirmDialog: React.FC<{
-  questionTitle: string; onConfirm: () => void; onCancel: () => void;
-}> = ({ questionTitle, onConfirm, onCancel }) => (
-  <div className="lms-modal-backdrop">
-    <div className="lms-modal">
-      <div className="lms-modal-header" style={{ background: 'var(--lms-danger-bg)', borderBottom: '1.5px solid var(--lms-danger-bdr)' }}>
-        <div className="lms-modal-icon" style={{ background: 'var(--lms-danger-bg)', border: '1.5px solid var(--lms-danger-bdr)' }}>
-          <AlertTriangle size={16} style={{ color: 'var(--lms-danger)' }} />
-        </div>
-        <div>
-          <h2 style={{ fontFamily: 'var(--lms-font)', fontSize: 14, fontWeight: 700, color: 'var(--lms-text-main)' }}>Delete Question?</h2>
-          <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', marginTop: 2 }}>This action cannot be undone</p>
-        </div>
-      </div>
-      <div className="lms-modal-body">
-        <p style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-text-sec)', lineHeight: 1.6, marginBottom: 4 }}>
-          Are you sure you want to delete <strong style={{ color: 'var(--lms-text-main)' }}>"{questionTitle || 'this question'}"</strong>?
-        </p>
-        <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)', fontWeight: 600 }}>This will permanently remove it.</p>
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button onClick={onCancel} className="lms-cancel-btn" style={{ flex: 1 }}>Cancel</button>
-          <button onClick={onConfirm} className="lms-btn" style={{ flex: 1, justifyContent: 'center', background: 'var(--lms-danger)', color: 'white', border: 'none', boxShadow: 'none' }}>
-            <Trash2 size={13} /> Yes, Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-const DifficultyPopup: React.FC<{
-  completedDiff: Diff; availableNext: { diff: Diff; remaining: number }[];
-  onSelect: (d: Diff) => void; onClose: () => void;
-}> = ({ completedDiff, availableNext, onSelect, onClose }) => {
-  const s = DS[completedDiff];
-  return (
-    <div className="lms-modal-backdrop">
-      <div className="lms-modal" style={{ maxWidth: 440 }}>
-        <div className="lms-modal-header" style={{ background: s.bg, borderBottom: `1.5px solid ${s.border}` }}>
-          <div className="lms-modal-icon" style={{ ...s.solid }}>
-            <CheckCircle2 size={18} style={{ color: 'white' }} />
-          </div>
-          <div>
-            <h2 style={{ fontFamily: 'var(--lms-font)', fontSize: 15, fontWeight: 700, color: s.text, textTransform: 'capitalize' }}>
-              {completedDiff} Questions Complete! 🎉
-            </h2>
-            <p style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', marginTop: 2 }}>All slots for this difficulty are filled.</p>
-          </div>
-        </div>
-        <div className="lms-modal-body">
-          {availableNext.length > 0 ? (
-            <>
-              <p style={{ fontFamily: 'var(--lms-font)', fontSize: 13, fontWeight: 600, color: 'var(--lms-text-main)', marginBottom: 10 }}>Choose next difficulty to continue:</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {availableNext.map(({ diff, remaining }) => {
-                  const ds = DS[diff];
-                  return (
-                    <button key={diff} onClick={() => onSelect(diff)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 'var(--lms-radius-md)', border: `2px solid ${ds.border}`, background: ds.bg, cursor: 'pointer', fontFamily: 'var(--lms-font)', transition: 'all 0.15s' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: ds.dot }} />
-                        <span style={{ fontFamily: 'var(--lms-font)', fontSize: 13, fontWeight: 700, color: ds.text, textTransform: 'capitalize' }}>{diff}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ ...ds.pill, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20 }}>{remaining} remaining</span>
-                        <ChevronRight size={13} style={{ color: ds.text }} />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '16px 0' }}>
-              <Sparkles size={28} style={{ color: 'var(--lms-success)', margin: '0 auto 8px' }} />
-              <p style={{ fontFamily: 'var(--lms-font)', fontSize: 14, fontWeight: 700, color: 'var(--lms-text-main)' }}>All difficulties complete!</p>
-              <p style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-text-muted)', marginTop: 4 }}>All question slots have been filled.</p>
-            </div>
-          )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button onClick={onClose} className="lms-cancel-btn">{availableNext.length === 0 ? 'Close' : 'Cancel'}</button>
-            {availableNext.length === 0 && (
-              <button onClick={onClose} className="lms-btn lms-btn-orange">
-                <Check size={13} /> Done
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ─── PREVIEW MODAL ─────────────────────────────────────────────────────────────
-
-const PreviewModal: React.FC<{
-  questions: FlowQuestion[]; currentIndex: number; isGeneral: boolean; exerciseData: any;
-  onJump: (idx: number) => void; onDelete: (localId: string) => void;
-  onClose: () => void; onDone: () => void;
-  hierarchyData: any; tabType: string; subcategory?: string; subcategoryLabel?: string;
-  exerciseName: string; actionLabel: string; questionLabel: string;
-  currentDiff: Diff; score: number; generalMPQ: number;
-  totalSlots: number; createdCount: number; remainingSlots: number;
-  isScoreEditable: (d: Diff) => boolean; getFixedScore: (d: Diff) => number;
-  getConfiguredDiffs: () => Diff[]; getRemainingSlots: (d?: Diff, withFlow?: FlowQuestion[]) => number;
-  getDbQuestionsForDiff: (d?: Diff) => any[]; getQuotaForDiff: (d: Diff) => number;
-  getCreatedCount: (d?: Diff) => number;
-  getTotalMarksForDiff: (d: Diff) => number; usedMarks: number;
-  onDiffRowClick: (d: Diff) => void; cfgType: string;
-  totalMarksAll: number; usedMarksAll: number; displayScore: number;
-  remainingMarks: number; totalMarksForDiff: number;
-  totalSlotsAll: number; createdCountAll: number; remainingSlotsAll: number;
-}> = ({
-  questions, currentIndex, isGeneral, exerciseData,
-  onJump, onDelete, onClose, onDone,
-  hierarchyData, tabType, subcategory, subcategoryLabel,
-  exerciseName, actionLabel, questionLabel,
-  currentDiff, score, generalMPQ, totalSlots, createdCount, remainingSlots,
-  isScoreEditable, getFixedScore,
-  cfgType, getConfiguredDiffs, getRemainingSlots, getQuotaForDiff,
-  getCreatedCount, getTotalMarksForDiff, usedMarks,
-  totalMarksAll, usedMarksAll, displayScore, remainingMarks, totalMarksForDiff,
-  totalSlotsAll, createdCountAll, remainingSlotsAll,
-}) => {
-    const [expandedSet, setExpandedSet] = useState<Set<number>>(new Set());
-    const [deleteTarget, setDeleteTarget] = useState<{ localId: string; title: string } | null>(null);
-    const [filterDiff, setFilterDiff] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
-    const [sidebarTab, setSidebarTab] = useState<'details' | 'overview' | null>(null);
-
-    const s = DS[currentDiff] || DS.medium;
-    const subIsSelectionLevel = cfgType === 'selectionLevel';
-    const subExerciseIsGraded = !subIsSelectionLevel && (exerciseData?.fullExerciseData?.isGraded !== false);
-
-    // Get unique difficulties present in saved questions
-    const savedQuestions = questions.filter(q => !!(q._id || q.isSaved || q.isPreExisting));
-    const availableDiffs = (['easy', 'medium', 'hard'] as const).filter(d =>
-      savedQuestions.some(q => q.difficulty === d)
-    );
-
-    // Apply filter + group by difficulty. When filter is "all" and the exercise
-    // is level-based (not General), display Easy → Medium → Hard so a card
-    // added later still surfaces with its siblings — otherwise a bank pick or
-    // manual add that happens after a different-difficulty entry sits in
-    // insertion order (e.g. E1, E2, M1, E3) instead of grouped (E1, E2, E3, M1).
-    // Insertion order is preserved WITHIN each difficulty via Array#sort's
-    // stability guarantee. General mode keeps insertion order since it has no
-    // meaningful difficulty grouping.
-    const DIFF_ORDER: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
-    const filteredSavedQuestions = savedQuestions
-      .filter(q => filterDiff === 'all' ? true : q.difficulty === filterDiff)
-      .slice()
-      .sort((a, b) => {
-        if (isGeneral || filterDiff !== 'all') return 0; // preserve incoming order
-        const ai = DIFF_ORDER[a.difficulty ?? 'medium'] ?? 1;
-        const bi = DIFF_ORDER[b.difficulty ?? 'medium'] ?? 1;
-        return ai - bi;
-      });
-
-    return (
-      <>
-        {/* Exercise Details Modal */}
-        {sidebarTab === 'details' && (
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,15,30,0.45)', backdropFilter: 'blur(2px)' }}
-            onClick={e => { if (e.target === e.currentTarget) setSidebarTab(null as any); }}>
-            <div style={{ background: 'var(--lms-bg-white)', borderRadius: 'var(--lms-radius-lg)', boxShadow: '0 20px 56px rgba(0,0,0,0.20)', width: 360, maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div style={{ padding: '13px 16px', borderBottom: '1.5px solid var(--lms-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--lms-bg-surface)', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <FileText size={14} style={{ color: 'var(--lms-text-sec)' }} />
-                  <span style={{ fontFamily: 'var(--lms-font)', fontSize: 13, fontWeight: 700, color: 'var(--lms-text-main)' }}>Exercise Details</span>
-                </div>
-                <button type="button" onClick={() => setSidebarTab(null as any)}
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--lms-text-muted)', display: 'flex', padding: 4, borderRadius: 6 }}>
-                  <X size={15} />
-                </button>
-              </div>
-              <div className="lms-sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-                {exerciseData?.fullExerciseData?.exerciseInformation?.exerciseId && (
-                  <div className="lms-detail-row" style={{ padding: '8px 16px' }}>
-                    <span className="lms-detail-label">Exercise ID</span>
-                    <span className="lms-detail-value" style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--lms-violet)', fontSize: 11 }}>
-                      {exerciseData.fullExerciseData.exerciseInformation.exerciseId}
-                    </span>
-                  </div>
-                )}
-                <div className="lms-detail-row" style={{ padding: '8px 16px' }}>
-                  <span className="lms-detail-label">Exercise Name</span>
-                  <span className="lms-detail-value" style={{ color: 'var(--lms-orange)', fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {exerciseName || 'Untitled'}
-                  </span>
-                </div>
-                <div className="lms-detail-row" style={{ padding: '8px 16px' }}>
-                  <span className="lms-detail-label">Exercise Type</span>
-                  <span className="lms-detail-value" style={{ fontSize: 11, textTransform: 'capitalize' }}>
-                    {exerciseData?.fullExerciseData?.exerciseType || 'programming'}
-                  </span>
-                </div>
-                <div className="lms-detail-row" style={{ padding: '8px 16px' }}>
-                  <span className="lms-detail-label">Configuration</span>
-                  <span className="lms-detail-value" style={{ fontSize: 11 }}>
-                    {isGeneral ? 'General' : cfgType === 'levelBased' ? 'Level Based' : 'Selection Level'}
-                  </span>
-                </div>
-                <div className="lms-detail-row" style={{ padding: '8px 16px' }}>
-                  <span className="lms-detail-label">Assessment Type</span>
-                  <span className="lms-detail-value" style={{ fontSize: 11, fontWeight: 700, color: subExerciseIsGraded ? 'var(--lms-success)' : 'var(--lms-warning)' }}>
-                    {subExerciseIsGraded ? 'Graded' : 'Non-Graded'}
-                  </span>
-                </div>
-                {(exerciseData?.fullExerciseData?.exerciseInformation?.totalDuration || exerciseData?.fullExerciseData?.exerciseInformation?.duration) && (
-                  <div className="lms-detail-row" style={{ padding: '8px 16px' }}>
-                    <span className="lms-detail-label">Duration</span>
-                    <span className="lms-detail-value" style={{ fontSize: 11 }}>
-                      {exerciseData?.fullExerciseData?.exerciseInformation?.totalDuration || exerciseData?.fullExerciseData?.exerciseInformation?.duration} mins
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div style={{ padding: '10px 16px', borderTop: '1.5px solid var(--lms-border)', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
-                <button type="button" onClick={() => setSidebarTab(null as any)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 16px', borderRadius: 'var(--lms-radius-md)', fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 600, border: '1.5px solid var(--lms-border)', background: 'var(--lms-bg-surface)', color: 'var(--lms-text-sec)', cursor: 'pointer' }}>
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Exercise Overview Modal */}
-        {sidebarTab === 'overview' && (() => {
-          const configuredDiffs = getConfiguredDiffs();
-          return (
-            <div
-              style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,15,30,0.45)', backdropFilter: 'blur(2px)' }}
-              onClick={e => { if (e.target === e.currentTarget) setSidebarTab(null as any); }}>
-              <div style={{ background: 'var(--lms-bg-white)', borderRadius: 'var(--lms-radius-lg)', boxShadow: '0 20px 56px rgba(0,0,0,0.20)', width: 400, maxHeight: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <div style={{ padding: '13px 16px', borderBottom: '1.5px solid var(--lms-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--lms-info-bg)', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <BarChart3 size={14} style={{ color: 'var(--lms-info)' }} />
-                    <span style={{ fontFamily: 'var(--lms-font)', fontSize: 13, fontWeight: 700, color: 'var(--lms-text-main)' }}>Exercise Overview</span>
-                  </div>
-                  <button type="button" onClick={() => setSidebarTab(null as any)}
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--lms-text-muted)', display: 'flex', padding: 4, borderRadius: 6 }}>
-                    <X size={15} />
-                  </button>
-                </div>
-                <div className="lms-sidebar-scroll" style={{ flex: 1, overflowY: 'auto' }}>
-                  {/* Overall Questions */}
-                  <div style={{ padding: '12px 16px', borderBottom: '1.5px solid var(--lms-border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                      <Hash size={12} style={{ color: 'var(--lms-orange)' }} />
-                      <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 700, color: 'var(--lms-orange)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Overall Questions</span>
-                    </div>
-                    <div className="lms-marks-row">
-                      <span className="lms-marks-label">Total Questions</span>
-                      <span className="lms-marks-value" style={{ color: 'var(--lms-text-main)', fontSize: 12 }}>{totalSlotsAll}</span>
-                    </div>
-                    <div className="lms-marks-row">
-                      <span className="lms-marks-label">Created</span>
-                      <span className="lms-marks-value" style={{ color: 'var(--lms-violet)', fontSize: 12 }}>
-                        {createdCountAll}<span style={{ color: 'var(--lms-text-hint)', fontWeight: 400, fontSize: 10 }}>/{totalSlotsAll}</span>
-                      </span>
-                    </div>
-                    <div className="lms-marks-row">
-                      <span className="lms-marks-label">Remaining Marks</span>
-                      <span className="lms-marks-value" style={{ color: remainingSlotsAll === 0 ? 'var(--lms-success)' : 'var(--lms-warning)', fontSize: 12 }}>{remainingSlotsAll}</span>
-                    </div>
-                    {totalSlotsAll > 0 && (
-                      <div className="lms-progress-bar" style={{ marginTop: 8 }}>
-                        <div className="lms-progress-fill" style={{ width: `${Math.min(100, (createdCountAll / totalSlotsAll) * 100)}%`, background: remainingSlotsAll === 0 ? 'var(--lms-success)' : 'var(--lms-orange)' }} />
-                      </div>
-                    )}
-                    {/* {!isGeneral && configuredDiffs.length > 0 && (
-                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 0 }}>
-                        {configuredDiffs.map(d => {
-                          const quota = getQuotaForDiff(d);
-                          const created = getCreatedCount(d);
-                          const rem = quota - created;
-                          const diffColor = d === 'easy' ? 'var(--lms-success)' : d === 'medium' ? 'var(--lms-warning)' : 'var(--lms-danger)';
-                          return (
-                            <div key={d} className="lms-marks-row" style={{ paddingLeft: 8, borderLeft: `2px solid ${diffColor}`, marginBottom: 2 }}>
-                              <span className="lms-marks-label" style={{ textTransform: 'capitalize', color: diffColor }}>{d}</span>
-                              <span className="lms-marks-value" style={{ fontSize: 11 }}>
-                                <span style={{ color: 'var(--lms-violet)' }}>{created}</span>
-                                <span style={{ color: 'var(--lms-text-hint)', fontWeight: 400 }}>/{quota}</span>
-                                <span style={{ color: rem <= 0 ? 'var(--lms-success)' : 'var(--lms-text-muted)', fontSize: 10, marginLeft: 6, fontWeight: 500 }}>
-                                  {rem <= 0 ? '✓' : `${rem} left`}
-                                </span>
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )} */}
-                  </div>
-                  {/* Overall Marks */}
-                  {subExerciseIsGraded && totalMarksAll > 0 && (
-                    <div style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                        <Award size={12} style={{ color: 'var(--lms-violet)' }} />
-                        <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 700, color: 'var(--lms-violet)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Overall Marks</span>
-                      </div>
-                      <div className="lms-marks-row">
-                        <span className="lms-marks-label">Total Marks</span>
-                        <span className="lms-marks-value" style={{ color: 'var(--lms-violet)', fontSize: 12 }}>{totalMarksAll}</span>
-                      </div>
-                      <div className="lms-marks-row">
-                        <span className="lms-marks-label">Marks Used</span>
-                        <span className="lms-marks-value" style={{ color: 'var(--lms-warning)', fontSize: 12 }}>
-                          {fmtMark(usedMarksAll)}<span style={{ color: 'var(--lms-text-hint)', fontWeight: 400, fontSize: 10 }}>/{totalMarksAll}</span>
-                        </span>
-                      </div>
-                      <div className="lms-marks-row">
-                        <span className="lms-marks-label">Remaining Marks</span>
-                        <span className="lms-marks-value" style={{ color: (totalMarksAll - usedMarksAll) <= 0 ? 'var(--lms-success)' : 'var(--lms-text-main)', fontSize: 12 }}>
-                          {fmtMark(Math.max(0, totalMarksAll - usedMarksAll))}
-                        </span>
-                      </div>
-                      {totalMarksAll > 0 && (
-                        <div className="lms-progress-bar" style={{ marginTop: 8 }}>
-                          <div className="lms-progress-fill" style={{ width: `${Math.min(100, (usedMarksAll / totalMarksAll) * 100)}%`, background: usedMarksAll >= totalMarksAll ? 'var(--lms-success)' : 'var(--lms-orange)' }} />
-                        </div>
-                      )}
-                      {configuredDiffs.length > 0 && (
-                        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 0 }}>
-                          {configuredDiffs.filter(d => d === currentDiff).map(d => {
-                            const levelMarks = getTotalMarksForDiff(d);
-                            const usedD = savedQuestions.filter(q => q.difficulty === d).reduce((acc, q) => acc + (q.score || 0), 0);
-                            const perQ = getFixedScore(d);
-                            const diffColor = d === 'easy' ? 'var(--lms-success)' : d === 'medium' ? 'var(--lms-warning)' : 'var(--lms-danger)';
-                            return (
-                              <div key={d} className="lms-marks-row" style={{ paddingLeft: 8, borderLeft: `2px solid ${diffColor}`, marginBottom: 2 }}>
-                                <span className="lms-marks-label" style={{ textTransform: 'capitalize', color: diffColor }}>{d}</span>
-                                <span className="lms-marks-value" style={{ fontSize: 11 }}>
-                                  <span style={{ color: 'var(--lms-warning)' }}>{fmtMark(usedD)}</span>
-                                  <span style={{ color: 'var(--lms-text-hint)', fontWeight: 400 }}>/{levelMarks || '?'}</span>
-                                  {perQ > 0 && <span style={{ color: 'var(--lms-text-muted)', fontSize: 10, marginLeft: 6, fontWeight: 500 }}>{perQ} mark per question</span>}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div style={{ padding: '10px 16px', borderTop: '1.5px solid var(--lms-border)', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
-                  <button type="button" onClick={() => setSidebarTab(null as any)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 16px', borderRadius: 'var(--lms-radius-md)', fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 600, border: '1.5px solid var(--lms-border)', background: 'var(--lms-bg-surface)', color: 'var(--lms-text-sec)', cursor: 'pointer' }}>
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,26,46,0.5)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 150, padding: 12 }}>
-          <div style={{ width: '96vw', maxWidth: 1400, height: '96vh', display: 'flex', flexDirection: 'column', background: 'var(--lms-bg-white)', borderRadius: 'var(--lms-radius-lg)', border: '1.5px solid var(--lms-border)', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
-
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1.5px solid var(--lms-border)', background: 'var(--lms-bg-white)', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'var(--lms-violet)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Eye size={16} style={{ color: 'white' }} />
-                </div>
-                <div style={{ width: 1, height: 20, background: 'var(--lms-border)', flexShrink: 0 }} />
-                <QuestionFormBreadcrumb hierarchyData={hierarchyData} tabType={tabType} subcategory={subcategory} subcategoryLabel={subcategoryLabel} exerciseName={exerciseName} actionLabel="Preview" questionLabel={questionLabel} />
-              </div>
-
-              {/* Right side: filter + count + close */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 16 }}>
-                {/* Question count pill */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, background: 'var(--lms-bg-surface)', border: '1.5px solid var(--lms-border)' }}>
-                  <Hash size={11} style={{ color: 'var(--lms-text-hint)' }} />
-                  <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, fontWeight: 700, color: 'var(--lms-text-main)' }}>
-                    {filteredSavedQuestions.length}{filterDiff !== 'all' ? `/${savedQuestions.length}` : ''} question{savedQuestions.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                {/* Difficulty filter — always visible for level-based */}
-                {!isGeneral && (
-                  <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-                    <select
-                      value={filterDiff}
-                      onChange={e => setFilterDiff(e.target.value as any)}
-                      style={{
-                        fontFamily: 'var(--lms-font)',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        border: `1.5px solid ${filterDiff !== 'all' ? (DS[filterDiff]?.border || 'var(--lms-border)') : 'var(--lms-border)'}`,
-                        borderRadius: 20,
-                        padding: '5px 28px 5px 12px',
-                        cursor: 'pointer',
-                        outline: 'none',
-                        background: filterDiff !== 'all' ? (DS[filterDiff]?.bg || 'var(--lms-bg-surface)') : 'var(--lms-bg-surface)',
-                        color: filterDiff !== 'all' ? (DS[filterDiff]?.text || 'var(--lms-text-sec)') : 'var(--lms-text-sec)',
-                        appearance: 'none',
-                        WebkitAppearance: 'none',
-                        minWidth: 140,
-                      }}
-                    >
-                      <option value="all">All difficulties</option>
-                      {(['easy', 'medium', 'hard'] as const).map(d => (
-                        <option key={d} value={d}>
-                          {d.charAt(0).toUpperCase() + d.slice(1)} ({savedQuestions.filter(q => q.difficulty === d).length})
-                        </option>
-                      ))}
-                    </select>
-                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8"
-                      style={{ position: 'absolute', right: 9, pointerEvents: 'none', width: 11, height: 11, color: filterDiff !== 'all' ? DS[filterDiff]?.text : 'var(--lms-text-sec)' }}>
-                      <path d="M2 4l4 4 4-4" />
-                    </svg>
-                  </div>
-                )}
-
-                {/* Close */}
-                <button onClick={onClose} style={{ padding: 8, borderRadius: 8, border: '1.5px solid var(--lms-danger-bdr)', background: 'var(--lms-danger-bg)', cursor: 'pointer' }}>
-                  <X size={15} style={{ color: 'var(--lms-danger)' }} />
-                </button>
-              </div>
-            </div>
-
-            {/* Preview banner */}
-            <div style={{ padding: '5px 20px', background: 'var(--lms-info-bg)', borderBottom: '1.5px solid var(--lms-info-bdr)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <Eye size={11} style={{ color: 'var(--lms-info)' }} />
-              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10.5, fontWeight: 700, color: 'var(--lms-info)', letterSpacing: 0.4, textTransform: 'uppercase' }}>Preview</span>
-              {filterDiff !== 'all' && (
-                <span style={{ ...DS[filterDiff]?.pill, fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 20, textTransform: 'capitalize', marginLeft: 4 }}>
-                  Filtered: {filterDiff}
-                </span>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-
-              {/* Questions list */}
-              <div className="lms-sidebar-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {(() => {
-                  if (filteredSavedQuestions.length === 0) return (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--lms-text-hint)', gap: 12, paddingTop: 60 }}>
-                      <Eye size={40} style={{ opacity: 0.15 }} />
-                      <p style={{ fontFamily: 'var(--lms-font)', fontSize: 14, fontWeight: 600 }}>
-                        {filterDiff !== 'all' ? `No ${filterDiff} questions saved yet` : 'No saved questions yet'}
-                      </p>
-                      {filterDiff !== 'all' && (
-                        <button onClick={() => setFilterDiff('all')}
-                          style={{ fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 600, color: 'var(--lms-violet)', background: 'var(--lms-violet-bg)', border: '1.5px solid var(--lms-violet-bdr)', borderRadius: 20, padding: '4px 14px', cursor: 'pointer' }}>
-                          Show all difficulties
-                        </button>
-                      )}
-                    </div>
-                  );
-
-                  return filteredSavedQuestions.map((q, filteredIdx) => {
-                    const originalIdx = questions.findIndex(x => x.__localId === q.__localId);
-                    const ds = DS[q.difficulty] || DS.medium;
-                    const isActive = originalIdx === currentIndex;
-                    const isExpanded = expandedSet.has(filteredIdx);
-                    const titleText = Array.isArray(q.title) ? getTitleText(q.title as any) || 'Untitled' : (q.title as string) || 'Untitled';
-                    const qNum = (() => {
-                      if (isGeneral) return filteredIdx + 1;
-                      const sameD = filteredSavedQuestions.filter(x => x.difficulty === q.difficulty);
-                      return sameD.findIndex(x => x.__localId === q.__localId) + 1;
-                    })();
-
-                    const tBlocks: any[] = [{ type: 'text', value: titleText }];
-                    const dBlocks: any[] = Array.isArray(q.description) && (q.description as any[]).length > 0
-                      ? (q.description as any[])
-                      : (() => { const dObj: any = typeof q.description === 'object' && !Array.isArray(q.description) ? q.description : { text: '' }; return dObj?.contentBlocks || (dObj?.text?.trim() ? [{ type: 'text', value: dObj.text }] : []); })();
-                    const hasRichTitle = tBlocks.some((b: any) => b.type === 'image' || b.type === 'code');
-                    const hasDesc = dBlocks.some((b: any) => b.type !== 'text' || b.value?.trim());
-
-                    const renderBlock = (b: any, bi: number) => {
-                      if (b.type === 'text' && b.value?.trim())
-                        return <p key={bi} style={{ fontFamily: 'var(--lms-font)', fontSize: 12.5, fontWeight: 400, color: 'var(--lms-text-main)', margin: 0, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{b.value}</p>;
-                      if (b.type === 'image')
-                        return (
-                          <div key={bi} style={{ display: 'flex', justifyContent: b.alignment === 'right' ? 'flex-end' : b.alignment === 'center' ? 'center' : 'flex-start' }}>
-                            <img src={b.url} alt="" style={{ width: `${b.sizePercent || 70}%`, maxWidth: '100%', borderRadius: 6, border: '1px solid var(--lms-border)' }} />
-                          </div>
-                        );
-                      if (b.type === 'code') {
-                        const isDk = ['#1e1e1e', '#282a36', '#272822'].includes(b.bgColor);
-                        return <pre key={bi} style={{ background: b.bgColor || '#f5f5f5', color: isDk ? '#d4d4d4' : '#1a1a2e', fontFamily: 'ui-monospace,monospace', fontSize: 11.5, padding: '10px 14px', borderRadius: 8, margin: 0, overflowX: 'auto', lineHeight: 1.6 }}>{b.value}</pre>;
-                      }
-                      return null;
-                    };
-
-                    return (
-                      <div key={q.__localId} style={{
-                        border: isActive ? `2px solid var(--lms-orange)` : '1.5px solid var(--lms-border)',
-                        borderRadius: 12,
-                        boxShadow: isActive ? '0 0 0 3px var(--lms-orange-light)' : '0 1px 4px rgba(0,0,0,0.05)',
-                        transition: 'border-color 0.15s, box-shadow 0.15s',
-                        flexShrink: 0,
-                        overflow: 'visible',
-                      }}>
-                        <div style={{ padding: '12px 14px', background: isActive ? 'var(--lms-orange-50)' : 'var(--lms-bg-white)', borderRadius: isExpanded ? '10px 10px 0 0' : 10 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{
-                              width: 30, height: 30, borderRadius: 9, fontSize: 12, fontWeight: 800,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                              fontFamily: 'var(--lms-font)',
-                              background: isActive ? 'var(--lms-orange)' : ds.bg,
-                              color: isActive ? 'white' : ds.text,
-                              border: `2px solid ${isActive ? 'transparent' : ds.border}`,
-                            }}>{qNum}</span>
-                            <p style={{ flex: 1, minWidth: 0, fontFamily: 'var(--lms-font)', fontSize: 13.5, fontWeight: 700, color: 'var(--lms-text-main)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titleText}</p>
-                            {q._id && (
-                              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 9, fontWeight: 700, color: 'var(--lms-success)', background: 'var(--lms-success-bg)', border: '1px solid var(--lms-success-bdr)', padding: '2px 7px', borderRadius: 20, flexShrink: 0 }}>SAVED</span>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                            {!isGeneral && (
-                              <span style={{ ...ds.pill, fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 20, textTransform: 'capitalize' as const, flexShrink: 0 }}>{q.difficulty}</span>
-                            )}
-                            {subExerciseIsGraded && (
-                              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', flexShrink: 0 }}>{q.score} marks</span>
-                            )}
-                            {subExerciseIsGraded && <span style={{ color: 'var(--lms-border)', fontSize: 11, flexShrink: 0 }}>·</span>}
-                            <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', flexShrink: 0 }}>{q.testCases?.length || 0} test case{(q.testCases?.length || 0) !== 1 ? 's' : ''}</span>
-                            {q.isSaved && !q.isDirty && <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10, color: 'var(--lms-success)', fontWeight: 600, flexShrink: 0 }}>✓ Saved</span>}
-                            {q.isDirty && <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10, color: 'var(--lms-warning)', fontWeight: 600, flexShrink: 0 }}>✎ Modified</span>}
-                            <div style={{ flex: 1 }} />
-                            <button onClick={() => { onJump(originalIdx); onClose(); }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--lms-warning-bg)', color: 'var(--lms-warning)', fontSize: 11, fontWeight: 700, border: '1.5px solid var(--lms-warning-bdr)', borderRadius: 7, cursor: 'pointer', fontFamily: 'var(--lms-font)', flexShrink: 0 }}>
-                              <Edit2 size={11} /> Edit
-                            </button>
-                            <button onClick={() => setDeleteTarget({ localId: q.__localId, title: titleText })}
-                              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--lms-danger-bg)', color: 'var(--lms-danger)', fontSize: 11, fontWeight: 700, border: '1.5px solid var(--lms-danger-bdr)', borderRadius: 7, cursor: 'pointer', fontFamily: 'var(--lms-font)', flexShrink: 0 }}>
-                              <Trash2 size={11} /> Delete
-                            </button>
-                            <button onClick={() => setExpandedSet(prev => { const n = new Set(prev); n.has(filteredIdx) ? n.delete(filteredIdx) : n.add(filteredIdx); return n; })}
-                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: `1.5px solid ${isExpanded ? 'var(--lms-violet-bdr)' : 'var(--lms-border)'}`, background: isExpanded ? 'var(--lms-violet-bg)' : 'var(--lms-bg-surface)', cursor: 'pointer', color: isExpanded ? 'var(--lms-violet)' : 'var(--lms-text-muted)', flexShrink: 0, transition: 'all 0.15s' }}>
-                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            </button>
-                          </div>
-                        </div>
-
-                        {isExpanded && (
-                          <div style={{ borderTop: '1.5px solid var(--lms-border)', borderRadius: '0 0 10px 10px', padding: '10px 16px', display: 'flex', flexDirection: 'column' }}>
-                            {hasRichTitle && (
-                              <div>
-                                <p className="lms-section-label">Problem Title</p>
-                                <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--lms-bg-white)', padding: '0px 12px', borderRadius: 8, border: '1.5px solid var(--lms-border)' }}>
-                                  {tBlocks.map(renderBlock)}
-                                </div>
-                              </div>
-                            )}
-                            {hasDesc && (
-                              <div>
-                                <p className="lms-section-label" style={{ marginBottom: 6 }}>Description</p>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--lms-bg-white)', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--lms-border)' }}>
-                                  {dBlocks.map(renderBlock)}
-                                </div>
-                              </div>
-                            )}
-                            {(q.testCases?.length || 0) > 0 && (
-                              <div>
-                                <p className="lms-section-label mt-5">Test Cases ({q.testCases.length})</p>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                  {q.testCases.map((tc: any, ti: number) => (
-                                    <div key={ti} style={{ background: 'var(--lms-bg-white)', borderRadius: 8, border: '1.5px solid var(--lms-border)', overflow: 'hidden' }}>
-                                      <div style={{ padding: '6px 10px', background: ti === 0 ? 'var(--lms-orange-50)' : 'var(--lms-bg-surface)', borderBottom: '1px solid var(--lms-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10.5, fontWeight: 700, color: ti === 0 ? '#c85a30' : 'var(--lms-text-sec)' }}>
-                                          Test Case {ti + 1}{ti === 0 ? ' · Sample' : ''}
-                                        </span>
-                                        {tc.isHidden && <span style={{ fontFamily: 'var(--lms-font)', fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'var(--lms-bg-surface2)', color: 'var(--lms-text-muted)' }}>Hidden</span>}
-                                      </div>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-                                        <div style={{ padding: '8px 12px', borderRight: '1px solid var(--lms-border)' }}>
-                                          <span style={{ fontFamily: 'var(--lms-font)', fontSize: 9.5, fontWeight: 700, color: 'var(--lms-text-hint)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Input</span>
-                                          <code style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--lms-text-main)', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{tc.input || <span style={{ color: 'var(--lms-text-hint)', fontStyle: 'italic' }}>empty</span>}</code>
-                                        </div>
-                                        <div style={{ padding: '8px 12px' }}>
-                                          <span style={{ fontFamily: 'var(--lms-font)', fontSize: 9.5, fontWeight: 700, color: 'var(--lms-text-hint)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Expected Output</span>
-                                          <code style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--lms-text-main)', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{tc.expectedOutput || <span style={{ color: 'var(--lms-text-hint)', fontStyle: 'italic' }}>empty</span>}</code>
-                                        </div>
-                                      </div>
-                                      {tc.explanation && (
-                                        <div style={{ padding: '6px 12px', borderTop: '1px solid var(--lms-border)', background: 'var(--lms-bg-surface)' }}>
-                                          <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)' }}>{tc.explanation}</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {(q.constraints?.filter((c: string) => c?.trim()).length || 0) > 0 && (
-                              <div>
-                                <p className="lms-section-label mt-5">Constraints</p>
-                                <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  {q.constraints.filter((c: string) => c?.trim()).map((c: string, ci: number) => (
-                                    <li key={ci} style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-text-main)' }}>{c}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-
-              {/* Right Sidebar */}
-              <div style={{ width: 280, flexShrink: 0, borderLeft: '1.5px solid var(--lms-border)', background: 'var(--lms-bg-white)', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-
-                {/* Two action buttons */}
-                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1.5px solid var(--lms-border)', flexShrink: 0, background: 'var(--lms-bg-surface)' }}>
-                  <button
-                    onClick={() => setSidebarTab('details')}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      width: '100%', padding: '10px 14px', borderRadius: 'var(--lms-radius-md)',
-                      fontFamily: 'var(--lms-font)', fontSize: 12.5, fontWeight: 600,
-                      border: '1.5px solid var(--lms-border)',
-                      background: 'var(--lms-bg-white)', color: 'var(--lms-text-sec)',
-                      cursor: 'pointer', transition: 'all 0.15s', textAlign: 'left',
-                    }}
-                    onMouseEnter={e => { const b = e.currentTarget; b.style.borderColor = 'var(--lms-orange)'; b.style.background = 'var(--lms-orange-50)'; b.style.color = '#c85a30'; }}
-                    onMouseLeave={e => { const b = e.currentTarget; b.style.borderColor = 'var(--lms-border)'; b.style.background = 'var(--lms-bg-white)'; b.style.color = 'var(--lms-text-sec)'; }}
-                  >
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--lms-orange-50)', border: '1.5px solid var(--lms-orange-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <FileText size={14} style={{ color: 'var(--lms-orange)' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: 'var(--lms-font)', fontSize: 12.5, fontWeight: 700, color: 'inherit' }}>Exercise Details</div>
-                      <div style={{ fontFamily: 'var(--lms-font)', fontSize: 10.5, color: 'var(--lms-text-muted)', marginTop: 1 }}>ID, type, config, duration</div>
-                    </div>
-                    <ChevronRight size={13} style={{ color: 'var(--lms-text-hint)', flexShrink: 0 }} />
-                  </button>
-
-                  <button
-                    onClick={() => setSidebarTab('overview')}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      width: '100%', padding: '10px 14px', borderRadius: 'var(--lms-radius-md)',
-                      fontFamily: 'var(--lms-font)', fontSize: 12.5, fontWeight: 600,
-                      border: '1.5px solid var(--lms-border)',
-                      background: 'var(--lms-bg-white)', color: 'var(--lms-text-sec)',
-                      cursor: 'pointer', transition: 'all 0.15s', textAlign: 'left',
-                    }}
-                    onMouseEnter={e => { const b = e.currentTarget; b.style.borderColor = 'var(--lms-info-bdr)'; b.style.background = 'var(--lms-info-bg)'; b.style.color = 'var(--lms-info)'; }}
-                    onMouseLeave={e => { const b = e.currentTarget; b.style.borderColor = 'var(--lms-border)'; b.style.background = 'var(--lms-bg-white)'; b.style.color = 'var(--lms-text-sec)'; }}
-                  >
-                    <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--lms-info-bg)', border: '1.5px solid var(--lms-info-bdr)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <BarChart3 size={14} style={{ color: 'var(--lms-info)' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: 'var(--lms-font)', fontSize: 12.5, fontWeight: 700, color: 'inherit' }}>Exercise Overview</div>
-                      <div style={{ fontFamily: 'var(--lms-font)', fontSize: 10.5, color: 'var(--lms-text-muted)', marginTop: 1 }}>Quota, marks, progress</div>
-                    </div>
-                    <ChevronRight size={13} style={{ color: 'var(--lms-text-hint)', flexShrink: 0 }} />
-                  </button>
-                </div>
-
-                {/* Stats */}
-                <div className="lms-sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '14px 14px' }}>
-
-                  {(() => {
-                    const activeDiff = filterDiff === 'all' ? null : filterDiff as Diff;
-
-                    // Per-difficulty computed values
-                    const diffSlots = activeDiff ? getQuotaForDiff(activeDiff) : 0;
-                    const diffCreated = activeDiff ? getCreatedCount(activeDiff) : 0;
-                    const diffRemaining = activeDiff ? getRemainingSlots(activeDiff) : 0;
-                    const diffMarksTotal = activeDiff ? getTotalMarksForDiff(activeDiff) : 0;
-                    const diffMarksUsed = activeDiff ? savedQuestions.filter(q => q.difficulty === activeDiff).reduce((acc, q) => acc + (q.score || 0), 0) : 0;
-                    const diffMarksRemaining = Math.max(0, diffMarksTotal - diffMarksUsed);
-                    const diffFixedScore = activeDiff ? getFixedScore(activeDiff) : 0;
-                    const diffDS = activeDiff ? (DS[activeDiff] || DS.medium) : null;
-
-                    return (
-                      <>
-                        {/* ── Difficulty Questions (when a diff is selected) ── */}
-                        {activeDiff && (
-                          <div style={{ marginBottom: 14 }}>
-                            <div className="lms-sidebar-section-title" style={{ fontSize: 11 }}>
-                              <Hash size={12} style={{ color: diffDS.text }} />
-                              <span style={{ textTransform: 'capitalize', color: diffDS.text }}>{activeDiff} Questions</span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Total</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-text-main)', fontSize: 12 }}>{diffSlots}</span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Created</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-violet)', fontSize: 12 }}>
-                                {diffCreated}<span style={{ color: 'var(--lms-text-hint)', fontWeight: 400, fontSize: 10 }}>/{diffSlots}</span>
-                              </span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Remaining</span>
-                              <span className="lms-marks-value" style={{ color: diffRemaining === 0 ? 'var(--lms-success)' : 'var(--lms-warning)', fontSize: 12 }}>{diffRemaining}</span>
-                            </div>
-                            {diffSlots > 0 && (
-                              <div className="lms-progress-bar" style={{ marginTop: 6 }}>
-                                <div className="lms-progress-fill" style={{
-                                  width: `${Math.min(100, (diffCreated / diffSlots) * 100)}%`,
-                                  background: diffRemaining === 0 ? 'var(--lms-success)' : diffDS.bar
-                                }} />
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* ── Difficulty Marks (when a diff is selected + graded) ── */}
-                        {activeDiff && subExerciseIsGraded && diffMarksTotal > 0 && (
-                          <div style={{ borderTop: '1.5px solid var(--lms-border)', paddingTop: 14, marginBottom: 14 }}>
-                            <div className="lms-sidebar-section-title" style={{ fontSize: 11 }}>
-                              <Award size={12} style={{ color: diffDS.text }} />
-                              <span style={{ textTransform: 'capitalize', color: diffDS.text }}>{activeDiff} Marks</span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Total Mark</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-text-main)', fontSize: 12 }}>{diffMarksTotal}</span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Mark Per Question</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-orange)', fontSize: 12 }}>
-                                {diffFixedScore}
-                                {isScoreEditable(activeDiff)
-                                  ? <span className="lms-badge lms-badge-violet" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3 }}>Custom</span>
-                                  : <span className="lms-badge" style={{ fontSize: '9px', padding: '1px 5px', marginLeft: 3, background: 'var(--lms-bg-surface)', color: 'var(--lms-text-muted)', borderColor: 'var(--lms-border)' }}>Fixed</span>}
-                              </span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Used Marks</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-warning)', fontSize: 12 }}>
-                                {fmtMark(diffMarksUsed)}<span style={{ color: 'var(--lms-text-hint)', fontWeight: 400, fontSize: 10 }}>/{diffMarksTotal}</span>
-                              </span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Remaining Marks</span>
-                              <span className="lms-marks-value" style={{ color: diffMarksRemaining <= 0 ? 'var(--lms-success)' : 'var(--lms-violet)', fontSize: 12 }}>{fmtMark(diffMarksRemaining)}</span>
-                            </div>
-                            <div className="lms-progress-bar" style={{ marginTop: 6 }}>
-                              <div className="lms-progress-fill" style={{
-                                width: `${Math.min(100, (diffMarksUsed / diffMarksTotal) * 100)}%`,
-                                background: diffMarksUsed >= diffMarksTotal ? 'var(--lms-success)' : diffDS.bar
-                              }} />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* ── Overall Questions (always visible) ── */}
-                        <div style={{
-                          borderTop: activeDiff ? '1.5px solid var(--lms-border)' : 'none',
-                          paddingTop: activeDiff ? 14 : 0,
-                          marginBottom: 14
-                        }}>
-                          <div className="lms-sidebar-section-title" style={{ fontSize: 11 }}>
-                            <Hash size={12} style={{ color: 'var(--lms-orange)' }} />
-                            <span>Overall Questions</span>
-                          </div>
-                          <div className="lms-marks-row">
-                            <span className="lms-marks-label">Total Questions</span>
-                            <span className="lms-marks-value" style={{ color: 'var(--lms-text-main)', fontSize: 12 }}>{totalSlotsAll}</span>
-                          </div>
-                          <div className="lms-marks-row">
-                            <span className="lms-marks-label">Created</span>
-                            <span className="lms-marks-value" style={{ color: 'var(--lms-violet)', fontSize: 12 }}>
-                              {createdCountAll}<span style={{ color: 'var(--lms-text-hint)', fontWeight: 400, fontSize: 10 }}>/{totalSlotsAll}</span>
-                            </span>
-                          </div>
-                          <div className="lms-marks-row">
-                            <span className="lms-marks-label">Remaining</span>
-                            <span className="lms-marks-value" style={{ color: remainingSlotsAll === 0 ? 'var(--lms-success)' : 'var(--lms-warning)', fontSize: 12 }}>{remainingSlotsAll}</span>
-                          </div>
-                          {totalSlotsAll > 0 && (
-                            <div className="lms-progress-bar" style={{ marginTop: 6 }}>
-                              <div className="lms-progress-fill" style={{
-                                width: `${Math.min(100, (createdCountAll / totalSlotsAll) * 100)}%`,
-                                background: remainingSlotsAll === 0 ? 'var(--lms-success)' : 'var(--lms-orange)'
-                              }} />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* ── Overall Marks (always visible when graded) ── */}
-                        {subExerciseIsGraded && totalMarksAll > 0 && (
-                          <div style={{ borderTop: '1.5px solid var(--lms-border)', paddingTop: 14 }}>
-                            <div className="lms-sidebar-section-title" style={{ fontSize: 11 }}>
-                              <Award size={12} style={{ color: 'var(--lms-orange)' }} />
-                              <span>Overall Marks</span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Marks Per Question</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-orange)', fontSize: 12 }}>{isGeneral ? generalMPQ : displayScore}</span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Total Questions</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-text-main)', fontSize: 12 }}>{totalSlotsAll}</span>
-                            </div>
-                            <div className="lms-marks-row">
-                              <span className="lms-marks-label">Total Marks</span>
-                              <span className="lms-marks-value" style={{ color: 'var(--lms-violet)', fontSize: 12 }}>{totalMarksAll}</span>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div style={{ padding: '12px 20px', borderTop: '1.5px solid var(--lms-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'var(--lms-bg-white)' }}>
-              <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)' }}>
-                {questions.filter(q => q.isSaved).length} saved · {questions.filter(q => !q.isSaved).length} unsaved
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={onClose} className="lms-cancel-btn">Continue Editing</button>
-                <button onClick={onDone} className="lms-btn lms-btn-orange">
-                  <Check size={13} /> Done
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {deleteTarget && (
-          <DeleteConfirmDialog questionTitle={deleteTarget.title}
-            onConfirm={() => { onDelete(deleteTarget.localId); setDeleteTarget(null); }}
-            onCancel={() => setDeleteTarget(null)} />
-        )}
-      </>
-    );
-  };
-
-
-// ─── Move this OUTSIDE ProgrammingQuestionForm ────────────────────────────────
-
-const TitleEditor: React.FC<{
-  titleBlocks: ProgContentBlock[];
-  setTitleBlocks: (blocks: ProgContentBlock[]) => void;
-  isDisabled: boolean;
-  hasError: boolean;
-  setTouched: (fn: (prev: Set<string>) => Set<string>) => void;
-  titleRef?: React.RefObject<HTMLTextAreaElement | null>;
-}> = ({ titleBlocks, setTitleBlocks, isDisabled, hasError, setTouched }) => {
-  const divRef = useRef<HTMLDivElement>(null);
-  // Track the "source of truth" text so we can avoid re-setting
-  // the DOM while the user is actively typing (which resets cursor).
-  const lastSetText = useRef<string>('');
-
-  const textBlock = titleBlocks.find(b => b.type === 'text');
-  const currentText = textBlock ? (textBlock as any).value as string : '';
-
-  // Only push value into DOM when it changes from *outside*
-  // (e.g. question switch via loadQuestionIntoForm), not while typing.
-  useEffect(() => {
-    if (!divRef.current) return;
-    if (currentText !== lastSetText.current) {
-      divRef.current.innerHTML = currentText;
-      lastSetText.current = currentText;
-    }
-  }, [currentText]);
-
-  const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
-    const newText = e.currentTarget.innerHTML;
-    lastSetText.current = newText; // keep ref in sync so effect won't overwrite
-    if (textBlock) {
-      setTitleBlocks(
-        titleBlocks.map(b =>
-          b.id === textBlock.id
-            ? ({ ...b, value: newText } as ProgContentBlock)
-            : b
-        )
-      );
-    } else {
-      const newTextBlock = mkProgTextBlock();
-      (newTextBlock as any).value = newText;
-      setTitleBlocks([newTextBlock, ...titleBlocks]);
-    }
-    if (newText.trim()) setTouched(p => new Set(p).add('title'));
-  };
-
-  return (
-    <div
-      ref={divRef}
-      contentEditable={!isDisabled}
-      suppressContentEditableWarning
-      onInput={handleInput}
-      onBlur={() => setTouched(p => new Set(p).add('title'))}
-      data-placeholder="Type your question here..."
-      style={{
-        fontFamily: 'var(--lms-font)',
-        fontSize: '15px',
-        fontWeight: 500,
-        color: 'var(--lms-text-main)',
-        background: 'transparent',
-        border: 'none',
-        borderBottom: `2px solid ${isDisabled ? 'var(--lms-border)' : 'var(--lms-text-main)'}`,
-        outline: 'none',
-        width: '100%',
-        padding: '4px 0',
-        opacity: isDisabled ? 0.6 : 1,
-        cursor: isDisabled ? 'not-allowed' : 'text',
-        lineHeight: 1.65,
-        minHeight: '40px',
-        // Show placeholder via CSS when empty
-        position: 'relative',
-      }}
-    />
-  );
-};
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXECUTION SETUP — subsection component (Function vs Full Program, contract,
-// starter experience, driver preview). Author-side UI only; the payload it
-// mutates is owned by the parent form.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const EXEC_CARD_STYLE: React.CSSProperties = {
-  background: 'var(--lms-bg-white, #FFFFFF)',
-  border: '1px solid var(--lms-border, #E2E8F0)',
-  borderRadius: 12,
-  padding: '14px 16px',
-};
-const EXEC_OPT_CARD_ON: React.CSSProperties = {
-  border: '1.5px solid #E76F51',
-  background: '#FFF5F1',
-  boxShadow: '0 0 0 3px rgba(231,111,81,0.10)',
-};
-const EXEC_OPT_CARD_OFF: React.CSSProperties = {
-  border: '1.5px solid var(--lms-border, #E2E8F0)',
-  background: 'var(--lms-bg-white, #FFFFFF)',
-};
-
-const ExecutionSetupSection: React.FC<{
-  executionType: 'function' | 'fullProgram';
-  setExecutionType: (v: 'function' | 'fullProgram') => void;
-  functionContract: FunctionContract;
-  setFunctionContract: (v: FunctionContract) => void;
-  startingExperience: 'blank' | 'generated' | 'custom';
-  setStartingExperience: (v: 'blank' | 'generated' | 'custom') => void;
-  language: string;
-  showDriverPreview: boolean;
-  setShowDriverPreview: (v: boolean) => void;
-  disabled?: boolean;
-  functionNameError?: string;
-}> = ({
-  executionType, setExecutionType,
-  functionContract, setFunctionContract,
-  startingExperience, setStartingExperience,
-  language, showDriverPreview, setShowDriverPreview,
-  disabled, functionNameError,
-}) => {
-  const isFn = executionType === 'function';
-  const types = execDataTypesFor(language);
-
-  // Professional segmented control — white active pill on grey track, subtle
-  // shadow to lift the active option. No decorative icons or badges; the label
-  // does the work. Pattern matches modern segmented controls (Linear / Vercel).
-  const segBtn = (key: 'function' | 'fullProgram', label: string) => {
-    const on = executionType === key;
-    return (
-      <button
-        type="button"
-        onClick={() => { if (!disabled) setExecutionType(key); }}
-        disabled={disabled}
-        style={{
-          padding: '6px 18px', borderRadius: 6, border: 'none',
-          background: on ? '#FFFFFF' : 'transparent',
-          color: on ? '#0F172A' : '#64748B',
-          fontWeight: on ? 600 : 500, fontSize: 13, fontFamily: 'var(--lms-font)',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
-          opacity: disabled ? 0.6 : 1,
-          boxShadow: on ? '0 1px 2px rgba(15,23,42,0.08), 0 0 0 1px rgba(15,23,42,0.04)' : 'none',
-          letterSpacing: 0.1,
-        }}
-      >
-        {label}
-      </button>
-    );
-  };
-
-  // Clickable starting-experience tile — radio-style indicator on the left
-  // gives an unmistakable "pick one" affordance, hover surface lifts to grey
-  // so it reads as a control, not a label.
-  const expTile = (
-    v: 'blank' | 'generated' | 'custom', label: string, recommended?: boolean,
-  ) => {
-    const on = startingExperience === v;
-    return (
-      <button
-        type="button"
-        onClick={() => { if (!disabled) setStartingExperience(v); }}
-        disabled={disabled}
-        onMouseEnter={e => { if (!disabled && !on) e.currentTarget.style.background = '#F8FAFC'; }}
-        onMouseLeave={e => { if (!disabled && !on) e.currentTarget.style.background = '#FFFFFF'; }}
-        style={{
-          padding: '10px 12px', borderRadius: 8, textAlign: 'left',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          border: on ? '1.5px solid #E76F51' : '1.5px solid #E2E8F0',
-          background: on ? '#FFF5F1' : '#FFFFFF',
-          boxShadow: on ? '0 0 0 3px rgba(231,111,81,0.10)' : '0 1px 2px rgba(15,23,42,0.04)',
-          transition: 'background 0.15s, border-color 0.15s, box-shadow 0.15s',
-          fontFamily: 'var(--lms-font)',
-          opacity: disabled ? 0.6 : 1,
-          display: 'flex', alignItems: 'center', gap: 10,
-          fontWeight: 600, fontSize: 13, color: on ? '#C55236' : '#0F172A',
-          minHeight: 40,
-        }}
-      >
-        {/* Radio-style indicator */}
-        <span style={{
-          flexShrink: 0,
-          width: 16, height: 16, borderRadius: '50%',
-          border: on ? '5px solid #E76F51' : '1.5px solid #CBD5E1',
-          background: '#FFFFFF',
-          transition: 'border 0.15s',
-        }} />
-        <span style={{ flex: 1 }}>{label}</span>
-        {recommended && (
-          <span style={{
-            fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
-            background: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0', letterSpacing: 0.2,
-            flexShrink: 0,
-          }}>Recommended</span>
-        )}
-      </button>
-    );
-  };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <label
-            className="lms-section-label"
-            style={{ margin: 0, fontFamily: 'var(--lms-font)', fontSize: 12, fontWeight: 700, letterSpacing: 0.35, color: '#0F172A', textTransform: 'uppercase' }}
-          >
-            Execution Setup <span style={{ color: '#DC2626' }}>*</span>
-          </label>
-          <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#64748B', fontFamily: 'var(--lms-font)' }}>
-            Choose how student submissions are executed and evaluated.
-          </p>
-        </div>
-      </div>
-
-      {/* Segmented switch — Function / Full Program */}
-      <div style={{
-        display: 'inline-flex', padding: 3, borderRadius: 8,
-        background: '#F1F5F9', alignSelf: 'flex-start', gap: 1,
-      }}>
-        {segBtn('function', 'Function')}
-        {segBtn('fullProgram', 'Full Program')}
-      </div>
-
-      {/* Function Contract */}
-      {isFn && (
-        <div style={EXEC_CARD_STYLE}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 13.5, color: '#0F172A', fontFamily: 'var(--lms-font)' }}>Function Contract</div>
-            <span style={{
-              fontFamily: 'ui-monospace,monospace', fontSize: 11, color: '#64748B',
-              padding: '2px 8px', borderRadius: 6, background: '#F1F5F9',
-            }}>{normalizeExecLang(language)}</span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 10 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                Function Name <span style={{ color: '#DC2626' }}>*</span>
-              </label>
-              <input
-                className={`lms-input${functionNameError ? ' err' : ''}`}
-                value={functionContract.functionName}
-                onChange={e => setFunctionContract({ ...functionContract, functionName: e.target.value })}
-                placeholder="e.g. findMax"
-                disabled={disabled}
-              />
-              {functionNameError && (
-                <div style={{ fontSize: 11, color: '#DC2626', marginTop: 2 }}>{functionNameError}</div>
-              )}
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                Return Type <span style={{ color: '#DC2626' }}>*</span>
-              </label>
-              <select
-                className="lms-input"
-                value={functionContract.returnType}
-                onChange={e => setFunctionContract({ ...functionContract, returnType: e.target.value })}
-                disabled={disabled}
-              >
-                {types.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5 }}>Parameters</div>
-              <button
-                type="button"
-                className="lms-btn lms-btn-ghost-orange"
-                style={{ padding: '4px 10px', fontSize: 11 }}
-                onClick={() => setFunctionContract({
-                  ...functionContract,
-                  params: [...functionContract.params, mkFunctionParam(functionContract.params.length)],
-                })}
-                disabled={disabled}
-              >
-                + Add Parameter
-              </button>
-            </div>
-            {functionContract.params.length === 0 ? (
-              <div style={{
-                background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: 8, padding: '10px 12px',
-                fontSize: 12, color: '#475569',
-              }}>
-                Zero parameters is allowed. The driver will call the function with no arguments.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {functionContract.params.map((p, i) => (
-                  <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '1fr 180px auto auto auto', gap: 6, alignItems: 'center' }}>
-                    <input
-                      className="lms-input"
-                      value={p.name}
-                      onChange={e => {
-                        const next = [...functionContract.params];
-                        next[i] = { ...p, name: e.target.value };
-                        setFunctionContract({ ...functionContract, params: next });
-                      }}
-                      placeholder="name"
-                      disabled={disabled}
-                    />
-                    <select
-                      className="lms-input"
-                      value={p.type}
-                      onChange={e => {
-                        const next = [...functionContract.params];
-                        next[i] = { ...p, type: e.target.value };
-                        setFunctionContract({ ...functionContract, params: next });
-                      }}
-                      disabled={disabled}
-                    >
-                      {types.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <button
-                      type="button" className="lms-icon-btn"
-                      style={{ background: '#F8FAFC' }}
-                      title="Move up" disabled={disabled || i === 0}
-                      onClick={() => {
-                        const next = [...functionContract.params];
-                        [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                        setFunctionContract({ ...functionContract, params: next });
-                      }}
-                    >↑</button>
-                    <button
-                      type="button" className="lms-icon-btn"
-                      style={{ background: '#F8FAFC' }}
-                      title="Move down" disabled={disabled || i === functionContract.params.length - 1}
-                      onClick={() => {
-                        const next = [...functionContract.params];
-                        [next[i + 1], next[i]] = [next[i], next[i + 1]];
-                        setFunctionContract({ ...functionContract, params: next });
-                      }}
-                    >↓</button>
-                    <button
-                      type="button" className="lms-icon-btn lms-icon-btn-red"
-                      title="Remove parameter" disabled={disabled}
-                      onClick={() => setFunctionContract({
-                        ...functionContract,
-                        params: functionContract.params.filter((_, idx) => idx !== i),
-                      })}
-                    ><Trash2 size={13} /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Generated Function Signature</div>
-            <pre style={{
-              margin: 0, background: '#F1F5F9', padding: '10px 12px', borderRadius: 6,
-              fontFamily: 'ui-monospace,monospace', fontSize: 12, overflowX: 'auto',
-            }}>{execSignatureFor(language, functionContract)}</pre>
-          </div>
-        </div>
-      )}
-
-      {/* Student Starting Experience — bare tiles, no outer box or header */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: isFn ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
-        gap: 8,
-      }}>
-        {expTile('blank', 'Blank Editor')}
-        {isFn && expTile('generated', 'Generated Starter', true)}
-        {expTile('custom', 'Custom Starter')}
-      </div>
-    </div>
-  );
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXECUTION PLAYGROUND MODALS — Run Test Cases, Try Function, Custom Input
-// All call the same Piston endpoint the existing Mock modal uses. They live
-// separately so the author's playground doesn't disturb the mock preview UI.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Resolve the form's language string (from exercise.programmingSettings.selectedLanguages)
-// to the canonical SupportedLanguage the shared Piston client expects.
-// Falls back to python so the run flow can still fire something sensible for
-// unknown labels — same fallback the multi-file editor uses.
-function resolveSupportedLang(lang: string): SupportedLanguage {
-  return normalizeLanguage(lang) || 'python';
-}
-
-// Wrapper around the shared runOnPiston client. Runs the wrapped source as a
-// SINGLE-file project (the auto-driver from execBuildFunctionRunPayload has
-// already been prepended for function mode) with the test case's stdin.
-async function runOne(lang: string, source: string, stdin: string, signal?: AbortSignal): Promise<RunResult> {
-  const L = resolveSupportedLang(lang);
-  return await runOnPiston({
-    language: L,
-    files: [{ path: `main.${L === 'python' ? 'py' : L === 'javascript' ? 'js' : L === 'typescript' ? 'ts' : L === 'java' ? 'Main.java' : L === 'cpp' ? 'cpp' : L === 'c' ? 'c' : 'go'}`, content: source, isEntryPoint: true }],
-    stdin,
-    signal,
-  });
-}
-
-// Categorise a shared RunResult into an outcome bucket we display in the
-// results table. Compile stderr precedes runtime stderr; any non-zero exit
-// with stderr = runtime error; SIGTERM/SIGKILL = timeout.
-type RunOutcome = 'pass' | 'fail' | 'compileErr' | 'runtimeErr' | 'timeout';
-interface RunOutcomeRow {
-  outcome: RunOutcome;
-  actual: string;
-  raw: string;
-  stderr: string;
-  exit: number | null;
-  signal: string | null;
-  runtimeMs?: number;
-}
-function classifyRun(res: RunResult, expected: string, elapsedMs?: number): RunOutcomeRow {
-  const compileErr = (res.compileError || '').trim();
-  const stderr = (res.stderr || '').trim();
-  const stdout = (res.stdout ?? res.output ?? '').toString();
-  const exit = res.code;
-  const signal = res.signal;
-  if (compileErr) return { outcome: 'compileErr', actual: '', raw: stdout, stderr: compileErr, exit, signal, runtimeMs: elapsedMs };
-  if (signal === 'SIGTERM' || signal === 'SIGKILL') return { outcome: 'timeout', actual: stdout.trim(), raw: stdout, stderr, exit, signal, runtimeMs: elapsedMs };
-  if (stderr && (exit == null || exit !== 0)) return { outcome: 'runtimeErr', actual: stdout.trim(), raw: stdout, stderr, exit, signal, runtimeMs: elapsedMs };
-  const actual = stdout.trim();
-  const expTrim = (expected ?? '').toString().trim();
-  return { outcome: actual === expTrim ? 'pass' : 'fail', actual, raw: stdout, stderr, exit, signal, runtimeMs: elapsedMs };
-}
-
-// Function-mode wrapper: prepends a hidden driver that reads a JSON test case
-// from stdin, calls the configured function, and prints the return value. The
-// student's own solutionCode is untouched.
-function buildFunctionRunSource(lang: string, contract: FunctionContract, solution: string): { source: string; supported: boolean } {
-  return execBuildFunctionRunPayload(lang, contract, solution);
-}
-// Full-program: the solution is run as-is; stdin is fed from the test case.
-function buildFullProgramRunSource(_lang: string, _contract: FunctionContract, solution: string): { source: string; supported: boolean } {
-  return { source: solution, supported: true };
-}
-
-// Compare the actual return (Piston stdout) to the expected literal. In
-// function mode both sides are JSON-serialisable so we compare structurally
-// when possible; falls back to a trimmed-string compare otherwise.
-function compareFunctionReturn(actualStdout: string, expected: string): boolean {
-  const a = (actualStdout ?? '').toString().trim();
-  const b = (expected ?? '').toString().trim();
-  if (a === b) return true;
-  try {
-    const av = JSON.parse(a);
-    const bv = JSON.parse(b);
-    return JSON.stringify(av) === JSON.stringify(bv);
-  } catch { /* fall through */ }
-  return false;
-}
-
-// ─── RUN TEST CASES MODAL ─────────────────────────────────────────────────
-const RunTestCasesModal: React.FC<{
-  language: string;
-  executionType: 'function' | 'fullProgram';
-  functionContract: FunctionContract;
-  solutionCode: string;
-  testCases: TC[];
-  onClose: () => void;
-}> = ({ language, executionType, functionContract, solutionCode, testCases, onClose }) => {
-  const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<Array<{ tc: TC; result: RunOutcomeRow | null; error?: string }>>([]);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
-
-  const isFn = executionType === 'function';
-  const buildSource = isFn ? buildFunctionRunSource : buildFullProgramRunSource;
-
-  const run = async () => {
-    if (!solutionCode.trim()) {
-      // Represent as compile error per spec (empty submission).
-      setResults(testCases.map(tc => ({ tc, result: { outcome: 'compileErr', actual: '', raw: '', stderr: 'Solution Code is empty.', exit: null, signal: null } as RunOutcomeRow })));
-      return;
-    }
-    setRunning(true);
-    setResults([]);
-    // Serial to keep within the ~20-parallel Piston budget noted in memory.
-    const built = buildSource(language, functionContract, solutionCode);
-    if (!built.supported) {
-      // Function-mode driver only ships for Python + JavaScript today; others
-      // are flagged in the UI so the teacher knows to fall back to Full Program.
-      setResults(testCases.map(tc => ({ tc, result: null, error: `Function-mode driver for ${language} is not yet supported. Switch to Full Program mode for this language, or use Python / JavaScript.` })));
-      setRunning(false);
-      return;
-    }
-    const collected: Array<{ tc: TC; result: RunOutcomeRow | null; error?: string }> = [];
-    for (const tc of testCases) {
-      const stdin = isFn
-        ? JSON.stringify(tcInputsToPayload(tc, functionContract.params))
-        : (tc.input || '');
-      const t0 = performance.now();
-      try {
-        const res = await runOne(language, built.source, stdin);
-        const elapsed = res.time != null ? res.time : (performance.now() - t0);
-        // For function mode we still need a smarter compare (JSON-aware).
-        if (isFn) {
-          const classified = classifyRun(res, tc.expectedOutput || '', elapsed);
-          if (classified.outcome === 'fail' || classified.outcome === 'pass') {
-            const ok = compareFunctionReturn(classified.raw, tc.expectedOutput || '');
-            classified.outcome = ok ? 'pass' : 'fail';
-            classified.actual = (classified.raw || '').trim();
-          }
-          collected.push({ tc, result: classified });
-        } else {
-          collected.push({ tc, result: classifyRun(res, tc.expectedOutput || '', elapsed) });
-        }
-      } catch (err: any) {
-        collected.push({ tc, result: null, error: err?.message || 'Network error' });
-      }
-      setResults([...collected]);
-    }
-    setRunning(false);
-  };
-
-  useEffect(() => { run(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-
-  const passed = results.filter(r => r.result?.outcome === 'pass').length;
-  const failed = results.length - passed;
-
-  return (
-    <div className="lms-modal-backdrop">
-      <div style={{
-        background: '#FFFFFF', borderRadius: 14, width: 'min(960px, 96vw)', maxHeight: '88vh',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.22)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E2E8F0' }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>Run Test Cases — Results</div>
-          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
-        </div>
-        <div style={{ padding: '14px 18px', overflowY: 'auto', flex: 1 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-            <span className="lms-badge" style={{ background: '#F1F5F9', color: '#334155', borderColor: '#E2E8F0' }}>Total: {testCases.length}</span>
-            <span className="lms-badge lms-badge-green">Passed: {passed}</span>
-            <span className="lms-badge" style={{ background: '#FEF2F2', color: '#DC2626', borderColor: '#FECACA' }}>Failed: {failed}</span>
-            {running && <span className="lms-badge" style={{ background: '#FFF7ED', color: '#C2410C', borderColor: '#FED7AA' }}>Running…</span>}
-          </div>
-          <div style={{ padding: '8px 12px', background: '#ECFEFF', border: '1px solid #A5F3FC', borderRadius: 8, color: '#0E7490', fontSize: 12, marginBottom: 10 }}>
-            {isFn
-              ? `The hidden driver was invoked with each test case and called ${functionContract.functionName || 'the configured function'}(...).`
-              : 'Stored Input was sent to stdin; program stdout was compared to Expected Output.'}
-          </div>
-          {results.map((row, i) => {
-            const r = row.result;
-            const outcome = r?.outcome;
-            const bar = outcome === 'pass' ? '#16A34A'
-              : outcome === 'compileErr' ? '#D97706'
-              : outcome === 'runtimeErr' ? '#D97706'
-              : outcome === 'timeout' ? '#D97706'
-              : outcome === 'fail' ? '#DC2626'
-              : '#94A3B8';
-            const label = outcome === 'pass' ? 'Passed'
-              : outcome === 'fail' ? 'Failed'
-              : outcome === 'compileErr' ? 'Compilation Error'
-              : outcome === 'runtimeErr' ? 'Runtime Error'
-              : outcome === 'timeout' ? 'Timed Out'
-              : row.error ? 'Error' : '—';
-            const open = expandedIdx === i;
-            return (
-              <div key={row.tc.id || i} style={{
-                border: '1px solid #E2E8F0', borderLeft: `3px solid ${bar}`,
-                borderRadius: 8, marginBottom: 8, overflow: 'hidden',
-              }}>
-                <div
-                  onClick={() => setExpandedIdx(open ? null : i)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer' }}
-                >
-                  <span className="lms-badge" style={{
-                    background: outcome === 'pass' ? '#F0FDF4' : outcome === 'fail' ? '#FEF2F2' : '#FFFBEB',
-                    color: bar,
-                    borderColor: outcome === 'pass' ? '#BBF7D0' : outcome === 'fail' ? '#FECACA' : '#FDE68A',
-                  }}>{label}</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0F172A' }}>
-                    Test Case {i + 1}{row.tc.isSample ? ' · Sample' : ''}{row.tc.isHidden ? ' · Hidden' : ''}
-                  </span>
-                  <div style={{ flex: 1 }} />
-                  {r?.runtimeMs != null && (
-                    <span style={{ fontSize: 11, color: '#64748B' }}>runtime {Math.round(r.runtimeMs)}ms{r.exit != null ? ` · exit ${r.exit}` : ''}</span>
-                  )}
-                </div>
-                {open && (
-                  <div style={{ padding: '10px 14px', borderTop: '1px solid #E2E8F0', background: '#FCFCFD' }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>Input</div>
-                    <pre style={preStyle}>{isFn
-                      ? JSON.stringify(tcInputsToPayload(row.tc, functionContract.params), null, 2)
-                      : (row.tc.input || '(empty)')}</pre>
-                    <div style={{ ...labelStyle, marginTop: 8 }}>Expected</div>
-                    <pre style={preStyle}>{row.tc.expectedOutput || '(empty)'}</pre>
-                    <div style={{ ...labelStyle, marginTop: 8 }}>Actual</div>
-                    <pre style={preStyle}>{r?.actual || r?.raw || (row.error ? row.error : '(empty)')}</pre>
-                    {r?.stderr && (
-                      <>
-                        <div style={{ ...labelStyle, marginTop: 8, color: '#DC2626' }}>Stderr</div>
-                        <pre style={{ ...preStyle, background: '#FFF7F7', color: '#B91C1C' }}>{r.stderr}</pre>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ padding: '10px 18px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
-          <button className="lms-btn lms-btn-orange" onClick={() => { setResults([]); run(); }} disabled={running}>
-            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Run Again
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const preStyle: React.CSSProperties = {
-  margin: '3px 0 0', background: '#F8FAFC', padding: '8px 10px', borderRadius: 6,
-  fontFamily: 'ui-monospace,monospace', fontSize: 12, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-};
-const labelStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 };
-
-// ─── TRY FUNCTION MODAL ──────────────────────────────────────────────────
-const TryFunctionModal: React.FC<{
-  language: string;
-  functionContract: FunctionContract;
-  solutionCode: string;
-  onClose: () => void;
-}> = ({ language, functionContract, solutionCode, onClose }) => {
-  const [inputs, setInputs] = useState<Record<string, string>>(() => {
-    const seed: Record<string, string> = {};
-    functionContract.params.forEach(p => { seed[p.name] = ''; });
-    return seed;
-  });
-  const [running, setRunning] = useState(false);
-  const [output, setOutput] = useState<{ ok: boolean; text: string; stderr?: string } | null>(null);
-
-  const callExpr = `${functionContract.functionName || 'solve'}(${functionContract.params.map(p => JSON.stringify(coerceTcInput(inputs[p.name] || ''))).join(', ')})`;
-
-  const call = async () => {
-    if (!solutionCode.trim()) { setOutput({ ok: false, text: 'Solution Code is empty.' }); return; }
-    const built = execBuildFunctionRunPayload(language, functionContract, solutionCode);
-    if (!built.supported) { setOutput({ ok: false, text: `Function-mode driver for ${language} is not yet supported.` }); return; }
-    const payload: Record<string, any> = {};
-    functionContract.params.forEach(p => { payload[p.name] = coerceTcInput(inputs[p.name] || ''); });
-    setRunning(true);
-    try {
-      const res = await runOne(language, built.source, JSON.stringify(payload));
-      const compileErr = (res.compileError || '').trim();
-      const stderr = (res.stderr || '').trim();
-      const stdout = ((res.stdout ?? res.output) || '').toString().trim();
-      if (compileErr) setOutput({ ok: false, text: compileErr });
-      else if (stderr && (res.code ?? 0) !== 0) setOutput({ ok: false, text: stdout || '', stderr });
-      else setOutput({ ok: true, text: stdout || '(no output)' });
-    } catch (err: any) {
-      setOutput({ ok: false, text: err?.message || 'Network error' });
-    } finally { setRunning(false); }
-  };
-
-  return (
-    <div className="lms-modal-backdrop">
-      <div style={{
-        background: '#FFFFFF', borderRadius: 14, width: 'min(720px, 94vw)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.22)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E2E8F0' }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>Try Function</div>
-          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
-        </div>
-        <div style={{ padding: '14px 18px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {functionContract.params.length === 0 && (
-              <div style={{ fontSize: 12, color: '#64748B' }}>Function has no parameters — press Call Function to invoke it.</div>
-            )}
-            {functionContract.params.map(p => (
-              <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: 8, alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 12, color: '#0F172A' }}>{p.name}</div>
-                  <div style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11, color: '#64748B' }}>{p.type}</div>
-                </div>
-                <input
-                  className="lms-input"
-                  value={inputs[p.name] || ''}
-                  onChange={e => setInputs({ ...inputs, [p.name]: e.target.value })}
-                  placeholder={`value for ${p.name}`}
-                  style={{ fontFamily: 'ui-monospace,monospace', fontSize: 12 }}
-                />
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 10, padding: '8px 12px', background: '#F8FAFC', border: '1px dashed #E2E8F0', borderRadius: 8, fontSize: 12, color: '#475569' }}>
-            Call expression: <code style={{ fontFamily: 'ui-monospace,monospace' }}>{callExpr}</code>
-          </div>
-          <div style={{ marginTop: 10, minHeight: 96, background: '#0F172A', color: '#E2E8F0', fontFamily: 'ui-monospace,monospace', fontSize: 12.5, padding: '10px 14px', borderRadius: 8, whiteSpace: 'pre-wrap' }}>
-            {output == null && <span style={{ color: '#94A3B8' }}>Enter parameter values and press Call Function.</span>}
-            {output && (
-              <>
-                <div style={{ color: '#93C5FD' }}>{`$ ${callExpr}`}</div>
-                <div style={{ color: output.ok ? '#E2E8F0' : '#FCA5A5' }}>{output.ok ? `=> ${output.text}` : output.text}</div>
-                {output.stderr && <div style={{ color: '#FCA5A5' }}>{output.stderr}</div>}
-              </>
-            )}
-          </div>
-        </div>
-        <div style={{ padding: '10px 18px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
-          <button className="lms-btn lms-btn-orange" onClick={call} disabled={running}>
-            {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Call Function
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ─── CUSTOM INPUT MODAL (Full Program) ───────────────────────────────────
-const CustomInputModal: React.FC<{
-  language: string;
-  solutionCode: string;
-  onClose: () => void;
-}> = ({ language, solutionCode, onClose }) => {
-  const [stdin, setStdin] = useState('');
-  const [running, setRunning] = useState(false);
-  const [lines, setLines] = useState<Array<{ kind: 'sys' | 'out' | 'err' | 'in'; text: string }>>([{ kind: 'sys', text: 'Ready. Press Run to execute the Solution against your input.' }]);
-
-  const run = async () => {
-    if (!solutionCode.trim()) { setLines([{ kind: 'err', text: 'CompilationError: Solution Code is empty.' }]); return; }
-    setRunning(true);
-    setLines([{ kind: 'sys', text: '▶ Running program…' }]);
-    try {
-      const res = await runOne(language, solutionCode, stdin);
-      const compileErr = (res.compileError || '').trim();
-      const stderr = (res.stderr || '').trim();
-      const stdout = ((res.stdout ?? res.output) || '').toString();
-      const exit = res.code ?? 0;
-      const next: Array<{ kind: 'sys' | 'out' | 'err' | 'in'; text: string }> = [];
-      if (compileErr) next.push({ kind: 'err', text: compileErr });
-      if (stdout) next.push(...stdout.split('\n').map(l => ({ kind: 'out' as const, text: l })));
-      if (stderr) next.push(...stderr.split('\n').map(l => ({ kind: 'err' as const, text: l })));
-      if (!compileErr) next.push({ kind: 'sys', text: `✓ Process finished (exit ${exit})` });
-      setLines(next);
-    } catch (err: any) {
-      setLines([{ kind: 'err', text: err?.message || 'Network error' }]);
-    } finally { setRunning(false); }
-  };
-
-  return (
-    <div className="lms-modal-backdrop">
-      <div style={{
-        background: '#FFFFFF', borderRadius: 14, width: 'min(900px, 96vw)', maxHeight: '88vh',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.22)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #E2E8F0' }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>Custom Input — Terminal</div>
-          <button className="lms-cancel-btn" onClick={onClose}>Close</button>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '14px 18px', overflowY: 'auto' }}>
-          <div>
-            <div style={labelStyle}>stdin</div>
-            <textarea
-              className="lms-textarea mono"
-              style={{ minHeight: 200, marginTop: 4 }}
-              value={stdin}
-              onChange={e => setStdin(e.target.value)}
-              placeholder={'Type stdin. Multiline is fine.\ne.g.\n5\n1 8 3 6 2'}
-            />
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <button className="lms-btn lms-btn-orange" onClick={run} disabled={running}>
-                {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Run
-              </button>
-              <button className="lms-cancel-btn" onClick={() => setLines([])}>Clear</button>
-              <button className="lms-btn" style={{ background: '#FEF2F2', color: '#DC2626', borderColor: '#FECACA' }} onClick={() => setRunning(false)}>Stop</button>
-            </div>
-          </div>
-          <div>
-            <div style={labelStyle}>stdout</div>
-            <div style={{
-              background: '#0F172A', color: '#E2E8F0', fontFamily: 'ui-monospace,monospace',
-              fontSize: 12.5, padding: '10px 14px', borderRadius: 8, minHeight: 200, maxHeight: 320,
-              overflowY: 'auto', whiteSpace: 'pre-wrap',
-            }}>
-              {lines.map((l, i) => (
-                <div key={i} style={{
-                  color: l.kind === 'err' ? '#FCA5A5'
-                    : l.kind === 'in' ? '#FDBA74'
-                    : l.kind === 'sys' ? '#94A3B8' : '#E2E8F0',
-                }}>{l.text}</div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+// ─── Extracted 2026-08-30 into `./programming/` — see also
+// `programming/types.ts`, `programming/styles.ts`, `programming/constants.ts`,
+// `programming/utils/*`. The prelude that used to live here has been split.
+import { injectFonts } from './programming/styles';
+import { DS } from './programming/constants';
+import type {
+  Diff, TC, FunctionParam, FunctionContract, ProgContentBlock, FlowQuestion,
+  ProgrammingQuestionFormProps,
+} from './programming/types';
+import { QUESTION_CATEGORIES } from './programming/types';
+import {
+  mkProgTextBlock, mkProgCodeBlock, descToBlocks, blocksToDescription,
+  titleToBlocks, getTitleText, fmtMark,
+} from './programming/utils/blocksHelpers';
+import {
+  EXEC_DATA_TYPES, normalizeExecLang, execDataTypesFor,
+  mkFunctionContract, mkFunctionParam,
+  execSignatureFor, jType, cppType, cType,
+  execGeneratedStarter, jDefault, cppDefault, cDefault,
+  execDriverPreview, execBuildFunctionRunPayload,
+  coerceTcInput, tcInputsToPayload,
+} from './programming/utils/execHelpers';
+import { mkLocalId, mkTC } from './programming/utils/factories';
+import { dbQuestionToFlow } from './programming/utils/dbAdapter';
+import { TA, NI } from './programming/components/Inputs';
+import { QuestionFormBreadcrumb } from './programming/components/Breadcrumb';
+import {
+  CloseConfirmDialog, EditExerciseConfirmDialog, DiffSwitchDialog,
+  DeleteConfirmDialog, DifficultyPopup,
+} from './programming/modals/Dialogs';
+import { ProgImageUploadModal } from './programming/modals/ProgImageUploadModal';
+import { PROG_CODE_THEMES, PROG_CODE_THEMES_MCQ } from './programming/components/codeThemes';
+import { ProgImageBlock } from './programming/components/ProgImageBlock';
+import { ProgCodeBlock, highlightAutoP } from './programming/components/ProgCodeBlock';
+import { ProgCodeBlockMCQ } from './programming/components/ProgCodeBlockMCQ';
+import { ProgDescEditor } from './programming/components/ProgDescEditor';
+import { ProgTitleEditor } from './programming/components/ProgTitleEditor';
+import { ProgrammingMockModal } from './programming/modals/ProgrammingMockModal';
+import { PreviewModal } from './programming/modals/PreviewModal';
+import { RunTestCasesModal } from './programming/modals/RunTestCasesModal';
+import { TryFunctionModal } from './programming/modals/TryFunctionModal';
+import { CustomInputModal } from './programming/modals/CustomInputModal';
+import { TitleEditor } from './programming/components/TitleEditor';
+import { ExecutionSetupSection } from './programming/components/ExecutionSetupSection';
+import type { RunOutcome, RunOutcomeRow } from './programming/utils/pistonHelpers';
+import {
+  resolveSupportedLang, runOne, classifyRun, compareFunctionReturn,
+  buildFunctionRunSource, buildFullProgramRunSource,
+} from './programming/utils/pistonHelpers';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -4430,6 +484,21 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
   // Code Setup — starter shown to students, solution used for validation.
   const [starterCode, setStarterCode] = useState('');
   const [solutionCode, setSolutionCode] = useState('');
+  // ─── Question details taxonomy (2026-08-30 UI redesign) ────────────────
+  // `category` = single value from QUESTION_CATEGORIES (or '' = uncategorised).
+  // `tags` = arbitrary short strings, deduped case-insensitively on add.
+  // Both persist through snapshotForm + mkPayload; server persistence is
+  // subject to the addQuestion/updateQuestion Object.assign whitelist in
+  // `server/controllers/courses/moduleStructure/exerciseAndQuestion.js`.
+  const [category, setCategory] = useState<string>('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState<string>('');
+  // Collapsible "6. Hints & advanced settings" open/closed state.
+  // Default OPEN — the reference showed hints as a permanently visible
+  // sub-section, and collapsing by default hid the Add-Hint affordance
+  // so teachers couldn't tell how to add one. loadQuestionIntoForm keeps
+  // it in sync with each loaded question.
+  const [hintsOpen, setHintsOpen] = useState<boolean>(true);
   const [codeSetupLanguage, setCodeSetupLanguage] = useState<string>(() => {
     const langs: string[] = (exerciseData as any)?.fullExerciseData?.programmingSettings?.selectedLanguages || [];
     return langs[0] || 'Python';
@@ -4692,14 +761,17 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
 
   const hasUnsavedFormChanges = useMemo((): boolean => {
     const currentQ = flowQuestions[currentIndex];
-    if (!currentQ || (!currentQ._id && !currentQ.isSaved && !currentQ.isPreExisting)) return !!(getTitleText(titleBlocks) || desc.trim());
+    if (!currentQ || (!currentQ._id && !currentQ.isSaved && !currentQ.isPreExisting)) return !!(getTitleText(titleBlocks) || desc.trim() || category || tags.length > 0);
     if (isEditMode && currentQ) {
       const existingDesc = typeof currentQ.description === 'object' ? currentQ.description?.text || '' : currentQ.description || '';
+      const existingTags: string[] = Array.isArray((currentQ as any).tags) ? (currentQ as any).tags : [];
+      const tagsChanged = tags.length !== existingTags.length || tags.some((t, i) => t !== existingTags[i]);
       return getTitleText(titleBlocks) !== (Array.isArray(currentQ.title) ? getTitleText(currentQ.title as any) : currentQ.title || '') || desc !== existingDesc || score !== (currentQ.score || 0) || timeLimit !== (currentQ.timeLimit || 2000) || memLimit !== (currentQ.memoryLimit || 256)
-        || isLinkQuestion !== (currentQ.isLinkQuestion === true) || questionLink.trim() !== (currentQ.questionLink || '');
+        || isLinkQuestion !== (currentQ.isLinkQuestion === true) || questionLink.trim() !== (currentQ.questionLink || '')
+        || category !== ((currentQ as any).category || '') || tagsChanged;
     }
     return false;
-  }, [flowQuestions, currentIndex, isEditMode, titleBlocks, desc, score, timeLimit, memLimit, isLinkQuestion, questionLink]);
+  }, [flowQuestions, currentIndex, isEditMode, titleBlocks, desc, score, timeLimit, memLimit, isLinkQuestion, questionLink, category, tags]);
 
   const hasSavedQuestionsInSession = useMemo((): boolean =>
     flowQuestions.some(q => q.isSaved || q._id || serverIdMap.current.has(q.__localId)),
@@ -4823,6 +895,19 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
         ? rawSe
         : (et === 'function' ? 'generated' : 'blank')
     );
+    // ── Taxonomy (2026-08-30 UI redesign): category is one preset or ''
+    //     tags is an array of trimmed strings; keep the collapsible open
+    //     when the loaded question already has a hint / extra hints. ──
+    setCategory(typeof (q as any).category === 'string' ? (q as any).category : '');
+    setTags(Array.isArray((q as any).tags)
+      ? ((q as any).tags as any[]).filter((t) => typeof t === 'string' && t.trim()).map((t: string) => t.trim())
+      : []);
+    setTagDraft('');
+    // Hints are always visible on load — teachers expect the Add-Hint
+    // affordance to be reachable without clicking a mystery toggle. The
+    // toggle in the header still lets a teacher hide the panel if they
+    // want to shorten the form on a question that will never have hints.
+    setHintsOpen(true);
     setErrs({});
     setTouched(new Set());
     setIsEditMode(!!(getServerId(q)));
@@ -4839,6 +924,9 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
     setExecutionType('fullProgram');
     setFunctionContract(mkFunctionContract());
     setStartingExperience('blank');
+    // Taxonomy defaults + close hints panel on a fresh blank form.
+    setCategory(''); setTags([]); setTagDraft('');
+    setHintsOpen(true);
   };
 
   const snapshotForm = (overrides?: Partial<FlowQuestion>): FlowQuestion => {
@@ -4889,6 +977,9 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
       executionType,
       functionContract,
       startingExperience,
+      // Author-provided taxonomy — see [[lms-questionforms-unification]] Phase 3.
+      category: category || undefined,
+      tags: tags.length > 0 ? tags : undefined,
       ...overrides,
     };
   };
@@ -4987,6 +1078,15 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
       executionType: isLinkQuestion ? undefined : executionType,
       functionContract: isLinkQuestion ? undefined : functionContract,
       startingExperience: isLinkQuestion ? undefined : startingExperience,
+      // Author-provided taxonomy. Sent whether or not the exercise's
+      // question-source is scratch/AI/bank so bank imports carry their
+      // origin tags forward if they had any. NOTE: server persistence
+      // requires `category` and `tags` in the addQuestion/updateQuestion
+      // Object.assign whitelist in
+      // `server/controllers/courses/moduleStructure/exerciseAndQuestion.js`
+      // — until that lands, these are effectively client-side only.
+      category: (category || '').trim() || undefined,
+      tags: tags.length > 0 ? tags : undefined,
     };
   };
   const handleEditClick = () => setIsEditMode(true);
@@ -6492,11 +2592,8 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
         {/* ── HEADER ── */}
       <div style={{ background: 'var(--lms-bg-white)', borderBottom: '1.5px solid var(--lms-border)', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
   <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-    {/* Logo mark */}
-    <div className="lms-header-logo-mark">
-      <GraduationCap size={16} style={{ color: 'white' }} />
-    </div>
-    <div style={{ width: 1, height: 20, background: 'var(--lms-border)', flexShrink: 0 }} />
+    {/* Logo mark + graduation-cap icon removed 2026-08-30 per user request —
+        the breadcrumb now owns the entire left side of the header. */}
 
     {/* Edit mode indicators */}
     {isCurrentPreExisting && !isEditMode && !isEditing && (
@@ -6506,7 +2603,11 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
         <Edit2 size={12} /> Edit Exercise
       </button>
     )}
-    <div style={{ minWidth: 0, flex: 1, overflow: 'visible' }}>
+    {/* Breadcrumb wrapper — flex: 1 with min-width: 0 lets it shrink to fit
+        the header row; the inner <ol> scrolls horizontally if the rail is
+        wider than the viewport. Prevents the breadcrumb from wrapping into
+        the second line and pushing the header taller. */}
+    <div style={{ minWidth: 0, flex: 1, overflowX: 'auto', overflowY: 'visible' }} className="lms-sidebar-scroll">
       <QuestionFormBreadcrumb hierarchyData={hierarchyData} tabType={tabType} subcategory={subcategory} subcategoryLabel={subcategoryLabel} exerciseName={exerciseName} actionLabel={actionLabel} questionLabel={questionLabel} />
     </div>
   </div>
@@ -6854,7 +2955,7 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
         <div style={{ display: 'flex', flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
 
           {/* ── MAIN FORM ── */}
-          <div ref={formScrollRef} className="lms-sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--lms-bg-white)' }}>
+          <div ref={formScrollRef} className="lms-sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--lms-bg-white)' }}>
 
             {/* Sticky Toolbar */}
             <div ref={stickyToolbarRef} style={{
@@ -7079,8 +3180,8 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
             {isLinkQuestion && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <label className="lms-section-label" style={{ margin: 0 }}>
-                    Question Link <span style={{ color: errs.questionLink && touched.has('questionLink') ? 'var(--lms-danger)' : 'var(--lms-text-muted)' }}>*</span>
+                  <label className="prog-label" style={{ margin: 0 }}>
+                    Question Link <span style={{ color: 'var(--lms-danger)' }}>*</span>
                   </label>
                   {errs.questionLink && touched.has('questionLink') && (
                     <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)' }}>— {errs.questionLink}</span>
@@ -7122,11 +3223,23 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
             )}
 
             {!isLinkQuestion && (<>
+            {/* ─── 1. Question details ─────────────────────────────────────
+                Numbered section header + Problem Title + Category + Tags +
+                Problem Description live under one logical section. The Marks
+                input stays in the sticky toolbar above (it depends on score
+                editability / fixed-marks state that already lives there),
+                but "Question details" is the semantic wrapper. */}
+            <div className="lms-num-header">
+              <span className="lms-num-header-badge">1</span>
+              Question details
+              <span className="lms-num-header-sub">Title, category, tags, and description</span>
+            </div>
+
             {/* Problem Title section */}
             <div ref={titleSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <label className={`lms-section-label`} style={{ margin: 0 }}>
-                  Problem Title <span style={{ color: errs.title && touched.has('title') ? 'var(--lms-danger)' : 'var(--lms-text-muted)' }}>*</span>
+                <label className="prog-label" style={{ margin: 0 }}>
+                  Problem Title <span style={{ color: 'var(--lms-danger)' }}>*</span>
                 </label>
                 {errs.title && touched.has('title') && (
                   <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)' }}>— {errs.title}</span>
@@ -7176,10 +3289,94 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               </div>
             </div>{/* end titleSectionRef wrapper */}
 
+            {/* ─── Category + Tags row (12-col grid) ─────────────────────
+                Category is a single preset from QUESTION_CATEGORIES; Tags
+                are free-form short strings the teacher types in and the UI
+                renders as removable chips. Both persist through snapshotForm
+                / mkPayload / hasUnsavedFormChanges; server persistence
+                requires whitelisting `category` + `tags` in the
+                addQuestion/updateQuestion Object.assign in
+                `exerciseAndQuestion.js`. See [[lms-questionforms-unification]]. */}
+            <div className="lms-qdet-grid">
+              <div className="lms-qdet-col-6">
+                <label className="lms-field-label" htmlFor="prog-category">
+                  Category
+                </label>
+                <select
+                  id="prog-category"
+                  className="lms-select"
+                  value={category}
+                  onChange={e => setCategory(e.target.value)}
+                  disabled={isFormDisabled}
+                >
+                  <option value="">— Uncategorised —</option>
+                  {QUESTION_CATEGORIES.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="lms-qdet-col-6">
+                <label className="lms-field-label" htmlFor="prog-tags-input">
+                  Tags
+                  <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', marginLeft: 4 }}>
+                    (Enter to add, × to remove)
+                  </span>
+                </label>
+                <div className="lms-tags-wrap">
+                  {tags.map((t, i) => (
+                    <span key={`${t}-${i}`} className="lms-tag-chip">
+                      {t}
+                      <button
+                        type="button"
+                        className="lms-tag-chip-x"
+                        onClick={() => !isFormDisabled && setTags(prev => prev.filter((_, idx) => idx !== i))}
+                        disabled={isFormDisabled}
+                        aria-label={`Remove tag ${t}`}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    id="prog-tags-input"
+                    type="text"
+                    className="lms-tag-input"
+                    value={tagDraft}
+                    placeholder={tags.length ? '+ Add tag' : 'Type a tag and press Enter…'}
+                    onChange={e => setTagDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        const t = tagDraft.trim().replace(/,+$/, '');
+                        if (!t) return;
+                        // Case-insensitive dedupe so "Math" and "math" don't both stick.
+                        if (tags.some(x => x.toLowerCase() === t.toLowerCase())) { setTagDraft(''); return; }
+                        setTags(prev => [...prev, t]);
+                        setTagDraft('');
+                      } else if (e.key === 'Backspace' && tagDraft === '' && tags.length > 0) {
+                        // Backspace on an empty draft removes the last chip — standard chip-input UX.
+                        setTags(prev => prev.slice(0, -1));
+                      }
+                    }}
+                    onBlur={() => {
+                      // Commit any half-typed tag on blur so it isn't lost when the teacher
+                      // clicks Save without hitting Enter first.
+                      const t = tagDraft.trim();
+                      if (t && !tags.some(x => x.toLowerCase() === t.toLowerCase())) {
+                        setTags(prev => [...prev, t]);
+                      }
+                      setTagDraft('');
+                    }}
+                    disabled={isFormDisabled}
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* ── Description ── */}
             <div ref={descSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <label className="lms-section-label" style={{ margin: 0 }}>Problem Description <span style={{ color: 'var(--lms-danger)' }}>*</span></label>
+                <label className="prog-label" style={{ margin: 0 }}>Problem Description <span style={{ color: 'var(--lms-danger)' }}>*</span></label>
                 {errs.description && touched.has('description') && <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)' }}>— {errs.description}</span>}
               </div>
               <div onBlur={() => setTouched(p => new Set(p).add('description'))}>
@@ -7194,6 +3391,22 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                   resetKey={currentIndex}
                 />
               </div>
+              {/* Editor meta strip — advisory only, does NOT affect what
+                  the editor stores (still ProgContentBlock[]). The counter
+                  reflects the visible text content across all text blocks,
+                  not the raw HTML. 5,000 is a soft cap consistent with the
+                  reference design; nothing enforces it in mkPayload. */}
+              <div className="lms-editor-meta">
+                <span>Markdown supported</span>
+                <span>{desc.replace(/<[^>]*>/g, '').length.toLocaleString()} / 5,000</span>
+              </div>
+            </div>
+
+            {/* ─── 2. Execution setup ────────────────────────────────── */}
+            <div className="lms-num-header">
+              <span className="lms-num-header-badge">2</span>
+              Execution setup
+              <span className="lms-num-header-sub">Choose how student submissions are executed and evaluated</span>
             </div>
 
             {/* ── Execution Setup (Function vs Full Program + starter experience) ── */}
@@ -7211,10 +3424,18 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               functionNameError={touched.has('functionName') ? errs.functionName : undefined}
             />
 
+            {/* ─── 3. Code ────────────────────────────────────────────── */}
+            <div className="lms-num-header">
+              <span className="lms-num-header-badge">3</span>
+              Code
+              <span className="lms-num-header-sub">Starter code (optional) and Solution code (required)</span>
+            </div>
+
             {/* ── Code Setup ── */}
             <div ref={codeSetupSectionRef}>
               <CodeSetupSection
                 variant="programming"
+                hideHeader
                 starterCode={starterCode}
                 onStarterChange={setStarterCode}
                 solutionCode={solutionCode}
@@ -7246,12 +3467,19 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               />
             </div>
 
+            {/* ─── 4. Constraints ─────────────────────────────────────── */}
+            <div className="lms-num-header">
+              <span className="lms-num-header-badge">4</span>
+              Constraints
+              <span className="lms-num-header-sub">Add any constraints on input values</span>
+            </div>
+
             {/* ── Constraints ── */}
             <div ref={constraintsSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <label className="lms-section-label" style={{ margin: 0 }}>
-                    Constraints <span style={{ color: 'var(--lms-text-muted)' }}>*</span>
+                  <label className="prog-label" style={{ margin: 0 }}>
+                    Constraints <span style={{ color: 'var(--lms-danger)' }}>*</span>
                   </label>
                   {errs.constraints && touched.has('constraints') && (
                     <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)' }}>— {errs.constraints}</span>
@@ -7279,13 +3507,20 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               </div>
             </div>
 
+            {/* ─── 5. Test cases ──────────────────────────────────────── */}
+            <div className="lms-num-header">
+              <span className="lms-num-header-badge">5</span>
+              Test cases
+              <span className="lms-num-header-sub">Sample cases are visible; hidden cases grade the submission</span>
+            </div>
+
             {/* ── Test Cases (branch on Execution Setup mode) ── */}
             <div ref={testcasesSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                    <label className="lms-section-label" style={{ margin: 0 }}>
-                      Test Cases <span style={{ color: 'var(--lms-text-muted)' }}>*</span>
+                    <label className="prog-label" style={{ margin: 0 }}>
+                      Test Cases <span style={{ color: 'var(--lms-danger)' }}>*</span>
                     </label>
                     {errs.testcases && touched.has('testcases') && (
                       <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)' }}>— {errs.testcases}</span>
@@ -7417,7 +3652,7 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                           </div>
                         </div>
                         <div style={{ marginTop: 8 }}>
-                          <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Explanation <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+                          <label className="prog-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Explanation <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
                           <input value={tc.description} onChange={e => updTC(tc.id, 'description', e.target.value)}
                             placeholder="Briefly explain what this test case verifies…"
                             disabled={isFormDisabled} className="lms-input" style={{ fontSize: 12 }} />
@@ -7431,16 +3666,16 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                       {headerRow}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                         <div>
-                          <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Input (Click Enter to give multiple inputs)</label>
+                          <label className="prog-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Input (Click Enter to give multiple inputs)</label>
                           <TA value={tc.input} onChange={v => updTC(tc.id, 'input', v)} placeholder="stdin…" rows={3} mono disabled={isFormDisabled} />
                         </div>
                         <div>
-                          <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Expected Output</label>
+                          <label className="prog-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Expected Output</label>
                           <TA value={tc.expectedOutput} onChange={v => updTC(tc.id, 'expectedOutput', v)} placeholder="expected stdout…" rows={3} mono disabled={isFormDisabled} />
                         </div>
                       </div>
                       <div style={{ marginTop: 8 }}>
-                        <label className="lms-section-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Explanation <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+                        <label className="prog-label" style={{ margin: 0, marginBottom: 4, display: 'block' }}>Explanation <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
                         <input value={tc.description} onChange={e => updTC(tc.id, 'description', e.target.value)}
                           placeholder="Briefly explain what this test case verifies…"
                           disabled={isFormDisabled} className="lms-input" style={{ fontSize: 12 }} />
@@ -7472,7 +3707,7 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <label className="lms-section-label" style={{ margin: 0 }}>
+                    <label className="prog-label" style={{ margin: 0 }}>
                       AI Test Cases <span style={{ color: 'var(--lms-danger)' }}>*</span>
                     </label>
                     {shown && (
@@ -7517,9 +3752,26 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               );
             })()}
 
-            {/* ── Hint ── */}
+            {/* ─── 6. Hints & advanced settings ─────────────────────────
+                Numbered header + Hint textarea + Additional Hints array,
+                shown flat (no collapsible). Earlier revision wrapped this
+                in a `.lms-collapsible` with a toggle — that made the
+                section appear as just a header + thin border and the body
+                looked missing on the page (2026-08-30 user report).
+                Reverting to the old flat layout matches teacher expectations. */}
+            <div className="lms-num-header">
+              <span className="lms-num-header-badge">6</span>
+              Hints &amp; advanced settings
+              <span className="lms-num-header-sub">
+                {(hint.trim() || extraHints.length > 0)
+                  ? `${(hint.trim() ? 1 : 0) + extraHints.length} hint${((hint.trim() ? 1 : 0) + extraHints.length) === 1 ? '' : 's'} configured`
+                  : 'Optional — add hints below if you want to guide the student'}
+              </span>
+            </div>
+
+            {/* ── Hint (primary) ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label className="lms-section-label" style={{ margin: 0 }}>
+              <label className="prog-label" style={{ margin: 0 }}>
                 Hint <span style={{ fontWeight: 400, color: 'var(--lms-text-hint)', textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>(Optional)</span>
               </label>
               <TA value={hint} onChange={setHint} placeholder="Give students a helpful hint…" rows={2} disabled={isFormDisabled} />
@@ -7528,7 +3780,7 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
             {/* ── Additional Hints ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label className="lms-section-label" style={{ margin: 0 }}>Additional Hints</label>
+                <label className="prog-label" style={{ margin: 0 }}>Additional Hints</label>
                 <button onClick={() => setExtraH(p => [...p, { hintText: '', pointsDeduction: 0, isPublic: true }])} disabled={isFormDisabled}
                   className={`lms-btn ${isFormDisabled ? 'lms-btn-slate' : 'lms-btn-ghost-orange'}`}
                   style={{ padding: '4px 10px', fontSize: 11, opacity: isFormDisabled ? 0.5 : 1, cursor: isFormDisabled ? 'not-allowed' : 'pointer' }}>
@@ -7572,6 +3824,11 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
               </div>
             )}
 
+            {/* 8px was the pre-redesign trailing spacer; it lived when the
+                whole form was shorter. The scroll container above now has
+                paddingBottom: 120 so the last visible section (Hints /
+                validation strip) always clears the sticky footer — this
+                spacer is just a soft finish before that padding kicks in. */}
             <div style={{ height: 8 }} />
           </div>
 
@@ -8567,6 +4824,7 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
           functionContract={functionContract}
           solutionCode={solutionCode}
           testCases={tcs}
+          constraints={constraints}
           onClose={() => setShowRunTestsModal(false)}
         />
       )}

@@ -34,6 +34,8 @@ import { addUser, deleteUser, toggleUserStatus, updateUser, bulkSetUserStatus, f
 import { Switch } from "@/components/ui/switch";
 import { userPermission } from "@/apiServices/tokenVerify";
 import { useUsersPageQuery, useUsersListQuery, useRolesQuery, transformUser } from "@/queries/users";
+import { useUserRoleCountsQuery } from "@/queries/userRoleCounts";
+import { UserCountModal } from "./components/UserCountModal";
 import { queryKeys } from "@/lib/queryKeys";
 import { API_BASE_URL } from "@/lib/http";
 
@@ -146,6 +148,7 @@ export default function UserManagementPage() {
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [selectedUserForPermission, setSelectedUserForPermission] = useState<User | null>(null);
   const [showBulkPermissionModal, setShowBulkPermissionModal] = useState(false);
+  const [showUserCountModal, setShowUserCountModal] = useState(false);
   const [selectedUserForBulkPermissions, setSelectedUserForBulkPermissions] = useState<User | null>(null);
   const [showViewDetailsModal, setShowViewDetailsModal] = useState(false);
   const [selectedUserForDetails, setSelectedUserForDetails] = useState<User | null>(null);
@@ -179,6 +182,9 @@ export default function UserManagementPage() {
   // The footer's page-size control still overrides it per session.
   const [pageSize, setPageSize] = useState(10);
   const tableCardRef = useRef<HTMLDivElement | null>(null);
+  // The viewport-sized box the floating bulk bar is dragged within, so it can
+  // be pushed off the pagination but never off the screen.
+  const bulkBarBoundsRef = useRef<HTMLDivElement | null>(null);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -616,6 +622,11 @@ export default function UserManagementPage() {
     () => Object.values(selectedRows).filter(matchesCurrentFilters),
     [selectedRows, matchesCurrentFilters]
   );
+  // Institution-wide user count and its per-role split. Numbers only, counted
+  // in Mongo, so this costs the page a couple of hundred bytes rather than the
+  // roster it would take to group them here.
+  const { data: roleCounts, isLoading: isLoadingRoleCounts } = useUserRoleCountsQuery(institutionId);
+
   const visibleSelectedIds = useMemo(
     () => visibleSelectedRows.map(u => u.id),
     [visibleSelectedRows]
@@ -952,6 +963,23 @@ export default function UserManagementPage() {
           <h1 className="text-sm sm:text-base font-semibold text-heading tracking-[-0.01em]">
             User Management
           </h1>
+          {/* The directory total, and the way into its role breakdown. Hidden
+              until the count has actually arrived — a button reading "0 users"
+              while the request is in flight is worse than no button. */}
+          {roleCounts && (
+            <button
+              type="button"
+              onClick={() => setShowUserCountModal(true)}
+              title="Users by role"
+              className="inline-flex shrink-0 items-center gap-1.5 h-8 px-3 rounded-control border border-hairline-strong bg-surface text-[13px] font-semibold text-body hover:bg-row-hover hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/15"
+            >
+              <Users className="w-3.5 h-3.5 text-subtle" />
+              <span className="tabular-nums">{roleCounts.total}</span>
+              <span className="font-medium text-subtle">
+                {roleCounts.total === 1 ? "user" : "users"}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* One toolbar: search left · Filter · Export · Print grouped right
@@ -1264,6 +1292,10 @@ export default function UserManagementPage() {
           setShowBulkUploadModal={setShowBulkUploadModal}
           showBulkPermissionModal={showBulkPermissionModal}
           setShowBulkPermissionModal={setShowBulkPermissionModal}
+          // Opened from the bulk bar, the picker starts on the rows already
+          // ticked here. Opened from the Bulk Actions menu with nothing
+          // selected this is empty, which is the old behaviour.
+          bulkPermissionUserIds={visibleSelectedIds}
           showViewDetailsModal={showViewDetailsModal}
           setShowViewDetailsModal={setShowViewDetailsModal}
           newUser={newUser}
@@ -1319,31 +1351,63 @@ export default function UserManagementPage() {
         />
       </motion.div>
 
+      <UserCountModal
+        isOpen={showUserCountModal}
+        onClose={() => setShowUserCountModal(false)}
+        data={roleCounts}
+        isLoading={isLoadingRoleCounts}
+      />
+
       {/* ── Floating bulk bar — appears only after a selection. Rendered OUTSIDE
           the animated page wrapper so its `fixed` positioning is viewport-
-          relative, never trapped by the entrance transform. ── */}
+          relative, never trapped by the entrance transform.
+
+          It is DRAGGABLE: parked at the bottom it covers the pagination, so it
+          can be pulled aside instead of forcing the selection to be cleared to
+          reach Next. The bar is centred by this full-viewport flex box rather
+          than by a transform of its own — dragging owns the transform, and the
+          two cannot share it. For the same reason the entrance animates
+          opacity and scale but NOT y: a declarative `y: 0` would snap the bar
+          home again on every re-render (each selection change is one).
+
+          The outer box is a motion.div rather than a plain one because it
+          is AnimatePresence's direct child — a plain div there would
+          unmount at once and the exit would never play. ── */}
       <AnimatePresence>
         {visibleSelectedIds.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 16, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: 16, x: '-50%' }}
+            ref={bulkBarBoundsRef}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-            className="fixed bottom-6 left-1/2 z-dropdown flex items-center gap-3 rounded-full bg-ink-900 py-2 pl-4 pr-2 text-white shadow-xl"
+            className="pointer-events-none fixed inset-0 z-dropdown flex items-end justify-center p-6"
           >
-            <span className="text-xs font-semibold whitespace-nowrap tabular-nums">
-              {visibleSelectedIds.length} selected
-            </span>
-            <span className="h-4 w-px bg-white/20" />
-            <span className="flex items-center gap-1.5">{renderBulkActions()}</span>
-            <button
-              type="button"
-              aria-label="Clear selection"
-              onClick={() => setSelectedRows({})}
-              className="inline-flex size-7 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            <motion.div
+              drag
+              dragConstraints={bulkBarBoundsRef}
+              dragMomentum={false}
+              dragElastic={0.05}
+              initial={{ scale: 0.96 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.96 }}
+              transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+              className="pointer-events-auto flex cursor-move touch-none select-none items-center gap-3 rounded-full bg-ink-900 py-2 pl-4 pr-2 text-white shadow-xl active:cursor-grabbing"
             >
-              <X size={14} />
-            </button>
+              <span className="text-xs font-semibold whitespace-nowrap tabular-nums">
+                {visibleSelectedIds.length} selected
+              </span>
+              <span className="h-4 w-px bg-white/20" />
+              <span className="flex items-center gap-1.5">{renderBulkActions()}</span>
+              <button
+                type="button"
+                aria-label="Clear selection"
+                onClick={() => setSelectedRows({})}
+                className="inline-flex size-7 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

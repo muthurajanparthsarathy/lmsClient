@@ -9,7 +9,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { StaffLayout } from '@/app/lms/component/stafflayout/staff-layout';
+import { AdminOrStaffLayout } from '@/app/lms/component/AdminOrStaffLayout';
 import {
   LoginLogEntry, ReportSession, CourseOption, ReportFilters,
   fetchLoginLogsForExport, fetchCourseReportAll,
@@ -678,7 +678,7 @@ export default function LogsPage() {
 
   // ════════════════════════════════════════════════════════════════════════════════
   return (
-    <StaffLayout fullBleed>
+    <AdminOrStaffLayout fullBleed>
       <style jsx global>{`
         .logs-page * { font-family: ${FONT} !important; }
         .logs-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1166,6 +1166,6 @@ export default function LogsPage() {
         )}
 
       </div>
-    </StaffLayout>
+    </AdminOrStaffLayout>
   );
 }

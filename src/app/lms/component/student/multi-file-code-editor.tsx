@@ -36,6 +36,8 @@ import {
   Award, Clock, Menu, Search, ArrowUpDown, X as XIcon, FileCode,
   Maximize2, Minimize2, FileText, Eye, Play, Square,
   Terminal as TerminalIcon, AlertCircle,
+  AlertTriangle, MinusCircle, CloudUpload, Check,
+  NotebookPen,
 } from "lucide-react"
 import {
   LANGUAGE_CONFIG, LANGUAGE_ORDER, STARTER_CODE,
@@ -54,7 +56,8 @@ import FileTree, { type DragItem } from "./multi-file/FileTree"
 import SearchPanel from "./multi-file/SearchPanel"
 import { Files as FilesIcon, Search as SearchIcon } from "lucide-react"
 import MonacoTabs from "./multi-file/MonacoTabs"
-import RunTerminal, { type TermLine } from "./multi-file/RunTerminal"
+import { type TermLine } from "./multi-file/RunTerminal"
+import BottomPanel, { type SubmitStatus, type TestResultCase, type TestResultState } from "./multi-file/BottomPanel"
 import TraceVisualizer from "./multi-file/TraceVisualizer"
 
 // Backend base URL.
@@ -142,10 +145,14 @@ const deriveFolders = (files: FileNode[], explicit: any[] = []): FolderNode[] =>
 }
 
 // Seed a single starter file for a language.
+// Content is intentionally BLANK per the workspace redesign — students see
+// an empty editor and write their own solution instead of a language-agnostic
+// "hello world" template. STARTER_CODE stays in the lib in case any other
+// caller still wants it.
 const seedFiles = (lang: SupportedLanguage): FileNode[] => {
   const cfg = LANGUAGE_CONFIG[lang]
   return [{
-    id: uid("file"), filename: cfg.filename, content: STARTER_CODE[lang],
+    id: uid("file"), filename: cfg.filename, content: "",
     language: lang, path: `/${cfg.filename}`, folderPath: "/",
     isEntryPoint: true, lastModified: new Date(),
   }]
@@ -189,6 +196,14 @@ export default function MultiFileCodeEditor({
   const [running, setRunning] = useState(false)
   const [lastRuntime, setLastRuntime] = useState<number | null>(null)
   const [showTerminal, setShowTerminal] = useState(true)
+  // Bottom-panel tabs — the ONE panel now hosts both the interactive
+  // Terminal (Run output) and the Test Result view (Submit answer result).
+  // Run activates 'terminal'; Submit activates 'test-result'. Neither clears
+  // the other's state — flipping tabs is cheap navigation. Types are
+  // exported from BottomPanel so both files share the shape.
+  const [bottomTab, setBottomTab] = useState<'terminal' | 'test-result'>('terminal')
+  const [testResult, setTestResult] = useState<TestResultState | null>(null)
+  const [selectedCaseIndex, setSelectedCaseIndex] = useState<number>(0)
   const runAbortRef = useRef<AbortController | null>(null)
   // Monotonic counter bumped on every question switch AND on component
   // unmount, so any in-flight run's late continuations (Piston fetch that
@@ -222,9 +237,23 @@ export default function MultiFileCodeEditor({
 
   // ─── Question / exercise state ──────────────────────────────────────────────
   const questions = useMemo(() => exercise?.questions ?? [], [exercise])
+  // Category-aware noun for student-facing CTAs. Trainers author one
+  // "Exercise" doc but attach it under We_Do (student practices → treated
+  // as an assignment) or You_Do (student is graded → treated as an
+  // assessment). Using the neutral "exercise" everywhere read as generic
+  // and lost the pedagogy signal, so we resolve the noun from category.
+  // I_Do (instructor demo) stays "exercise".
+  const activityNoun: 'assignment' | 'assessment' | 'exercise' =
+    category === 'We_Do' ? 'assignment'
+    : category === 'You_Do' ? 'assessment'
+    : 'exercise'
+  const ActivityNoun = activityNoun.charAt(0).toUpperCase() + activityNoun.slice(1)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const currentQuestion = questions[currentQuestionIndex] || null
 
+  // Problems sidebar is CLOSED by default so the workspace opens focused on
+  // the current question + code. The hamburger in the Problem details
+  // toolbar toggles it whenever the student wants the full list.
   const [showSidebar, setShowSidebar] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -232,6 +261,12 @@ export default function MultiFileCodeEditor({
   const [sortBy, setSortBy] = useState<"default" | "difficulty" | "title">("default")
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all")
   const [solvedQuestions, setSolvedQuestions] = useState<Set<number>>(new Set())
+  // Track which questions the student has started (typed real content into
+  // any file). Drives the Finish modal's Completed / Incomplete / Not
+  // attempted split so the counts are honest, not guesses. Filled by
+  // onEditorChange for the current question, and pre-hydrated on load
+  // when a draft or previous submission already carries non-empty files.
+  const [attemptedQuestions, setAttemptedQuestions] = useState<Set<number>>(new Set())
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false)
@@ -242,12 +277,29 @@ export default function MultiFileCodeEditor({
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showOverviewModal, setShowOverviewModal] = useState(false)
+  // Notes panel — a lightweight per-exercise scratchpad. Toggled from the
+  // Notes tab on the left nav rail; body autosaves to localStorage
+  // (keyed by exercise + question so switching questions swaps context).
+  const [showNotesPanel, setShowNotesPanel] = useState(false)
+  const [notesText, setNotesText] = useState<string>("")
   const [pendingNavLevel, setPendingNavLevel] = useState<null | "course" | "hierarchy" | "category">(null)
 
   const [fullExercise, setFullExercise] = useState<any>(exercise || null)
   const [exerciseTimeLeft, setExerciseTimeLeft] = useState<number | null>(null)
 
-  const resizing = useRef<null | "question" | "tree">(null)
+  // Resize state captured on mouseDown so the mouseMove math is a pure
+  // delta from the click point — no bounding-rect assumptions about the
+  // Problems sidebar / activity bar widths. Fixes drag-jump-to-min when
+  // those offsets don't match the old formula.
+  type ResizeKind =
+    | { kind: 'question'; startX: number; startWidth: number }
+    | { kind: 'tree';     startX: number; startWidth: number }
+    | { kind: 'bottom';   startY: number; startHeight: number }
+  const resizing = useRef<null | ResizeKind>(null)
+  // Bottom-panel (Terminal + Test Result) height. Drag grip on the top
+  // edge updates this; clamped to a sensible min/max so the editor never
+  // vanishes and the terminal never becomes too tiny to read.
+  const [bottomPanelHeight, setBottomPanelHeight] = useState<number>(240)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // ─── Re-fetch full exercise (totalMarks etc.) ───────────────────────────────
@@ -364,8 +416,41 @@ export default function MultiFileCodeEditor({
     setVizAwait(false)
     setVizPrompt("")
     vizBufRef.current = ""
+
+    // Bottom-panel reset for the new question. The Test Result is tied to
+    // the previous question's submission — showing it above the new
+    // question would look like the new one had already been graded
+    // (that's the bug the user reported). Reset the panel back to the
+    // Terminal tab too, since Terminal state itself was already cleared
+    // above.
+    setTestResult(null)
+    setSelectedCaseIndex(0)
+    setBottomTab('terminal')
+
+    // Load per-question notes from localStorage for the freshly-selected
+    // question. Miss = blank scratchpad. Storage key includes both
+    // exercise + question ids so the same student's notes on different
+    // questions don't collide.
+    try {
+      const key = `lms_notes_${exercise?._id || 'ex'}_${currentQuestion?._id || 'q'}`
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(key) : null
+      setNotesText(raw ?? "")
+    } catch { setNotesText("") }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestion?._id])
+
+  // Autosave notes on change (debounced 500ms) so the student's
+  // scratchpad survives a reload without a Save button. Same key rule as
+  // the load — question-scoped.
+  useEffect(() => {
+    if (!currentQuestion?._id) return
+    const key = `lms_notes_${exercise?._id || 'ex'}_${currentQuestion._id}`
+    const t = setTimeout(() => {
+      try { localStorage.setItem(key, notesText) } catch { /* quota */ }
+    }, 500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesText, currentQuestion?._id])
 
   // Component-unmount teardown of the SAME run handles. Without this, a user
   // who clicks Back / closes the tab while a Pyodide run is still executing
@@ -391,10 +476,32 @@ export default function MultiFileCodeEditor({
     setReady(false)
     setSelectedLanguage((prev) => (availableLanguages.includes(prev) ? prev : primary))
 
+    // The question can carry an author-provided Starter Code (Code Setup
+    // section on ProgrammingQuestionForm). Read it here so the entry file
+    // can seed with it when no draft/submission wins. Old records used
+    // `solutions.startedCode` (and even the misspelled `staetedCode`) —
+    // the single-file editor consults both, and we match that.
+    const cq: any = currentQuestion || {}
+    const authoredStarter: string = (
+      typeof cq.starterCode === "string" ? cq.starterCode :
+      typeof cq?.solutions?.startedCode === "string" ? cq.solutions.startedCode :
+      typeof cq?.solutions?.staetedCode === "string" ? cq.solutions.staetedCode : ""
+    )
+
+    // seedFiles() creates one empty entry file; if the question shipped a
+    // Starter Code, drop it into that file's content so the student opens
+    // to the author's scaffold instead of a blank editor.
+    const seedWithAuthorStarter = (lang: SupportedLanguage): FileNode[] => {
+      const seed = seedFiles(lang)
+      if (authoredStarter && seed[0]) seed[0].content = authoredStarter
+      return seed
+    }
+
     const hydrate = (fileRecords: any[], folderRecords: any[], lang: SupportedLanguage) => {
       if (cancelled) return
       const fs = fileRecords.map(fileFromRecord)
-      if (fs.length === 0) { fs.push(...seedFiles(lang)) }
+      const hydratedFromExistingWork = fs.length > 0
+      if (fs.length === 0) { fs.push(...seedWithAuthorStarter(lang)) }
       if (!fs.some((f) => f.isEntryPoint)) {
         const entry = fs.find((f) => f.language === lang) || fs[0]
         if (entry) entry.isEntryPoint = true
@@ -407,19 +514,40 @@ export default function MultiFileCodeEditor({
       setActiveFileId(first ? first.id : null)
       setSelectedLanguage(lang)
       setReady(true)
+      // A load that came from an existing draft or previous submission
+      // (rather than a fresh seed) means the student already worked on
+      // this question — mark it attempted so the Finish modal shows it
+      // as Incomplete (not Not-Attempted) even if they don't type again
+      // this session.
+      if (hydratedFromExistingWork && fs.some((f) => (f.content || '').trim().length > 0)) {
+        setAttemptedQuestions((prev) => prev.has(currentQuestionIndex) ? prev : new Set(prev).add(currentQuestionIndex))
+      }
     }
 
     ;(async () => {
       const exerciseId = exercise?._id
       const questionId = currentQuestion?._id
 
-      // 1) draft
+      // 1) draft — a draft whose only file is a pristine template (an old
+      // library STARTER_CODE snapshot from before the workspace went blank,
+      // or the question's own authored starter with no student edits) is
+      // treated as "no work yet" so we fall through and re-seed from the
+      // authored starter. Without this, once a student first opened the
+      // question the autosaved starter would be locked in forever.
+      const isPristineStarter = (files: any[]): boolean => {
+        if (!files || files.length !== 1) return false
+        const only = files[0]
+        const body = (only?.content ?? "").toString()
+        if (body.trim() === "") return true
+        if (authoredStarter && body === authoredStarter) return true
+        return Object.values(STARTER_CODE).some((tpl) => tpl === body)
+      }
       if (exerciseId && questionId) {
         try {
           const r = await fetch(`${API}/draft/load?exerciseId=${exerciseId}&questionId=${questionId}`, { headers: authHeaders(), cache: "no-store" })
           const data = await r.json()
           const d = data?.draft
-          if (d && Array.isArray(d.files) && d.files.length > 0) {
+          if (d && Array.isArray(d.files) && d.files.length > 0 && !isPristineStarter(d.files)) {
             const lang = (normalizeLanguage(d.language) && availableLanguages.includes(normalizeLanguage(d.language)!))
               ? normalizeLanguage(d.language)! : primary
             hydrate(d.files, d.folders || [], lang)
@@ -444,7 +572,8 @@ export default function MultiFileCodeEditor({
         } catch { /* fall through */ }
       }
 
-      // 3) starter
+      // 3) starter — falls through hydrate([], …) which now consults the
+      // authored Starter Code first, and finally an empty file.
       hydrate([], [], primary)
     })()
 
@@ -582,7 +711,14 @@ export default function MultiFileCodeEditor({
 
   const onEditorChange = useCallback((id: string, value: string) => {
     setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, content: value, lastModified: new Date() } : f)))
-  }, [])
+    // Any keystroke on the current question marks it as attempted for
+    // the Finish-modal split. `id` isn't tied to a question index, but
+    // the editor is always scoped to the currently-selected question, so
+    // recording `currentQuestionIndex` is accurate.
+    if (value && value.trim().length > 0) {
+      setAttemptedQuestions((prev) => prev.has(currentQuestionIndex) ? prev : new Set(prev).add(currentQuestionIndex))
+    }
+  }, [currentQuestionIndex])
 
   // ═════════════════════════════════════════════════════════════════════════════
   // Run on Piston
@@ -593,6 +729,10 @@ export default function MultiFileCodeEditor({
   const runCode = useCallback(async () => {
     if (running || vizRunning || !files.length) return
     setRunning(true)
+    // Run → always route to the Terminal tab. Test Result state is left
+    // untouched so a prior submission is still there when the student flips
+    // back to it.
+    setBottomTab('terminal')
     setShowTerminal(true)
     setLastRuntime(null)
     log("system", `$ Running (${LANGUAGE_CONFIG[selectedLanguage].label}) …`)
@@ -643,6 +783,8 @@ export default function MultiFileCodeEditor({
     const entry = pickPythonEntry()
     if (!entry || !entry.content.trim()) { toast("Write some Python first.", { icon: "ℹ️" }); return }
 
+    // Same routing as batch Run — Terminal tab, panel expanded.
+    setBottomTab('terminal')
     setShowTerminal(true)
     setInteractiveActive(true)
     setAwaitingInput(false)
@@ -824,6 +966,20 @@ export default function MultiFileCodeEditor({
     const questionId = currentQuestion?._id
     if (!exerciseId || !questionId || !courseId) return { ok: false, message: "Missing exercise context." }
 
+    // Route the bottom panel to Test Result the moment Submit answer fires,
+    // and paint an "Evaluating…" loading state. The Terminal tab keeps its
+    // Run output — only the tab activation swaps. The previous test result
+    // stays visible until the new one lands (marked evaluating so students
+    // know it's outdated).
+    setBottomTab('test-result')
+    setShowTerminal(true)
+    setSelectedCaseIndex(0)
+    setTestResult((prev) => ({
+      ...(prev || { cases: [] }),
+      status: 'evaluating',
+      message: 'Evaluating your answer…',
+    }))
+
     // Link questions: solved on the external site — no project files exist.
     // Submit a single marker file naming the link and skip auto-evaluation.
     const _lq: any = currentQuestion as any
@@ -885,18 +1041,17 @@ export default function MultiFileCodeEditor({
 
     if (isLinkQ) {
       // No auto-evaluation possible — the work lives on the external site;
-      // the trainer reviews/marks it manually.
-      log("info", "🔗 Link question — submission recorded; the trainer reviews the external-site solution.")
+      // the trainer reviews/marks it manually. No terminal log needed —
+      // the Test Result panel carries the message now.
     } else if (method === "testcase") {
       // Server-side judge (Phase 1 P0). The submit endpoint re-runs the
       // project against the trainer's authoritative testCases — including
       // hidden ones the browser never sees — and returns the breakdown in
-      // its response. So we just note it in the terminal and let the axios
-      // call below do the work; the per-case pass/fail lines get printed
-      // after the response lands.
-      log("system", "🧪 Running test cases on server judge…")
+      // its response. The per-case pass/fail info lands in the Test Result
+      // panel, not the terminal.
     } else if (method === "ai") {
-      log("system", "🤖 Running AI evaluation…")
+      // AI evaluation runs client-side against Gemini; the Test Result panel
+      // shows "Evaluating…" throughout. No terminal log.
       // Concatenate every file with a header so Gemini sees the whole project
       // layout at once — the same shape it sees for single-file code.
       const bundled = submitFiles
@@ -950,14 +1105,9 @@ export default function MultiFileCodeEditor({
           aiResult.errorMessage ||
             "AI grader failed. Your code was saved — trainer will grade manually.",
         )
-        log("error", `⚠️ ${aiResult.errorMessage || "AI grader failed."}`)
-      } else {
-        const b = aiResult.breakdown.ai
-        log(
-          "success",
-          `🏁 AI score: ${submitScore}/${maxMarks} — ${b.passedTestCases}/${b.totalTestCases} test cases passed, ${b.criteria.length} criteria evaluated`,
-        )
       }
+      // AI success/failure is surfaced in the Test Result panel via the
+      // final setTestResult call below; no terminal log needed.
     }
     // method === "manual" → score stays 0, no breakdown.
 
@@ -981,37 +1131,97 @@ export default function MultiFileCodeEditor({
       // submissions don't stamp an empty object onto the answer.
       ...(evaluationBreakdown ? { evaluationBreakdown } : {}),
     }
-    const res = await axios.post(`${API}/courses/answers/submit-multiple-files`, payload, {
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-    })
+    let res: any
+    try {
+      res = await axios.post(`${API}/courses/answers/submit-multiple-files`, payload, {
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+      })
+    } catch (netErr: any) {
+      // Network / 5xx / auth failure. The answer was NOT evaluated — the
+      // Test Result panel says so and offers Try again; no false "wrong".
+      setTestResult({
+        status: 'submission-failed',
+        cases: [],
+        message: 'Submission failed',
+        errorDetail: netErr?.response?.data?.message || netErr?.message || 'Network error — your answer was not evaluated.',
+      })
+      return { ok: false, message: netErr?.message || "network error" }
+    }
 
-    // Render the server-authored per-case breakdown in the terminal — the
-    // client no longer runs test cases itself, so this is where the ✓/✗
-    // lines students used to see get printed.
+    // Build the TestResult state from the server-authored breakdown. The
+    // client never invents cases — everything comes from the response,
+    // including hidden flags. If the response has no breakdown (Manual eval),
+    // the panel still shows the accepted/submitted summary.
     const serverBreakdown = res.data?.data?.evaluationBreakdown
-    const serverScore = res.data?.data?.score
-    const serverStatus = res.data?.data?.status
+    const serverScore: number | null = typeof res.data?.data?.score === 'number' ? res.data.data.score : null
+    const serverStatus: string | null = res.data?.data?.status || null
+    const maxMarks = Number(currentQuestion?.score ?? currentQuestion?.points ?? 10) || 10
+
+    let nextResult: TestResultState
     if (serverBreakdown?.method === "testcase" && serverBreakdown.testcase) {
       const tc = serverBreakdown.testcase
-      const cases: Array<{ index: number; passed: boolean; hidden: boolean; input: string; expectedOutput: string; actualOutput: string }> = tc.cases || []
-      const maxMarks = Number(currentQuestion?.score ?? currentQuestion?.points ?? 10) || 10
-      for (const c of cases) {
-        const label = c.hidden ? `Hidden test #${c.index + 1}` : `Test #${c.index + 1}`
-        if (c.passed) log("success", `✓ ${label} passed`)
-        else if (c.hidden) log(
-          "error",
-          // Trainer's input/expected stay hidden; student's own output is
-          // safe to show — it helps them debug format mismatches (e.g.
-          // returning "true" when the trainer expected "Even").
-          `✗ ${label} failed — got: ${c.actualOutput || "(no output)"}`,
-        )
-        else log("error", `✗ ${label} failed — expected: ${c.expectedOutput} | got: ${c.actualOutput || "(no output)"}`)
+      const rawCases: any[] = Array.isArray(tc.cases) ? tc.cases : []
+      const cases: TestResultCase[] = rawCases.map((c) => ({
+        index: c.index ?? 0,
+        hidden: !!c.hidden,
+        passed: !!c.passed,
+        // Server marks hidden cases progressively as they unlock; anything
+        // without the flag from an older response falls back to !hidden
+        // (visible cases are always effectively unlocked).
+        unlocked: typeof c.unlocked === 'boolean' ? c.unlocked : !c.hidden,
+        input: c.input ?? "",
+        expectedOutput: c.expectedOutput ?? "",
+        actualOutput: c.actualOutput ?? "",
+        errorMessage: c.errorMessage,
+      }))
+      const passed = typeof tc.passed === 'number' ? tc.passed : cases.filter(c => c.passed).length
+      const total = typeof tc.total === 'number' ? tc.total : cases.length
+      const status: SubmitStatus =
+        passed === total && total > 0 ? 'accepted'
+        : passed === 0 ? 'wrong-answer'
+        : 'partial'
+      nextResult = {
+        status,
+        cases,
+        passedCount: passed,
+        totalCount: total,
+        runtimeMs: typeof tc.runtimeMs === 'number' ? tc.runtimeMs : null,
+        memoryKb: typeof tc.memoryKb === 'number' ? tc.memoryKb : null,
+        score: serverScore,
+        maxMarks,
       }
-      log(
-        tc.passed === tc.total ? "success" : "info",
-        `🏁 Passed ${tc.passed}/${tc.total} — Score: ${serverScore}/${maxMarks}${serverStatus === "solved" ? " ✓ SOLVED" : ""}`,
-      )
+    } else if (serverBreakdown?.method === "ai" && serverBreakdown.ai) {
+      const ai = serverBreakdown.ai
+      const passed = ai.passedTestCases ?? 0
+      const total = ai.totalTestCases ?? 0
+      const status: SubmitStatus =
+        (serverStatus === 'solved') ? 'accepted'
+        : (total > 0 && passed === 0) ? 'wrong-answer'
+        : (total > 0 && passed < total) ? 'partial'
+        : 'accepted'
+      nextResult = {
+        status,
+        cases: [],
+        passedCount: passed,
+        totalCount: total,
+        score: serverScore,
+        maxMarks,
+        message: `AI evaluation — ${ai.criteria?.length ?? 0} criteria`,
+      }
+    } else {
+      // Manual / Link / no breakdown — just a submission acknowledgement.
+      nextResult = {
+        status: serverStatus === 'solved' ? 'accepted' : 'accepted',
+        cases: [],
+        score: serverScore,
+        maxMarks,
+        message: isLinkQ
+          ? 'Link submission recorded. The trainer will review the external solution.'
+          : 'Submission recorded. The trainer will grade this answer manually.',
+      }
     }
+    setTestResult(nextResult)
+    setSelectedCaseIndex(0)
 
     return res.data?.success ? { ok: true } : { ok: false, message: res.data?.message || "unknown" }
   }
@@ -1107,21 +1317,30 @@ export default function MultiFileCodeEditor({
   }, [exData?.exerciseInformation?.totalDuration])
 
   // ─── Resize handler ──────────────────────────────────────────────────────────
+  // Delta-based: each drag adjusts the width/height by (current pointer -
+  // start pointer), so layout offsets (sidebar, activity bar, borders) are
+  // invisible to the math and the clamp only fires at the true min/max.
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
-      if (!resizing.current || !containerRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      if (resizing.current === "question") setQuestionWidth(Math.max(220, Math.min(640, e.clientX - rect.left)))
-      else if (resizing.current === "tree") {
-        const base = rect.left + (isFull ? 0 : questionWidth)
-        setTreeWidth(Math.max(150, Math.min(420, e.clientX - base)))
+      const r = resizing.current
+      if (!r) return
+      if (r.kind === "question") {
+        setQuestionWidth(Math.max(220, Math.min(640, r.startWidth + (e.clientX - r.startX))))
+      } else if (r.kind === "tree") {
+        setTreeWidth(Math.max(150, Math.min(420, r.startWidth + (e.clientX - r.startX))))
+      } else if (r.kind === "bottom") {
+        const rect = containerRef.current?.getBoundingClientRect()
+        const maxH = rect ? Math.max(160, rect.height - 200) : 800
+        // Grip is on the panel's TOP edge, so dragging UP grows height —
+        // startY - clientY yields positive delta on upward drags.
+        setBottomPanelHeight(Math.max(120, Math.min(maxH, r.startHeight + (r.startY - e.clientY))))
       }
     }
     const handleUp = () => { resizing.current = null }
     window.addEventListener("mousemove", handleMove)
     window.addEventListener("mouseup", handleUp)
     return () => { window.removeEventListener("mousemove", handleMove); window.removeEventListener("mouseup", handleUp) }
-  }, [isFull, questionWidth])
+  }, [])
 
   // ─── Question filtering / nav (unchanged behaviour) ─────────────────────────
   const difficultyMap = useMemo<Record<string, { firstIndex: number; count: number }>>(() => {
@@ -1157,19 +1376,39 @@ export default function MultiFileCodeEditor({
   const selectQuestion = (idx: number) => setCurrentQuestionIndex(idx)
 
   // ─── Reusable question UI ───────────────────────────────────────────────────
+  // Prev / Next arrow buttons — plain square controls that flank the "Question
+  // N of M" label in the Problem details toolbar. The label lives outside so
+  // the arrows don't duplicate it.
+  const navBtnStyle = (disabled: boolean): React.CSSProperties => ({
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 32, height: 32, borderRadius: 8,
+    border: "1px solid #D9E1EA", background: "#fff",
+    color: disabled ? "#C6D0DA" : "#172033",
+    cursor: disabled ? "not-allowed" : "pointer",
+    flexShrink: 0,
+  })
   const questionNav = questions.length > 1 ? (
-    <div className="flex items-center gap-1 flex-shrink-0">
-      <button onClick={goPrev} disabled={currentQuestionIndex === 0} className="px-2 h-6 flex items-center justify-center gap-0.5 border rounded text-2xs font-medium border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 disabled:opacity-50">
-        <ChevronLeft className="w-3 h-3" /> Prev
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <button
+        onClick={goPrev}
+        disabled={currentQuestionIndex === 0}
+        aria-label="Previous question"
+        title="Previous question"
+        style={navBtnStyle(currentQuestionIndex === 0)}
+      >
+        <ChevronLeft style={{ width: 16, height: 16 }} />
       </button>
-      <span className="text-2xs font-semibold min-w-[34px] text-center text-emerald-600">{currentQuestionIndex + 1}/{questions.length}</span>
-      <button onClick={goNext} disabled={currentQuestionIndex === questions.length - 1} className="px-2 h-6 flex items-center justify-center gap-0.5 border rounded text-2xs font-medium border-orange-300 bg-orange-50 hover:bg-orange-100 text-orange-700 disabled:opacity-50">
-        Next <ChevronRight className="w-3 h-3" />
+      <button
+        onClick={goNext}
+        disabled={currentQuestionIndex === questions.length - 1}
+        aria-label="Next question"
+        title="Next question"
+        style={navBtnStyle(currentQuestionIndex === questions.length - 1)}
+      >
+        <ChevronRight style={{ width: 16, height: 16 }} />
       </button>
     </div>
-  ) : (
-    <span className="text-2xs text-gray-500 font-mono flex-shrink-0">Q {currentQuestionIndex + 1}/{questions.length || 1}</span>
-  )
+  ) : null
 
   // Build examples list — fallback to handle any question shape:
   //   1. ALL non-hidden testCases (matches code-editor.tsx logic — the forms
@@ -1286,78 +1525,366 @@ export default function MultiFileCodeEditor({
   // ═════════════════════════════════════════════════════════════════════════════
   // RENDER
   // ═════════════════════════════════════════════════════════════════════════════
+  // Small helper used by the Finish modal — a single tone-tinted status
+  // card (Completed / Incomplete / Not attempted). Kept local so it can
+  // reference FONT without prop drilling.
+  const StatusCard = ({ tone, Icon, label, value }: {
+    tone: 'ok' | 'warn' | 'mute'; Icon: any; label: string; value: number
+  }) => {
+    const T = tone === 'ok'
+      ? { fg: '#12A765', bg: '#ECFDF3', border: '#BBF7D0' }
+      : tone === 'warn'
+        ? { fg: '#B54708', bg: '#FFFAEB', border: '#FDE68A' }
+        : { fg: '#B42318', bg: '#FEF2F2', border: '#FECACA' }
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "8px 10px", borderRadius: 10,
+        border: "1px solid #E4E7EC", background: "#fff",
+      }}>
+        <span aria-hidden="true" style={{
+          width: 28, height: 28, borderRadius: 999, flexShrink: 0,
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          background: T.bg, border: `1px solid ${T.border}`, color: T.fg,
+        }}>
+          <Icon size={14} />
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "#667085" }}>{label}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#101828", lineHeight: 1.1 }}>{value}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div ref={containerRef} className="flex flex-col h-full w-full" style={{ background: "#fff", color: "#111827", fontFamily: FONT, userSelect: resizing.current ? "none" : "auto" }}>
-      {/* TOP CHROME */}
-      {exercise && !isFull && (
-        <div style={{ flexShrink: 0, borderBottom: "1px solid #e5e7eb" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "6px 12px", gap: 8, borderBottom: "1px solid #f0f0f0", background: "#ffffff" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
-              <button onClick={() => setPendingNavLevel("course")} style={{ fontFamily: FONT, fontSize: 12.5, fontWeight: 500, color: "#f97316", background: "none", border: "none", cursor: "pointer", padding: 0 }}>{courseName || "Course"}</button>
-              {hierarchy.map((seg, i) => (
-                <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <ChevronRight style={{ width: 12, height: 12, color: "#c0c4cc" }} />
-                  <button onClick={() => setPendingNavLevel("hierarchy")} style={{ fontFamily: FONT, fontSize: 12.5, fontWeight: 500, color: "#f97316", background: "none", border: "none", cursor: "pointer", padding: 0 }}>{seg}</button>
-                </span>
-              ))}
-              {category && (
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <ChevronRight style={{ width: 12, height: 12, color: "#c0c4cc" }} />
-                  <button onClick={() => setPendingNavLevel("category")} style={{ fontFamily: FONT, fontSize: 12.5, fontWeight: 500, color: "#f97316", background: "none", border: "none", cursor: "pointer", padding: 0 }}>{category === "We_Do" ? "We Do" : category === "I_Do" ? "I Do" : category === "You_Do" ? "You Do" : category}</button>
-                </span>
-              )}
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <ChevronRight style={{ width: 12, height: 12, color: "#c0c4cc" }} />
-                <span style={{ fontFamily: FONT, fontSize: 12.5, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis" }}>{exercise?.exerciseInformation?.exerciseName || "Exercise"}</span>
+      {/* GLOBAL HEADER — one compact toolbar per the workspace redesign:
+          left = green product glyph + hamburger sidebar toggle; centre =
+          Previous / N of M / Next question paginator (real values, no
+          hardcoding); right = Visualize / Run / Submit answer / Finish
+          assignment (moved out of the old editor toolbar so a single
+          row carries the primary actions). Old breadcrumb + timer +
+          Exercise-info/Score chips dropped from here; the left nav rail
+          hosts Score + Exercise info now. */}
+      {exercise && !isFull && (() => {
+        const total = questions.length || 1
+        const cur   = Math.min(currentQuestionIndex + 1, total)
+        return (
+          <div style={{
+            flexShrink: 0,
+            background: "#FFFFFF",
+            borderBottom: "1px solid #E4E7EC",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "8px 16px", minHeight: 60,
+            gap: 12,
+          }}>
+            {/* Left — glyph + hamburger + Previous/counter/Next paginator.
+                Paginator moved to the LEFT end of the toolbar per the
+                user; sits right after the sidebar toggle so the reading
+                flow is "sidebar / current question / actions". */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <span aria-hidden="true" style={{
+                width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                background: "#0F9D94", color: "#fff",
+              }}>
+                <FileCode style={{ width: 18, height: 18 }} />
               </span>
+              <button
+                type="button"
+                onClick={() => setShowSidebar(v => !v)}
+                aria-label="Toggle problems sidebar"
+                aria-pressed={showSidebar}
+                title={showSidebar ? "Hide problems" : "Show problems"}
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 36, height: 36, borderRadius: 8,
+                  border: "1px solid #D9E1EA", background: "#fff", color: "#172033",
+                  cursor: "pointer", flexShrink: 0,
+                }}
+              >
+                <Menu style={{ width: 18, height: 18 }} />
+              </button>
+
+              {/* Prev / N-of-M / Next — smaller text (12px), wider
+                  padding, buttons at the two ends of the group with the
+                  counter between. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setCurrentQuestionIndex(i => Math.max(0, i - 1))}
+                  disabled={currentQuestionIndex <= 0}
+                  aria-label="Previous question"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    minWidth: 100, height: 32, padding: "0 16px", borderRadius: 8,
+                    border: "1px solid #D9E1EA", background: "#fff",
+                    color: currentQuestionIndex <= 0 ? "#C6D0DA" : "#172033",
+                    fontSize: 12, fontWeight: 600, fontFamily: FONT,
+                    cursor: currentQuestionIndex <= 0 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <ChevronLeft style={{ width: 13, height: 13 }} />
+                  Previous
+                </button>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  minWidth: 44, height: 32, padding: "0 8px",
+                  fontFamily: FONT, fontSize: 13, fontWeight: 700, color: "#101828",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  {cur} / {total}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentQuestionIndex(i => Math.min(total - 1, i + 1))}
+                  disabled={currentQuestionIndex >= total - 1}
+                  aria-label="Next question"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    minWidth: 100, height: 32, padding: "0 16px", borderRadius: 8,
+                    border: "1px solid #D9E1EA", background: "#fff",
+                    color: currentQuestionIndex >= total - 1 ? "#C6D0DA" : "#172033",
+                    fontSize: 12, fontWeight: 600, fontFamily: FONT,
+                    cursor: currentQuestionIndex >= total - 1 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Next
+                  <ChevronRight style={{ width: 13, height: 13 }} />
+                </button>
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 8 }}>
-              <button onClick={() => { if (!isSubmitting) setShowSubmitConfirm(true) }} disabled={isSubmitting} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 6, border: "none", background: isSubmitting ? "#6b7280" : "#10b981", color: "white", fontSize: 13, fontWeight: 500, cursor: isSubmitting ? "not-allowed" : "pointer", opacity: isSubmitting ? 0.7 : 1 }}>
-                {isSubmitting ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> : <CheckCircle style={{ width: 14, height: 14 }} />} Submit Exercise
+
+            {/* Right — primary actions moved up from the editor toolbar. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, justifySelf: "end" }}>
+              {/* All right-cluster actions matched to the paginator
+                  rhythm — h-32, 12px labels, tight padding. Labels
+                  simplified per user: "Submit answer" → "Submit" and
+                  "Finish {activity}" → "Finish". Full intent still
+                  reads via title / aria-label. */}
+              <button
+                onClick={visualize}
+                disabled={vizLoading || !ready}
+                title="Step through your Python code"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  height: 32, padding: "0 12px", borderRadius: 8,
+                  border: "1px solid #6957E5", background: "#fff", color: "#6957E5",
+                  fontSize: 12, fontWeight: 600, fontFamily: FONT,
+                  cursor: vizLoading ? "wait" : "pointer",
+                  opacity: ready ? 1 : 0.5,
+                }}
+              >
+                {vizLoading ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />}
+                Visualize
+              </button>
+
+              {running ? (
+                <button onClick={stopRun} style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  height: 32, padding: "0 12px", borderRadius: 8,
+                  border: "1px solid #fca5a5", background: "#fee2e2", color: "#b91c1c",
+                  fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: "pointer",
+                }}>
+                  <Square size={12} /> Stop
+                </button>
+              ) : interactiveActive ? (
+                <button onClick={stopInteractive} style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  height: 32, padding: "0 12px", borderRadius: 8,
+                  border: "1px solid #fca5a5", background: "#fee2e2", color: "#b91c1c",
+                  fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: "pointer",
+                }}>
+                  <Square size={12} /> Stop
+                </button>
+              ) : (
+                <button
+                  onClick={() => { selectedLanguage === "python" ? runInteractive() : runCode() }}
+                  disabled={!ready || vizRunning}
+                  title={selectedLanguage === "python" ? "Run with live input" : "Run your program"}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    height: 32, padding: "0 14px", borderRadius: 8,
+                    border: "none", background: "#12A765", color: "#fff",
+                    fontSize: 12, fontWeight: 700, fontFamily: FONT,
+                    cursor: (ready && !vizRunning) ? "pointer" : "not-allowed",
+                    opacity: (ready && !vizRunning) ? 1 : 0.5,
+                  }}
+                >
+                  <Play size={12} /> Run
+                </button>
+              )}
+
+              {exercise && (
+                <button
+                  onClick={submitQuestion}
+                  disabled={isSubmittingQuestion || isSubmitting}
+                  title="Submit your answer to this question"
+                  aria-label="Submit answer"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    height: 32, padding: "0 14px", borderRadius: 8,
+                    border: "none",
+                    background: (isSubmittingQuestion || isSubmitting) ? "#94A3B8" : "#FF641A",
+                    color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: FONT,
+                    cursor: (isSubmittingQuestion || isSubmitting) ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {isSubmittingQuestion ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                  Submit
+                </button>
+              )}
+
+              <button
+                onClick={() => { if (!isSubmitting) setShowSubmitConfirm(true) }}
+                disabled={isSubmitting}
+                title={`Finish and submit the entire ${activityNoun}`}
+                aria-label={`Finish ${activityNoun}`}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  height: 32, padding: "0 14px", borderRadius: 8,
+                  border: "none", background: "#12A765", color: "#fff",
+                  fontSize: 12, fontWeight: 700, fontFamily: FONT,
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
+                  opacity: isSubmitting ? 0.6 : 1,
+                }}
+              >
+                {isSubmitting
+                  ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
+                  : <CheckCircle style={{ width: 12, height: 12 }} />}
+                Finish
               </button>
             </div>
           </div>
-
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px", background: "#ffffff", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              {availableDifficulties.length > 0 && (
-                <>
-                  <span style={{ fontSize: 11, color: "#6b7280" }}>Difficulty</span>
-                  <select value={selectedDifficulty} onChange={(e) => { setSelectedDifficulty(e.target.value); if (e.target.value !== "all") jumpToDifficulty(e.target.value) }} style={{ height: 28, padding: "0 10px", borderRadius: 99, border: "1px solid #d1d5db", background: "#fff", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>
-                    <option value="all">All difficulties</option>
-                    {availableDifficulties.map((diff) => <option key={diff} value={diff}>{diff.charAt(0).toUpperCase() + diff.slice(1)} ({difficultyMap[diff].count})</option>)}
-                  </select>
-                </>
-              )}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 10px", borderRadius: 99, background: "#fff7ed" }}>
-                <FileCode style={{ width: 12, height: 12, color: "#f97316" }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#f97316" }}>{files.length} file{files.length !== 1 ? "s" : ""}</span>
-              </div>
-            </div>
-            <ExerciseInfoButtons onDetailsClick={() => setShowDetailsModal(true)} onOverviewClick={() => setShowOverviewModal(true)} isGraded={exData?.isGraded !== false} detailsActive={showDetailsModal} overviewActive={showOverviewModal} />
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              {exerciseTimeLeft !== null && (exData?.exerciseInformation?.totalDuration || 0) > 0 && (() => {
-                const totalSecs = (exData?.exerciseInformation?.totalDuration || 0) * 60
-                const pct = totalSecs > 0 ? Math.max(0, (exerciseTimeLeft / totalSecs) * 100) : 0
-                const isDanger = exerciseTimeLeft < 60
-                const tcol = isDanger ? "#ef4444" : exerciseTimeLeft < 300 ? "#f59e0b" : "#F27757"
-                return (
-                  <div style={{ minWidth: 130 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock style={{ width: 12, height: 12, color: tcol }} /><span style={{ fontSize: 11, color: "#9b9bae", fontWeight: 600 }}>Time Left</span></div>
-                      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 14, fontWeight: 800, color: tcol }}>{formatExerciseTime(exerciseTimeLeft)}</span>
-                    </div>
-                    <div style={{ height: 4, borderRadius: 99, background: "#f4f4f7", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: tcol, transition: "width 1s linear" }} /></div>
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* MAIN BODY */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* LEFT NAV RAIL — thin column that hosts Problem toggle + the
+            utility chips (Score, Exercise info) moved out of the header.
+            First in the flex row so it always sits flush-left. */}
+        {exercise && !isFull && (
+          <div style={{
+            width: 72, background: "#F7F9FB",
+            borderRight: "1px solid #E4E7EC",
+            display: "flex", flexDirection: "column", alignItems: "stretch",
+            padding: "12px 0", gap: 4, flexShrink: 0,
+          }}>
+            <button
+              type="button"
+              onClick={() => setShowNotesPanel(v => !v)}
+              aria-label="Notes"
+              aria-pressed={showNotesPanel}
+              title="Notes — private scratchpad for this question"
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                padding: "10px 4px", border: "none", background: "transparent", cursor: "pointer",
+                color: showNotesPanel ? "#0F5B5D" : "#667085",
+                borderLeft: showNotesPanel ? "2px solid #0F5B5D" : "2px solid transparent",
+              }}
+            >
+              <NotebookPen style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, fontFamily: FONT }}>Notes</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowOverviewModal(true)}
+              aria-label={(exData?.isGraded !== false) ? "Score" : "Questions"}
+              title={(exData?.isGraded !== false) ? "Score" : "Questions"}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                padding: "10px 4px", border: "none", background: "transparent", cursor: "pointer",
+                color: showOverviewModal ? "#6957E5" : "#667085",
+                borderLeft: showOverviewModal ? "2px solid #6957E5" : "2px solid transparent",
+              }}
+            >
+              <Award style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, fontFamily: FONT }}>
+                {(exData?.isGraded !== false) ? "Score" : "Overview"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDetailsModal(true)}
+              aria-label="Exercise info"
+              title="Exercise info"
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                padding: "10px 4px", border: "none", background: "transparent", cursor: "pointer",
+                color: showDetailsModal ? "#0F9D94" : "#667085",
+                borderLeft: showDetailsModal ? "2px solid #0F9D94" : "2px solid transparent",
+              }}
+            >
+              <AlertCircle style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: 10.5, fontWeight: 600, fontFamily: FONT, lineHeight: 1.2, textAlign: "center" }}>
+                Exercise<br />info
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Notes panel — private per-question scratchpad. Slides in
+            beside the rail; autosaves to localStorage on every
+            keystroke so a reload never loses the student's own notes.
+            Kept intentionally simple (plain textarea) so it never
+            competes with the code editor for attention. */}
+        {showNotesPanel && !isFull && (
+          <div
+            className="flex-shrink-0 flex flex-col border-r"
+            style={{ width: 320, background: "#FFFDF7", borderColor: "#E4E7EC" }}
+          >
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "10px 14px", borderBottom: "1px solid #E4E7EC", background: "#FFFBF0",
+            }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <NotebookPen size={14} style={{ color: "#0F5B5D" }} />
+                <span style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, color: "#101828" }}>
+                  Notes
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNotesPanel(false)}
+                aria-label="Close notes"
+                title="Close"
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 24, height: 24, borderRadius: 6, border: "none",
+                  background: "transparent", color: "#667085", cursor: "pointer",
+                }}
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <div style={{
+              padding: "6px 14px 4px",
+              fontFamily: FONT, fontSize: 11.5, color: "#667085",
+            }}>
+              Private scratchpad for this question. Autosaved.
+            </div>
+            <textarea
+              value={notesText}
+              onChange={(e) => setNotesText(e.target.value)}
+              placeholder="Jot ideas, edge cases, or pseudo-code here…"
+              spellCheck={false}
+              style={{
+                flex: 1, resize: "none",
+                margin: "6px 14px 14px", padding: "10px 12px",
+                borderRadius: 8, border: "1px solid #E4E7EC", background: "#fff",
+                fontFamily: FONT, fontSize: 13, color: "#101828", lineHeight: 1.55,
+                outline: "none",
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "#0F5B5D" }}
+              onBlur={(e)  => { e.currentTarget.style.borderColor = "#E4E7EC" }}
+            />
+          </div>
+        )}
+
         {/* Problems sidebar */}
         {showSidebar && !isFull && (
           <div className="w-80 border-r overflow-hidden flex flex-col flex-shrink-0" style={{ borderColor: "#e5e7eb", background: "#fff" }}>
@@ -1410,7 +1937,7 @@ export default function MultiFileCodeEditor({
             <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center" style={{ background: "#f9fafb" }}>
               <div className="text-md font-bold text-gray-800">This question opens on {hostOf(linkUrl)}</div>
               <p className="text-xs text-gray-500 max-w-md">
-                Open the problem in a new tab, solve it there, then come back and press <b>Submit Question</b>.
+                Open the problem in a new tab, solve it there, then come back and press <b>Submit answer</b>.
               </p>
               <div className="flex items-center gap-2 flex-wrap justify-center">
                 <button
@@ -1428,7 +1955,7 @@ export default function MultiFileCodeEditor({
                     style={{ background: (isSubmittingQuestion || isSubmitting) ? "#9ca3af" : "#22c55e", border: "none", cursor: "pointer" }}
                   >
                     {isSubmittingQuestion ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                    {solvedQuestions.has(currentQuestionIndex) ? "Submitted ✓" : "Submit Question"}
+                    {solvedQuestions.has(currentQuestionIndex) ? "Submitted ✓" : "Submit answer"}
                   </button>
                 )}
               </div>
@@ -1440,55 +1967,120 @@ export default function MultiFileCodeEditor({
         {/* Question panel */}
         {!isFull && (
           <>
-            <div className="flex flex-col flex-shrink-0 overflow-hidden border-r" style={{ width: questionWidth, background: "#fff", borderColor: "#e5e7eb" }}>
-              <div className="px-3 py-2 border-b flex items-center justify-between gap-2" style={{ borderColor: "#e5e7eb" }}>
-                <div className="flex items-center gap-2 min-w-0">
-                  <button onClick={() => setShowSidebar(!showSidebar)} className="flex items-center justify-center w-6 h-6 rounded hover:bg-gray-100 text-gray-700" title={showSidebar ? "Hide problems" : "Show problems"}>{showSidebar ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}</button>
-                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">Problem</span>
-                </div>
-                {questionNav}
-              </div>
+            <div className="flex flex-col flex-shrink-0 overflow-hidden border-r" style={{ width: questionWidth, background: "#fff", borderColor: "#D9E1EA" }}>
+              {/* Problem details — hamburger + "Question N of M" removed
+                  from this row: they already sit in the global header's
+                  paginator group, so repeating them here was pure noise.
+                  Question content sits flush with the panel edge now. */}
               <div className="flex-1 overflow-y-auto p-4 text-xs leading-relaxed text-gray-800">{questionContent}</div>
             </div>
-            <div onMouseDown={() => { resizing.current = "question" }} className="w-1 cursor-col-resize hover:bg-orange-400 flex-shrink-0" style={{ background: "#e5e7eb" }} />
+            <div onMouseDown={(e) => { resizing.current = { kind: "question", startX: e.clientX, startWidth: questionWidth } }} className="w-1 cursor-col-resize hover:bg-orange-400 flex-shrink-0" style={{ background: "#e5e7eb" }} />
           </>
         )}
 
         {/* EDITOR AREA */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "#fff" }}>
-          {/* Toolbar */}
-          <div className="flex items-center justify-between flex-shrink-0 px-3" style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", minHeight: 40 }}>
-            <div className="flex items-center gap-2">
+          {/* Toolbar — active-file crumb + Saved status on the left, then
+              language + Visualize (outlined violet) + Run (green) + Submit
+              answer (orange primary) on the right. "Submit answer" submits
+              only the currently selected question; the whole-exercise
+              "Finish exercise" lives in the global header. */}
+          <div className="flex items-center justify-between flex-shrink-0" style={{ background: "#fff", borderBottom: "1px solid #D9E1EA", minHeight: 44, padding: "0 12px" }}>
+            <div className="flex items-center gap-3 min-w-0">
               {isFull && (
-                <button onClick={() => setShowQDrawer((v) => !v)} className="flex items-center gap-1 h-7 px-2 rounded text-2xs font-semibold" style={{ background: showQDrawer ? "#f97316" : "#f3f4f6", color: showQDrawer ? "#fff" : "#374151", border: showQDrawer ? "none" : "1px solid #e5e7eb" }}><FileText size={13} /> Question</button>
+                <button
+                  onClick={() => setShowQDrawer((v) => !v)}
+                  className="flex items-center gap-1 h-7 px-2 rounded text-xs font-semibold"
+                  style={{ background: showQDrawer ? "#0F9D94" : "#F3F6FA", color: showQDrawer ? "#fff" : "#172033", border: showQDrawer ? "none" : "1px solid #D9E1EA" }}
+                >
+                  <FileText size={13} /> Question
+                </button>
               )}
-              <span className="text-2xs text-gray-600">Language</span>
-              <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value as SupportedLanguage)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: `1px solid ${LANGUAGE_CONFIG[selectedLanguage]?.color || "#d1d5db"}`, background: "#fff", color: "#111827", fontSize: 12, fontWeight: 600, fontFamily: "ui-monospace, monospace", cursor: "pointer" }}>
+              {activeFile && (
+                <span title={activeFile.path} style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  fontFamily: "ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: "#172033",
+                  padding: "4px 10px", background: "#F3F6FA", borderRadius: 6, border: "1px solid #E4E7EC",
+                  maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  <FileText style={{ width: 12, height: 12, color: "#667085" }} />
+                  {basename(activeFile.path)}
+                </span>
+              )}
+              {/* Autosave indicator — the editor debounces to /draft/save
+                  every 1.5s and heartbeats every 15s, so a static "Saved"
+                  is accurate for a student who's not offline. Kept
+                  non-animated per the spec. */}
+              <span aria-live="polite" title="Your work is autosaved" style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                fontFamily: FONT, fontSize: 12, color: "#12A765", fontWeight: 500,
+              }}>
+                <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: "#12A765", display: "inline-block" }} />
+                Saved
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Language picker stays on the editor toolbar because it's
+                  scoped to the active file. Run / Visualize / Submit
+                  answer moved to the global header (single-toolbar rule);
+                  a Stop button STILL surfaces here when a run is live so
+                  the student can halt without scrolling their eye all the
+                  way up. */}
+              <select
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value as SupportedLanguage)}
+                aria-label="Language"
+                style={{
+                  height: 32, padding: "0 10px", borderRadius: 8,
+                  border: "1px solid #D9E1EA", background: "#fff",
+                  color: "#172033", fontSize: 12.5, fontWeight: 600,
+                  fontFamily: "ui-monospace, monospace", cursor: "pointer",
+                }}
+              >
                 {availableLanguages.map((lang) => <option key={lang} value={lang}>{LANGUAGE_CONFIG[lang].label}</option>)}
               </select>
-            </div>
-            <div className="flex items-center gap-2 pr-1 flex-shrink-0">
-              {running ? (
-                <button onClick={stopRun} className="flex items-center gap-1.5 h-7 px-3 rounded text-xs font-semibold" style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}><Square size={12} /> Stop</button>
-              ) : interactiveActive ? (
-                <button onClick={stopInteractive} className="flex items-center gap-1.5 h-7 px-3 rounded text-xs font-semibold" style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}><Square size={12} /> Stop</button>
-              ) : (
-                // Single Run button: Python runs interactively (live input);
-                // other languages run on Piston (batch + stdin box).
+
+              {(running || interactiveActive) && (
                 <button
-                  onClick={() => { selectedLanguage === "python" ? runInteractive() : runCode() }}
-                  disabled={!ready || vizRunning}
-                  title={selectedLanguage === "python" ? "Run with live, interactive input()" : "Run your program"}
-                  className="flex items-center gap-1.5 h-7 px-3 rounded text-xs font-semibold"
-                  style={{ background: "#22c55e", color: "#fff", border: "none", opacity: (ready && !vizRunning) ? 1 : 0.5 }}
-                ><Play size={12} /> Run</button>
+                  onClick={running ? stopRun : stopInteractive}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    height: 32, padding: "0 12px", borderRadius: 8,
+                    border: "1px solid #fca5a5", background: "#fee2e2", color: "#b91c1c",
+                    fontSize: 12.5, fontWeight: 600, fontFamily: FONT, cursor: "pointer",
+                  }}
+                >
+                  <Square size={13} /> Stop
+                </button>
               )}
-              <button onClick={visualize} disabled={vizLoading || !ready} title="Step through your Python code (stack + heap)" className="flex items-center gap-1.5 h-7 px-3 rounded text-2xs font-semibold" style={{ border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4338ca", cursor: vizLoading ? "wait" : "pointer", opacity: ready ? 1 : 0.5 }}>{vizLoading ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />} Visualize</button>
-              <button onClick={() => setShowTerminal((v) => !v)} className="flex items-center gap-1 h-7 px-2 rounded text-2xs text-gray-600 hover:bg-gray-100" title="Toggle terminal">Terminal</button>
-              {exercise && (
-                <button onClick={submitQuestion} disabled={isSubmittingQuestion || isSubmitting} className="flex items-center gap-1.5 h-7 px-3 rounded text-2xs font-semibold" style={{ border: "none", background: (isSubmittingQuestion || isSubmitting) ? "#9ca3af" : "#f97316", color: "#fff", cursor: "pointer" }}>{isSubmittingQuestion ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />} Submit Question</button>
-              )}
-              <button onClick={() => { setShowQDrawer(false); setIsFull((v) => !v) }} className="flex items-center justify-center w-7 h-7 rounded text-gray-600 hover:bg-gray-100" title={isFull ? "Exit full screen" : "Full screen"}>{isFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
+
+              <button
+                onClick={() => setShowTerminal((v) => !v)}
+                aria-label="Toggle terminal"
+                title="Toggle terminal"
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 32, height: 32, borderRadius: 8,
+                  border: "1px solid #D9E1EA", background: "#fff", color: "#667085",
+                  cursor: "pointer",
+                }}
+              >
+                <TerminalIcon size={14} />
+              </button>
+
+              <button
+                onClick={() => { setShowQDrawer(false); setIsFull((v) => !v) }}
+                aria-label={isFull ? "Exit full screen" : "Full screen"}
+                title={isFull ? "Exit full screen" : "Full screen"}
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  width: 32, height: 32, borderRadius: 8,
+                  border: "1px solid #D9E1EA", background: "#fff", color: "#667085",
+                  cursor: "pointer",
+                }}
+              >
+                {isFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
             </div>
           </div>
 
@@ -1505,10 +2097,11 @@ export default function MultiFileCodeEditor({
               </div>
             )}
 
-            {/* VS Code-style Activity Bar — always visible icon rail.
-                Clicking the active icon collapses the side panel; clicking an
-                inactive one switches to it. */}
-            <div className="flex-shrink-0 flex flex-col items-stretch" style={{ width: 44, background: "#1e293b" }}>
+            {/* Activity Bar — light cool-gray rail (was slate #1e293b) per
+                the workspace redesign: no dark full-panel surfaces on the
+                student side. Same 44px icon rail, teal active state instead
+                of white-on-slate. */}
+            <div className="flex-shrink-0 flex flex-col items-stretch" style={{ width: 44, background: "#F3F6FA", borderRight: "1px solid #D9E1EA" }}>
               {([
                 { key: "explorer" as const, icon: FilesIcon, label: "Explorer (files)" },
                 { key: "search"   as const, icon: SearchIcon, label: "Search across files" },
@@ -1517,13 +2110,20 @@ export default function MultiFileCodeEditor({
                 return (
                   <button
                     key={key}
+                    aria-label={label}
+                    aria-pressed={active}
                     title={label}
                     onClick={() => setSideView((v) => (v === key ? null : key))}
                     className="flex items-center justify-center"
-                    style={{ height: 44, position: "relative", color: active ? "#fff" : "#94a3b8", background: "transparent", cursor: "pointer" }}
+                    style={{
+                      height: 44, position: "relative",
+                      color: active ? "#0F9D94" : "#667085",
+                      background: active ? "#fff" : "transparent",
+                      borderLeft: active ? "2px solid #0F9D94" : "2px solid transparent",
+                      cursor: "pointer",
+                    }}
                   >
-                    {active && <span style={{ position: "absolute", left: 0, top: 6, bottom: 6, width: 2, background: "#fff", borderRadius: 2 }} />}
-                    <Icon size={20} />
+                    <Icon size={18} />
                   </button>
                 )
               })}
@@ -1545,7 +2145,30 @@ export default function MultiFileCodeEditor({
                     <SearchPanel files={files} onOpenFile={openFile} />
                   )}
                 </div>
-                <div onMouseDown={() => { resizing.current = "tree" }} className="w-1 cursor-col-resize hover:bg-orange-400 flex-shrink-0" style={{ background: "#e5e7eb" }} />
+                {/* Explorer resize grip — mirrors the bottom-panel handle:
+                    6px cool-gray strip with a centred left/right-arrow chip
+                    so the drag affordance is unambiguous. */}
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize explorer"
+                  onMouseDown={(e) => { resizing.current = { kind: "tree", startX: e.clientX, startWidth: treeWidth } }}
+                  className="flex-shrink-0 flex items-center justify-center"
+                  style={{
+                    width: 6, cursor: "col-resize",
+                    background: "#F3F6FA", borderLeft: "1px solid #D9E1EA", borderRight: "1px solid #D9E1EA",
+                  }}
+                  title="Drag to resize the explorer"
+                >
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    width: 14, height: 34, borderRadius: 6,
+                    background: "#fff", border: "1px solid #D9E1EA", color: "#667085",
+                    pointerEvents: "none",
+                  }}>
+                    <ArrowUpDown size={11} style={{ transform: "rotate(90deg)" }} />
+                  </span>
+                </div>
               </>
             )}
 
@@ -1565,18 +2188,58 @@ export default function MultiFileCodeEditor({
                 </div>
               </div>
 
-              {/* Terminal */}
+              {/* Bottom panel — two tabs: Terminal (Run output) and Test
+                  Result (Submit answer output). Height is drag-resizable via
+                  the grip on its top border (two-arrow icon centred on the
+                  divider). Flipping tabs preserves both panels' state. */}
               {showTerminal && (
-                <div className="flex-shrink-0 border-t" style={{ height: 200, borderColor: "#1e293b" }}>
-                  <RunTerminal
-                    lines={termLines} running={running || interactiveActive} stdin={stdin}
-                    lastRuntimeMs={lastRuntime} onStdinChange={setStdin} onClear={() => setTermLines([])}
+                <>
+                  <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize bottom panel"
+                    onMouseDown={(e) => { resizing.current = { kind: "bottom", startY: e.clientY, startHeight: bottomPanelHeight } }}
+                    className="flex-shrink-0 flex items-center justify-center"
+                    style={{
+                      height: 6, cursor: "row-resize",
+                      background: "#F3F6FA", borderTop: "1px solid #D9E1EA", borderBottom: "1px solid #D9E1EA",
+                      position: "relative",
+                    }}
+                    title="Drag to resize the bottom panel"
+                  >
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 34, height: 14, borderRadius: 6,
+                      background: "#fff", border: "1px solid #D9E1EA", color: "#667085",
+                      pointerEvents: "none",
+                    }}>
+                      <ArrowUpDown size={11} />
+                    </span>
+                  </div>
+                  <div className="flex-shrink-0 flex flex-col" style={{ height: bottomPanelHeight, borderColor: "#D9E1EA", background: "#fff" }}>
+                  <BottomPanel
+                    activeTab={bottomTab}
+                    onTabChange={setBottomTab}
+                    testResult={testResult}
+                    // Terminal props
+                    termLines={termLines}
+                    running={running || interactiveActive}
+                    stdin={stdin}
+                    lastRuntime={lastRuntime}
+                    setStdin={setStdin}
+                    onClearTerm={() => setTermLines([])}
                     interactive={interactiveActive}
                     awaitingInput={awaitingInput}
                     inputPrompt={inputPrompt}
                     onSubmitInput={submitInteractiveInput}
+                    // TestResult props
+                    selectedCaseIndex={selectedCaseIndex}
+                    onSelectCase={setSelectedCaseIndex}
+                    onRetrySubmit={submitQuestion}
+                    isSubmitting={isSubmittingQuestion}
                   />
-                </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -1585,46 +2248,190 @@ export default function MultiFileCodeEditor({
       </div>
 
       {/* MODALS */}
-      {/* Submit Exercise confirmation — stays open during the network call so
-          the spinner gives clear feedback. submitExercise() closes it on success. */}
-      {showSubmitConfirm && (
-        <div
-          onClick={(e) => { if (!isSubmitting && e.target === e.currentTarget) setShowSubmitConfirm(false) }}
-          style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <div style={{ background: "#fff", borderRadius: 12, width: 420, padding: "26px 28px", boxShadow: "0 24px 60px rgba(0,0,0,0.3)", border: "1px solid #e5e7eb" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 999, background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <CheckCircle style={{ width: 18, height: 18, color: "#15803d" }} />
+      {/* Finish confirmation — summary modal per the design mockup.
+          Shows a live progress split (Completed / Incomplete / Not
+          attempted) computed from solvedQuestions + attemptedQuestions,
+          a "Needs your attention" list of the specific questions that
+          are incomplete or not attempted, and a save-status panel. Two
+          footer actions: Review questions (close the modal so the
+          student can jump around) and Finish {activity} (real submit).
+          The modal stays open during the network call so the button
+          shows the in-flight spinner. */}
+      {showSubmitConfirm && (() => {
+        const total = questions.length || 0
+        const completedList: number[] = []
+        const incompleteList: number[] = []
+        const notAttemptedList: number[] = []
+        for (let i = 0; i < total; i++) {
+          if (solvedQuestions.has(i)) completedList.push(i)
+          else if (attemptedQuestions.has(i)) incompleteList.push(i)
+          else notAttemptedList.push(i)
+        }
+        const completed = completedList.length
+        const incomplete = incompleteList.length
+        const notAttempted = notAttemptedList.length
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0
+        const attention: Array<{ index: number; kind: 'incomplete' | 'not-attempted'; label: string }> = [
+          ...incompleteList.map((i) => ({ index: i, kind: 'incomplete' as const, label: 'Answer is incomplete' })),
+          ...notAttemptedList.map((i) => ({ index: i, kind: 'not-attempted' as const, label: 'Not attempted' })),
+        ]
+        const exerciseName = exercise?.exerciseInformation?.exerciseName || `this ${activityNoun}`
+        const goToQuestion = (idx: number) => {
+          setShowSubmitConfirm(false)
+          setCurrentQuestionIndex(idx)
+        }
+        return (
+          <div
+            onClick={(e) => { if (!isSubmitting && e.target === e.currentTarget) setShowSubmitConfirm(false) }}
+            style={{
+              position: "fixed", inset: 0, zIndex: 99999,
+              background: "rgba(15,23,42,0.55)", backdropFilter: "blur(3px)",
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+              fontFamily: FONT,
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="finish-modal-title"
+              style={{
+                background: "#fff", borderRadius: 14, width: "100%", maxWidth: 600,
+                boxShadow: "0 24px 60px rgba(15,23,42,0.24)", border: "1px solid #E4E7EC",
+                display: "flex", flexDirection: "column", overflow: "visible",
+              }}
+            >
+              {/* Header — compact so the whole modal fits without inner scroll */}
+              <div style={{ padding: "14px 20px 4px", display: "flex", alignItems: "center", gap: 12 }}>
+                <span aria-hidden="true" style={{
+                  width: 34, height: 34, borderRadius: 999, flexShrink: 0,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  background: "#FFF4EC", border: "1px solid #FFE0CC", color: "#FF641A",
+                }}>
+                  <CheckCircle style={{ width: 17, height: 17 }} />
+                </span>
+                <h2 id="finish-modal-title" style={{ fontSize: 17, fontWeight: 700, color: "#101828", margin: 0 }}>
+                  {isSubmitting ? "Finishing…" : `Finish ${activityNoun}?`}
+                </h2>
               </div>
-              <p style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: 0 }}>
-                {isSubmitting ? "Submitting…" : "Submit Exercise?"}
-              </p>
-            </div>
-            <p style={{ fontSize: 13, color: "#475569", marginBottom: 22, lineHeight: 1.6 }}>
-              {isSubmitting
-                ? <>Uploading your code for <b>"{exercise?.exerciseInformation?.exerciseName || "this exercise"}"</b>… please wait.</>
-                : <>Are you sure you want to submit <b>"{exercise?.exerciseInformation?.exerciseName || "this exercise"}"</b>? Once submitted you won't be able to edit your code for this question again.</>
-              }
-            </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button
-                onClick={() => setShowSubmitConfirm(false)}
-                disabled={isSubmitting}
-                style={{ fontSize: 13, fontWeight: 500, padding: "8px 18px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#374151", cursor: isSubmitting ? "not-allowed" : "pointer", opacity: isSubmitting ? 0.5 : 1 }}
-              >No</button>
-              <button
-                onClick={() => submitExercise()}
-                disabled={isSubmitting}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, padding: "8px 18px", borderRadius: 8, border: "none", background: isSubmitting ? "#6b7280" : "#10b981", color: "#fff", cursor: isSubmitting ? "not-allowed" : "pointer" }}
-              >
-                {isSubmitting && <Loader2 size={14} className="animate-spin" />}
-                {isSubmitting ? "Submitting…" : "Yes, submit"}
-              </button>
+
+              {/* Assignment name + progress */}
+              <div style={{ padding: "4px 20px 0" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#101828", wordBreak: "break-word" }}>
+                  {exerciseName}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#667085", marginTop: 4 }}>
+                  <span>{completed} of {total} questions completed</span>
+                  <span>{pct}% complete</span>
+                </div>
+                <div style={{ marginTop: 4, height: 5, borderRadius: 999, background: "#F1F1F3", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: "#FF641A", transition: "width .3s ease" }} />
+                </div>
+              </div>
+
+              {/* Status cards */}
+              <div style={{ padding: "10px 20px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                <StatusCard tone="ok"   Icon={Check}          label="Completed"     value={completed} />
+                <StatusCard tone="warn" Icon={AlertTriangle}  label="Incomplete"    value={incomplete} />
+                <StatusCard tone="mute" Icon={MinusCircle}    label="Not attempted" value={notAttempted} />
+              </div>
+
+              {/* Needs your attention */}
+              {attention.length > 0 && (
+                <div style={{
+                  margin: "10px 20px 0", padding: "10px 12px",
+                  border: "1px solid #E4E7EC", borderRadius: 10,
+                  // Only the attention list scrolls if there are many
+                  // incomplete/not-attempted rows. Everything else stays
+                  // fixed so the modal itself never needs a scrollbar.
+                  maxHeight: 150, overflowY: "auto",
+                }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: "#101828", marginBottom: 4 }}>
+                    Needs your attention
+                  </div>
+                  {attention.map((row, i) => {
+                    const tone = row.kind === 'incomplete' ? 'warn' : 'mute'
+                    const Icon = row.kind === 'incomplete' ? AlertTriangle : MinusCircle
+                    return (
+                      <button
+                        key={row.index}
+                        type="button"
+                        onClick={() => goToQuestion(row.index)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          width: "100%", padding: "6px 0", background: "transparent", border: "none",
+                          borderTop: i === 0 ? undefined : "1px solid #F1F1F3",
+                          textAlign: "left", cursor: "pointer",
+                        }}
+                      >
+                        <Icon size={15} style={{ color: tone === 'warn' ? '#B54708' : '#B42318', flexShrink: 0 }} />
+                        <span style={{ fontSize: 12.5, color: "#101828" }}>
+                          Question {row.index + 1} <span style={{ color: "#667085" }}>— {row.label}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Save state panel */}
+              <div style={{
+                margin: "10px 20px 0", padding: "10px 12px",
+                border: "1px solid #E4E7EC", borderRadius: 10,
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span aria-hidden="true" style={{
+                  width: 30, height: 30, borderRadius: 999, flexShrink: 0,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  background: "#ECFDF3", border: "1px solid #BBF7D0", color: "#12A765",
+                }}>
+                  <CloudUpload size={15} />
+                </span>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: "#101828" }}>All responses saved</div>
+                  <div style={{ fontSize: 11.5, color: "#667085", marginTop: 1 }}>
+                    Submitting locks all questions from further edits.
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                marginTop: 12, padding: "10px 16px 14px", borderTop: "1px solid #E4E7EC",
+                display: "flex", justifyContent: "flex-end", gap: 8,
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSubmitConfirm(false)}
+                  disabled={isSubmitting}
+                  style={{
+                    height: 36, padding: "0 14px", borderRadius: 8,
+                    border: "1px solid #D9E1EA", background: "#fff", color: "#101828",
+                    fontSize: 12.5, fontWeight: 600, fontFamily: FONT,
+                    cursor: isSubmitting ? "not-allowed" : "pointer", opacity: isSubmitting ? 0.6 : 1,
+                  }}
+                >
+                  Review questions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitExercise()}
+                  disabled={isSubmitting}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    height: 36, padding: "0 16px", borderRadius: 8,
+                    border: "none", background: isSubmitting ? "#94A3B8" : "#FF641A", color: "#fff",
+                    fontSize: 12.5, fontWeight: 700, fontFamily: FONT,
+                    cursor: isSubmitting ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {isSubmitting && <Loader2 size={13} className="animate-spin" />}
+                  {isSubmitting ? "Finishing…" : `Finish ${activityNoun}`}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {pendingNavLevel !== null && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>

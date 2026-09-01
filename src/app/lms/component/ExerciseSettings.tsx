@@ -241,10 +241,14 @@ const THIRD_PARTY_PROVIDERS: ThirdPartyProvider[] = [
 // configuration renderers (MCQ / Programming / Others). Values come from
 // scratchpad/demo-design-spec.md; D.* tokens are preferred where one fits.
 // =============================================================================
-const SPEC_CARD: React.CSSProperties = { background: '#fff', border: `1px solid ${D.border2}`, borderRadius: 11 };
-const SPEC_CARD_H: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', background: D.surface, borderBottom: `1px solid ${D.border}`, borderRadius: '11px 11px 0 0' };
-const SPEC_CARD_T: React.CSSProperties = { fontSize: 11.2, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: D.textSub };
-const SPEC_CARD_B: React.CSSProperties = { padding: 13, fontSize: 13 };
+// STEP-2 restyle (2026-08-31): switched from cream-tinted card headers with
+// grey uppercase titles to white cards with an orange section-heading strip +
+// gray hairline divider — matches the Step 1 SectionHeading pattern, so every
+// wizard step reads with the same visual grammar.
+const SPEC_CARD: React.CSSProperties = { background: '#fff', border: `1px solid ${D.border2}`, borderRadius: 8 };
+const SPEC_CARD_H: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px 8px', background: '#fff', borderBottom: `1px solid ${D.border}`, borderRadius: '8px 8px 0 0' };
+const SPEC_CARD_T: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FF5A12' };
+const SPEC_CARD_B: React.CSSProperties = { padding: 14, fontSize: 13 };
 const specPill = (bg: string, line: string, text: string): React.CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 5, height: 23, padding: '0 9px',
   borderRadius: 999, fontSize: 10.8, fontWeight: 600, whiteSpace: 'nowrap',
@@ -267,8 +271,8 @@ const SPEC_NOTE = {
   warn: specNote('#FFFAEB', '#F5DFA8', '#B54708'),
   bad:  specNote('#FEF3F2', '#FBD3CE', '#912018'),
 };
-// Spec field label: 11px/600 #4B5563, 5px below-gap
-const SPEC_LABEL: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 600, color: '#4B5563', marginBottom: 5 };
+// Spec field label: 11.5px/600 dark-slate, 6px below-gap — Step 1 FieldLabel parity
+const SPEC_LABEL: React.CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 600, color: '#101828', marginBottom: 6 };
 // Difficulty-matrix palette (level column tints / 7×7 dots / level text)
 const SPEC_LEVEL_TINT = { easy: '#F7FDF9', medium: '#FFFCF5', hard: '#FFFAF9' } as const;
 const SPEC_LEVEL_DOT  = { easy: '#0F9D58', medium: '#F0A415', hard: '#E0503C' } as const;
@@ -402,6 +406,12 @@ const ExerciseSettings: React.FC<ExerciseSettingsProps> = ({
     selectedModule: '', selectedLanguages: [] as string[],
     exerciseId: `EX${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
     exerciseName: '', description: '',
+    // Author-written instructions rendered on the student pre-start page.
+    // Round-trips through the server (exerciseSchema has strict:false, so
+    // no schema change needed). Empty → the pre-start page auto-generates
+    // a paragraph from duration / language / question count so students
+    // still see something useful.
+    instructions: '',
     exerciseLevel: '' as 'beginner' | 'intermediate' | 'expert',
     isGraded: false,
     totalDuration: 60, totalMarks: 0, totalMarksMCQ: 0, totalMarksProgramming: 0,
@@ -645,6 +655,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
       exerciseId: info.exerciseId ?? prev.exerciseId,
       exerciseName: info.exerciseName ?? '',
       description: typeof info.description === 'string' ? info.description : (info.description?.text ?? ''),
+      instructions: typeof ex.instructions === 'string' ? ex.instructions : (prev.instructions ?? ''),
       exerciseLevel: (info.exerciseLevel as any) ?? 'intermediate',
       totalDuration: info.totalDuration ?? 60,
       totalMarks: info.totalMarks ?? 0,
@@ -821,6 +832,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
       exerciseId: info.exerciseId ?? prev.exerciseId,
       exerciseName: info.exerciseName ?? '',
       description: typeof info.description === 'string' ? info.description : (info.description?.text ?? ''),
+      instructions: typeof ex.instructions === 'string' ? ex.instructions : (prev.instructions ?? ''),
       exerciseLevel: (info.exerciseLevel as any) ?? 'intermediate',
       totalDuration: info.totalDuration ?? 60,
       totalMarks: info.totalMarks ?? 0,
@@ -2124,6 +2136,11 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
         otherMode: formData.exerciseType === 'Other',
       },
       isGraded: formData.isGraded !== false,
+      // Top-level author instructions — persists via the controller's
+      // existing whitelist (exerciseSchema is strict:false so no schema
+      // change is needed). Empty string is legal — the pre-start page
+      // will auto-generate from settings when nothing is authored.
+      instructions: formData.instructions || '',
       stepsSaved: [...savedSteps],
       // Phase 2 — teacher's chosen question source (empty until picked).
       questionSource: questionSource || null,
@@ -4600,6 +4617,19 @@ const renderNotifications = useCallback(() => (
 
         return (
           <>
+            {/* Step-2 header (2026-08-31): title + subtitle wrap the branch-
+                specific config renderers so every exercise type gets the same
+                page-header rhythm as Step 1's "Exercise setup". Padding matches
+                the .es-step body so the title's left edge lines up with the
+                first section below. */}
+            <div style={{ padding: '18px 22px 0', fontFamily: FONT }}>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: '#101828', margin: 0, lineHeight: 1.25 }}>
+                Question configuration
+              </h2>
+              <p style={{ fontSize: 13, color: '#667085', margin: '6px 0 0', lineHeight: 1.5 }}>
+                Define the number of questions, difficulty mix, and scoring rules.
+              </p>
+            </div>
             {typeConfig}
             <div className="px-10 py-2.5 border-t" style={{ borderColor: D.border }}>
               <div className="flex items-center gap-2.5">
@@ -5258,187 +5288,126 @@ const renderNotifications = useCallback(() => (
           boxShadow: '0 14px 40px rgba(15,23,42,.14)',
         }}>
 
-        {/* ── APP BAR — mark · crumbs · origin pill · close ── */}
-        <header className="flex items-center flex-shrink-0"
-          style={{ gap: 11, padding: '11px 20px', borderBottom: '1px solid #F1EEEA', background: '#fff' }}>
-          <span className="flex items-center justify-center flex-shrink-0"
-            style={{ width: 27, height: 27, borderRadius: 8, background: 'linear-gradient(140deg,#F58634,#E15912)', color: '#fff', fontSize: 13 }}>
-            ✦
-          </span>
-          <span style={{ fontSize: 11.5, color: '#9CA3AF' }}>
-            Exercises / <b style={{ color: '#1D2433', fontWeight: 600 }}>
-              {formData.exerciseName?.trim() || (isEditing ? 'Edit exercise' : 'New exercise')}
-            </b>
-          </span>
-          {/* Origin pill — where this exercise came from. Presentational only:
-              it never enters formData or any payload. */}
-          {seedLabel && (
-            <span className="inline-flex items-center flex-shrink-0" title="Started from a template"
-              style={{ gap: 5, height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#FFF2E8', border: '1px solid #FBD8BE', color: '#D65A16' }}>
-              ▦ {seedLabel}
+        {/* ── TEAL HEADER — 2026-08-30 redesign to match the mockup.
+              Row 1: sparkle + breadcrumb · centered title · saved status ·
+                     close button
+              Row 2: horizontal 5-step progress indicator with orange
+                     active step, subtle white dividers
+              The vertical cream rail + Summary panel + Non-graded note
+              were removed — the step titles/state come from the same
+              `steps` array as before, just rendered horizontally instead
+              of vertically. Everything below (step-header, content,
+              save/next actions) is unchanged. */}
+        <header className="flex flex-col flex-shrink-0" style={{ background: '#0F5B5D', color: '#fff' }}>
+          {/* Row 1 — chrome */}
+          <div className="flex items-center" style={{ gap: 12, padding: '12px 24px' }}>
+            <span className="flex items-center justify-center flex-shrink-0"
+              style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(140deg,#FF7A2C,#FF5A12)', color: '#fff', fontSize: 14 }}>
+              ✦
             </span>
-          )}
-          <button onClick={requestClose} aria-label="Close"
-            className="ml-auto flex items-center justify-center flex-shrink-0"
-            style={{ width: 30, height: 30, border: '1px solid transparent', background: 'transparent', borderRadius: 8, color: '#6B7280', cursor: 'pointer', fontSize: 15 }}>
-            <X size={16} />
-          </button>
+            <nav aria-label="Breadcrumb" style={{ fontSize: 13 }}>
+              <span style={{ color: 'rgba(255,255,255,0.65)' }}>Exercises</span>
+              <span style={{ margin: '0 8px', color: 'rgba(255,255,255,0.35)' }}>/</span>
+              <span style={{ color: '#fff', fontWeight: 600 }}>
+                {formData.exerciseName?.trim() || (isEditing ? 'Edit exercise' : 'New exercise')}
+              </span>
+            </nav>
+            {/* Origin pill (kept — same "started from template" affordance
+                as before). */}
+            {seedLabel && (
+              <span className="inline-flex items-center flex-shrink-0" title="Started from a template"
+                style={{ gap: 5, height: 22, padding: '0 9px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+                  background: 'rgba(255,244,238,0.15)', border: '1px solid rgba(255,244,238,0.35)', color: '#FFE7D6' }}>
+                ▦ {seedLabel}
+              </span>
+            )}
+            {/* Centered title — absolutely centred so the flanking chrome
+                (breadcrumb / status / close) doesn't shift it as they grow
+                or shrink. */}
+            <h1 className="flex-1 text-center" style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.01em', color: '#fff', margin: 0 }}>
+              {isEditing ? 'Edit exercise' : 'Create exercise'}
+            </h1>
+            {/* Save status — small green dot + label. Matches the mockup's
+                "Saved just now" chip. */}
+            <span className="inline-flex items-center flex-shrink-0" style={{ gap: 6, fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+              <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: '#32D583' }} />
+              {savedSteps.size > 0 ? 'Saved just now' : 'Unsaved'}
+            </span>
+            <button onClick={requestClose} aria-label="Close"
+              className="flex items-center justify-center flex-shrink-0"
+              style={{ width: 32, height: 32, border: '1px solid transparent', background: 'transparent',
+                borderRadius: 8, color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}>
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Row 2 — horizontal stepper */}
+          <div className="flex items-center" style={{ gap: 0, padding: '0 24px 12px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 12 }}>
+            <ol className="flex items-center flex-1 min-w-0" style={{ listStyle: 'none', margin: 0, padding: 0, gap: 0 }}>
+              {steps.map((step, idx) => {
+                const active = step.active;
+                const isStep1 = step.title === 'Exercise Details';
+                const isLocked_step = !isStep1 && !step1Unlocked;
+                const isLast = idx === steps.length - 1;
+                const stepIssueList = stepIssues[step.title] ?? [];
+                const stepHasError = stepIssueList.length > 0;
+                const done = savedSteps.has(step.title) && !active && !stepHasError;
+                return (
+                  <li key={step.id} className="flex items-center flex-1 min-w-0" style={{ gap: 10 }}>
+                    <button type="button"
+                      onClick={() => handleStepClick(step.id)}
+                      disabled={isLocked_step}
+                      title={isLocked_step ? 'Please complete Exercise Details first' : step.title}
+                      className="flex items-center flex-shrink-0 min-w-0 focus:outline-none"
+                      style={{
+                        gap: 10, padding: '4px 8px', borderRadius: 8,
+                        background: 'transparent', border: 'none',
+                        cursor: isLocked_step ? 'not-allowed' : 'pointer', opacity: isLocked_step ? 0.5 : 1,
+                      }}>
+                      <span className="flex items-center justify-center flex-shrink-0"
+                        style={{
+                          width: 26, height: 26, borderRadius: '50%', fontSize: 12, fontWeight: 700,
+                          background: active ? '#FF5A12' : 'transparent',
+                          color: active ? '#fff' : stepHasError ? '#FEC7C1' : done ? '#FF9D6C' : 'rgba(255,255,255,0.85)',
+                          border: `1.5px solid ${active ? '#FF5A12' : stepHasError ? '#FBD3CE' : done ? '#FF9D6C' : 'rgba(255,255,255,0.35)'}`,
+                        }}>
+                        {isLocked_step ? <Lock size={11} /> : done ? <Check size={13} strokeWidth={3} /> : (idx + 1)}
+                      </span>
+                      <span className="min-w-0 truncate" style={{
+                        fontSize: 13.5,
+                        fontWeight: active ? 700 : 500,
+                        color: active ? '#FF5A12' : stepHasError ? '#FEC7C1' : done ? '#fff' : 'rgba(255,255,255,0.85)',
+                        borderBottom: active ? '2px solid #FF5A12' : 'none',
+                        paddingBottom: active ? 2 : 4,
+                      }}>
+                        {step.title}
+                      </span>
+                    </button>
+                    {!isLast && (
+                      <span aria-hidden className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.2)', minWidth: 12 }} />
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+            <span className="flex-shrink-0" style={{ marginLeft: 16, fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+              {(steps.findIndex(s => s.id === currentStep) + 1) || 1} of {steps.length}
+            </span>
+          </div>
         </header>
 
         <div className="es-shell flex flex-1 min-h-0">
 
-        {/* ── STEP RAIL (cream, 210px) ── */}
-        <aside className="es-rail flex-shrink-0 flex flex-col overflow-y-auto"
-          style={{ width: 196, background: '#FDF4EA', borderRight: '1px solid #F3E7D9', padding: '14px 12px', gap: 12 }}>
-
-          {/* Brand */}
-          <div className="es-brand flex items-center flex-shrink-0" style={{ gap: 11 }}>
-            <span className="flex items-center justify-center flex-shrink-0"
-              style={{ width: 27, height: 27, borderRadius: 8, background: 'linear-gradient(140deg,#F58634,#E15912)', color: '#fff', fontSize: 13 }}>
-              ✦
-            </span>
-            <b style={{ fontSize: 13.5, fontWeight: 700, color: '#1D2433' }}>
-              {isEditing ? 'Edit Exercise' : 'Create Exercise'}
-            </b>
-          </div>
-
-          {/* Steps */}
-          <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {steps.map((step, idx) => {
-              const active = step.active;
-              const isStep1 = step.title === 'Exercise Details';
-              const isLocked_step = !isStep1 && !step1Unlocked;
-              const isLast = idx === steps.length - 1;
-              const stepIssueList = stepIssues[step.title] ?? [];
-              const stepHasError = stepIssueList.length > 0;
-              // The demo's rule: a ✓ only for a step already passed that has no
-              // errors — otherwise the number stays.
-              const done = savedSteps.has(step.title) && !active && !stepHasError;
-
-              return (
-                <li key={step.id} style={{ position: 'relative' }}>
-                  {/* Connector, drawn behind the dot and stopping before the next. */}
-                  {!isLast && (
-                    <span aria-hidden className="es-connector" style={{
-                      position: 'absolute', left: 11.5, top: 29, bottom: 2, width: 1.5,
-                      background: done ? '#EE6A22' : '#EFD9C2',
-                    }} />
-                  )}
-                  <button type="button"
-                    onClick={() => handleStepClick(step.id)}
-                    disabled={isLocked_step}
-                    title={isLocked_step ? 'Please complete Exercise Details first' : step.title}
-                    className="w-full text-left focus:outline-none"
-                    style={{
-                      display: 'grid', gridTemplateColumns: '24px 1fr', gap: 10,
-                      padding: isLast ? '6px 0 0' : '6px 0 13px',
-                      background: 'transparent', border: 'none',
-                      cursor: isLocked_step ? 'not-allowed' : 'pointer', opacity: isLocked_step ? 0.5 : 1,
-                    }}>
-                    <span className="flex items-center justify-center"
-                      style={{
-                        width: 24, height: 24, borderRadius: '50%', fontSize: 10.5, fontWeight: 700,
-                        background: active ? '#EE6A22' : '#fff',
-                        color: active ? '#fff' : stepHasError ? '#D92D20' : done ? '#EE6A22' : '#9CA3AF',
-                        border: `1.5px solid ${active ? '#EE6A22' : stepHasError ? '#FBD3CE' : done ? '#EE6A22' : '#E7D8C6'}`,
-                        boxShadow: active ? '0 0 0 4px rgba(238,106,34,.15)' : 'none',
-                      }}>
-                      {isLocked_step ? <Lock size={10} /> : done ? <Check size={12} strokeWidth={3} /> : (idx + 1)}
-                    </span>
-
-                    <span className="min-w-0" style={{ display: 'block' }}>
-                      <span className="truncate" style={{
-                        display: 'block', fontSize: 12.4, lineHeight: 1.25,
-                        fontWeight: active ? 700 : 600,
-                        color: isLocked_step ? '#A79C90' : (active || done) ? '#1D2433' : '#8A8178',
-                      }}>
-                        {step.title}
-                      </span>
-                      {/* Subtitle gives way to the issue count while failing. */}
-                      <span style={{
-                        display: 'block', fontSize: 10.4, marginTop: 1,
-                        color: stepHasError && !isLocked_step ? '#D92D20' : '#A79C90',
-                      }}>
-                        {stepHasError && !isLocked_step
-                          ? `${stepIssueList.length} issue${stepIssueList.length > 1 ? 's' : ''}`
-                          : step.subtitle}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-
-          {/* Non-graded drops the Grade Settings step — say so rather than
-              letting a step silently vanish. */}
-          {formData.isGraded === false && (
-            <div style={{
-              display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11, lineHeight: 1.5,
-              background: '#EFF6FF', border: '1px solid #CFE0FB', color: '#1B4DA8',
-            }}>
-              <span>ⓘ</span>
-              <span>Grade Settings is hidden — this exercise is Non-Graded.</span>
-            </div>
-          )}
-
-          {/* Live totals, pinned to the bottom. */}
-          <div className="es-summary flex-shrink-0" style={{ marginTop: 'auto' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#9CA3AF', marginBottom: 4 }}>
-              Summary
-            </div>
-            {[
-              { k: 'Type', v: summary.type },
-              { k: 'Questions', v: String(summary.questions) },
-              {
-                k: 'Marks',
-                v: `${formatDecimal(summary.used)} / ${formatDecimal(summary.total)}`,
-                bad: summary.total > 0 && !isApproximatelyEqual(summary.used, summary.total),
-              },
-              { k: 'Attempts', v: attemptsSummary },
-            ].map((row) => (
-              <div key={row.k} className="flex items-center justify-between gap-2"
-                style={{ fontSize: 12, padding: '5px 0', borderBottom: '1px dashed #EBE7E2' }}>
-                <span style={{ color: '#6B7280' }}>{row.k}</span>
-                <span className="tabular-nums truncate" title={row.v}
-                  style={{ fontWeight: 600, color: (row as { bad?: boolean }).bad ? '#D92D20' : '#1D2433' }}>
-                  {row.v}
-                </span>
-              </div>
-            ))}
-          </div>
-        </aside>
-
-        {/* ── SECTION BODY ── */}
+        {/* ── SECTION BODY (now full width — the vertical rail is gone) ── */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ background: '#ffffff' }}>
 
-          {/* Step header: eyebrow · title · subtitle · validity pill */}
-          <div className="es-head flex items-start gap-3 flex-shrink-0" style={{ padding: '12px 16px 9px' }}>
-            <div className="min-w-0 flex-1">
-              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#9CA3AF' }}>
-                Step {steps.findIndex(s => s.id === currentStep) + 1} of {steps.length}
-              </div>
-              <h2 style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-.4px', lineHeight: 1.2, color: '#0F172A', marginTop: 3 }}>
-                {steps.find(s => s.id === currentStep)?.title}
-              </h2>
-              <p className="es-head-sub" style={{ fontSize: 12.6, color: '#6B7280', marginTop: 2 }}>
-                {steps.find(s => s.id === currentStep)?.subtitle}
-              </p>
-            </div>
-
-            {currentIssues.length > 0 ? (
-              <span className="inline-flex items-center gap-1 flex-shrink-0"
-                style={{ height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#D92D20' }}>
-                {currentIssues.length} issue{currentIssues.length > 1 ? 's' : ''}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 flex-shrink-0"
-                style={{ height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#ECFDF3', border: '1px solid #C7EBD5', color: '#046C4E' }}>
-                <Check size={10} strokeWidth={3} /> Section valid
-              </span>
-            )}
-          </div>
-          {/* Save-as-template lives in the footer; see below. */}
+          {/* Step-eyebrow band removed 2026-08-30 per user — the horizontal
+              stepper in the teal header already communicates "Step 1 of 5 —
+              Details" so the "Step 1 of 6 · Exercise Details · Section
+              valid" bar under it was pure redundant chrome. Kept the
+              currentIssues signalling by relying on the field-level error
+              strips inside each step; the "N issues" pill was duplicative
+              with the header stepper's own red step-badge state. */}
 
           {/* Content + inline actions (single scroll container, no footer bar) */}
           <div className="flex-1 overflow-y-auto flex flex-col">
@@ -5452,25 +5421,11 @@ const renderNotifications = useCallback(() => (
               </div>
             )}
 
-            {/* ── Fix before continuing — every failing field on this step, in
-                one place, so the teacher isn't hunting for the red input. Only
-                appears after a Next/Save has marked the fields touched. ── */}
-            {currentIssues.length > 0 && !isLocked && (
-              <div role="alert" className="animate-in"
-                style={{
-                  display: 'flex', gap: 8, alignItems: 'flex-start',
-                  margin: '0 22px 4px', padding: '8px 10px', borderRadius: 8,
-                  fontSize: 11.4, lineHeight: 1.5,
-                  background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#912018',
-                }}>
-                <div>
-                  <b style={{ fontWeight: 700 }}>Fix before continuing</b>
-                  <ul style={{ margin: '5px 0 0', paddingLeft: 16 }}>
-                    {currentIssues.map((msg, i) => <li key={i}>{msg}</li>)}
-                  </ul>
-                </div>
-              </div>
-            )}
+            {/* "Fix before continuing" summary strip removed 2026-08-30 per
+                user — the toaster + per-field red state carry the same
+                information; a full aggregate list on top of that was noise.
+                `currentIssues` is still computed and drives the toaster on
+                Save/Next and the step's red-badge in the header stepper. */}
 
             <div style={isLocked ? { pointerEvents: 'none', userSelect: 'none', opacity: 0.82 } : {}}>
               {renderCurrentStep()}

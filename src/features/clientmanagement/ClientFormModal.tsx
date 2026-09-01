@@ -3,8 +3,11 @@
 import React, { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-    ArrowLeft, ArrowRight, Building, Check, Loader2, Pencil, Plus, User, X,
+    ArrowLeft, ArrowRight, Building, Check, ChevronDown, Loader2, Pencil, Plus, User, X,
 } from 'lucide-react'
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Modal, StatusPill, Field, Input as KitInput, Textarea as KitTextarea, Checkbox } from '@/app/lms/shared/ui'
 import { Button } from '@/components/ui/button'
 import TipTapEditor from '@/app/lms/component/tiptopEditor'
@@ -43,22 +46,86 @@ function BasicInfoSection({
                 {/* Status is managed from the list's Activate/Deactivate
                     toggle — not here. New clients start Active. */}
                 <Field label="Business model" required error={errors.businessModel}>
-                    <select
-                        name="businessModel"
-                        value={formData.businessModel}
-                        onChange={onChange}
-                        aria-invalid={errors.businessModel ? true : undefined}
-                        className={`h-10 w-full rounded-control border bg-surface px-3 text-sm transition-colors focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-subtle ${
-                            errors.businessModel
-                                ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-500/15'
-                                : 'border-hairline-strong hover:border-line-hover focus:border-brand focus:ring-brand/15'
-                        } ${formData.businessModel ? 'text-body' : 'text-faint'}`}
-                    >
-                        <option value="">Select a business model…</option>
-                        {BUSINESS_MODELS.map((m) => (
-                            <option key={m.value} value={m.value}>{m.label}</option>
-                        ))}
-                    </select>
+                    {/* Modern dropdown replaces the old native <select>
+                        (2026-08-30 user request). Trigger looks like a
+                        text input; the panel below shows each model as
+                        a two-line row (code + description) with a checkmark
+                        on the current selection. The click handler
+                        synthesises a minimal ChangeEvent so the parent's
+                        existing `onChange` handler (which reads
+                        e.target.name/value from the old <select>) works
+                        unchanged. Uses the project's shared DropdownMenu
+                        primitive — no new UI dependency. */}
+                    {(() => {
+                        const selected = BUSINESS_MODELS.find((m) => m.value === formData.businessModel)
+                        const [selCode, selPhrase] = selected ? selected.label.split('—').map((s) => s.trim()) : ['', '']
+                        return (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <button
+                                        type="button"
+                                        aria-invalid={errors.businessModel ? true : undefined}
+                                        aria-haspopup="listbox"
+                                        className={`inline-flex h-10 w-full items-center justify-between gap-2 rounded-control border bg-surface px-3 text-left text-sm transition-colors focus:outline-none focus:ring-2 data-[state=open]:border-brand data-[state=open]:ring-2 data-[state=open]:ring-brand/15 ${
+                                            errors.businessModel
+                                                ? 'border-danger-500 focus:border-danger-500 focus:ring-danger-500/15'
+                                                : 'border-hairline-strong hover:border-line-hover focus:border-brand focus:ring-brand/15'
+                                        }`}
+                                    >
+                                        {selected ? (
+                                            <span className="flex min-w-0 items-baseline gap-2 truncate">
+                                                <span className="font-semibold text-heading">{selCode}</span>
+                                                <span className="truncate text-xs text-subtle">{selPhrase}</span>
+                                            </span>
+                                        ) : (
+                                            <span className="text-faint">Select a business model…</span>
+                                        )}
+                                        <ChevronDown size={16} className="shrink-0 text-subtle" aria-hidden />
+                                    </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                    side="bottom"
+                                    align="start"
+                                    sideOffset={6}
+                                    // avoidCollisions must be false or Radix flips the
+                                    // panel to whichever edge has more room inside the
+                                    // modal — which in the modal's cramped horizontal
+                                    // frame usually meant "off to the LEFT of the
+                                    // trigger" (2026-08-30 user report). Forcing side
+                                    // "bottom" + avoidCollisions:false pins the panel
+                                    // to sit directly UNDER the trigger, always.
+                                    avoidCollisions={false}
+                                    className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[220px] p-1"
+                                >
+                                    {BUSINESS_MODELS.map((m) => {
+                                        const isSel = formData.businessModel === m.value
+                                        const [code, phrase] = m.label.split('—').map((s) => s.trim())
+                                        return (
+                                            <DropdownMenuItem
+                                                key={m.value}
+                                                onClick={() => onChange({
+                                                    target: { name: 'businessModel', value: m.value },
+                                                } as unknown as React.ChangeEvent<HTMLSelectElement>)}
+                                                className={`cursor-pointer gap-2 rounded-[8px] py-2 pl-2.5 pr-2 ${
+                                                    isSel ? 'bg-brand-wash text-brand-strong' : ''
+                                                }`}
+                                            >
+                                                <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                                                    <span className={`text-sm font-semibold ${isSel ? 'text-brand-strong' : 'text-heading'}`}>
+                                                        {code}
+                                                    </span>
+                                                    <span className={`text-xs ${isSel ? 'text-brand-strong/80' : 'text-subtle'}`}>
+                                                        {phrase || m.label}
+                                                    </span>
+                                                </span>
+                                                {isSel && <Check size={14} className="shrink-0 text-brand-strong" aria-hidden />}
+                                            </DropdownMenuItem>
+                                        )
+                                    })}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )
+                    })()}
                 </Field>
             </div>
 

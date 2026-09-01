@@ -4,7 +4,7 @@
 // Student Calendar — the learner's READ-ONLY view of the holiday calendars
 // that apply to them.
 //
-// Two scopes feed it, both through the same per-institute API the admin
+// Two scopes EXIST, both read through the same per-institute API the admin
 // Holiday Calendar writes to (`scopeIdFor`, shared from the calendar module's
 // types.ts so the read key can never drift from the write key):
 //
@@ -14,20 +14,21 @@
 //                      `clientId` on the learner's own user document, so this
 //                      is the calendar of the client they are enrolled with.
 //
-// The switch at the top chooses between them: "All" merges both (each entry
-// badged with where it came from) and "<Client> only" narrows to the client's
-// own calendar. A learner with no client on their account sees the institute
-// calendar alone and no switch — there is nothing to switch between.
+// A learner sees the calendar of the client they are ENROLLED WITH, and only
+// that one — the institute-wide calendar is not merged in and there is no
+// scope switch. A learner with NO client on their account has no client
+// calendar to read, so they fall back to the institute one; without that
+// fallback their page would simply be blank.
 //
 // Nothing here writes. Add/Edit/Delete stay in the admin Holiday Calendar at
 // /lms/pages/calendar, which is where the `calendar` permission's Manage
 // Holidays grant applies.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import {
-    CalendarDays, ChevronLeft, ChevronRight, Building2, Briefcase, X, CalendarOff,
+    CalendarDays, ChevronLeft, ChevronRight, X, CalendarOff,
 } from 'lucide-react'
 import { StudentLayout } from '@/app/lms/component/student/student-layout'
 import { useCurrentUserQuery } from '@/queries/auth'
@@ -37,11 +38,11 @@ import {
     HOLIDAY_TYPES, type Holiday, type HolidayType, type HolidayDuration,
 } from '@/app/lms/pages/calendar/components/types'
 
-// Where a holiday came from. Carried on every row so the merged "All" view can
-// say which calendar an entry is on without a second lookup.
+// Where a holiday came from. Only ONE source is ever displayed now, but the
+// tag is kept: it is what the fallback below reads to decide whether a
+// learner is looking at their client's calendar or the institute's.
 type Source = 'institute' | 'client'
 type ScopedHoliday = Holiday & { source: Source }
-type ScopeFilter = 'all' | 'client'
 
 const idStr = (v: unknown): string =>
     typeof v === 'string' ? v : (v && typeof v === 'object' && '_id' in (v as any))
@@ -68,21 +69,6 @@ const fmtLong = (iso: string) =>
     new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     })
-
-// ── Source chip ──────────────────────────────────────────────────────────────
-function SourceChip({ source, clientName }: { source: Source; clientName: string }) {
-    const isClient = source === 'client'
-    return (
-        <span className={`inline-flex items-center gap-1 h-5 px-1.5 rounded-chip border text-2xs font-semibold whitespace-nowrap ${
-            isClient
-                ? 'bg-brand-wash text-brand-strong border-brand-300'
-                : 'bg-info-50 text-info-700 border-info-500/20'
-        }`}>
-            {isClient ? <Briefcase size={10} strokeWidth={2.4} /> : <Building2 size={10} strokeWidth={2.4} />}
-            {isClient ? clientName : 'Institute'}
-        </span>
-    )
-}
 
 // ── Read-only month grid ─────────────────────────────────────────────────────
 // A learner's grid, not the editor's: no drag-select, no hover "Add", and a
@@ -181,12 +167,7 @@ export default function StudentCalendarPage() {
     const hasClient = !!clientId
 
     const [month, setMonth] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1) })
-    const [scope, setScope] = useState<ScopeFilter>('all')
     const [preview, setPreview] = useState<ScopedHoliday | null>(null)
-
-    // A learner with no client has nothing to narrow to — keep them on the
-    // merged view so the switch state can never hide the whole calendar.
-    useEffect(() => { if (!hasClient) setScope('all') }, [hasClient])
 
     // Same windowing rule as the admin calendar: the focused year padded by a
     // month at each end, which covers the 6-week grid's leading/trailing cells.
@@ -201,11 +182,12 @@ export default function StudentCalendarPage() {
     const instituteScopeId = instituteId
     const clientScopeId = hasClient ? scopeIdFor(instituteId, clientId) : ''
 
-    // The institute calendar is only fetched when it is actually displayed —
-    // "<Client> only" is a narrower QUERY, not just a narrower filter.
+    // Fetched ONLY as the no-client fallback. An enrolled learner never asks
+    // for the institute calendar at all — this is a narrower QUERY, not just
+    // a narrower filter, so their client's is the one request made.
     const { data: instituteCal, isLoading: instLoading } = useQuery({
         ...instituteHolidayCalendarApi.getByInstitute(instituteScopeId, range),
-        enabled: !!instituteScopeId && scope === 'all',
+        enabled: !!instituteScopeId && !hasClient,
         placeholderData: keepPreviousData,
     })
     const { data: clientCal, isLoading: clientLoading } = useQuery({
@@ -214,13 +196,16 @@ export default function StudentCalendarPage() {
         placeholderData: keepPreviousData,
     })
 
-    const loading = userLoading || (scope === 'all' && !!instituteScopeId && instLoading) || (hasClient && clientLoading)
+    const loading = userLoading || (hasClient ? clientLoading : (!!instituteScopeId && instLoading))
 
-    const holidays = useMemo<ScopedHoliday[]>(() => {
-        const client = toHolidays(clientCal?.holidays, 'client')
-        if (scope === 'client') return client
-        return [...toHolidays(instituteCal?.holidays, 'institute'), ...client]
-    }, [instituteCal, clientCal, scope])
+    // One calendar, never a merge: the learner's client if they have one,
+    // the institute's only when they do not.
+    const holidays = useMemo<ScopedHoliday[]>(
+        () => (hasClient
+            ? toHolidays(clientCal?.holidays, 'client')
+            : toHolidays(instituteCal?.holidays, 'institute')),
+        [instituteCal, clientCal, hasClient],
+    )
 
     // Grouped by date so a cell can render both calendars' entries for the same
     // day. Client entries sort after institute ones so the merged order is
@@ -277,7 +262,7 @@ export default function StudentCalendarPage() {
         <StudentLayout>
             <div className="mx-auto max-w-[1440px] space-y-4">
 
-                {/* ── Header: title · scope switch · month nav ── */}
+                {/* ── Header: title · month nav ── */}
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-center gap-2.5 min-w-0">
                         <span className="inline-flex h-9 w-9 items-center justify-center rounded-tile bg-brand-wash text-brand-strong shrink-0">
@@ -286,39 +271,14 @@ export default function StudentCalendarPage() {
                         <div className="min-w-0">
                             <h1 className="text-lg font-bold text-heading leading-tight truncate">Calendar</h1>
                             <p className="text-2xs text-subtle truncate">
-                                {scope === 'client'
+                                {hasClient
                                     ? `Holidays on ${clientName}'s calendar`
-                                    : hasClient
-                                        ? `Institute holidays and ${clientName}'s holidays`
-                                        : 'Institute holidays'}
+                                    : 'Institute holidays'}
                             </p>
                         </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                        {/* Scope switch — only meaningful when the learner is
-                            actually enrolled with a client. */}
-                        {hasClient && (
-                            <div role="group" aria-label="Calendar scope" className="flex items-center rounded-control border border-hairline bg-canvas p-0.5">
-                                {([
-                                    { v: 'all' as const, label: 'All', icon: <Building2 size={13} strokeWidth={2.2} /> },
-                                    { v: 'client' as const, label: `${clientName} only`, icon: <Briefcase size={13} strokeWidth={2.2} /> },
-                                ]).map(o => (
-                                    <button
-                                        key={o.v}
-                                        type="button"
-                                        onClick={() => setScope(o.v)}
-                                        aria-pressed={scope === o.v}
-                                        className={`flex items-center gap-1.5 h-7 px-2.5 rounded-chip text-xs font-semibold transition-colors duration-150 max-w-[180px] ${
-                                            scope === o.v ? 'bg-surface text-brand-strong shadow-xs' : 'text-subtle hover:text-heading'
-                                        }`}
-                                    >
-                                        {o.icon}
-                                        <span className="truncate">{o.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
 
                         <div className="flex items-center gap-1">
                             <button
@@ -361,7 +321,7 @@ export default function StudentCalendarPage() {
                                 byDate={byDate}
                                 onOpen={setPreview}
                                 clientName={clientName}
-                                showSource={scope === 'all' && hasClient}
+                                showSource={false}
                             />
                             {legendTypes.length > 0 && (
                                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -396,10 +356,10 @@ export default function StudentCalendarPage() {
                                     <div className="px-4 py-8 text-center">
                                         <CalendarOff size={20} className="mx-auto text-faint" strokeWidth={1.8} />
                                         <p className="mt-2 text-xs text-subtle">
-                                            {/* Most clients have no calendar of their own yet, so a
-                                                learner switching to "<Client> only" would otherwise
-                                                see a blank grid and read it as broken. */}
-                                            {holidays.length === 0 && scope === 'client'
+                                            {/* Most clients have no calendar of their own yet, so
+                                                naming the calendar explains an empty grid that
+                                                would otherwise read as broken. */}
+                                            {holidays.length === 0 && hasClient
                                                 ? `No holidays on ${clientName}'s calendar yet.`
                                                 : 'No holidays coming up.'}
                                         </p>
@@ -429,9 +389,6 @@ export default function StudentCalendarPage() {
                                                                 <span className="text-2xs text-subtle truncate">{meta.label}</span>
                                                             </span>
                                                         </span>
-                                                        {scope === 'all' && hasClient && (
-                                                            <SourceChip source={h.source} clientName={clientName} />
-                                                        )}
                                                     </button>
                                                 </li>
                                             )
@@ -482,8 +439,13 @@ export default function StudentCalendarPage() {
                             <Row label="Duration">
                                 <span className="text-sm text-body">{durationLabel(preview.duration)}</span>
                             </Row>
+                            {/* Which calendar this sits on. Plain text now — with
+                                only one source on screen, the two-state chip had
+                                nothing left to distinguish. */}
                             <Row label="Calendar">
-                                <SourceChip source={preview.source} clientName={clientName} />
+                                <span className="text-sm text-body">
+                                    {preview.source === 'client' ? clientName : 'Institute'}
+                                </span>
                             </Row>
                             {preview.note ? (
                                 <Row label="Note">

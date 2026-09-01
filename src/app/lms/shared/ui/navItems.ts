@@ -63,38 +63,42 @@ export interface SidebarItem {
 // Local storage key for user data
 export const USER_DATA_KEY = "smartcliff_userData";
 
-// Admin / Super Admin sidebars show ONLY these modules, in this order.
-// (Other roles keep their full permission-driven list.)
+// The admin / super admin rail's PREFERRED ORDER — not a filter.
+//
+// This was a whitelist, and any granted module missing from it was silently
+// dropped: an account holding Approvals, Grades and Attendance Management saw
+// twelve rail entries for fifteen stored grants, with nothing to explain the
+// gap. The rail is now driven by the grants themselves — every active
+// permission renders — and this list only decides WHERE the modules it names
+// sit. Anything granted but unlisted follows them in its stored `order`.
+//
+// So hiding a module from someone's rail is done by revoking it in Assign
+// Permission, which is where an admin would look for it, rather than by
+// editing a constant in this file.
 export const ADMIN_SIDEBAR_KEYS = [
-    "admindashboard",       // Admin Dashboard — always first (the landing)
-    "notifications",        // Notification — promoted to 2nd; carries the red
-                            //                blinking unread indicator now that
-                            //                the corner bell is retired
+    "admindashboard",       // Dashboard (labelled "Dashboard" on the rail —
+                            //            see SIDEBAR_TITLE_OVERRIDES)
     "pocdashboard",         // POC Dashboard — only for an admin explicitly
-                            //                 granted it; groups into Overview
-                            //                 next to the Admin Dashboard
+                            //                 granted it; kept beside the other
+                            //                 dashboard so the two group.
     "usermanagement",       // User Management
+    "clientmanagement",     // ─┐ Business Management. The merger splices the
+    "servicemapping",       // ─┘ group in at the FIRST of these two, so their
+                            //    position here is the group's position.
     "coursestructure",      // Course Management
-    // approvals removed — the per-course "Set Approval" action lives inside
-    // the Actions dropdown on each course row in Course Management now, next
-    // to the other course-scoped operations.
-    "questionbanks",        // Question Bank › Internal Questions
-    "questionbanksexternal",// Question Bank › External Questions — both keys
-                            //                 listed so the merger below can
-                            //                 pick up whichever are granted
-    "profile",              // Profiles
+    "notifications",        // Notification
+    "approvals",            // Approvals
+    "attendancemanagement", // Attendance Management
+    "grades",               // Grade
+    "reports",              // Report — the standalone Performance Report. The
+                            //          staff rails inject their own copy; here
+                            //          it is a grant like any other.
     "calendar",             // Calendar
-    "clientmanagement",     // Business Management (Client Management tab)
-    "servicemapping",       // Business Management (Service Mapping tab)
-    // System Settings parent — merges dynamicfieldsettings + logs. Both
-    // permissions are still listed here so the merger below picks them up.
-    "dynamicfieldsettings", // → System Settings › Dynamic Settings
-    "logs",                 // → System Settings › Audit Logs
-    // grades removed — Grade lives inside a Course's per-course dropdown
-    // (Feedback / Grade / Attendance) under Course Setup, not as a top-level
-    // sidebar entry.
-    // attendancemanagement removed — same story: Attendance is a per-course
-    // control accessed from within a Course, not a rail entry.
+    "questionbanks",        // ─┐ Question Bank › Internal / External. Same
+    "questionbanksexternal",// ─┘ splice-at-the-first rule as above.
+    "dynamicfieldsettings", // ─┐ System Settings › Dynamic Settings / Audit
+    "logs",                 // ─┘ Logs. Same rule again.
+    "profile",              // Profile
 ];
 
 // Permission key → route lives in ONE lucide-free module so the route gate and
@@ -198,12 +202,25 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
     let sortedPermissions = [...permissions].sort((a, b) => a.order - b.order);
 
     if (adminOnly) {
-        // Admin / Super Admin: whitelist + fixed order. Matched on the CANONICAL
-        // key so a variant spelling still finds its whitelist slot instead of
-        // dropping the module out of the sidebar entirely.
-        sortedPermissions = ADMIN_SIDEBAR_KEYS
-            .map(key => sortedPermissions.find(p => canonicalPermissionKey(p.permissionKey) === key))
-            .filter((p): p is UserPermission => !!p);
+        // Admin / Super Admin: the curated order above, applied as a SORT.
+        //
+        // It used to be applied as a map-and-filter, which meant a granted
+        // module the list did not name never reached the rail at all. Sorting
+        // instead keeps the curated positions for the modules it names and
+        // lets everything else the account holds follow, in its stored order —
+        // so the rail is the grants, and the list is only their arrangement.
+        //
+        // Matched on the CANONICAL key so a variant spelling still finds its
+        // slot rather than falling to the tail.
+        const rank = new Map(ADMIN_SIDEBAR_KEYS.map((key, i) => [key, i]));
+        sortedPermissions = [...sortedPermissions].sort((a, b) => {
+            const ra = rank.get(canonicalPermissionKey(a.permissionKey));
+            const rb = rank.get(canonicalPermissionKey(b.permissionKey));
+            if (ra !== undefined && rb !== undefined) return ra - rb;
+            if (ra !== undefined) return -1;
+            if (rb !== undefined) return 1;
+            return a.order - b.order;   // already the incoming sort
+        });
     }
 
     // Rail labels come from the shared map in ../navRoutes — the staff rail
@@ -285,48 +302,90 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
         items.push(...rest);
     }
 
-    const MERGED_KEYS = ["clientmanagement", "servicemapping", "businessmanagement"];
-    const firstIdx = items.findIndex(i => MERGED_KEYS.includes((i.permissionKey || "").toLowerCase()));
-    if (firstIdx !== -1) {
-        // Both tabs point at fixed pages that always exist. The section itself
-        // is already permission-gated (it only appears because the user holds a
-        // Business Management permission), so surface BOTH tabs rather than
-        // depending on each key being individually present — that dependency is
-        // exactly what made the submenu vanish when the two keys drifted apart.
-        const sectionColor = items[firstIdx].color;
-        const children: SidebarItem[] = [
-            {
+    // ── Business Management umbrella ──
+    // 2026-08-30 user request: nest Course Management INSIDE Business
+    // Management alongside Client Management and Service Mapping. So the
+    // rail reads as one Business heading with three tabs underneath:
+    //
+    //   Business Management ▾
+    //     ├─ Client Management     → /lms/pages/clientmanagement
+    //     ├─ Service Mapping       → /lms/pages/servicemapping
+    //     └─ Course Management     → /lms/pages/coursestructure
+    //
+    // Only children the user is actually granted appear (permission gates
+    // are unchanged). If NONE of the three keys are granted, no Business
+    // heading appears at all. If Business Management is the umbrella but a
+    // user only has (say) Course Management, the umbrella still renders
+    // with the one child so the module isn't hidden behind a missing
+    // parent — matches the existing "no action hidden" pattern used for
+    // the Question Bank and System Settings mergers.
+    const BUSINESS_KEYS = ["clientmanagement", "servicemapping", "coursestructure", "businessmanagement"];
+    const firstBusinessIdx = items.findIndex(
+        i => BUSINESS_KEYS.includes(canonicalPermissionKey(i.permissionKey)),
+    );
+    if (firstBusinessIdx !== -1) {
+        const sectionColor = items[firstBusinessIdx].color;
+
+        // Build children only for the keys this user actually holds.
+        // Order is fixed (Client → Service → Course) so the section reads
+        // consistently regardless of grant order.
+        const held = new Set(items.map(i => canonicalPermissionKey(i.permissionKey)));
+        const businessChildren: SidebarItem[] = [];
+        if (held.has("clientmanagement")) {
+            businessChildren.push({
                 title: "Client Management",
                 href: "/lms/pages/clientmanagement",
                 icon: getIconByName("Building"),
                 iconName: "Building",
                 color: sectionColor,
                 permissionKey: "clientmanagement",
-            },
-            {
+            });
+        }
+        if (held.has("servicemapping")) {
+            businessChildren.push({
                 title: "Service Mapping",
                 href: "/lms/pages/servicemapping",
                 icon: getIconByName("Layers"),
                 iconName: "Layers",
                 color: sectionColor,
                 permissionKey: "servicemapping",
-            },
-        ];
-        const merged: SidebarItem = {
-            title: "Business Management",
-            // The parent opens the first tab — the two are separate pages, there
-            // is no combined landing page any more.
-            href: children[0].href,
-            icon: getIconByName("Briefcase"),
-            iconName: "Briefcase",
-            color: sectionColor,
-            hasChevron: false,
-            permissionKey: "businessmanagement",
-            children,
-        };
-        const filtered = items.filter(i => !MERGED_KEYS.includes((i.permissionKey || "").toLowerCase()));
-        filtered.splice(firstIdx, 0, merged);
-        return systemSettingsMerge(filtered);
+            });
+        }
+        if (held.has("coursestructure")) {
+            businessChildren.push({
+                title: "Course Management",
+                href: "/lms/pages/coursestructure",
+                icon: getIconByName("BookOpen"),
+                iconName: "BookOpen",
+                color: sectionColor,
+                permissionKey: "coursestructure",
+            });
+        }
+
+        if (businessChildren.length > 0) {
+            const merged: SidebarItem = {
+                title: "Business Management",
+                // Parent opens the first granted child (Client → Service →
+                // Course) since there's no combined landing page.
+                href: businessChildren[0].href,
+                icon: getIconByName("Briefcase"),
+                iconName: "Briefcase",
+                color: sectionColor,
+                hasChevron: false,
+                permissionKey: "businessmanagement",
+                children: businessChildren,
+            };
+            // Strip every underlying key + any old top-level Business
+            // Management entry, then splice the merged section in at the
+            // position of the first Business-scoped item so ordering
+            // relative to unrelated items (Question Bank, System Settings,
+            // etc.) is preserved.
+            const filtered = items.filter(
+                i => !BUSINESS_KEYS.includes(canonicalPermissionKey(i.permissionKey)),
+            );
+            filtered.splice(firstBusinessIdx, 0, merged);
+            return systemSettingsMerge(filtered);
+        }
     }
 
     return systemSettingsMerge(items);
@@ -400,9 +459,10 @@ function systemSettingsMerge(items: SidebarItem[]): SidebarItem[] {
  * ignore it. Adding, removing or reordering a POC's (or anyone's) sidebar is
  * now purely an Assign Permission action.
  *
- * Only ONE role-derived rule survives: admin / super admin keep the curated
- * ADMIN_SIDEBAR_KEYS whitelist and its fixed order, because those accounts
- * hold the entire catalog and the rail would otherwise be unusable.
+ * Only ONE role-derived rule survives, and it no longer hides anything: admin
+ * / super admin get the curated ADMIN_SIDEBAR_KEYS ORDER, so the modules those
+ * accounts hold appear in a deliberate arrangement rather than by stored
+ * `order` alone. What appears is still exactly what was granted.
  */
 export const buildNavForStoredUser = (userData: UserData | null): SidebarItem[] => {
     // Detect POC first — its permissions get a small role-scoped patch
