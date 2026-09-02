@@ -1,5 +1,6 @@
-import React from 'react';
-import { AlertCircle, Check, Info, Plus, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
+import { AlertCircle, Check, ChevronDown, Info, Lock, Plus, X } from 'lucide-react';
 import { D } from '../shared/tokens';
 import { InfoTooltip, OInput, ONumberInput } from '../shared/UIComponents';
 import TipTapEditor from '../../tiptopEditor';
@@ -58,16 +59,206 @@ const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) =
   </div>
 );
 
-// Field label — always above the control. Compacted to 11.5px / 500 weight.
+// Field label — always above the control. 11px / 600 / MC.text, matching the
+// step-2 labels (Evaluation Method, Question Flow, Attempt Limit) so the two
+// steps read as one form.
 const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean; info?: string; htmlFor?: string }> = ({
   children, required, info, htmlFor,
 }) => (
   <label htmlFor={htmlFor} style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 4 }}>
-    <span style={{ fontSize: 11.5, fontWeight: 600, color: MC.text }}>{children}</span>
-    {required && <span aria-label="required" style={{ fontSize: 11.5, fontWeight: 700, color: MC.orange }}>*</span>}
+    <span style={{ fontSize: 11, fontWeight: 600, color: MC.text }}>{children}</span>
+    {required && <span aria-label="required" style={{ fontSize: 11, fontWeight: 700, color: MC.orange }}>*</span>}
     {info && <InfoTooltip content={info} />}
   </label>
 );
+
+// ─── MDropdown — modern custom dropdown (2026-09-01) ────────────────────────
+// Replaces the browser-native <select>. Trigger button matches the other
+// 40px form fields (Duration, Total marks); menu portals to <body> with a
+// rounded surface, subtle shadow, per-row hover state and an orange-tinted
+// selected row with a check. No native <option> ever renders — the popup is
+// pure custom UI.
+interface MDropdownOption { value: string; label: string }
+const MDropdown: React.FC<{
+  value: string;
+  options: MDropdownOption[];
+  onChange: (v: string) => void;
+  onBlur?: () => void;
+  placeholder?: string;
+  disabled?: boolean;
+  error?: boolean;
+  id?: string;
+  ariaLabel?: string;
+}> = ({ value, options, onChange, onBlur, placeholder = 'Select…', disabled, error, id, ariaLabel }) => {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const selected = options.find(o => o.value === value);
+
+  useEffect(() => {
+    if (open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setCoords({ top: r.bottom + window.scrollY + 6, left: r.left + window.scrollX, width: r.width });
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) { setOpen(false); onBlur?.(); }
+    };
+    const onScroll = () => { setOpen(false); onBlur?.(); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('scroll', onScroll, true);
+    };
+  }, [open, onBlur]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        id={id}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onClick={() => !disabled && setOpen(v => !v)}
+        style={{
+          width: '100%', height: 40, borderRadius: 7,
+          padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8,
+          fontSize: 13, textAlign: 'left', boxSizing: 'border-box',
+          background: disabled ? MC.readonly : error ? '#FFFBFA' : '#FFFFFF',
+          color: selected ? MC.text : '#98A2B3',
+          border: `1px solid ${open ? MC.orange : error ? '#F04438' : '#D0D5DD'}`,
+          boxShadow: open ? '0 0 0 3px rgba(255,90,18,0.13)' : 'none',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          outline: 'none', transition: 'border-color 150ms ease, box-shadow 150ms ease',
+        }}
+      >
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected?.label || placeholder}
+        </span>
+        {disabled
+          ? <Lock size={13} style={{ color: MC.sub, flexShrink: 0 }} />
+          : <ChevronDown size={15} strokeWidth={2} style={{ color: MC.sub, flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease' }} />
+        }
+      </button>
+      {open && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <div ref={menuRef} role="listbox"
+          style={{
+            position: 'absolute', top: coords.top, left: coords.left, width: coords.width,
+            zIndex: 10000, background: '#FFFFFF',
+            border: `1px solid ${MC.border}`, borderRadius: 10,
+            boxShadow: '0 12px 32px rgba(15,23,42,0.14), 0 2px 6px rgba(15,23,42,0.06)',
+            overflow: 'hidden', padding: 4, maxHeight: 320, overflowY: 'auto',
+            animation: 'mdd-in 140ms ease both',
+          }}>
+          <style>{`@keyframes mdd-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+          {options.map(opt => {
+            const isSel = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={isSel}
+                onClick={() => { onChange(opt.value); setOpen(false); onBlur?.(); }}
+                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = '#F9FAFB'; }}
+                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 12px', border: 'none', borderRadius: 8,
+                  fontSize: 13, fontWeight: isSel ? 600 : 500,
+                  background: isSel ? MC.orangeTint : 'transparent',
+                  color: isSel ? MC.orange : MC.text,
+                  cursor: 'pointer', textAlign: 'left',
+                  transition: 'background 120ms ease',
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {opt.label}
+                </span>
+                {isSel && <Check size={14} strokeWidth={3} style={{ color: MC.orange, flexShrink: 0 }} />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
+
+// ─── NumField — 40px numeric input matching the Duration field ──────────────
+// Used for Total marks / MCQ marks / Programming marks so those inputs share
+// the same visual weight as Duration. Debounces to blur (parses + clamps) —
+// live typing is preserved so admins can enter multi-digit values without
+// interruption.
+const NumField: React.FC<{
+  value: number;
+  onChange: (v: number) => void;
+  onBlur?: () => void;
+  placeholder?: string;
+  error?: boolean;
+  disabled?: boolean;
+  id?: string;
+  min?: number;
+  max?: number;
+}> = ({ value, onChange, onBlur, placeholder, error, disabled, id, min = 0, max = 10000 }) => {
+  const [raw, setRaw] = useState<string>(value === 0 ? '' : String(value));
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) {
+      setRaw(value === 0 ? '' : String(value));
+    }
+  }, [value]);
+  const commit = () => {
+    const n = parseFloat(raw);
+    const clamped = isNaN(n) ? 0 : Math.min(max, Math.max(min, n));
+    if (clamped !== value) onChange(clamped);
+    setRaw(clamped === 0 ? '' : (clamped % 1 === 0 ? String(clamped) : clamped.toFixed(2)));
+    onBlur?.();
+  };
+  return (
+    <input
+      ref={inputRef}
+      id={id}
+      type="text"
+      inputMode="decimal"
+      value={raw}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={e => { const v = e.target.value; if (v === '' || /^[0-9]*\.?[0-9]*$/.test(v)) setRaw(v); }}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') commit(); }}
+      onFocus={e => {
+        const el = e.currentTarget;
+        el.style.borderColor = MC.orange;
+        el.style.boxShadow = '0 0 0 3px rgba(255,90,18,0.13)';
+      }}
+      onBlurCapture={e => {
+        const el = e.currentTarget;
+        el.style.borderColor = error ? '#F04438' : '#D0D5DD';
+        el.style.boxShadow = 'none';
+      }}
+      style={{
+        width: '100%', height: 40, borderRadius: 7,
+        padding: '0 12px', fontSize: 13, color: MC.text,
+        border: `1px solid ${error ? '#F04438' : '#D0D5DD'}`,
+        background: disabled ? MC.readonly : error ? '#FFFBFA' : '#FFFFFF',
+        outline: 'none', boxSizing: 'border-box', transition: 'border-color 150ms ease, box-shadow 150ms ease',
+      }}
+    />
+  );
+};
 
 interface ExerciseDetailsStepProps {
   formData: any;
@@ -104,7 +295,7 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
     { value: 'MCQ',         label: 'MCQ — Multiple Choice Questions (auto-graded)' },
     { value: 'Programming', label: 'Programming — Code challenges with test cases' },
     { value: 'Combined',    label: 'Combined — MCQ + Programming (hybrid)' },
-    { value: 'Other',       label: 'Other — Custom exercise with module & language config' },
+    { value: 'Other',       label: 'Other — Custom assignment with module & language config' },
   ];
 
   // Build the chip list for the Skills row from configuredLanguages. Preserved
@@ -170,17 +361,15 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
         .exd-input.err { border-color: #F04438; background: #FFFBFA; }
       `}</style>
 
-      {/* Page title — compacted from 28px to 20px per user note. */}
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: MC.text, letterSpacing: '-.02em', margin: '0 0 14px' }}>
-        Exercise setup
-      </h1>
+      {/* Page title moved into the modal's right-pane header
+          ("Assignment setup") — no inline h1 here to avoid a duplicate. */}
 
       {/* ── Identity ── */}
       <SectionHeading>Identity</SectionHeading>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 24%) minmax(0, 1fr)', gap: 20, marginBottom: 16 }}>
         <div>
-          <FieldLabel htmlFor="exercise-id" info="Auto-generated unique identifier for this exercise">
-            Exercise ID
+          <FieldLabel htmlFor="exercise-id" info="Auto-generated unique identifier for this assignment">
+            Assignment ID
           </FieldLabel>
           <input
             id="exercise-id"
@@ -193,7 +382,7 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
         </div>
         <div>
           <FieldLabel htmlFor="exercise-name" required info="The name displayed to students in their dashboard">
-            Exercise name
+            Assignment name
           </FieldLabel>
           <input
             id="exercise-name"
@@ -224,35 +413,22 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
       }}>
         <div>
           <FieldLabel htmlFor="exercise-type" required info="MCQ, Programming, Combined, or Other — decides the question authoring surface">
-            Exercise type
+            Assignment type
           </FieldLabel>
-          <select
+          <MDropdown
             id="exercise-type"
             value={formData.exerciseType || ''}
-            onChange={e => {
-              const v = e.target.value as any;
-              handleSelectExerciseType(v);
+            options={exerciseTypeOptions}
+            placeholder="Select type"
+            disabled={isLockedForEdit}
+            error={!!validationErrors.exerciseType && touchedFields.has('exerciseType')}
+            ariaLabel="Assignment type"
+            onChange={v => {
+              handleSelectExerciseType(v as any);
               if (v) setValidationErrors((prev: any) => { const n = { ...prev }; delete n.exerciseType; return n; });
             }}
             onBlur={() => markTouched('exerciseType')}
-            disabled={isLockedForEdit}
-            style={{
-              ...selectBaseStyle,
-              ...(validationErrors.exerciseType && touchedFields.has('exerciseType')
-                ? { borderColor: '#F04438', background: '#FFFBFA' }
-                : {}),
-              color: formData.exerciseType ? MC.text : '#98A2B3',
-              background: isLockedForEdit ? MC.readonly : '#fff',
-              cursor: isLockedForEdit ? 'not-allowed' : 'pointer',
-              backgroundImage: chevronBg, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
-            }}
-          >
-            <option value="" disabled>Select type</option>
-            {exerciseTypeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          {isLockedForEdit && (
-            <p style={{ marginTop: 6, fontSize: 12, color: MC.sub }}>Exercise type cannot be changed after creation</p>
-          )}
+          />
           {validationErrors.exerciseType && touchedFields.has('exerciseType') && (
             <p style={{ marginTop: 6, fontSize: 12, color: '#B42318', display: 'flex', alignItems: 'center', gap: 4 }}>
               <AlertCircle size={12} /> {validationErrors.exerciseType}
@@ -264,28 +440,23 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
           <FieldLabel htmlFor="exercise-level" required info="Sets the challenge level — affects filtering and student guidance">
             Difficulty
           </FieldLabel>
-          <select
+          <MDropdown
             id="exercise-level"
             value={formData.exerciseLevel || ''}
-            onChange={e => {
-              setFormData((prev: any) => ({ ...prev, exerciseLevel: e.target.value as any }));
-              if (e.target.value) setValidationErrors((prev: any) => { const n = { ...prev }; delete n.exerciseLevel; return n; });
+            options={[
+              { value: 'beginner', label: 'Beginner' },
+              { value: 'intermediate', label: 'Intermediate' },
+              { value: 'expert', label: 'Expert' },
+            ]}
+            placeholder="Select level"
+            error={!!validationErrors.exerciseLevel && touchedFields.has('exerciseLevel')}
+            ariaLabel="Difficulty"
+            onChange={v => {
+              setFormData((prev: any) => ({ ...prev, exerciseLevel: v as any }));
+              if (v) setValidationErrors((prev: any) => { const n = { ...prev }; delete n.exerciseLevel; return n; });
             }}
             onBlur={() => markTouched('exerciseLevel')}
-            style={{
-              ...selectBaseStyle,
-              ...(validationErrors.exerciseLevel && touchedFields.has('exerciseLevel')
-                ? { borderColor: '#F04438', background: '#FFFBFA' }
-                : {}),
-              color: formData.exerciseLevel ? MC.text : '#98A2B3',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="" disabled hidden>Select level</option>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="expert">Expert</option>
-          </select>
+          />
           {validationErrors.exerciseLevel && touchedFields.has('exerciseLevel') && (
             <p style={{ marginTop: 6, fontSize: 12, color: '#B42318', display: 'flex', alignItems: 'center', gap: 4 }}>
               <AlertCircle size={12} /> {validationErrors.exerciseLevel}
@@ -346,22 +517,21 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
               {isCombined ? 'Marks (MCQ + Prog.)' : 'Total marks'}
             </FieldLabel>
             {!isCombined ? (
-              <ONumberInput
+              <NumField
+                id="exercise-total-marks"
                 value={formData.totalMarks}
                 onChange={v => {
                   setFormData((prev: any) => ({ ...prev, totalMarks: v }));
                   if (v > 0) setValidationErrors((prev: any) => { const e = { ...prev }; delete e.totalMarks; return e; });
                 }}
                 onBlur={() => markTouched('totalMarks')}
-                placeholder="Enter total marks"
-                error={validationErrors.totalMarks}
-                touched={touchedFields.has('totalMarks')}
-                style={{ width: '100%' }}
+                placeholder="e.g. 100"
+                error={!!validationErrors.totalMarks && touchedFields.has('totalMarks')}
               />
             ) : (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ flex: 1 }}>
-                  <ONumberInput
+                  <NumField
                     value={formData.totalMarksMCQ}
                     onChange={v => {
                       setFormData((prev: any) => ({ ...prev, totalMarksMCQ: v, totalMarks: v + prev.totalMarksProgramming }));
@@ -369,13 +539,11 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
                     }}
                     onBlur={() => markTouched('totalMarksMCQ')}
                     placeholder="MCQ"
-                    error={validationErrors.totalMarksMCQ}
-                    touched={touchedFields.has('totalMarksMCQ')}
-                    style={{ width: '100%' }}
+                    error={!!validationErrors.totalMarksMCQ && touchedFields.has('totalMarksMCQ')}
                   />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <ONumberInput
+                  <NumField
                     value={formData.totalMarksProgramming}
                     onChange={v => {
                       setFormData((prev: any) => ({ ...prev, totalMarksProgramming: v, totalMarks: prev.totalMarksMCQ + v }));
@@ -383,16 +551,14 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
                     }}
                     onBlur={() => markTouched('totalMarksProgramming')}
                     placeholder="Prog."
-                    error={validationErrors.totalMarksProgramming}
-                    touched={touchedFields.has('totalMarksProgramming')}
-                    style={{ width: '100%' }}
+                    error={!!validationErrors.totalMarksProgramming && touchedFields.has('totalMarksProgramming')}
                   />
                 </div>
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
-                  height: 24, marginTop: 12, padding: '0 9px', borderRadius: 999,
+                  height: 26, padding: '0 10px', borderRadius: 999,
                   background: MC.orangeTint, border: `1px solid ${MC.orangeTint}`,
-                  fontSize: 11, fontWeight: 600, color: MC.orange, whiteSpace: 'nowrap',
+                  fontSize: 11.5, fontWeight: 600, color: MC.orange, whiteSpace: 'nowrap',
                 }}>
                   {combinedTotal} marks
                 </span>
@@ -407,7 +573,7 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
 
       {/* Grading radio cards */}
       <div style={{ marginBottom: 16 }}>
-        <FieldLabel required info="Graded exercises require marks configuration; Non-graded tracks completion only">
+        <FieldLabel required info="Graded assignments require marks configuration; Non-graded tracks completion only">
           Grading
         </FieldLabel>
         <div
@@ -465,12 +631,12 @@ export const ExerciseDetailsStep: React.FC<ExerciseDetailsStepProps> = ({
         {gradedLocked ? (
           <p style={{ marginTop: 8, fontSize: 12, color: MC.sub, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Info size={13} style={{ color: MC.orange }} />
-            Grading type cannot be changed after the exercise has been fully completed.
+            Grading type cannot be changed after the assignment has been fully completed.
           </p>
         ) : !isGraded && (
           <p style={{ marginTop: 8, fontSize: 12, color: MC.sub, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Info size={13} style={{ color: MC.orange }} />
-            Grade settings are hidden for non-graded exercises.
+            Grade settings are hidden for non-graded assignments.
           </p>
         )}
       </div>

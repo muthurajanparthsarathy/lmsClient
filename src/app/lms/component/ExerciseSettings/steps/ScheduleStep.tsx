@@ -79,13 +79,13 @@ const SegInput: React.FC<{
           onChange(c);
         }
       }}
-      className="text-center font-semibold bg-white outline-none transition-colors"
+      className="text-center font-medium bg-white outline-none transition-colors"
       style={{
-        width: pad === 4 ? 48 : 32, height: 30, fontSize: 12, borderRadius: 8,
-        border: `1px solid ${D.border2}`, color: D.textMain, fontFamily: FONT,
+        width: pad === 4 ? 50 : 34, height: 30, fontSize: 12, borderRadius: 6,
+        border: '1px solid #D0D5DD', color: '#101828', fontFamily: FONT, padding: '0 4px',
       }}
-      onFocus={e => { e.target.style.borderColor = D.orange; e.target.style.boxShadow = `0 0 0 3px ${D.orangeMed}`; }}
-      onBlurCapture={e => { e.target.style.borderColor = D.border2; e.target.style.boxShadow = 'none'; }}
+      onFocus={e => { e.target.style.borderColor = D.orange; e.target.style.boxShadow = '0 0 0 2px rgba(255,90,18,.13)'; }}
+      onBlurCapture={e => { e.target.style.borderColor = '#D0D5DD'; e.target.style.boxShadow = 'none'; }}
     />
   );
 };
@@ -277,21 +277,19 @@ const QUICK_OFFSETS = [
   { label: '+1w',  ms: 7 * 24 * 60 * 60 * 1000 },
 ];
 
-// ── Spec card / switch (presentational only) ─────────────────────────────────
-const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div style={{ border: `1px solid ${D.border2}`, borderRadius: 11, background: '#fff' }}>
-    <div
-      className="flex items-center"
-      style={{
-        padding: '9px 13px', gap: 9, background: D.surface,
-        borderBottom: `1px solid ${D.border}`, borderRadius: '11px 11px 0 0',
-      }}
-    >
-      <span style={{ fontSize: 11.2, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: D.textSub }}>
-        {title}
-      </span>
-    </div>
-    <div style={{ padding: 13 }}>{children}</div>
+// ── Presentational primitives (switch + section heading) ─────────────────────
+// SectionHeading mirrors the pattern used in ExerciseDetailsStep — orange
+// title with a thin hairline divider extending to the right. Replaces the
+// old bordered `Card` wrapper so the whole page reads as one flat surface.
+const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 10px' }}>
+    <span style={{
+      fontSize: 12, fontWeight: 700, color: D.orange, letterSpacing: '-.01em',
+      whiteSpace: 'nowrap', textTransform: 'none', fontFamily: FONT,
+    }}>
+      {children}
+    </span>
+    <span aria-hidden style={{ flex: 1, height: 1, background: D.border }} />
   </div>
 );
 
@@ -449,112 +447,116 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
   ];
 
   return (
-    <div className="flex flex-col" style={{ padding: '18px 22px', gap: 13 }}>
-      <Card title="Approval">
-        {/* Approval — visibility gate. Students only see the exercise after every approver in the course's Approval Hierarchy approves. */}
-        <div className="flex flex-col gap-2 relative">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div
-              className="w-8 h-8 flex items-center justify-center flex-shrink-0"
-              style={{ background: '#FFF2E8', color: D.orangeDark, borderRadius: 8 }}
-            >
-              <ShieldCheck size={15} />
-            </div>
-            <div className="flex items-center gap-1 w-40 flex-shrink-0">
-              <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
-                Requires Approval
-              </span>
-              <InfoTooltip
-                content="When ON, students see this exercise only after every approver in the course's Approval Hierarchy approves."
-                side="right"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <SpecSwitch on={approvalOn} onClick={() => toggleField('requiresAdminApproval')} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: approvalOn ? D.emerald : D.textHint }}>
-                {approvalOn ? 'Yes' : 'No'}
-              </span>
-            </div>
+    <div style={{ padding: '16px 32px 24px', maxWidth: 1200, fontFamily: FONT }}>
+      {/* Page heading is rendered by the parent wizard from STEP_META so we
+          don't stack a duplicate here — mirrors the Question sources pattern. */}
+
+      {/* ── APPROVAL ─────────────────────────────────────────────── */}
+      <SectionHeading>Approval</SectionHeading>
+      <div
+        className="flex flex-col"
+        style={{ gap: 10, paddingTop: 6, paddingBottom: 6, borderBottom: `1px solid ${D.border}` }}
+      >
+        <div className="flex items-center flex-wrap" style={{ gap: 12, minHeight: 56 }}>
+          <div
+            className="flex items-center justify-center flex-shrink-0"
+            style={{ width: 36, height: 36, background: '#FFF2E8', color: D.orangeDark, borderRadius: 8 }}
+          >
+            <ShieldCheck size={16} />
           </div>
+          <div className="flex items-center" style={{ gap: 4, minWidth: 220 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
+              Requires Approval
+            </span>
+            <InfoTooltip
+              content="When ON, students see this exercise only after every approver in the course's Approval Hierarchy approves."
+              side="right"
+            />
+          </div>
+          <div className="flex items-center" style={{ gap: 8, marginLeft: 4 }}>
+            <SpecSwitch on={approvalOn} onClick={() => toggleField('requiresAdminApproval')} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: approvalOn ? D.emerald : D.textHint }}>
+              {approvalOn ? 'Yes' : 'No'}
+            </span>
+          </div>
+        </div>
 
-          {approvalOn && (
-            <div className="ml-11 space-y-2">
-              {approvalLoading && (
-                <span style={{ fontSize: 11.4, color: D.textMuted }}>Loading approvers…</span>
-              )}
-              {!approvalLoading && approvalSteps && approvalSteps.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {approvalSteps.map((s: any, i: number) => (
-                    <React.Fragment key={s.roleId || i}>
-                      {i > 0 && <span style={{ fontSize: 11, color: D.textHint }}>→</span>}
-                      <span
-                        className="inline-flex items-center"
-                        style={{ height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#F4F4F5', border: '1px solid #E7E5E4', color: '#57606E' }}
-                      >
-                        {i + 1}. {s.roleName}
-                      </span>
-                    </React.Fragment>
-                  ))}
-                  <span className="ml-1" style={{ fontSize: 10.8, color: D.textMuted }}>
-                    → Students
-                  </span>
-                </div>
-              )}
-              {!approvalLoading && Array.isArray(approvalSteps) && approvalSteps.length === 0 && (
-                <div
-                  className="flex items-start"
-                  style={{ gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11.4, lineHeight: 1.5, background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#912018' }}
-                >
-                  <AlertCircle size={12} className="mt-[2px] flex-shrink-0" />
-                  <span>
-                    Course has no Approval Hierarchy configured. Configure it on the course participants page first.
-                  </span>
-                </div>
-              )}
-
-              {/* Approval scope — spec segmented control */}
-              <div className="pt-1">
-                <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#4B5563', marginBottom: 5 }}>
-                  What should approvers review?
+        {approvalOn && (
+          <div style={{ paddingLeft: 48, display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 8 }}>
+            {approvalLoading && (
+              <span style={{ fontSize: 11.4, color: D.textMuted }}>Loading approvers…</span>
+            )}
+            {!approvalLoading && approvalSteps && approvalSteps.length > 0 && (
+              <div className="flex items-center flex-wrap" style={{ gap: 6 }}>
+                {approvalSteps.map((s: any, i: number) => (
+                  <React.Fragment key={s.roleId || i}>
+                    {i > 0 && <span style={{ fontSize: 11, color: D.textHint }}>→</span>}
+                    <span
+                      className="inline-flex items-center"
+                      style={{ height: 23, padding: '0 9px', borderRadius: 999, fontSize: 10.8, fontWeight: 600, background: '#F4F4F5', border: '1px solid #E7E5E4', color: '#57606E' }}
+                    >
+                      {i + 1}. {s.roleName}
+                    </span>
+                  </React.Fragment>
+                ))}
+                <span style={{ fontSize: 10.8, color: D.textMuted, marginLeft: 4 }}>→ Students</span>
+              </div>
+            )}
+            {!approvalLoading && Array.isArray(approvalSteps) && approvalSteps.length === 0 && (
+              <div
+                className="flex items-start"
+                style={{ gap: 8, padding: '8px 10px', borderRadius: 8, fontSize: 11.4, lineHeight: 1.5, background: '#FEF3F2', border: '1px solid #FBD3CE', color: '#912018' }}
+              >
+                <AlertCircle size={12} className="mt-[2px] flex-shrink-0" />
+                <span>
+                  Course has no Approval Hierarchy configured. Configure it on the course participants page first.
                 </span>
-                <div className="inline-flex" style={{ background: D.surface2, border: `1px solid ${D.border2}`, borderRadius: 8, padding: 3, gap: 3 }}>
-                  {SCOPE_OPTIONS.map(({ val, label, hint }) => {
-                    const selected = ((formData.schedule as any).approvalScope || 'settings') === val;
-                    return (
-                      <button
-                        key={val}
-                        type="button"
-                        aria-pressed={selected}
-                        title={hint}
-                        onClick={() => setFormData((prev: any) => ({
-                          ...prev,
-                          schedule: { ...prev.schedule, approvalScope: val },
-                        }))}
-                        className="flex items-center justify-center transition-all"
-                        style={{
-                          height: 27, padding: '0 12px', borderRadius: 5, fontSize: 12, fontWeight: 600,
-                          border: 'none', cursor: 'pointer',
-                          background: selected ? '#fff' : 'transparent',
-                          color: selected ? D.orangeDark : D.textMuted,
-                          boxShadow: selected ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
-                        }}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{ fontSize: 11.4, lineHeight: 1.5, color: D.textMuted, marginTop: 5 }}>
-                  {SCOPE_OPTIONS.find(o => o.val === ((formData.schedule as any).approvalScope || 'settings'))?.hint}
-                </div>
+              </div>
+            )}
+
+            <div style={{ paddingTop: 4 }}>
+              <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#101828', marginBottom: 5, fontFamily: FONT }}>
+                What should approvers review?
+              </span>
+              <div className="inline-flex" style={{ background: D.surface2, border: `1px solid ${D.border2}`, borderRadius: 8, padding: 3, gap: 3 }}>
+                {SCOPE_OPTIONS.map(({ val, label, hint }) => {
+                  const selected = ((formData.schedule as any).approvalScope || 'settings') === val;
+                  return (
+                    <button
+                      key={val}
+                      type="button"
+                      aria-pressed={selected}
+                      title={hint}
+                      onClick={() => setFormData((prev: any) => ({
+                        ...prev,
+                        schedule: { ...prev.schedule, approvalScope: val },
+                      }))}
+                      className="flex items-center justify-center transition-all"
+                      style={{
+                        height: 27, padding: '0 12px', borderRadius: 5, fontSize: 12, fontWeight: 600,
+                        border: 'none', cursor: 'pointer',
+                        background: selected ? '#fff' : 'transparent',
+                        color: selected ? D.orangeDark : D.textMuted,
+                        boxShadow: selected ? '0 1px 3px rgba(15,23,42,.1)' : 'none',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11.4, lineHeight: 1.5, color: D.textMuted, marginTop: 5 }}>
+                {SCOPE_OPTIONS.find(o => o.val === ((formData.schedule as any).approvalScope || 'settings'))?.hint}
               </div>
             </div>
-          )}
-        </div>
-      </Card>
-      <Card title="Availability">
-        <div className="divide-y" style={{ borderColor: D.border }}>
-        {FIELDS.map(({ label, fieldKey, icon, iconColor, iconBg, toggleable, enabledKey, required, tooltip, showOffsets }) => {
+          </div>
+        )}
+      </div>
+
+      {/* ── AVAILABILITY ─────────────────────────────────────────── */}
+      <div style={{ marginTop: 20 }}>
+        <SectionHeading>Availability</SectionHeading>
+        {FIELDS.map(({ label, fieldKey, icon, iconColor, iconBg, toggleable, enabledKey, required, tooltip, showOffsets }, idx) => {
           const enabled  = !toggleable || !!(formData.schedule as any)[enabledKey];
           const val      = getDV(fieldKey);
           const error    = getError(fieldKey);
@@ -568,18 +570,26 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
             <div
               key={fieldKey}
               ref={el => { rowRefs.current[fieldKey] = el; }}
-              className="flex items-center gap-3 py-3 relative flex-wrap"
-              style={{ borderColor: D.border }}
+              className="flex items-center flex-wrap relative"
+              style={{
+                gap: 12,
+                paddingTop: 14, paddingBottom: 14,
+                minHeight: 72,
+                borderBottom: idx < FIELDS.length - 1 ? `1px solid ${D.border}` : 'none',
+              }}
             >
-              {/* Icon */}
-              <div className="w-8 h-8 flex items-center justify-center flex-shrink-0" style={{ background: iconBg, color: iconColor, borderRadius: 8 }}>
+              {/* Icon tile */}
+              <div
+                className="flex items-center justify-center flex-shrink-0"
+                style={{ width: 36, height: 36, background: iconBg, color: iconColor, borderRadius: 8 }}
+              >
                 {icon}
               </div>
 
               {/* Label */}
-              <div className="flex items-center gap-1 w-40 flex-shrink-0">
-                <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>{label}</span>
-                {required && <span style={{ fontSize: 12.6, fontWeight: 700, color: D.orange }}>*</span>}
+              <div className="flex items-center" style={{ gap: 4, minWidth: 220 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>{label}</span>
+                {required && <span style={{ fontSize: 11, fontWeight: 700, color: D.orange }}>*</span>}
                 {tooltip && <InfoTooltip content={tooltip} side="right" />}
               </div>
 
@@ -590,37 +600,37 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
 
               {/* Date/time row */}
               {enabled ? (
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="inline-flex items-center gap-1">
+                <div className="flex items-center flex-wrap" style={{ gap: 6 }}>
+                  <span className="inline-flex items-center" style={{ gap: 4 }}>
                     <SegInput value={val.day}   placeholder="DD"   min={1}    max={31}   onChange={d => setDV(fieldKey, { ...val, day: d })} />
-                    <span className="text-xs font-bold" style={{ color: D.textHint }}>/</span>
+                    <span style={{ fontSize: 12, color: D.textHint, fontWeight: 500 }}>/</span>
                     <SegInput value={val.month} placeholder="MM"   min={1}    max={12}   onChange={m => setDV(fieldKey, { ...val, month: m })} />
-                    <span className="text-xs font-bold" style={{ color: D.textHint }}>/</span>
+                    <span style={{ fontSize: 12, color: D.textHint, fontWeight: 500 }}>/</span>
                     <SegInput value={val.year}  placeholder="YYYY" min={2020} max={2099} onChange={y => setDV(fieldKey, { ...val, year: y })} />
                   </span>
-                  <span className="inline-flex items-center gap-1 ml-2">
+                  <span className="inline-flex items-center" style={{ gap: 4, marginLeft: 8 }}>
                     <SegInput value={val.hour}   placeholder="HH" min={0} max={23} onChange={h => setDV(fieldKey, { ...val, hour: h })} />
-                    <span className="text-xs font-bold" style={{ color: D.textHint }}>:</span>
+                    <span style={{ fontSize: 12, color: D.textHint, fontWeight: 500 }}>:</span>
                     <SegInput value={val.minute} placeholder="MM" min={0} max={59} onChange={m => setDV(fieldKey, { ...val, minute: m })} />
                   </span>
                   <button
                     ref={el => { rowRefs.current[fieldKey + '_btn'] = el as HTMLDivElement | null; }}
                     type="button"
                     onClick={() => setOpenField(isOpen ? null : fieldKey)}
-                    className="ml-2 flex items-center justify-center border transition-all flex-shrink-0"
+                    className="flex items-center justify-center transition-all flex-shrink-0"
                     style={{
-                      width: 30, height: 30, borderRadius: 8,
+                      width: 30, height: 30, borderRadius: 6, marginLeft: 4,
                       background: isOpen ? D.orange : '#fff',
                       color: isOpen ? '#fff' : D.textMuted,
-                      borderColor: isOpen ? D.orange : D.border2,
+                      border: `1px solid ${isOpen ? D.orange : '#D0D5DD'}`,
+                      cursor: 'pointer',
                     }}
                   >
-                    <Calendar size={14} />
+                    <Calendar size={13} />
                   </button>
 
-                  {/* Quick-offset chips */}
                   {showOffsets && (
-                    <div className="ml-2 flex items-center gap-1 flex-wrap">
+                    <div className="flex items-center flex-wrap" style={{ gap: 4, marginLeft: 6 }}>
                       {QUICK_OFFSETS.map(o => (
                         <button
                           key={o.label}
@@ -632,8 +642,8 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
                             : 'Fill the previous date first'}
                           className="inline-flex items-center transition-all"
                           style={{
-                            height: 23, padding: '0 9px', borderRadius: 999,
-                            fontSize: 10.8, fontWeight: 600,
+                            height: 26, padding: '0 10px', borderRadius: 999,
+                            fontSize: 11, fontWeight: 600,
                             background: '#F4F4F5', border: '1px solid #E7E5E4', color: '#57606E',
                             opacity: canOffset ? 1 : 0.45,
                             cursor: canOffset ? 'pointer' : 'not-allowed',
@@ -658,7 +668,7 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5" style={{ fontSize: 11.4, color: D.textMuted }}>
+                <div className="flex items-center" style={{ gap: 6, fontSize: 11.4, color: D.textMuted }}>
                   <Lock size={12} />
                   <span>Disabled</span>
                 </div>
@@ -666,7 +676,7 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
 
               {/* Error */}
               {error && touched && (
-                <span className="ml-1" style={{ fontSize: 11.4, color: D.red }}>{error}</span>
+                <span style={{ fontSize: 11.4, color: D.red, marginLeft: 4 }}>{error}</span>
               )}
 
               {/* Popup */}
@@ -683,8 +693,7 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
             </div>
           );
         })}
-        </div>
-      </Card>
+      </div>
     </div>
   );
 };

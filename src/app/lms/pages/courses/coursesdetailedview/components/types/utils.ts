@@ -65,7 +65,20 @@ export const getFileUrl = (fileUrl: string|{base?:string;[k:string]:string|undef
 export const formatSubItemName = (key: string) => 
   key.replace(/_/g," ").replace(/\b\w/g,l=>l.toUpperCase())
 
-export const normalizeKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g,'_')
+// Canonical spellings for subcategory keys that exist in stored data under a
+// legacy misspelling. Course configs written as "Letcure" stored pedagogy
+// buckets under "letcure"; treat "lecture" as canonical so a config or bucket
+// using either spelling resolves to the same activity. Safe because every
+// caller compares normalizeKey(a) === normalizeKey(b) (both sides pass
+// through here) and then indexes data with the ORIGINAL stored key.
+const KEY_ALIASES: Record<string, string> = {
+  letcure: 'lecture',
+}
+
+export const normalizeKey = (s: string) => {
+  const k = s.trim().toLowerCase().replace(/\s+/g,'_')
+  return KEY_ALIASES[k] ?? k
+}
 
 export const hasChildItems = (item: any): boolean => {
   if('subModules' in item && item.subModules && item.subModules.length > 0) return true

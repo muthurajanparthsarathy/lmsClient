@@ -23,6 +23,7 @@ import {
   Check
 } from "lucide-react";
 import CreateTestModal from "./testyouskillscomponents/CreateTestModal";
+import CreateQuestionOptionModal from "./testyouskillscomponents/CreateQuestionOptionModal";
 import { youDoMcqApi, getEntityTypeFromNodeType } from "@/apiServices/pedagogyAndModuleAdd/testYourSkillsApi";
 // Resources by Batch — used by the raw `fetch` below, which the axios
 // interceptor cannot reach. `getActiveBatchId` also keys the reload effect so
@@ -382,97 +383,11 @@ const BulkDeleteConfirmationModal: React.FC<{
   );
 };
 
-// ─── Create Option Modal Component ────────────────────────────────────────────
-const CreateOptionModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  onSelectFromScratch: () => void;
-  onSelectFromBank: () => void;
-  onSelectFromDocument: () => void;
-}> = ({ isOpen, onClose, onSelectFromScratch, onSelectFromBank, onSelectFromDocument }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div 
-      className="fixed inset-0 z-[1000] flex items-center justify-center"
-      style={{ background: 'rgba(26,26,46,0.55)', backdropFilter: 'blur(3px)' }}
-      onClick={onClose}
-    >
-      <div 
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
-        style={{ border: '1px solid var(--lms-border)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="px-5 pt-5 pb-3 border-b" style={{ borderColor: T.border }}>
-          <h3 className="text-base font-bold" style={{ color: T.textMain }}>Add Question</h3>
-          <p className="text-xs mt-1" style={{ color: T.textMuted }}>Choose how you want to create questions</p>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <button
-            onClick={onSelectFromScratch}
-            className="w-full flex items-start gap-4 p-4 rounded-xl transition-all text-left"
-            style={{ background: T.bg, border: `1.5px solid ${T.border}`, transition: 'all 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = T.green; e.currentTarget.style.background = T.greenLight; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bg; }}
-          >
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#e8f5e9', color: T.green }}>
-              <Plus size={20} strokeWidth={1.5} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold" style={{ color: T.textMain }}>Create From Scratch</p>
-              <p className="text-[11px] mt-0.5" style={{ color: T.textMuted }}>Build from scratch with custom content</p>
-            </div>
-          </button>
-
-          <button
-            onClick={onSelectFromBank}
-            className="w-full flex items-start gap-4 p-4 rounded-xl transition-all text-left"
-            style={{ background: T.bg, border: `1.5px solid ${T.border}`, transition: 'all 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = T.purple; e.currentTarget.style.background = T.purpleLight; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bg; }}
-          >
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#f3e8ff', color: T.purple }}>
-              <Database size={20} strokeWidth={1.5} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold" style={{ color: T.textMain }}>From Question Bank</p>
-              <p className="text-[11px] mt-0.5" style={{ color: T.textMuted }}>Import from existing question repository</p>
-            </div>
-          </button>
-
-          <button
-            onClick={onSelectFromDocument}
-            className="w-full flex items-start gap-4 p-4 rounded-xl transition-all text-left"
-            style={{ background: T.bg, border: `1.5px solid ${T.border}`, transition: 'all 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = T.amber; e.currentTarget.style.background = T.amberLight; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bg; }}
-          >
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#fef3c7', color: T.amber }}>
-              <Upload size={20} strokeWidth={1.5} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold" style={{ color: T.textMain }}>From Document</p>
-              <p className="text-[11px] mt-0.5" style={{ color: T.textMuted }}>Bulk import from JSON, CSV, TXT</p>
-            </div>
-          </button>
-        </div>
-
-        <div className="px-4 pb-4">
-          <button
-            onClick={onClose}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
-            style={{ background: T.pageBg, border: `1.5px solid ${T.border}`, color: T.textSub }}
-            onMouseEnter={e => { e.currentTarget.style.background = T.bg; e.currentTarget.style.borderColor = T.border; }}
-            onMouseLeave={e => { e.currentTarget.style.background = T.pageBg; e.currentTarget.style.borderColor = T.border; }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+// ─── Create Option Modal ─────────────────────────────────────────────────────
+// 2026-09-02: the inline CreateOptionModal that used to live here was
+// replaced with the shared CreateQuestionOptionModal (rebuilt to the
+// "Add a programming question" mockup). Same prop contract — see the
+// call site below.
 
 // ─── Preview Modal Component (Supports All Question Types) ─────────────────────
 const PreviewModal: React.FC<{
@@ -1902,7 +1817,7 @@ const handleBankQuestionsSelected = async (selectedQuestions: any[]) => {
         const path = getEntityPath(entityPath);
         
         // IMPORTANT: Use the same testItemKey "test_your_skills" for all questions
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533'}/you-do/createquestion/${path}/${nodeId}/you-do/${testItemKey}/mcq`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com'}/you-do/createquestion/${path}/${nodeId}/you-do/${testItemKey}/mcq`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
@@ -2658,9 +2573,19 @@ const loadQuestions = async (_opts: { silent?: boolean } = {}) => {
       </div>
 
       {/* Modals */}
-      <CreateOptionModal
+      <CreateQuestionOptionModal
         isOpen={showCreateOptionModal}
         onClose={() => setShowCreateOptionModal(false)}
+        exerciseType="MCQ"
+        breadcrumbs={(() => {
+          const out: Array<{ name: string; type: string }> = [];
+          if (hierarchyData.courseName)   out.push({ name: hierarchyData.courseName,   type: 'course' });
+          if (hierarchyData.moduleName)   out.push({ name: hierarchyData.moduleName,   type: 'module' });
+          if (hierarchyData.submoduleName) out.push({ name: hierarchyData.submoduleName, type: 'submodule' });
+          const leaf = hierarchyData.topicName || nodeName;
+          if (leaf) out.push({ name: leaf, type: 'topic' });
+          return out;
+        })()}
         onSelectFromScratch={() => {
           setShowCreateOptionModal(false);
           handleAddQuestionFromScratch();

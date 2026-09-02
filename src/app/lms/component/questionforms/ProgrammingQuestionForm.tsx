@@ -149,6 +149,15 @@ useEffect(() => {
 // in-form "+" dropdown. Only auto-opened modals may cascade-close the whole
 // form; a dropdown-opened modal must never tear the form down on dismiss.
 const sourceModalAutoOpenedRef = useRef(false);
+// Set by any INTENTIONAL close of the AI / Bank / Other-Platform modal — the
+// user clicked X / Cancel / Escape / clicked the backdrop. Gates the
+// blank-slot auto-reopen so an explicit close cannot re-trigger the same
+// modal. Cleared whenever the user re-enters the flow (opens the source
+// dropdown, changes difficulty, or Save & Continue lands them on a fresh
+// slot). See the Add Question UX contract:
+//   "An intentional close must not trigger logic that automatically reopens
+//    the same modal or another blank form."
+const intentionalCloseRef = useRef(false);
 // Once the teacher dismisses an auto-opened modal with manual slots still to
 // fill, suppress the re-pop so the AI/bank modal doesn't reappear after every
 // manually-authored Save & Next. Re-armed only by explicitly re-opening the
@@ -649,6 +658,7 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
       { key: 'title', ref: titleSectionRef },
       { key: 'description', ref: descSectionRef },
       { key: 'solutionCode', ref: codeSetupSectionRef },
+      { key: 'starterCode',  ref: codeSetupSectionRef },
       { key: 'constraints', ref: constraintsSectionRef },
       { key: 'testcases', ref: testcasesSectionRef },
     ];
@@ -1855,6 +1865,16 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
   const reopenSourceModalForBlankSlot = () => {
     if (isEditing) return;
 
+    // Intentional close wins over every other reason to reopen. If the user
+    // clicked X / Cancel / Escape / backdrop, the modal must NOT come back
+    // by itself — they get to return to Choose Source and pick differently.
+    // The flag is single-shot: we clear it here so a legitimate re-entry
+    // (a Save & Continue landing, a difficulty change, etc.) is unaffected.
+    if (intentionalCloseRef.current) {
+      intentionalCloseRef.current = false;
+      return;
+    }
+
     // The teacher explicitly dismissed the picker for THIS slot. The re-pop
     // rule below ("its modal IS the flow") is meant to stop someone drifting
     // into a dead editor by accident — it is not meant to trap them: without
@@ -2150,7 +2170,16 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
     if (!titleText && !titleBlocks.some(b => b.type === 'image' || b.type === 'code')) e.title = 'Title is required';
     const descText = descBlocks.filter(b => b.type === 'text').map(b => (b as any).value).join(' ').trim();
     if (!descText && !descBlocks.some(b => b.type === 'image' || b.type === 'code')) e.description = 'Description is required';
-    if (isStringSolutionEmpty(solutionCode)) e.solutionCode = 'Solution code is required';
+    // Solution code is optional at save-time — the evaluator (testcase/manual/AI)
+    // handles its absence at runtime. Run Test Cases still blocks at click-time
+    // if solution is empty (operational precondition, not a save-time rule).
+    //
+    // Starter code is required ONLY in 'custom' starter mode where the trainer
+    // opted to write their own template. 'blank' is intentionally empty and
+    // 'generated' auto-populates from the language, so neither needs a check.
+    if (startingExperience === 'custom' && isStringSolutionEmpty(starterCode)) {
+      e.starterCode = 'Starter code is required in Custom starter mode';
+    }
     if (!constraints.some(c => c.trim())) e.constraints = 'At least one constraint is required';
     if (executionType === 'function') {
       if (!functionContract.functionName.trim()) e.functionName = 'Function name is required';
@@ -3428,7 +3457,7 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
             <div className="lms-num-header">
               <span className="lms-num-header-badge">3</span>
               Code
-              <span className="lms-num-header-sub">Starter code (optional) and Solution code (required)</span>
+              <span className="lms-num-header-sub">Starter code ({startingExperience === 'custom' ? 'required' : 'optional'}) and Solution code (optional)</span>
             </div>
 
             {/* ── Code Setup ── */}
@@ -3546,23 +3575,38 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                       onClick={() => setShowCustomInputModal(true)}
                     ><Play size={11} /> Custom Input</button>
                   )}
-                  <button
-                    type="button"
-                    className="lms-btn lms-btn-orange"
-                    style={{ padding: '5px 12px', fontSize: 11 }}
-                    disabled={isFormDisabled}
-                    onClick={() => {
-                      // Cheap pre-flight — surface obvious problems without a round trip.
-                      if (isStringSolutionEmpty(solutionCode)) {
-                        setErrs(p => ({ ...p, solutionCode: 'Solution code is required to run tests' }));
-                        setTouched(p => new Set(p).add('solutionCode'));
-                        setValidationToast(['Solution Code is empty']);
-                        setTimeout(() => setValidationToast([]), 3000);
-                        return;
-                      }
-                      setShowRunTestsModal(true);
-                    }}
-                  ><Play size={11} /> Run Test Cases</button>
+                  {(() => {
+                    // Evaluation-method gated Run Test Cases button.
+                    //   testcase  → render (existing behaviour, Piston execution)
+                    //   manual    → not rendered (manual evaluator needs no auto-run)
+                    //   ai        → not rendered (AI evaluator runs on student submit
+                    //               via the multi-file editor flow, not from authoring)
+                    //   undefined → treated as 'testcase' to preserve legacy behaviour
+                    //               (no invented fallback — matches the project's
+                    //               existing pattern of direct evaluationMethod?.method
+                    //               reads without a resolver).
+                    const evalMethod = (exerciseData as any)?.fullExerciseData?.evaluationMethod?.method;
+                    if (evalMethod === 'manual' || evalMethod === 'ai') return null;
+                    return (
+                      <button
+                        type="button"
+                        className="lms-btn lms-btn-orange"
+                        style={{ padding: '5px 12px', fontSize: 11 }}
+                        disabled={isFormDisabled}
+                        onClick={() => {
+                          // Cheap pre-flight — surface obvious problems without a round trip.
+                          if (isStringSolutionEmpty(solutionCode)) {
+                            setErrs(p => ({ ...p, solutionCode: 'Solution code is required to run tests' }));
+                            setTouched(p => new Set(p).add('solutionCode'));
+                            setValidationToast(['Solution Code is empty']);
+                            setTimeout(() => setValidationToast([]), 3000);
+                            return;
+                          }
+                          setShowRunTestsModal(true);
+                        }}
+                      ><Play size={11} /> Run Test Cases</button>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -4926,6 +4970,11 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
         setShowBankSelector(false);
         // Cancel any pending reopen timer so a dismiss can't race the re-pop.
         if (reopenTimerRef.current) { clearTimeout(reopenTimerRef.current); reopenTimerRef.current = null; }
+        // Intentional close: same contract as the AI modal — no auto-reopen
+        // when the picker delivered no content.
+        if (!sourceModalAddedRef.current) {
+          intentionalCloseRef.current = true;
+        }
         // Bank/Other-Platform-alone flow: closing the auto-opened picker with
         // no picks made and no manual work in progress exits the form —
         // otherwise (Custom exercise with a manual slice still to fill, or a
@@ -5007,6 +5056,14 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
     setShowAIModal(false);
     // Cancel any pending reopen timer so a dismiss can't race the re-pop.
     if (reopenTimerRef.current) { clearTimeout(reopenTimerRef.current); reopenTimerRef.current = null; }
+    // Add Question UX contract: closing an UNTOUCHED AI modal returns to
+    // Choose Source silently — no auto-reopen. Scoped to the "no content
+    // was produced" case (`!sourceModalAddedRef.current`) so that
+    // post-save routing after a successful generate is unaffected — that
+    // path still lets `reopenSourceModalForBlankSlot` walk pending slots.
+    if (!sourceModalAddedRef.current) {
+      intentionalCloseRef.current = true;
+    }
     // Only an AUTO-OPENED AI modal may cascade-close the form, and only when
     // the exercise has no manual-authoring slice left to fill. Dismissing an
     // AI modal that was opened by hand from the "+" dropdown never tears down

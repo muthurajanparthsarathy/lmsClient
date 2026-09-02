@@ -1,37 +1,37 @@
 // constants.tsx
-// Aligned with ExerciseSettings palette (client/src/app/lms/component/ExerciseSettings/shared/tokens.ts)
-// so the Create Assessment modal reads as the same product surface.
+// ─────────────────────────────────────────────────────────────────────────────
+// Design tokens for the Create Assessment modal.
+//
+// These are now a direct re-export of the ExerciseSettings palette
+// (client/src/app/lms/component/ExerciseSettings/shared/tokens.ts) so the
+// Assessment surface reads as the same product — orange accent, warm greys,
+// system font stack — as the Assignment / Exercise Settings modal it was
+// visually redesigned to match on 2026-09-01.
+//
+// Keys are unchanged, so every existing `D.*` reference in step files keeps
+// working; only the underlying values shifted. `blue` and `purple` slots are
+// remapped to orange to keep the surface visually unified — no purple accents
+// exist in the shared design.
+// ─────────────────────────────────────────────────────────────────────────────
+import { D as SHARED_D, FONT as SHARED_FONT } from '@/app/lms/component/ExerciseSettings/shared/tokens';
+
 export const D = {
-  orange:      '#E8640C',
-  orangeLight: 'rgba(232,100,12,0.10)',
-  orangeMed:   'rgba(232,100,12,0.14)',
-  orangeGlow:  'rgba(232,100,12,0.18)',
-  orangeDark:  '#C8520A',
-  bg:          '#ffffff',
-  surface:     '#f8fafc',
-  surface2:    '#f4f5f7',
-  border:      '#eef0f4',
-  border2:     '#e5e7eb',
-  textMain:    '#0F172A',
-  textSub:     '#334155',
-  textMuted:   '#475569',
-  textHint:    '#94A3B8',
-  emerald:     '#10b981',
-  blue:        '#E8640C', // remapped to orange — Assessment used blue as a secondary accent; keep visual unity
-  purple:      '#E8640C', // remapped to orange too — no purple accents in the shared surface
-  amber:       '#f59e0b',
-  red:         '#ef4444',
+  ...SHARED_D,
+  // Assessment surface historically used blue/purple as secondary accents;
+  // remap both to the orange primary so nothing renders off-brand.
+  blue: SHARED_D.orange,
+  purple: SHARED_D.orange,
 };
 
+export const FONT = SHARED_FONT;
+
+// Kept as a no-op so callers (CreateAssessmentModal) don't need to change;
+// the shared design uses the native system font stack — no webfont download.
 export const injectFonts = (() => {
   let injected = false;
   return () => {
     if (injected || typeof document === 'undefined') return;
     injected = true;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap';
-    document.head.appendChild(link);
   };
 })();
 

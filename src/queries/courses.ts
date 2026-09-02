@@ -13,6 +13,7 @@ import {
   CourseDetailResponse,
 } from "@/lib/api/courses";
 import { ApiError } from "@/lib/apiClient";
+import { getUserId } from "@/lib/session";
 import type { Course } from "@/apiServices/studentcoursepage";
 
 const FIVE_MIN = 5 * 60 * 1000;
@@ -31,11 +32,22 @@ export const useCoursesListQuery = (userId: string | null) =>
 
 export const useCourseDetailQuery = (courseId: string | undefined) =>
   useQuery<CourseDetailResponse, ApiError>({
-    queryKey: courseId ? queryKeys.courses.detail(courseId) : ["courses", "detail", "none"],
+    // Viewer id is part of the identity — the server batch-scopes and
+    // role-gates this payload per caller, so two accounts on one browser must
+    // never share an entry (see queryKeys.courses.detail).
+    queryKey: courseId
+      ? queryKeys.courses.detail(courseId, getUserId())
+      : ["courses", "detail", "none"],
     queryFn: () => fetchCourseDetail(courseId as string),
     enabled: !!courseId,
     staleTime: THREE_MIN,
     gcTime: TEN_MIN,
+    // Override the app-wide `refetchOnMount: false`. This payload changes
+    // whenever a teacher uploads a resource for the viewer's batch; with the
+    // global default a warm (or rehydrated) entry painted the OLD resource
+    // list for its full lifetime — a student kept seeing "No resources yet"
+    // after the teacher had added content. Stale-on-mount must refetch here.
+    refetchOnMount: true,
     placeholderData: keepPreviousData,
   });
 
@@ -45,7 +57,9 @@ export const usePrefetchCourseDetail = () => {
     (courseId: string) => {
       if (!courseId) return;
       qc.prefetchQuery({
-        queryKey: queryKeys.courses.detail(courseId),
+        // Same viewer-scoped identity as useCourseDetailQuery, or the
+        // prefetch would warm an entry the page never reads.
+        queryKey: queryKeys.courses.detail(courseId, getUserId()),
         queryFn: () => fetchCourseDetail(courseId),
         staleTime: THREE_MIN,
       });

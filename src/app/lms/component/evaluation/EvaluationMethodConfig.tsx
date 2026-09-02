@@ -242,11 +242,11 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
     >i</span>
   );
 
-  // Inline label fallback — spec label metrics (11px/600 #4B5563, 5px gap
+  // Inline label fallback — spec label metrics (11px/600 #101828, 5px gap
   // below), matching the restyled ExerciseSettings programming rows.
   const inlineLabel = (text: string, info: string) => (
     <div className="flex items-center" style={{ marginBottom: 5 }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', fontFamily: font }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: font }}>
         {text} <span style={{ color: D.orange }}>*</span>
       </span>
       {infoDot(info)}
@@ -272,7 +272,13 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
         ? <SectionLabel required info={INFO}>Evaluation Method</SectionLabel>
         : inlineLabel('Evaluation Method', INFO)}
 
-      <div style={dense ? { maxWidth: '45%' } : undefined}>
+      {/* Dense mode used to cap the dropdown at 45% width — that made
+          sense when the host row was internally 14px-padded, but the 2026-09-01
+          modal flattens padding to zero, so a 45% dropdown looked visually
+          orphaned next to a full-width segmented control. Full width in both
+          layouts keeps the two columns of the "Question Flow · Evaluation
+          Method" row visually balanced. */}
+      <div>
         <ODropdown
           value={v.method}
           options={options}
@@ -342,7 +348,7 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
               (still stored below as safety net). */}
           <div className="mt-3">
             <div className="flex items-center" style={{ marginBottom: 5 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', fontFamily: font }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: font }}>
                 AI Test Cases Count <span style={{ color: D.orange }}>*</span>
               </span>
               {infoDot('Choose whether one count applies to every question in the exercise, or each Programming question has its own count entered in the question authoring form.')}
@@ -397,7 +403,7 @@ export const EvaluationMethodConfig: React.FC<Props> = ({
               ? <SectionLabel info="How many test cases the AI generates + evaluates against the student's code. Cached per question so every student sees the same set.">AI Test Cases</SectionLabel>
               : (
                 <div className="flex items-center" style={{ marginBottom: 5 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563', fontFamily: font }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: font }}>
                     AI Test Cases <span style={{ color: D.orange }}>*</span>
                   </span>
                   {infoDot("How many test cases the AI generates + evaluates against the student's code. Cached per question so every student sees the same set.")}

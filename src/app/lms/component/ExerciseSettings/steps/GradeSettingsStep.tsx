@@ -2,8 +2,24 @@ import React from 'react';
 import {
   Award, EyeOff, Hash, Layers, List, Plus, Shield, Terminal, Trash2,
 } from 'lucide-react';
-import { D } from '../shared/tokens';
+import { D, FONT } from '../shared/tokens';
 import { InfoTooltip, ONumberInput } from '../shared/UIComponents';
+
+// ── SectionHeading ───────────────────────────────────────────────────────────
+// Same orange-title + hairline pattern used in ScheduleStep and
+// NotificationsStep so all wizard steps read as one flat surface.
+const SectionHeading: React.FC<{ children: React.ReactNode; right?: React.ReactNode }> = ({ children, right }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 10px' }}>
+    <span style={{
+      fontSize: 12, fontWeight: 700, color: D.orange, letterSpacing: '-.01em',
+      whiteSpace: 'nowrap', textTransform: 'none', fontFamily: FONT,
+    }}>
+      {children}
+    </span>
+    <span aria-hidden style={{ flex: 1, height: 1, background: D.border }} />
+    {right && <span className="flex items-center flex-shrink-0" style={{ gap: 8 }}>{right}</span>}
+  </div>
+);
 
 // Recommended performance scale shown by default (percentage of Total Mark).
 // Always rendered; teachers can edit labels/percentages, add rows, or remove them.
@@ -66,43 +82,37 @@ const SpecSwitch: React.FC<{ on: boolean; onClick: () => void; label: string }> 
   </button>
 );
 
-// demo card: 1px --line border, radius 11, wash header with uppercase title
+// Flat section — SectionHeading + plain body. Replaces the old bordered
+// SpecCard so the whole step reads as one flat surface, matching the
+// ScheduleStep pattern. The `icon` slot from the old signature is ignored
+// (SectionHeading has no icon slot); every call site's `right` and
+// `bodyStyle` overrides still flow through unchanged.
 const SpecCard: React.FC<{
   title: string; icon?: React.ReactNode; right?: React.ReactNode;
   bodyStyle?: React.CSSProperties; children: React.ReactNode;
-}> = ({ title, icon, right, bodyStyle, children }) => (
-  <div style={{ border: `1px solid ${D.border2}`, borderRadius: 11, background: '#fff' }}>
-    <div
-      className="flex items-center"
-      style={{
-        padding: '9px 13px', background: D.surface, borderBottom: `1px solid ${D.border}`,
-        borderRadius: '10px 10px 0 0', gap: 9,
-      }}
-    >
-      {icon && <span className="flex items-center flex-shrink-0" style={{ color: D.textHint }}>{icon}</span>}
-      <span style={{ fontSize: 11.2, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: D.textSub }}>
-        {title}
-      </span>
-      {right && <span className="ml-auto flex items-center" style={{ gap: 8 }}>{right}</span>}
-    </div>
-    <div style={{ padding: 13, ...bodyStyle }}>{children}</div>
+}> = ({ title, right, bodyStyle, children }) => (
+  <div>
+    <SectionHeading right={right}>{title}</SectionHeading>
+    <div style={bodyStyle}>{children}</div>
   </div>
 );
 
-// card row: label (+ tooltip, description) on the left, value control on the right
+// Row: label + control sit adjacent so the value never trails to the far
+// right when the label is short. Fixed label column keeps rows lined up
+// across the whole card, matching the ScheduleStep field-row pattern.
 const MarkRow: React.FC<{
   icon?: React.ReactNode; label: React.ReactNode; info?: string; sub?: string;
   first?: boolean; right: React.ReactNode;
 }> = ({ icon, label, info, sub, first, right }) => (
   <div
-    className="flex items-center justify-between"
-    style={{ padding: '9px 0', borderTop: first ? 'none' : `1px solid ${D.border}` }}
+    className="flex items-center flex-wrap"
+    style={{ gap: 12, padding: '9px 0', borderTop: first ? 'none' : `1px solid ${D.border}` }}
   >
-    <div className="flex items-center" style={{ gap: 8, minWidth: 0, marginRight: 14 }}>
+    <div className="flex items-center" style={{ gap: 8, minWidth: 220 }}>
       {icon && <span className="flex items-center flex-shrink-0" style={{ color: D.textHint }}>{icon}</span>}
       <div>
         <div className="flex items-center" style={{ gap: 2 }}>
-          <span style={{ fontSize: 12.3, fontWeight: 600, color: D.textSub }}>{label}</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>{label}</span>
           {info && <InfoTooltip content={info} side="right" />}
         </div>
         {sub && <p style={{ fontSize: 11.4, color: D.textMuted, marginTop: 1 }}>{sub}</p>}
@@ -114,9 +124,8 @@ const MarkRow: React.FC<{
 
 // read-only auto-calculated value: ink text + blue "Auto" pill (NOT an input)
 const AutoValue: React.FC<{ value: number | string }> = ({ value }) => (
-  <span className="inline-flex items-center" style={{ gap: 7 }}>
-    <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>{value === 'Auto' ? '—' : value}</span>
-    <span style={BLUE_PILL}>Auto</span>
+  <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
+    {value === 'Auto' ? '—' : value}
   </span>
 );
 
@@ -215,9 +224,8 @@ export const GradeSettingsStep: React.FC<GradeSettingsStepProps> = ({
                   {levelLabels[level]}
                 </span>
               </div>
-              <div className="flex items-center justify-center" style={{ gap: 7 }}>
+              <div className="flex items-center justify-center">
                 <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>{levelTotal}</span>
-                <span style={BLUE_PILL}>Auto</span>
               </div>
               <div>
                 <ONumberInput
@@ -297,9 +305,8 @@ export const GradeSettingsStep: React.FC<GradeSettingsStepProps> = ({
                   {row.label}
                 </span>
               </div>
-              <div className="flex items-center justify-center" style={{ gap: 7 }}>
+              <div className="flex items-center justify-center">
                 <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>{row.total}</span>
-                <span style={BLUE_PILL}>Auto</span>
               </div>
               <div>
                 <ONumberInput
@@ -338,14 +345,14 @@ export const GradeSettingsStep: React.FC<GradeSettingsStepProps> = ({
 
     return (
       <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${D.border}` }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center" style={{ gap: 8, minWidth: 0, marginRight: 14 }}>
+        <div className="flex items-center flex-wrap" style={{ gap: 12 }}>
+          <div className="flex items-center" style={{ gap: 8, minWidth: 220 }}>
             <span className="flex items-center flex-shrink-0" style={{ color: D.textHint }}>
               <Hash size={13} />
             </span>
             <div>
               <div className="flex items-center" style={{ gap: 6 }}>
-                <span style={{ fontSize: 12.3, fontWeight: 600, color: D.textSub }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
                   Mark to Pass by Difficulty
                 </span>
                 <span style={PURPLE_PILL}>Per level</span>
@@ -398,7 +405,7 @@ export const GradeSettingsStep: React.FC<GradeSettingsStepProps> = ({
               style={{ width: 15, height: 15, accentColor: D.orange, marginTop: 2 }}
             />
             <div className="flex-1">
-              <label htmlFor="overallMarkToPassEnabled" className="cursor-pointer" style={{ fontSize: 12.3, fontWeight: 600, color: D.textSub }}>
+              <label htmlFor="overallMarkToPassEnabled" className="cursor-pointer" style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
                 Mark to Pass <span style={{ fontWeight: 400, color: D.textMuted }}>(Optional)</span>
               </label>
               <p style={{ fontSize: 11.4, color: D.textMuted, marginTop: 2 }}>
@@ -423,7 +430,7 @@ export const GradeSettingsStep: React.FC<GradeSettingsStepProps> = ({
   };
 
   return (
-    <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+    <div style={{ padding: '16px 32px 24px', maxWidth: 1200, fontFamily: FONT, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* ── Grading card: total mark / mark to pass / difficulty pass ── */}
       <SpecCard title="Grading" icon={<Award size={13} />} bodyStyle={{ padding: '2px 13px 6px' }}>
@@ -718,12 +725,12 @@ export const GradeSettingsStep: React.FC<GradeSettingsStepProps> = ({
           },
         ].map((row, idx) => (
           <div key={row.key}
-            className="flex items-center justify-between"
-            style={{ padding: '9px 0', borderTop: idx > 0 ? `1px solid ${D.border}` : 'none' }}>
-            <div className="flex items-center" style={{ gap: 8, minWidth: 0, marginRight: 14 }}>
+            className="flex items-center flex-wrap"
+            style={{ gap: 12, padding: '9px 0', borderTop: idx > 0 ? `1px solid ${D.border}` : 'none' }}>
+            <div className="flex items-center" style={{ gap: 8, minWidth: 220 }}>
               <span className="flex items-center flex-shrink-0" style={{ color: D.textHint }}>{row.icon}</span>
               <div>
-                <div style={{ fontSize: 12.3, fontWeight: 600, color: D.textSub }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
                   {row.label}
                 </div>
                 <div style={{ fontSize: 11.4, color: D.textMuted, marginTop: 1 }}>{row.sub}</div>

@@ -1,16 +1,16 @@
 // CreateAssessmentModal.tsx
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { X, Sparkles, Settings2, ArrowLeft, ArrowRight, FileText, Loader2, Check, Lock, Shield, Layers, ClipboardList, FolderOpen } from 'lucide-react';
+import { X, ArrowLeft, ArrowRight, FileText, Loader2, Check, Lock, Shield, Layers, ClipboardList, FolderOpen } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { exerciseApi } from '@/apiServices/exercise';
 import TipTapEditor from '@/app/lms/component/tiptopEditor';
-import { D, injectFonts, getEntityType, isApproximatelyEqual, formatDecimal, moduleLanguages, mcqScoringOptions, generateCalendarDays } from './assessments/constants';
+import { D, FONT, injectFonts, getEntityType, isApproximatelyEqual, formatDecimal, moduleLanguages, mcqScoringOptions, generateCalendarDays } from './assessments/constants';
 import { ExerciseSettingsProps, HierarchyData, Step, ValidationErrors, FormDataType } from './assessments/types';
 import { MCQConfiguration } from './assessments/QuestionConfigurationSteps';
 import { ScheduleStep } from './assessments/ScheduleStep';
 import { NotificationsStep } from './assessments/NotificationsStep';
 import { GradeSettingsStep } from './assessments/GradeSettingsStep';
-import { InfoTooltip, OInput, ONumberInput, OToggle, ODropdown, GradeRow, DateRowPicker } from './assessments/UIComponents';
+import { InfoTooltip, OInput, ONumberInput, OToggle, ODropdown, GradeRow, DateRowPicker, SectionLabel } from './assessments/UIComponents';
 import { ExerciseDetailsStep, SectionItem, ExerciseDetailsStepRef } from './assessments/ExerciseDetailsStep';
 import { SecuritySettings, SecuritySettingsData, defaultSecuritySettings } from './assessments/SecuritySettings';
 import { courseDataApi } from '@/apiServices/coursesData';
@@ -1826,13 +1826,10 @@ const handleComplete = useCallback(async () => {
     return false;
   }, [isEditing]);
 
-  const SectionLabel = useCallback(({ children, required, info }: { children: React.ReactNode; required?: boolean; info?: string }) => (
-    <div className="flex items-center gap-1 mb-1">
-      <label className="text-xs font-semibold" style={{ color: D.textSub, fontFamily: "'Poppins','Poppins',sans-serif" }}>{children}</label>
-      {required && <span className="text-xs font-bold" style={{ color: D.orange }}>*</span>}
-      {info && <InfoTooltip content={info} />}
-    </div>
-  ), []);
+  // SectionLabel is imported from ./assessments/UIComponents (re-exported from
+  // the shared ExerciseSettings palette) so the field label rhythm matches the
+  // Assignment / Exercise Settings modal — 11px near-black label + orange *,
+  // sitting flush with the 34px control row.
 
   const renderCurrentStep = useCallback(() => {
     const step = steps.find(s => s.id === currentStep);
@@ -2029,37 +2026,109 @@ if (formData.exerciseType === 'MCQ') {
   const isOnStep1 = currentStep === step1Id;
   const busy = isLoading || isSavingStep;
 
-  const BreadcrumbArrow = () => <span className="mx-1" style={{ color: D.orange, fontWeight: 700, fontSize: 13 }}>»</span>;
+  // Header meta per step — mirrors the STEP_META map in ExerciseSettings.tsx.
+  // The right-pane header displays these; the sidebar uses the raw step titles.
+  // Every existing Create Assessment step title is enumerated verbatim so the
+  // wizard's step layout is unchanged — this is a lookup, not a rename.
+  const STEP_HEADER: Record<string, { pageHeader: string; pageSubtitle: string }> = {
+    'Exercise Details':            { pageHeader: 'Exercise Details',            pageSubtitle: 'Basic info, timing and grading defaults for this assessment.' },
+    'Section Details':             { pageHeader: 'Section Details',             pageSubtitle: 'Configure each section — marks, duration and exercise type.' },
+    'Question Configuration':      { pageHeader: 'Question Configuration',      pageSubtitle: 'Choose the configuration strategy and set question counts.' },
+    'Question Source':             { pageHeader: 'Question Source',             pageSubtitle: 'Pick where the questions come from — bank, manual, AI or a custom mix.' },
+    'Schedule':                    { pageHeader: 'Schedule',                    pageSubtitle: 'Control access, timing, deadlines and grading reminders.' },
+    'Security Settings':           { pageHeader: 'Security Settings',           pageSubtitle: 'Proctoring, browser lockdown and other test-integrity controls.' },
+    'Notifications':               { pageHeader: 'Notifications',               pageSubtitle: 'Choose who is notified and when reminders are sent.' },
+    'Grade Settings':              { pageHeader: 'Grade Settings',              pageSubtitle: 'Set the pass mark, section-based split and grade bands.' },
+    'Select Assessment Content':   { pageHeader: 'Select Assessment Content',   pageSubtitle: 'Pick the covered topics and add student-facing instructions.' },
+  };
+  const currentTitle = steps.find(s => s.id === currentStep)?.title || '';
+  const currentMeta = STEP_HEADER[currentTitle] || { pageHeader: currentTitle, pageSubtitle: '' };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(30,41,59,0.55)', backdropFilter: 'blur(6px)', fontFamily: "'Poppins','Poppins',sans-serif" }}>
-      {/* Global style: font enforcement + dark scrollbar utility for step components that reference it */}
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50 p-4"
+      style={{ background: 'rgba(30,41,59,0.55)', backdropFilter: 'blur(6px)', fontFamily: FONT }}>
+
+      {/* ── ExerciseSettings-parity CSS: shared font stack, thin scrollbar,
+          compact step density and responsive shell behaviour so the assessment
+          wizard reads as the same product as the Assignment / Exercise Settings
+          modal. Kept scoped to `.es-main` so nothing outside the modal is
+          affected. */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
-        .es-main, .es-main * { font-family: 'Poppins','Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important; }
-        .es-main ::-webkit-scrollbar { width: 6px; height: 6px; }
+        .es-main, .es-main * { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,'Helvetica Neue',Arial,sans-serif; }
+        .es-main ::-webkit-scrollbar { width: 4px; height: 4px; }
         .es-main ::-webkit-scrollbar-track { background: transparent; }
-        .es-main ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-        .es-main ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .ca-dark-scroll { scrollbar-color: #cbd5e1 transparent; scrollbar-width: thin; }
-        .ca-dark-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .es-main ::-webkit-scrollbar-thumb { background: #d4d8df; border-radius: 4px; }
+        .es-main ::-webkit-scrollbar-thumb:hover { background: #b9becb; }
+        .ca-dark-scroll { scrollbar-color: #d4d8df transparent; scrollbar-width: thin; }
+        .ca-dark-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
         .ca-dark-scroll::-webkit-scrollbar-track { background: transparent; }
-        .ca-dark-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-        .ca-dark-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .ca-dark-scroll::-webkit-scrollbar-thumb { background: #d4d8df; border-radius: 4px; }
+        .ca-dark-scroll::-webkit-scrollbar-thumb:hover { background: #b9becb; }
+        .es-side .es-side-step:hover:not([disabled]) { background: rgba(238,106,34,0.06); }
+        .es-close:hover { background: #DC2626 !important; }
+        @media (max-width: 1024px) {
+          .es-side { width: 220px !important; padding: 24px 16px !important; }
+          .es-right-head { padding: 18px 20px 14px !important; }
+          .es-body { padding: 0 20px !important; }
+          .es-foot { padding: 14px 20px !important; }
+        }
+        @media (max-width: 720px) {
+          .es-main { flex-direction: column !important; }
+          .es-side {
+            width: 100% !important; height: auto !important;
+            flex-direction: row !important; align-items: center;
+            border-right: none !important; border-bottom: 1px solid #E4E7EC !important;
+            padding: 12px 16px !important; overflow-x: auto; overflow-y: hidden;
+            gap: 8px;
+          }
+          .es-side-count { display: none !important; }
+          .es-side ol {
+            flex-direction: row !important; gap: 6px !important;
+            margin-top: 0 !important; align-items: center;
+          }
+          .es-side ol > span[aria-hidden] { display: none !important; }
+          .es-side .es-side-step { padding: 6px 10px !important; box-shadow: none !important; white-space: nowrap; }
+          .es-side .es-side-step > span:last-child { display: none !important; }
+          .es-right-head { padding: 16px 16px 12px !important; }
+          .es-body { padding: 0 12px !important; }
+          .es-foot { padding: 12px 16px !important; gap: 8px !important; flex-wrap: wrap; }
+        }
+        @media (max-width: 620px) {
+          .es-main {
+            width: 100vw !important; height: 100dvh !important;
+            max-width: none !important; border-radius: 0 !important; border: none !important;
+          }
+        }
+        @keyframes es-slidein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: es-slidein 0.18s ease both; }
+        @media (prefers-reduced-motion: reduce) {
+          .es-main .animate-in { animation: none; }
+          .es-main * { transition-duration: 0.01ms !important; }
+        }
       `}</style>
 
-      {/* ── CARD (white outer with padding — cream sidebar sits inside, white shows as natural border) ── */}
-      <div className="es-main w-full max-w-7xl flex overflow-hidden p-3 relative"
-        style={{ height: '96vh', borderRadius: 24, background: '#ffffff', boxShadow: '0 30px 80px rgba(15,23,42,0.30), 0 8px 24px rgba(15,23,42,0.12)' }}>
-        {/* ── Initial-edit hydration overlay ── */}
-        {/* When the trainer clicks Edit, the modal mounts with empty form state */}
-        {/* and immediately fires getExerciseById → populateFormFromExercise. Until */}
-        {/* that fetch lands, the fields render as blanks — which looks like the */}
-        {/* modal is broken and prompts the trainer to click Edit again. This */}
-        {/* overlay covers the whole card during hydration so the wait is legible. */}
+      {/* ── MODAL CARD — matches the Assignment / Exercise Settings shell.
+          96vw × 92vh (max 1900px), 18px radius, white surface, subtle border.
+          The sidebar owns its own cream wash; the right pane owns its own
+          header, scroll body and sticky footer. ── */}
+      <div
+        className="es-main flex overflow-hidden relative"
+        style={{
+          width: '96vw', height: '92vh', maxWidth: 1900, minHeight: 560,
+          borderRadius: 18, background: '#FFFFFF',
+          border: '1px solid #E4E7EC',
+          boxShadow: '0 24px 60px rgba(15,23,42,.14)',
+        }}>
+
+        {/* ── Initial-edit hydration overlay ──
+            When the trainer clicks Edit, the modal mounts with empty form state
+            and immediately fires getExerciseById → populateFormFromExercise.
+            Until that fetch lands, the fields render as blanks — this overlay
+            covers the whole card so the wait is legible. */}
         {isEditing && isHydratingEdit && (
-          <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center rounded-3xl"
-            style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(2px)' }}>
+          <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center"
+            style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(2px)', borderRadius: 18 }}>
             <div className="w-10 h-10 border-[3px] rounded-full animate-spin mb-3"
               style={{ borderColor: D.orange, borderTopColor: 'transparent' }} />
             <p className="text-[13px] font-semibold" style={{ color: D.textMain }}>Loading assessment…</p>
@@ -2067,168 +2136,264 @@ if (formData.exerciseType === 'MCQ') {
           </div>
         )}
 
-        {/* ── SIDEBAR (cream bg — white padding on the outer card shows as border around it) ── */}
-        <aside className="w-72 flex-shrink-0 flex flex-col overflow-y-auto ca-dark-scroll rounded-2xl"
-          style={{ background: '#faf3ea' }}>
-          {/* Brand */}
-          <div className="flex items-center gap-2.5 px-7 pt-7 pb-8">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: isEditing ? D.amber + '20' : D.orange, boxShadow: `0 4px 12px ${D.orangeGlow}` }}>
-              {isEditing ? <Settings2 size={15} style={{ color: D.amber }} /> : <Sparkles size={15} className="text-white" />}
-            </div>
-            <div className="text-[16px] font-extrabold leading-tight" style={{ color: D.textMain }}>
-              {isEditing ? 'Edit Assessment' : 'Create Assessment'}
-            </div>
-          </div>
+        {/* ── LEFT SIDEBAR — fixed 280px vertical stepper. Renders every
+            dynamic step from `steps` (Section Details slots in only when
+            section-based is on; Question Configuration slots out then).
+            Sidebar layout mirrors ExerciseSettings: brand chip at the top,
+            "Step X of Y" count below, then the step list. The existing gate
+            (savedSteps.has('Exercise Details')) still blocks navigation past
+            Step 1 until it is saved. ── */}
+        <aside
+          className="es-side flex flex-col flex-shrink-0"
+          style={{
+            width: 280, background: '#F8FAFC',
+            borderRight: '1px solid #E4E7EC',
+            padding: '28px 24px',
+          }}>
 
-          {/* Step list */}
-          <div className="flex-1 px-7">
-            {steps.map((step, idx) => {
-              const active = step.active;
-              const isStepSaved = savedSteps.has(step.title);
-              const isLocked_step = step.title !== 'Exercise Details' && !step1Unlocked;
-              const stepHasError = step.title === 'Exercise Details' && !!(validationErrors.exerciseName || validationErrors.totalDuration || validationErrors.totalMarks);
-              const done = !active && isStepSaved;
-              const isLast = idx === steps.length - 1;
+          {/* Sidebar brand chip removed 2026-09-01 (follow-up): edit mode adds
+              two extra steps (Section Details when section-based, plus the
+              always-on Select Assessment Content), and the brand row was
+              eating a full 44px of vertical space that the list needs so
+              every step is visible without scrolling on 92vh cards. The
+              modal's Create/Edit Assessment identity is still discoverable
+              from the right-pane header + step title; the reference
+              sidebar carries no brand either. */}
+          <p className="es-side-count" style={{
+            fontSize: 12.5, fontWeight: 600, color: '#667085',
+            margin: 0, letterSpacing: '.01em',
+          }}>
+            Step {Math.max(0, steps.findIndex(s => s.id === currentStep)) + 1} of {steps.length}
+          </p>
 
-              // Current: solid orange filled  |  Completed: outlined orange with check  |  Pending/Locked: outlined grey
-              const circleBg = active ? D.orange : '#ffffff';
-              const circleColor = active ? '#ffffff' : done ? D.orange : D.textMuted;
-              const circleBorder = active ? D.orange : done ? D.orange : '#cbd5e1';
-              const titleColor = active ? D.textMain : isLocked_step ? D.textHint : done ? D.textMain : D.textSub;
-              const descText = (step as any).subtitle || '';
-
+          {/* Step list — single-line rows (no subtitle in the sidebar). Fixed
+              44px row height + 14px gap keeps the list visually balanced.
+              A vertical connector runs down the center of the badge column. */}
+          <ol style={{
+            marginTop: 20, marginBottom: 0, padding: 0, listStyle: 'none',
+            display: 'flex', flexDirection: 'column', gap: 14,
+            position: 'relative',
+          }}>
+            <span aria-hidden style={{
+              position: 'absolute', left: 25, top: 22, bottom: 22, width: 1,
+              background: '#E4E7EC', zIndex: 0,
+            }} />
+            {steps.map((step, i) => {
+              const isActive = step.id === currentStep;
+              const done = savedSteps.has(step.title);
+              const isStep1 = step.title === 'Exercise Details';
+              const stepLocked = !isStep1 && !step1Unlocked;
+              const stepHasError = isStep1 && !!(validationErrors.exerciseName || validationErrors.totalDuration || validationErrors.totalMarks);
               return (
-                <button
-                  key={step.id}
-                  type="button"
-                  onClick={() => handleStepClick(step.id)}
-                  disabled={isLocked_step}
-                  className="w-full flex items-stretch gap-3 text-left focus:outline-none"
-                  style={{ cursor: isLocked_step ? 'not-allowed' : 'pointer', opacity: isLocked_step ? 0.55 : 1 }}
-                  title={isLocked_step ? 'Please complete Exercise Details first' : step.title}
-                >
-                  <div className="flex flex-col items-center flex-shrink-0">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold border-2 transition-all"
-                      style={{ background: circleBg, color: circleColor, borderColor: circleBorder, boxShadow: active ? `0 4px 10px ${D.orangeGlow}` : 'none' }}>
-                      {isLocked_step ? <Lock size={11} /> : done ? <Check size={13} strokeWidth={3} /> : (idx + 1)}
-                    </div>
-                    {!isLast && (
-                      <div className="w-0.5 flex-1 my-1" style={{ background: done ? D.orange + '80' : '#d0d7e2', minHeight: 22 }} />
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0 pb-6 pt-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <div className="text-[13px] font-bold leading-tight truncate" style={{ color: titleColor }}>
+                <li key={step.id} style={{ position: 'relative', zIndex: 1 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleStepClick(step.id)}
+                    disabled={stepLocked}
+                    title={stepLocked ? 'Complete Exercise Details first' : step.title}
+                    className="es-side-step focus:outline-none"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      width: '100%', height: 44,
+                      padding: '0 14px 0 11px',
+                      borderRadius: 10,
+                      background: isActive ? '#FFF3EC' : 'transparent',
+                      boxShadow: isActive ? `inset 3px 0 0 ${D.orange}` : 'none',
+                      border: 'none',
+                      cursor: stepLocked ? 'not-allowed' : 'pointer',
+                      opacity: stepLocked ? 0.55 : 1,
+                      textAlign: 'left',
+                      transition: 'background 180ms ease, box-shadow 180ms ease',
+                    }}>
+                    <span aria-hidden style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 28, height: 28, flexShrink: 0, borderRadius: '50%',
+                      background: isActive ? D.orange : '#FFFFFF',
+                      color: isActive ? '#FFFFFF' : done ? D.orange : '#94A3B8',
+                      border: `1.5px solid ${isActive ? D.orange : done ? D.orange : '#CBD5E1'}`,
+                      fontSize: 12.5, fontWeight: 700,
+                    }}>
+                      {stepLocked
+                        ? <Lock size={12} />
+                        : (done && !isActive)
+                          ? <Check size={13} strokeWidth={3} />
+                          : (i + 1)}
+                    </span>
+                    <span style={{
+                      minWidth: 0, flex: 1,
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      fontSize: 13.5, fontWeight: 600,
+                      color: isActive ? '#101828' : stepLocked ? D.textHint : '#344054',
+                      lineHeight: 1.2, letterSpacing: '-.005em',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                         {step.title}
-                      </div>
-                      {stepHasError && !isLocked_step && (
-                        <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[8px] font-black flex-shrink-0"
-                          style={{ background: D.red, color: '#fff', lineHeight: 1 }} title="Required fields missing">!</span>
+                      </span>
+                      {stepHasError && !stepLocked && (
+                        <span
+                          className="inline-flex items-center justify-center flex-shrink-0"
+                          title="Required fields missing"
+                          style={{
+                            width: 14, height: 14, borderRadius: '50%',
+                            background: D.red, color: '#fff',
+                            fontSize: 8, fontWeight: 900, lineHeight: 1,
+                          }}>!</span>
                       )}
-                    </div>
-                    {descText && (
-                      <div className="text-[11px] mt-0.5 leading-snug" style={{ color: isLocked_step ? D.textHint : D.textMuted }}>
-                        {descText}
-                      </div>
-                    )}
-                  </div>
-                </button>
+                    </span>
+                  </button>
+                </li>
               );
             })}
-          </div>
-
+          </ol>
         </aside>
 
-        {/* ── RIGHT PANE (flush white, sidebar alone floats as a bordered card) ── */}
-        <div className="flex-1 flex flex-col overflow-hidden relative" style={{ background: '#ffffff' }}>
+        {/* ── RIGHT PANE — header + scroll body + sticky footer. ── */}
+        <section className="es-right flex-1 flex flex-col min-w-0" style={{ background: '#FFFFFF' }}>
 
-          {/* Floating close (Back moved to bottom action row) */}
-          <button onClick={onClose}
-            className="absolute top-5 right-8 z-10 w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-100"
-            style={{ color: D.textMuted }}>
-            <X size={18} />
-          </button>
+          {/* Header — step title on the left, saved chip + red circular close
+              on the right; hairline divider below. */}
+          <div
+            className="es-right-head"
+            style={{
+              padding: '20px 24px 16px',
+              borderBottom: '1px solid #E4E7EC',
+              display: 'flex', alignItems: 'center', gap: 24, flexShrink: 0,
+            }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1 style={{
+                fontSize: 18, fontWeight: 700, color: '#101828',
+                letterSpacing: '-.01em', margin: 0, lineHeight: 1.25,
+              }}>
+                {currentMeta.pageHeader}
+              </h1>
+            </div>
 
-          {/* Compact step meta header */}
-          <div className="px-10 pb-3 flex-shrink-0 pt-5">
-            <div className="flex items-start justify-between gap-6">
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold mb-0.5" style={{ color: D.textMuted }}>
-                  Step {steps.findIndex(s => s.id === currentStep) + 1}/{steps.length}
-                </div>
-                <h2 className="text-[20px] font-extrabold leading-tight tracking-tight" style={{ color: D.textMain }}>
-                  {steps.find(s => s.id === currentStep)?.title}
-                </h2>
-              </div>
-              {savedSteps.has(steps.find(s => s.id === currentStep)?.title || '') && (
-                <span className="flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 mt-1"
-                  style={{ background: D.emerald + '12', color: D.emerald, border: `1px solid ${D.emerald}25`, marginRight: 44 }}>
+            <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
+              {savedSteps.has(currentTitle) && (
+                <span
+                  className="flex items-center gap-1"
+                  style={{
+                    fontSize: 10.5, fontWeight: 700,
+                    padding: '3px 9px', borderRadius: 999,
+                    background: D.emerald + '12', color: D.emerald,
+                    border: `1px solid ${D.emerald}25`,
+                  }}>
                   <Check size={10} strokeWidth={3} />Saved
                 </span>
               )}
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="es-close"
+                style={{
+                  width: 32, height: 32, border: 'none',
+                  background: '#EF4444', borderRadius: '50%',
+                  color: '#FFFFFF', cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 1px 2px rgba(239,68,68,.25)',
+                  transition: 'background 150ms ease',
+                }}>
+                <X size={16} strokeWidth={2.5} />
+              </button>
             </div>
-            <div className="mt-3 border-t" style={{ borderColor: D.border }} />
           </div>
 
-          {/* Content + inline actions (single scroll container) */}
-          <div className="flex-1 overflow-y-auto ca-dark-scroll flex flex-col">
+          {/* Body — the ONLY scrolling area in the modal. */}
+          <div className="es-body flex-1 overflow-y-auto ca-dark-scroll" style={{ padding: '0 24px' }}>
             {isLocked && (
-              <div className="mx-8 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl"
+              <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-xl"
                 style={{ background: D.emerald + '12', border: `1px solid ${D.emerald}35` }}>
                 <Lock size={12} style={{ color: D.emerald }} />
                 <span className="text-xs font-semibold" style={{ color: D.emerald }}>
-                  This exercise has been submitted and is now read-only.
+                  This assessment has been submitted and is now read-only.
                 </span>
               </div>
             )}
             <div style={isLocked ? { pointerEvents: 'none', userSelect: 'none', opacity: 0.82 } : {}}>
               {renderCurrentStep()}
             </div>
-
-            {/* Inline actions — Back on left, Save/Next/Finish on right */}
-            <div className="mt-auto flex items-center justify-between gap-3 px-10 pb-8 pt-4 flex-shrink-0">
-              {currentStep > 1 ? (
-                <button onClick={handleBack} disabled={busy}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all border disabled:opacity-50 hover:bg-slate-50"
-                  style={{ borderColor: D.border2, color: D.textSub, background: '#ffffff' }}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-              ) : <div />}
-              <div className="flex items-center gap-3">
-              {!isLocked && (
-                <button onClick={handleSave} disabled={busy}
-                  className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
-                  style={{ borderColor: D.emerald, color: D.emerald, background: '#ffffff', minWidth: 100 }}>
-                  {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
-                </button>
-              )}
-              {!isLastStep && (
-                <button onClick={handleNext} disabled={busy || (isOnStep1 && !step1Unlocked)}
-                  className="flex items-center justify-center gap-2 px-7 py-3 rounded-xl text-[14px] font-bold text-white transition-all cursor-pointer disabled:opacity-40"
-                  style={{ background: '#0f172a', boxShadow: '0 8px 20px rgba(15,23,42,0.25)', minWidth: 130 }}>
-                  Next <ArrowRight size={15} />
-                </button>
-              )}
-              {isLastStep && !isLocked && (
-                <button onClick={handleComplete} disabled={busy}
-                  className="flex items-center justify-center gap-2 px-7 py-3 rounded-xl text-[14px] font-bold text-white transition-all cursor-pointer disabled:opacity-60"
-                  style={{ background: `linear-gradient(135deg, ${D.emerald}, #059669)`, boxShadow: `0 8px 20px ${D.emerald}40`, minWidth: 130 }}>
-                  {isLoading ? <><Loader2 size={15} className="animate-spin" />Finishing…</> : <><Check size={15} strokeWidth={3} />Finish</>}
-                </button>
-              )}
-              {isLocked && (
-                <span className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-bold"
-                  style={{ background: D.emerald + '15', color: D.emerald, border: `1px solid ${D.emerald}40` }}>
-                  <Check size={13} strokeWidth={3} />Submitted
-                </span>
-              )}
-              </div>
-            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Sticky footer — Back on the left, Save + Next/Finish on the right.
+              Sits outside the scroll container so the primary action is always
+              reachable on a long step. */}
+          <div
+            className="es-foot flex items-center flex-shrink-0"
+            style={{
+              padding: '16px 32px', gap: 12,
+              borderTop: '1px solid #E4E7EC', background: '#FFFFFF',
+            }}>
+            <button
+              onClick={handleBack}
+              disabled={busy || currentStep === (steps[0]?.id ?? 1)}
+              className="flex items-center gap-1.5 rounded-lg text-[13px] font-semibold transition-all border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+              style={{
+                height: 36, padding: '0 16px',
+                borderColor: '#D0D5DD', color: '#344054', background: '#FFFFFF',
+              }}>
+              <ArrowLeft size={14} /> Back
+            </button>
+
+            <span style={{ flex: 1 }} />
+
+            {!isLocked && (
+              <button
+                onClick={handleSave}
+                disabled={busy}
+                className="flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
+                style={{
+                  height: 36, padding: '0 18px', minWidth: 110,
+                  borderColor: '#12B76A', color: '#12B76A', background: '#FFFFFF',
+                }}>
+                {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
+              </button>
+            )}
+
+            {!isLastStep && (
+              <button
+                onClick={handleNext}
+                disabled={busy || (isOnStep1 && !step1Unlocked)}
+                title={isOnStep1 && !step1Unlocked ? 'Save Exercise Details first to continue' : undefined}
+                className="flex items-center justify-center gap-2 rounded-lg text-[13px] font-bold text-white transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  height: 36, padding: '0 22px', minWidth: 120,
+                  background: '#101828',
+                }}>
+                Next <ArrowRight size={14} />
+              </button>
+            )}
+
+            {isLastStep && !isLocked && (
+              <button
+                onClick={handleComplete}
+                disabled={busy}
+                className="flex items-center justify-center gap-2 rounded-lg text-[13px] font-bold text-white transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{
+                  height: 36, padding: '0 22px', minWidth: 130,
+                  background: `linear-gradient(135deg, ${D.orange}, ${D.orangeDark})`,
+                  boxShadow: `0 8px 20px ${D.orangeGlow}`,
+                }}>
+                {isLoading
+                  ? <><Loader2 size={14} className="animate-spin" />Finishing…</>
+                  : <><Check size={14} strokeWidth={3} />Finish</>}
+              </button>
+            )}
+
+            {isLocked && (
+              <span
+                className="flex items-center gap-1.5 rounded-lg text-[13px] font-bold"
+                style={{
+                  height: 36, padding: '0 16px',
+                  background: D.emerald + '15', color: D.emerald,
+                  border: `1px solid ${D.emerald}40`,
+                }}>
+                <Check size={13} strokeWidth={3} />Submitted
+              </span>
+            )}
+          </div>
+        </section>
+      </div>{/* /card */}
     </div>
   );
 };

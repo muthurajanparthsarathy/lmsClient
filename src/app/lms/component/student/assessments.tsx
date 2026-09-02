@@ -2334,9 +2334,12 @@ export default function Assessments({
                           Retake / Start Retest) + the three-dot menu.
                           Centred horizontally so both the button and the
                           kebab land in the same visual slot every row
-                          and align with the centred "Action" header. */}
-                      <td className="px-3 h-11 align-middle">
-                        <div className="flex items-center justify-center gap-1.5">
+                          and align with the right-aligned "Action" header. The
+                          kebab is the ONLY element common to all row states, so
+                          right-aligning both keeps its x-position pinned even
+                          when the Start button appears or vanishes. */}
+                      <td className="pl-3 pr-6 h-11 align-middle">
+                        <div className="flex items-center justify-end gap-1.5">
                           {availability.canStart && !limitReached && (
                             <button
                               type="button"

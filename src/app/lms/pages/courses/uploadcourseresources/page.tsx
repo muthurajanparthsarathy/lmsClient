@@ -1072,6 +1072,10 @@ export default function DynamicLMSCoordinator() {
   const isFetchingRef = useRef<string | null>(null);
   const lastFetchedDataRef = useRef<string>("");
   const initialDataLoadedRef = useRef(false);
+  // One-shot guard for the URL deep-link restore effect below — see the
+  // comment inside it. Without this, every courseData rebuild re-selected the
+  // pedagogy-less light node named by `?nodeId=` and wiped page rows.
+  const urlRestoreDoneRef = useRef(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isNodeSelected, setIsNodeSelected] = useState(false);
   const [isSidebarLoading, setIsSidebarLoading] = useState(true);
@@ -1570,7 +1574,7 @@ export default function DynamicLMSCoordinator() {
             }
           });
 
-          const pagesAsFiles: UploadedFile[] = Array.from(pagesMap.values()).map((page: any) => ({
+          const pagesAsFiles: UploadedFile[] = Array.from(pagesMap.values()).map((page: any): any => ({
             id: page._id,
             name: page.title || "Untitled Page",
             type: "page",
@@ -1580,6 +1584,12 @@ export default function DynamicLMSCoordinator() {
             subcategory: subcatKey,
             folderId: null,
             tags: [],
+            // Group context — group-bound pages carry groupId/groupName on the
+            // record (see server createPage); without forwarding them here the
+            // fallback render in Coursecontent shows the page standalone
+            // instead of inside its group row.
+            groupId: page.groupId || undefined,
+            groupName: page.groupName || undefined,
             _combinedCode: page.combinedCode || "",
             _pageCount: page.pageCount || 1,
             _blocks: page.blocks || [],
@@ -1910,6 +1920,23 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
         [node.id]: cachedContentData[node.id]
       }));
       setIsContentLoading(false);
+      // The tree node comes from the LIGHT course payload, which carries no
+      // pedagogy — but CourseContent renders the page rows from
+      // selectedNode.originalData.pedagogy. Without re-attaching it here, the
+      // cached path selected a pedagogy-less node and every created page
+      // disappeared from the list (while the count badge, fed by contentData,
+      // still counted them). loadNodePedagogy is a React Query cache hit
+      // within staleTime, so this is free in the common case.
+      loadNodePedagogy(node)
+        .then((nodePedagogy) => {
+          if (!nodePedagogy) return;
+          setSelectedNode((prev) =>
+            prev && prev.id === node.id
+              ? { ...prev, originalData: { ...(prev.originalData || {}), ...nodePedagogy } }
+              : prev
+          );
+        })
+        .catch(() => { /* content already painted from cache — never block on this */ });
     } else {
       // Fetch fresh data
       await fetchAndCacheNodeData(node);
@@ -1919,7 +1946,7 @@ const refreshContentData = useCallback(async (node: CourseNode, backendData?: an
     if (node.type === "topic" || node.type === "subtopic") {
       updateURL({ nodeId: node.id, activeTab, activeSubcategory });
     }
-  }, [courseData, selectedNode, activeTab, activeSubcategory, subcategories, findPathToNode, generateBreadcrumbs, cachedContentData]);
+  }, [courseData, selectedNode, activeTab, activeSubcategory, subcategories, findPathToNode, generateBreadcrumbs, cachedContentData, loadNodePedagogy]);
 
 
   const getParentNodeName = useCallback((node: CourseNode, targetType: string): string => {
@@ -3903,6 +3930,18 @@ const handleNavigateToFolderLevel = useCallback(async (folderName: string, index
   }, [selectedNode?.id]); // Only depends on node ID, not the whole object
   useEffect(() => {
     if (!courseData.length) return;
+
+    // ONE-SHOT restore. This effect re-runs whenever `courseData` changes —
+    // and fetchAndRefresh rebuilds courseData from the LIGHT payload after
+    // every upload / page create / delete. With `nodeId` still in the URL,
+    // each re-run re-selected the light tree node (which carries NO pedagogy),
+    // clobbering the pedagogy-laden selectedNode that fetchAndRefresh had just
+    // set — so freshly created pages vanished from the list while the count
+    // badge (fed by contentData) still counted them. The URL restore is a
+    // mount-time concern: apply it once when courseData first arrives, never
+    // on refreshes.
+    if (urlRestoreDoneRef.current) return;
+    urlRestoreDoneRef.current = true;
 
     const params = new URLSearchParams(window.location.search);
 

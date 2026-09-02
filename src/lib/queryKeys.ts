@@ -89,7 +89,20 @@ export const queryKeys = {
     lists: () => ["courses", "list"] as const,
     list: (userId: string | null) => ["courses", "list", { userId }] as const,
     details: () => ["courses", "detail"] as const,
-    detail: (courseId: string) => ["courses", "detail", courseId] as const,
+    // The `/getAll/courses-data/:courseId` payload is VIEWER-scoped: the server
+    // resolves the caller's batch (a student gets their enrolled batch's
+    // pedagogy, staff get their selection) and gates exercises by the caller's
+    // role. Keyed by courseId alone, one account's batch-scoped payload was
+    // served to the next account on the same browser — a student could paint a
+    // cached anonymous/staff/other-batch copy with an empty resource list.
+    // `viewerId` therefore belongs in the identity. Callers that only need a
+    // PREFIX (invalidation after uploads/deletes must reach every viewer's
+    // entry) omit it — `detail(courseId)` stays a valid prefix of
+    // `detail(courseId, viewerId)`.
+    detail: (courseId: string, viewerId?: string | null) =>
+      viewerId === undefined
+        ? (["courses", "detail", courseId] as const)
+        : (["courses", "detail", courseId, { viewerId }] as const),
   },
   pedagogy: {
     all: ["pedagogy"] as const,

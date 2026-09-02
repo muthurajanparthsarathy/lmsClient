@@ -4,15 +4,56 @@ import { D, FONT } from '../shared/tokens';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 // Loose `formData: any` mirrors the parent's existing typing — no behavioural
-// change, no type tightening during extraction.
+// change, no type tightening.
 interface NotificationsStepProps {
   formData: any;
   setFormData: React.Dispatch<React.SetStateAction<any>>;
 }
 
+// ── SectionHeading ───────────────────────────────────────────────────────────
+// Same orange-title + hairline pattern used in ScheduleStep and
+// ExerciseDetailsStep so the wizard reads as one flat surface across steps.
+const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 10px' }}>
+    <span style={{
+      fontSize: 12, fontWeight: 700, color: D.orange, letterSpacing: '-.01em',
+      whiteSpace: 'nowrap', textTransform: 'none', fontFamily: FONT,
+    }}>
+      {children}
+    </span>
+    <span aria-hidden style={{ flex: 1, height: 1, background: D.border }} />
+  </div>
+);
+
+// ── SpecSwitch ───────────────────────────────────────────────────────────────
+// Local copy of the 35×20 emerald switch used across the settings wizard.
+const SpecSwitch: React.FC<{ on: boolean; onClick: () => void }> = ({ on, onClick }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={on}
+    onClick={onClick}
+    className="relative flex-shrink-0"
+    style={{
+      width: 35, height: 20, borderRadius: 999, padding: 0, border: 'none',
+      background: on ? D.emerald : '#DEDAD5', cursor: 'pointer', transition: 'background .16s',
+    }}
+  >
+    <span
+      style={{
+        position: 'absolute', top: 2, left: 2, width: 16, height: 16, borderRadius: '50%',
+        background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+        transition: 'transform .16s', transform: on ? 'translateX(15px)' : 'translateX(0)',
+      }}
+    />
+  </button>
+);
+
 // ── NotificationsStep ────────────────────────────────────────────────────────
-// Lifted verbatim from renderNotifications in ExerciseSettings.tsx. Same toggle
-// rows, same channel checkboxes, same Graded vs Non-Graded branching.
+// Rows share the ScheduleStep layout — flat white surface, 36px pale icon tile,
+// 11px/600/#101828 label with an inline description, right-aligned toggle +
+// On/Off status. When a row is ON its channel checkboxes fan out below,
+// indented under the label so they align with the row above.
 export const NotificationsStep: React.FC<NotificationsStepProps> = ({
   formData,
   setFormData,
@@ -31,8 +72,9 @@ export const NotificationsStep: React.FC<NotificationsStepProps> = ({
     description: formData.notifications.notifyStudent
       ? 'Students will be notified when the exercise is available.'
       : 'Students will not be notified about this exercise.',
-    icon: <Bell size={14} />,
-    color: D.orange,
+    icon: <Bell size={16} />,
+    iconColor: D.orange,
+    iconBg: 'rgba(255,90,18,0.10)',
     value: formData.notifications.notifyStudent,
     onChange: (v: boolean) => setFormData((prev: any) => ({ ...prev, notifications: { ...prev.notifications, notifyStudent: v } })),
     channels: {
@@ -62,8 +104,9 @@ export const NotificationsStep: React.FC<NotificationsStepProps> = ({
       description: formData.notifications.notifyGradersSubmissions
         ? 'Graders will receive alerts when students submit.'
         : 'Graders will not receive alerts when students submit.',
-      icon: <UserCheck size={14} />,
-      color: D.blue,
+      icon: <UserCheck size={16} />,
+      iconColor: D.blue,
+      iconBg: 'rgba(59,130,246,0.10)',
       value: formData.notifications.notifyGradersSubmissions,
       onChange: (v: boolean) => setFormData((prev: any) => ({ ...prev, notifications: { ...prev.notifications, notifyGradersSubmissions: v } })),
       channels: {
@@ -90,8 +133,9 @@ export const NotificationsStep: React.FC<NotificationsStepProps> = ({
       description: formData.notifications.notifyGradersLateSubmissions
         ? 'Graders will receive alerts for late submissions.'
         : 'No alerts for late submissions.',
-      icon: <Clock size={14} />,
-      color: D.amber,
+      icon: <Clock size={16} />,
+      iconColor: D.amber,
+      iconBg: 'rgba(245,158,11,0.10)',
       value: formData.notifications.notifyGradersLateSubmissions,
       onChange: (v: boolean) => setFormData((prev: any) => ({ ...prev, notifications: { ...prev.notifications, notifyGradersLateSubmissions: v } })),
       channels: {
@@ -114,86 +158,81 @@ export const NotificationsStep: React.FC<NotificationsStepProps> = ({
     },
   ];
 
-  // Spec card row: title 12.6/600 ink, dynamic description 11.4 muted, green
-  // switch right-aligned with On/Off state label; channel strip is a lighter
-  // sub-row (wash bg, radius 8) shown under the SAME `row.value` conditional.
-  // Pure markup/styling — reads and handlers are the row object's, unchanged.
-  const renderNotifyRow = (row: any) => (
+  // Flat row matching the ScheduleStep field row: icon tile + label +
+  // description + toggle + On/Off. Divider under every row except the last
+  // in its section (the parent list applies `isLast`).
+  const renderNotifyRow = (row: any, isLast: boolean) => (
     <div
       key={row.key}
-      style={{ border: `1px solid ${D.border2}`, borderRadius: 11, background: '#fff', padding: 13 }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        paddingTop: 14,
+        paddingBottom: 14,
+        borderBottom: isLast ? 'none' : `1px solid ${D.border}`,
+      }}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-start gap-2.5 flex-1 mr-3">
-          <div
-            className="w-7 h-7 flex items-center justify-center flex-shrink-0 mt-0.5"
-            style={{ background: row.color + '12', color: row.color, borderRadius: 8 }}
-          >
-            {row.icon}
-          </div>
-          <div>
-            <div className="leading-tight" style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain, fontFamily: FONT }}>
-              {row.label}
-            </div>
-            <div className="mt-0.5" style={{ fontSize: 11.4, lineHeight: 1.5, color: D.textMuted }}>
-              {row.description}
-            </div>
-          </div>
+      <div className="flex items-center flex-wrap" style={{ gap: 12, minHeight: 40 }}>
+        {/* Icon tile */}
+        <div
+          className="flex items-center justify-center flex-shrink-0"
+          style={{ width: 36, height: 36, background: row.iconBg, color: row.iconColor, borderRadius: 8 }}
+        >
+          {row.icon}
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+
+        {/* Label + description */}
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 240, flex: 1, gap: 2 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT, lineHeight: 1.25 }}>
+            {row.label}
+          </span>
+          <span style={{ fontSize: 11.4, color: D.textMuted, lineHeight: 1.4, fontFamily: FONT }}>
+            {row.description}
+          </span>
+        </div>
+
+        {/* Toggle + status */}
+        <div className="flex items-center" style={{ gap: 8 }}>
+          <SpecSwitch on={!!row.value} onClick={() => row.onChange(!row.value)} />
           <span style={{ fontSize: 11, fontWeight: 700, color: row.value ? D.emerald : D.textHint }}>
             {row.value ? 'On' : 'Off'}
           </span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={!!row.value}
-            onClick={() => row.onChange(!row.value)}
-            className="relative flex-shrink-0"
-            style={{
-              width: 35, height: 20, borderRadius: 999, padding: 0, border: 'none',
-              background: row.value ? D.emerald : '#DEDAD5', cursor: 'pointer', transition: 'background .16s',
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute', top: 2, left: 2, width: 16, height: 16, borderRadius: '50%',
-                background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)',
-                transition: 'transform .16s', transform: row.value ? 'translateX(15px)' : 'translateX(0)',
-              }}
-            />
-          </button>
         </div>
       </div>
 
-      {/* Channel checkboxes — lighter sub-row shown when toggled ON */}
+      {/* Channel checkboxes — indented under the label column when ON. */}
       {row.value && (
-        <div
-          className="mt-2.5 animate-in fade-in slide-in-from-top-1 duration-150"
-          style={{ background: D.surface, borderRadius: 8, padding: '8px 10px' }}
-        >
-          <div className="flex items-center gap-4 flex-wrap">
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#4B5563' }}>
+        <div style={{ paddingLeft: 48 }}>
+          <div
+            className="flex items-center flex-wrap"
+            style={{
+              gap: 16,
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: D.surface,
+              border: `1px solid ${D.border}`,
+            }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
               Notify via:
             </span>
             {channelOptions.map(ch => (
               <label
                 key={ch.key}
                 className="flex items-center cursor-pointer select-none"
-                style={{ gap: 7 }}
+                style={{ gap: 6 }}
               >
                 <input
                   type="checkbox"
                   checked={row.channels[ch.key]}
                   onChange={(e) => row.onChannelChange(ch.key, e.target.checked)}
                   className="rounded cursor-pointer"
-                  style={{ width: 15, height: 15, accentColor: D.orange }}
+                  style={{ width: 14, height: 14, accentColor: D.orange }}
                 />
-                <span className="flex items-center gap-1.5">
-                  <span style={{ color: D.textMuted }}>
-                    {ch.icon}
-                  </span>
-                  <span style={{ fontSize: 12.3, color: D.textSub }}>
+                <span className="flex items-center" style={{ gap: 5 }}>
+                  <span style={{ color: D.textMuted }}>{ch.icon}</span>
+                  <span style={{ fontSize: 12, color: D.textSub, fontFamily: FONT }}>
                     {ch.label}
                   </span>
                 </span>
@@ -206,24 +245,33 @@ export const NotificationsStep: React.FC<NotificationsStepProps> = ({
   );
 
   return (
-    <div className="flex flex-col" style={{ padding: '18px 22px', gap: 13 }}>
-      {/* For Graded exercises: show all rows */}
-      {formData.isGraded !== false && (
-        <>
-          {graderRows.map(row => renderNotifyRow(row))}
+    <div style={{ padding: '16px 32px 24px', maxWidth: 1200, fontFamily: FONT }}>
+      {/* Page heading is rendered by the parent wizard from STEP_META so we
+          don't stack a duplicate here — same pattern as ScheduleStep. */}
 
-          {/* Student notification row (for Graded) */}
-          {renderNotifyRow(studentOnlyRow)}
+      {formData.isGraded !== false ? (
+        <>
+          {/* ── GRADERS ─────────────────────────────────────────────── */}
+          <SectionHeading>Graders</SectionHeading>
+          <div>
+            {graderRows.map((row, i) => renderNotifyRow(row, i === graderRows.length - 1))}
+          </div>
+
+          {/* ── STUDENTS ────────────────────────────────────────────── */}
+          <div style={{ marginTop: 20 }}>
+            <SectionHeading>Students</SectionHeading>
+            <div>
+              {renderNotifyRow(studentOnlyRow, true)}
+            </div>
+          </div>
         </>
-      )}
-
-      {/* For Non-Graded exercises: show ONLY the Student row */}
-      {formData.isGraded === false && (
+      ) : (
         <>
-          <p style={{ fontSize: 11.4, lineHeight: 1.5, color: D.textMuted, margin: 0 }}>
-            Students will be notified when the exercise becomes available.
-          </p>
-          {renderNotifyRow(studentOnlyRow)}
+          {/* ── STUDENTS (Non-graded — only surface) ────────────────── */}
+          <SectionHeading>Students</SectionHeading>
+          <div>
+            {renderNotifyRow(studentOnlyRow, true)}
+          </div>
         </>
       )}
     </div>

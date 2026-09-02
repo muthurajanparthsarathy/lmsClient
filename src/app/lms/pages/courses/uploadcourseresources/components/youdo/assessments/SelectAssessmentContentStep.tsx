@@ -5,11 +5,17 @@
 // the security settings carried over from the Security step. The selected
 // topics + instructions are persisted on the exercise so the student attend
 // flow can scope and brief the test.
+//
+// Restyled 2026-09-01 to match the ExerciseSettings design system —
+// two `SectionHeading` groups ("Covered topics" and "Instructions"), the
+// step body wrapped in `StepShell`, and the descriptive subtitle sentences
+// under each card title moved into an `InfoTooltip` on the heading.
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
-  ClipboardList, Search, Folder, ChevronRight, ChevronDown, X, Info,
+  Search, Folder, ChevronRight, ChevronDown, X, Info,
   Lock, MonitorSmartphone, Copy, RefreshCw, ScanFace, Shield, Eye, Check, Video,
 } from "lucide-react";
+import { SectionHeading, StepShell, InfoTooltip } from './UIComponents';
 
 const ACCENT = "#7c3aed";
 const ACCENT_BG = "#ede9fe";
@@ -188,107 +194,88 @@ const SelectAssessmentContentStep: React.FC<Props> = ({
     );
   };
 
-  const card: React.CSSProperties = { border: `1px solid ${D.border}`, borderRadius: 14, background: "#fff", padding: "16px 18px" };
-
   return (
-    <div className="px-10 pt-4 pb-6">
-      <div className="space-y-4">
-        {/* ── Section 1: Select Topics from Hierarchy ── */}
-        <div style={card}>
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div>
-              <div className="text-[13px] font-bold" style={{ color: ACCENT }}>1. Select Topics from Hierarchy <span style={{ color: D.orange }}>*</span></div>
-              <p className="text-xs mt-0.5" style={{ color: D.textMuted }}>Select one or more topics and subtopics for this assessment.</p>
-            </div>
-            <div className="relative" style={{ width: 240, maxWidth: "45%" }}>
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: D.textMuted }} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search topics…"
-                className="w-full pl-7 pr-3 h-9 text-[12px] rounded-lg outline-none"
-                style={{ background: "#f8fafc", border: `1px solid ${D.border}`, color: D.textMain }}
-              />
-            </div>
+    <StepShell>
+      {/* ── Covered topics ────────────────────────────────────────────────── */}
+      <SectionHeading
+        right={
+          <div className="relative" style={{ width: 240 }}>
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: D.textMuted }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search topics…"
+              className="w-full pl-7 pr-3 h-9 text-[12px] rounded-lg outline-none"
+              style={{ background: "#fff", border: `1px solid ${D.border2}`, color: D.textMain }}
+            />
           </div>
+        }
+      >
+        <span className="inline-flex items-center gap-1">
+          Covered topics <span style={{ color: D.orange, fontWeight: 700 }}>*</span>
+          <InfoTooltip content="Select one or more topics and subtopics for this assessment." />
+        </span>
+      </SectionHeading>
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* Tree */}
-            <div className="rounded-xl p-2 overflow-y-auto ca-dark-scroll" style={{ border: `1px solid ${D.border}`, minHeight: 280, maxHeight: 360, background: "#fff" }}>
-              {tree.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-xs" style={{ color: D.textMuted, minHeight: 240 }}>No course hierarchy found.</div>
-              ) : (
-                tree.map(renderNode)
-              )}
-            </div>
-
-            {/* Selected panel */}
-            <div className="rounded-xl p-3 flex flex-col" style={{ border: `1px solid ${D.border}`, minHeight: 280, maxHeight: 360, background: "#fbfaff" }}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[13px] font-semibold" style={{ color: D.textMain }}>Selected <span style={{ color: D.textMuted }}>({selectedTopics.length})</span></span>
-                {selectedTopics.length > 0 && (
-                  <button type="button" onClick={() => onChangeSelected([])} className="text-[12px] font-semibold" style={{ color: ACCENT }}>Clear All</button>
-                )}
-              </div>
-              <div className="flex-1 overflow-y-auto ca-dark-scroll">
-                {selectedTopics.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-xs text-center px-4" style={{ color: D.textMuted }}>No topics selected yet. Pick topics from the hierarchy on the left.</div>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedTopics.map((t) => (
-                      <span key={t.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium" style={{ background: ACCENT_BG, color: ACCENT }}>
-                        {t.title}
-                        <button type="button" onClick={() => onChangeSelected(selectedTopics.filter((s) => s.id !== t.id))}><X size={11} /></button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 pt-2 text-[11px]" style={{ borderTop: `1px solid ${D.border}`, color: D.textMuted }}>
-                <Info size={12} /> You can select multiple topics and subtopics
-              </div>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-4">
+        {/* Tree */}
+        <div className="rounded-xl p-2 overflow-y-auto ca-dark-scroll" style={{ border: `1px solid ${D.border2}`, minHeight: 280, maxHeight: 360, background: "#fff" }}>
+          {tree.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-xs" style={{ color: D.textMuted, minHeight: 240 }}>No course hierarchy found.</div>
+          ) : (
+            tree.map(renderNode)
+          )}
         </div>
 
-        {/* ── Section 2: Assessment Instructions ── */}
-        <div style={card}>
-          <div className="text-[13px] font-bold" style={{ color: ACCENT }}>2. Assessment Instructions <span style={{ color: D.orange }}>*</span></div>
-          <p className="text-xs mt-0.5 mb-3" style={{ color: D.textMuted }}>Provide clear instructions for the assessment.</p>
-          <TipTapEditor
-            value={instructions}
-            onChange={(v: string) => onChangeInstructions(v)}
-            placeholder="Enter instructions for the assessment…"
-            minHeight="220px"
-            maxHeight="400px"
-            showToolbar
-            editable
-          />
-        </div>
-
-        {/* ── Section 3: Security Settings (read-only summary) ── */}
-        {/* <div style={card}>
-          <div className="text-[13px] font-bold" style={{ color: ACCENT }}>3. Security Settings <span className="text-[11px] font-medium" style={{ color: D.textMuted }}>(Applied from Previous Step)</span></div>
-          <p className="text-xs mt-0.5 mb-3" style={{ color: D.textMuted }}>These security settings will be applied to this assessment.</p>
-          <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${D.border}` }}>
-            {SECURITY_ROWS.map((row, i) => {
-              const on = !!securitySettings?.[row.key];
-              return (
-                <div key={row.key} className="flex items-center justify-between px-3.5 py-2.5" style={{ borderTop: i === 0 ? "none" : `1px solid ${D.border}` }}>
-                  <div className="flex items-center gap-2.5">
-                    <span style={{ color: D.textMuted }}>{row.icon}</span>
-                    <span className="text-[13px] font-medium" style={{ color: D.textMain }}>{row.label}</span>
-                  </div>
-                  <span className="text-[12px] font-semibold" style={{ color: on ? D.emerald : D.textMuted }}>
-                    {on ? "Enabled" : "Disabled"}
+        {/* Selected panel */}
+        <div className="rounded-xl p-3 flex flex-col" style={{ border: `1px solid ${D.border2}`, minHeight: 280, maxHeight: 360, background: D.surface }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[13px] font-semibold" style={{ color: D.textMain }}>
+              Selected <span style={{ color: D.textMuted }}>({selectedTopics.length})</span>
+            </span>
+            {selectedTopics.length > 0 && (
+              <button type="button" onClick={() => onChangeSelected([])} className="text-[12px] font-semibold" style={{ color: ACCENT }}>Clear All</button>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto ca-dark-scroll">
+            {selectedTopics.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-center px-4" style={{ color: D.textMuted }}>No topics selected yet. Pick topics from the hierarchy on the left.</div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedTopics.map((t) => (
+                  <span key={t.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium" style={{ background: ACCENT_BG, color: ACCENT }}>
+                    {t.title}
+                    <button type="button" onClick={() => onChangeSelected(selectedTopics.filter((s) => s.id !== t.id))}><X size={11} /></button>
                   </span>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            )}
           </div>
-        </div> */}
+          <div className="flex items-center gap-1.5 mt-2 pt-2 text-[11px]" style={{ borderTop: `1px solid ${D.border}`, color: D.textMuted }}>
+            <Info size={12} /> You can select multiple topics and subtopics
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* ── Instructions ─────────────────────────────────────────────────── */}
+      <div style={{ marginTop: 20 }}>
+        <SectionHeading>
+          <span className="inline-flex items-center gap-1">
+            Instructions <span style={{ color: D.orange, fontWeight: 700 }}>*</span>
+            <InfoTooltip content="Provide clear instructions for the assessment." />
+          </span>
+        </SectionHeading>
+        <TipTapEditor
+          value={instructions}
+          onChange={(v: string) => onChangeInstructions(v)}
+          placeholder="Enter instructions for the assessment…"
+          minHeight="220px"
+          maxHeight="400px"
+          showToolbar
+          editable
+        />
+      </div>
+    </StepShell>
   );
 };
 

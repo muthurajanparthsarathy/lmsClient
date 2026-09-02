@@ -17,6 +17,11 @@ import AddQuestionForm from '@/app/lms/component/questionforms/AddQuestionForm';
 import QuestionBankSelector from '@/app/lms/component/questionforms/mcq/QuestionBankSelector';
 import GenerateMCQAIQuestion from '@/app/lms/component/questionforms/mcq/GenerateMCQAIQuestion';
 import AddQuestionViaDocument from '@/app/lms/component/AddQuestionViaDocument';
+import {
+  getNextPendingQuestion as qmGetNextPendingQuestion,
+  srcToBucket as qmSrcToBucket,
+  type Difficulty,
+} from '@/app/lms/component/questionsource/quotaModel';
 import { exerciseApi } from '@/apiServices/exercise';
 import { questionApi } from '@/apiServices/question';
 // Shared app-wide loader (orange Swirling ring). Replaces two hand-rolled
@@ -905,6 +910,48 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
       proceedFromSectionOrRoot(exerciseWithQuestions);
     }
   };
+
+  // ─── Plan progression nudge (Add Question UX Phase 5) ─────────────────────
+  // After a save/import lands inside the assessment, check the exercise's
+  // customDistribution + latest questions for the next pending (difficulty,
+  // bucket) slot and toast an informative "next up" or "plan complete"
+  // message. Uses the fully-refetched exercise from `fullExerciseRef.current`
+  // — that ref is updated synchronously inside fetchQuestions() so it's
+  // always the latest, unlike `questions` state which is React-async.
+  //
+  // `didSaveInFormRef` avoids spamming: if the user closed the form without
+  // saving anything, no nudge fires. The AI/Bank/Doc paths flip the flag
+  // themselves when they successfully deliver content.
+  const didSaveInFormRef = useRef(false);
+  const notifyYouDoPlanProgress = useCallback((lastBucketHint?: 'ai' | 'manual' | 'otherPlatform') => {
+    const ex = fullExerciseRef.current;
+    if (!ex) return;
+    if ((ex as any).questionSource !== 'custom') return; // no per-difficulty plan
+    const cd = (ex as any).customDistribution;
+    if (!cd) return;
+    const currentQuestions = Array.isArray((ex as any).questions) ? (ex as any).questions : questions;
+    const next = qmGetNextPendingQuestion({
+      currentDifficulty: null,
+      currentBucket: lastBucketHint ?? null,
+      customDistribution: cd,
+      questions: currentQuestions,
+    });
+    if (!next) {
+      toast.success('Plan complete — all configured questions have been added.', {
+        id: 'plan-complete',
+        duration: 4200,
+        icon: '🎉',
+      });
+      return;
+    }
+    const bucketLabel = next.bucket === 'ai' ? 'AI'
+      : next.bucket === 'otherPlatform' ? 'Other Platform'
+      : 'Manual';
+    toast(
+      `Next up: ${next.difficulty[0].toUpperCase() + next.difficulty.slice(1)} · ${bucketLabel}.`,
+      { id: 'plan-progress', duration: 3800, icon: '↪️' },
+    );
+  }, [questions]);
 
   const closeAddQ = () => {
     setAddQ({ step: null });
@@ -2323,15 +2370,16 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
               setAddQ(prev => ({ ...prev, step: 'source' }));
             }}
             onClose={() => {
-              // Other Platform slot cannot be silently bypassed — if the
-              // trainer picked "Other Platform" as the source and hits X
-              // without selecting anything, refuse to close, run the trap.
-              if (addQ.sourceChoice === 'thirdParty' && !qbHasContentRef.current) {
-                trapCloseAttempt('thirdParty');
-                return;
-              }
+              // Universal close/cancel contract (Add Question UX):
+              //   • Opening the Bank / Other Platform picker never consumes quota.
+              //   • Closing an UNTOUCHED picker returns to Choose Source silently.
+              //   • No trap, no toast, no auto-reopen.
+              // Return to the source step (not all the way out) so the
+              // difficulty / section / type selections are preserved and the
+              // user can pick a different source without walking back through
+              // every previous step.
               setShowQBank(false);
-              closeAddQ();
+              setAddQ(prev => ({ ...prev, sourceChoice: undefined, step: 'source' }));
             }}
             onSelect={(qs) => {
               // Content has been picked — the trap flag flips so the natural
@@ -2452,17 +2500,19 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
             // or X out of that to fully cancel. Parity with QuestionsView.tsx
             // which does `setShowGenerateAI(false)` only.
             //
-            // Close-trap: an AI slot cannot be silently bypassed. If the
-            // trainer picked "AI" and hits X without generating anything, we
-            // refuse the close and run the trap (flash + ding + toast with
-            // "Change source"). The natural onSave→onClose path flips the
-            // flag first (see onSave below), so a real save closes cleanly.
+            // Universal close/cancel contract (Add Question UX):
+            //   • Opening the AI modal never creates a question or reserves a slot.
+            //   • Closing an UNTOUCHED AI modal returns to Choose Source silently.
+            //   • No trap, no toast, no auto-reopen.
+            // The onSave path sets `sourceChoice` back to undefined and
+            // advances into the form; this close path lands the user back
+            // on the source step, preserving section/type/difficulty so
+            // they don't walk previous screens again.
             onClose={() => {
-              if (addQ.sourceChoice === 'ai' && !aiHasContentRef.current) {
-                trapCloseAttempt('ai');
-                return;
-              }
               setShowAIModal(false);
+              if (!aiHasContentRef.current) {
+                setAddQ(prev => ({ ...prev, sourceChoice: undefined, step: 'source' }));
+              }
             }}
             onSave={(aiQuestions: any[]) => {
               // Content produced — flip the trap flag so the subsequent
@@ -2555,7 +2605,12 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
             }}
             tabType={tabType as any}
             onClose={async () => { setShowDocUpload(false); closeAddQ(); await fetchQuestions(); }}
-            onInserted={async (_count: number) => { setShowDocUpload(false); closeAddQ(); await fetchQuestions(); }}
+            onInserted={async (count: number) => {
+              setShowDocUpload(false);
+              closeAddQ();
+              await fetchQuestions();
+              if (count > 0) notifyYouDoPlanProgress('manual');
+            }}
           />
         );
       })()}
@@ -2582,8 +2637,26 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
             sectionData={addQ.section}
             initialData={editingQuestion || undefined}
             isEditing={!!editingQuestion}
-            onClose={async () => { closeAddQ(); await fetchQuestions(); }}
-            onSave={async () => { await fetchQuestions(); }}
+            onClose={async () => {
+              const shouldNudge = didSaveInFormRef.current;
+              didSaveInFormRef.current = false;
+              closeAddQ();
+              await fetchQuestions();
+              if (shouldNudge) {
+                // Bucket hint from the last chosen source, so progression
+                // prefers to stay in the same bucket per getNextPendingQuestion's
+                // priority rules.
+                const src = addQ.sourceChoice;
+                const hint = src === 'ai' ? 'ai' as const
+                  : src === 'thirdParty' ? 'otherPlatform' as const
+                  : 'manual' as const;
+                notifyYouDoPlanProgress(hint);
+              }
+            }}
+            onSave={async () => {
+              didSaveInFormRef.current = true;
+              await fetchQuestions();
+            }}
             showTypeSelector={(exData.exerciseType || '').toLowerCase() === 'combined'}
             shouldRefreshOnMount={true}
             // Guard bank/AI preload against the edit path — editingQuestion

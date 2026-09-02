@@ -47,7 +47,15 @@ import type { Query } from "@tanstack/react-query";
 // the old grades entries, including the string-concatenated overallScore the
 // server used to emit ("555005550" where the sum is 30). Bumping the buster is
 // what actually discards it.
-export const QUERY_CACHE_BUSTER = "2026-08-27-v9";
+// v10: "courses" added to NON_PERSISTED_KEYS. ["courses","detail",id] is the
+// SAME multi-MB /getAll/courses-data payload the legacy "course" root was
+// excluded for — and it is viewer/batch-scoped and carries the populated
+// roster (student names + emails). Persisted under a courseId-only key it
+// outlived logins for 24h, so a student rehydrated another viewer's (or a
+// pre-upload) copy and saw an empty resource list. The buster bump discards
+// every browser's already-persisted copy; the key gained a viewerId segment
+// in the same change.
+export const QUERY_CACHE_BUSTER = "2026-09-01-v10";
 
 /** Max age for a persisted entry. After this we re-fetch on next read.
  *  24h is a sane middle ground — long enough to make repeat-reloads feel
@@ -69,6 +77,18 @@ const NON_PERSISTED_KEYS = new Set<string>([
   // consumed by reviewSubmission + live dashboard marks — both of which
   // benefit less from a stale cache than from fresh data anyway.
   "course",
+  // The SAME payload under the query-factory root: ["courses","detail",id]
+  // (student course detailed view) plus the per-user course list. Three
+  // reasons, each sufficient:
+  //   • size — identical multi-MB body to "course" above;
+  //   • PII — the populated batchAndParticipants roster (names, emails);
+  //   • viewer scoping — the server resolves the caller's batch and gates by
+  //     role, so a persisted copy served across logins painted another
+  //     viewer's (or a pre-upload) resource list — the "teacher added
+  //     resources, student sees No resources yet" bug.
+  // Still cached in memory for the hook's gcTime — it just doesn't outlive
+  // the tab.
+  "courses",
   // Dashboard analytics (`/student-Dashboard/courses-data/analytics`).
   // Against an up-to-date server the admin dashboard requests the ?light=1
   // projection (small), but an older server ignores the param and returns

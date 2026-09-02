@@ -3294,10 +3294,15 @@ export const CourseContent: React.FC<CourseContentProps> = ({
   );
 
   const allFiles = useMemo(() => {
-    // Pages come exclusively from pedagogy below — exclude any stale page entries
-    // that currentFolderContents.files might already carry to prevent duplicates.
+    // Pages come primarily from pedagogy below — exclude page entries that
+    // currentFolderContents.files might already carry to prevent duplicates.
+    // They are kept aside (not thrown away): when the `pedagogy` prop is stale
+    // or missing they are re-added as a fallback at the end, see below.
     const combined = currentFolderContents.files.filter(
       f => (f.type || "").toLowerCase() !== "page"
+    );
+    const contentDataPages = currentFolderContents.files.filter(
+      f => (f.type || "").toLowerCase() === "page"
     );
 
     // Normalise the current folder path to a comparable string.
@@ -3398,6 +3403,39 @@ export const CourseContent: React.FC<CourseContentProps> = ({
           });
         }
       }
+    }
+
+    // ── Fallback: pages straight from contentData ─────────────────────────
+    // The walk above renders pages from the `pedagogy` prop
+    // (selectedNode.originalData.pedagogy). That prop can be stale or absent:
+    // the sidebar tree is built from the LIGHT course payload (no pedagogy),
+    // and the cached node-selection path re-selects that light node without
+    // re-attaching pedagogy. contentData is refreshed on every upload/delete/
+    // batch switch, so its page entries are authoritative — without this
+    // fallback the subcategory count said "7" while the pages silently
+    // vanished from the list. contentData pages are root-level only
+    // (processNodeContent does not walk folder pages), so merge them only at
+    // root, and only ids the pedagogy walk didn't already produce.
+    if (currentPathStr === "") {
+      const seenPageIds = new Set(
+        combined
+          .filter(f => (f.type || "").toLowerCase() === "page")
+          .map(f => f.id)
+      );
+      contentDataPages.forEach(p => {
+        if (seenPageIds.has(p.id)) return;
+        const override = localPageOverrides[p.id];
+        combined.push(
+          override
+            ? ({
+                ...p,
+                name: override.title ?? p.name,
+                _combinedCode: override.combinedCode ?? (p as any)._combinedCode ?? "",
+                _pageCount: override.pageCount ?? (p as any)._pageCount ?? 1,
+              } as any)
+            : p
+        );
+      });
     }
 
     return combined;

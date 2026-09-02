@@ -241,14 +241,15 @@ const THIRD_PARTY_PROVIDERS: ThirdPartyProvider[] = [
 // configuration renderers (MCQ / Programming / Others). Values come from
 // scratchpad/demo-design-spec.md; D.* tokens are preferred where one fits.
 // =============================================================================
-// STEP-2 restyle (2026-08-31): switched from cream-tinted card headers with
-// grey uppercase titles to white cards with an orange section-heading strip +
-// gray hairline divider — matches the Step 1 SectionHeading pattern, so every
-// wizard step reads with the same visual grammar.
-const SPEC_CARD: React.CSSProperties = { background: '#fff', border: `1px solid ${D.border2}`, borderRadius: 8 };
-const SPEC_CARD_H: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px 8px', background: '#fff', borderBottom: `1px solid ${D.border}`, borderRadius: '8px 8px 0 0' };
-const SPEC_CARD_T: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FF5A12' };
-const SPEC_CARD_B: React.CSSProperties = { padding: 14, fontSize: 13 };
+// STEP-2/3 restyle (2026-09-01): flattened the card chrome so every section
+// reads like Step 1's ExerciseDetailsStep — orange section heading + hairline
+// divider + fields directly beneath, no nested border-box. The old
+// bordered-card look created a visual cage inside each step that fought the
+// clean single-column rhythm of the redesigned modal.
+const SPEC_CARD: React.CSSProperties = { background: 'transparent', border: 'none', borderRadius: 0 };
+const SPEC_CARD_H: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0 8px', background: 'transparent', borderBottom: `1px solid ${D.border}`, marginBottom: 10 };
+const SPEC_CARD_T: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: '-.005em', textTransform: 'none', color: '#FF5A0A' };
+const SPEC_CARD_B: React.CSSProperties = { padding: 0, fontSize: 13 };
 const specPill = (bg: string, line: string, text: string): React.CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 5, height: 23, padding: '0 9px',
   borderRadius: 999, fontSize: 10.8, fontWeight: 600, whiteSpace: 'nowrap',
@@ -2513,7 +2514,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
 
       // FIXED: declare these BEFORE the if/else so both branches can access them
       const entityPath = getEntityType(nodeType);
-      const BASE_URL = 'http://localhost:5533';
+      const BASE_URL = 'https://lmsserver-yeve.onrender.com';
       const token = getToken();
 
       if (!token) throw new Error('No authentication token found. Please log in again.');
@@ -2818,7 +2819,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
 
       // FIXED: declare before if/else
       const entityPath = getEntityType(nodeType);
-      const BASE_URL = 'http://localhost:5533';
+      const BASE_URL = 'https://lmsserver-yeve.onrender.com';
       const token = getToken();
 
       if (!token) throw new Error('No authentication token found. Please log in again.');
@@ -3477,12 +3478,19 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                 </div>
                 <div>
                   <div className="text-[9px] font-semibold mb-1" style={{ color: D.textMuted }}>TYPE</div>
-                  <select value={scoring?.type || 'level_specific'} onChange={e => updateOthersLevelScoringConfig(level, { type: e.target.value as any, ...(e.target.value === 'level_specific' ? { marksPerQuestion: 2, totalMarks: undefined } : { totalMarks: 10, marksPerQuestion: undefined }) })}
-                    className="w-full px-2 py-1 text-[11px] rounded-md border font-semibold outline-none"
-                    style={{ borderColor: D.border2, background: '#fff', color: D.textMain, fontFamily: FONT }}>
-                    <option value="level_specific">Same Marks</option>
-                    <option value="question_specific">Individual</option>
-                  </select>
+                  <ODropdown
+                    value={scoring?.type || 'level_specific'}
+                    options={[
+                      { value: 'level_specific',    label: 'Same Marks' },
+                      { value: 'question_specific', label: 'Individual' },
+                    ]}
+                    onChange={v => updateOthersLevelScoringConfig(level, {
+                      type: v as any,
+                      ...(v === 'level_specific'
+                        ? { marksPerQuestion: 2, totalMarks: undefined }
+                        : { totalMarks: 10, marksPerQuestion: undefined }),
+                    })}
+                  />
                 </div>
                 <div>
                   <div className="text-[9px] font-semibold mb-1" style={{ color: D.textMuted }}>{isQSpec ? 'TOTAL MARKS' : 'PER QUESTION'}</div>
@@ -3736,12 +3744,21 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                           const hasError = touchedFields.has(`scoring_others_${level}`) && !!scoringErrors[level];
                           return (
                             <div key={level} style={{ ...bodyCell(level), opacity: count === 0 ? 0.4 : 1, pointerEvents: count === 0 ? 'none' : 'auto' }}>
-                              <select value={scoring?.type || 'level_specific'}
-                                onChange={e => updateOthersLevelScoringConfig(level, { type: e.target.value as any, ...(e.target.value === 'level_specific' ? { marksPerQuestion: 2, totalMarks: undefined } : { totalMarks: 10, marksPerQuestion: undefined }) })}
-                                style={{ ...SPEC_SELECT, borderColor: hasError ? '#FBD3CE' : D.border2 }}>
-                                <option value="level_specific">Same Marks</option>
-                                <option value="question_specific">Individual</option>
-                              </select>
+                              <ODropdown
+                                value={scoring?.type || 'level_specific'}
+                                options={[
+                                  { value: 'level_specific',    label: 'Same Marks' },
+                                  { value: 'question_specific', label: 'Individual' },
+                                ]}
+                                error={hasError ? 'invalid' : undefined}
+                                touched={hasError}
+                                onChange={v => updateOthersLevelScoringConfig(level, {
+                                  type: v as any,
+                                  ...(v === 'level_specific'
+                                    ? { marksPerQuestion: 2, totalMarks: undefined }
+                                    : { totalMarks: 10, marksPerQuestion: undefined }),
+                                })}
+                              />
                             </div>
                           );
                         })}
@@ -3836,7 +3853,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
               label="Attempt Limit" description="Restrict submission attempts" inline />
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ ...SPEC_LABEL, marginBottom: 0 }}>Attempts Allowed</span>
+                <span style={{ ...SPEC_LABEL, marginBottom: 0, fontSize: 11, color: '#101828', fontFamily: FONT }}>Attempts Allowed</span>
                 <InfoTooltip content="Maximum number of submission attempts allowed per student (1–10)" side="right" />
               </div>
               <div style={{ width: 96 }}>
@@ -3858,6 +3875,41 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
       </div>
     );
   }, [formData, validationErrors, touchedFields, markTouched, othersAllocatedMarks, othersLevelMismatch, othersShouldShowScoringSection, questionFlowOptions, updateOthersLevelScoringConfig, configOptions]);
+  // ==========================================================================
+  // ALL QUESTIONS REQUIRED (shared row)
+  // ==========================================================================
+  // Rendered in two places: paired beside Attempt Limit inside the Programming
+  // config, and as a standalone strip under MCQ / Other / Combined. Kept as one
+  // node so the two copies cannot drift apart. Label / toggle / status metrics
+  // match the Attempt Limit row exactly so the pair lines up side by side.
+  const allQuestionsRequiredRow = useMemo(() => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        All Questions Required
+        <InfoTooltip content="When ON, students must complete every question before they can submit. When OFF, partial submission is allowed." />
+      </div>
+      <button type="button" role="switch" aria-checked={formData.allQuestionsRequired}
+        onClick={() => setFormData(prev => ({ ...prev, allQuestionsRequired: !prev.allQuestionsRequired }))}
+        style={{
+          position: 'relative', width: 35, height: 20, borderRadius: 999, border: 'none',
+          cursor: 'pointer', flexShrink: 0, transition: 'background .16s',
+          background: formData.allQuestionsRequired ? D.emerald : '#DEDAD5',
+        }}>
+        <span style={{
+          position: 'absolute', top: 2, left: 2, width: 16, height: 16, borderRadius: '50%',
+          background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)', transition: 'transform .16s',
+          transform: formData.allQuestionsRequired ? 'translateX(15px)' : 'none',
+        }} />
+      </button>
+      <span style={{
+        fontSize: 11, fontWeight: 700,
+        color: formData.allQuestionsRequired ? D.emerald : D.textHint,
+      }}>
+        {formData.allQuestionsRequired ? 'Enabled' : 'Off'}
+      </span>
+    </div>
+  ), [formData.allQuestionsRequired]);
+
   // ==========================================================================
   // RENDER: Programming Configuration
   // ==========================================================================
@@ -4126,7 +4178,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
             />
           </div>
 
-          {formData.programmingConfig.questionConfigType === 'general' && (
+          {formData.programmingConfig.questionConfigType === 'general' && (<>
             <div style={{ flex: '1 1 220px', minWidth: 180 }}>
               <span style={SPEC_LABEL}>Total Questions <span style={{ color: D.orange }}>*</span></span>
               <ONumberInput
@@ -4153,7 +4205,26 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                 touched={touchedFields.has('programmingGeneralQuestionCount')}
               />
             </div>
-          )}
+            {formData.isGraded !== false && (
+              /* General mode: Marks / question sits next to Total Questions
+                 (auto-derived total ÷ questions). Moved up from the
+                 "Questions & Scoring" section per user 2026-09-01 — in
+                 General mode there is nothing else to show inside that
+                 section, so the paired inputs read cleanly at a glance. */
+              <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+                <span style={SPEC_LABEL}>Marks / question</span>
+                <div style={{
+                  height: 34, borderRadius: 8, border: `1px solid ${D.border}`, background: D.surface,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 11px',
+                }}>
+                  <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
+                    {formatDecimal(formData.programmingConfig.scoreSettings.equalDistribution || 0)}
+                  </span>
+                  <span className="es-pill" style={SPEC_PILL.blue}>Auto</span>
+                </div>
+              </div>
+            )}
+          </>)}
 
           {isLevelMode && (<>
             <div style={{ flex: '1 1 220px', minWidth: 180 }}>
@@ -4186,7 +4257,14 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
           </div>
         ) : (<>
 
-          {/* ── QUESTIONS & SCORING ── */}
+          {/* ── QUESTIONS & SCORING ──
+              Hidden in General mode entirely: Total Questions and
+              Marks / question already sit in the top row, so the section
+              body has nothing to render and the header pills duplicate the
+              tally that is one row away. Level Based / Selection Level
+              keep the section because they need the difficulty matrix and
+              the pills contextualise its per-level marks. */}
+          {isLevelMode && (
           <div style={SPEC_CARD}>
             <div className="es-card-h" style={SPEC_CARD_H}>
               <span style={SPEC_CARD_T}>Questions &amp; Scoring</span>
@@ -4204,31 +4282,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
             </div>
 
             <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {!isLevelMode ? (
-                formData.isGraded !== false && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 12, alignItems: 'end' }}>
-                    <div className="es-note" style={SPEC_NOTE.info}>
-                      <span>ⓘ</span>
-                      <span>
-                        General Configuration doesn&apos;t split by difficulty — marks are divided equally
-                        across all {formData.programmingConfig.generalQuestionCount || 0} questions.
-                      </span>
-                    </div>
-                    <div>
-                      <span style={SPEC_LABEL}>Marks / question</span>
-                      <div style={{
-                        height: 34, borderRadius: 8, border: `1px solid ${D.border}`, background: D.surface,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 11px',
-                      }}>
-                        <span style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>
-                          {formatDecimal(formData.programmingConfig.scoreSettings.equalDistribution || 0)}
-                        </span>
-                        <span className="es-pill" style={SPEC_PILL.blue}>Auto</span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              ) : (<>
+              {(<>
                 {/* ── Difficulty matrix ── */}
                 <div className="es-matrix-wrap" style={{ border: `1px solid ${D.border2}`, borderRadius: 10, overflow: 'hidden' }}>
                   {/* Header */}
@@ -4297,19 +4351,20 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                         const isDisabled = isSelLevel ? count === 0 : false;
                         return (
                           <div key={level} style={{ ...MCELL, background: LV[level].tint, opacity: isDisabled ? 0.4 : 1, pointerEvents: isDisabled ? 'none' : 'auto' }}>
-                            <select
+                            <ODropdown
                               value={scoring?.type || 'level_specific'}
-                              onChange={e => updateLevelScoringConfig(level, {
-                                type: e.target.value as any,
-                                ...(e.target.value === 'level_specific'
+                              options={[
+                                { value: 'level_specific',    label: 'Same Marks' },
+                                { value: 'question_specific', label: 'Individual' },
+                              ]}
+                              onChange={v => updateLevelScoringConfig(level, {
+                                type: v as any,
+                                ...(v === 'level_specific'
                                   ? { marksPerQuestion: scoring?.marksPerQuestion || 0, totalMarks: undefined }
                                   : { totalMarks: scoring?.totalMarks || 0, marksPerQuestion: undefined }
                                 )
                               })}
-                              style={SELECT_STYLE}>
-                              <option value="level_specific">Same Marks</option>
-                              <option value="question_specific">Individual</option>
-                            </select>
+                            />
                           </div>
                         );
                       })}
@@ -4434,18 +4489,39 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
               </>)}
             </div>
           </div>
+          )}
 
-          {/* ── QUESTION FLOW · EVALUATION METHOD ── */}
-          <div className="es-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
+          {/* ── EVALUATION METHOD · QUESTION FLOW ──
+              Both fields share a label rhythm (11px/600 #101828 with a 5px
+              gap under it) and their control below is 34px tall, so the
+              labels and control tops both align across the two columns.
+              Column order swapped 2026-09-01 — Evaluation Method leads the
+              row, Question Flow sits on the right. */}
+          <div className="es-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start', marginTop: 12 }}>
+            <div style={SPEC_CARD}>
+              <div className="es-card-b" style={SPEC_CARD_B}>
+                <EvaluationMethodConfig
+                  value={formData.evaluationMethod}
+                  onChange={next => setFormData(prev => ({ ...prev, evaluationMethod: next }))}
+                  D={D}
+                  ODropdown={ODropdown}
+                  font={FONT}
+                  dense
+                />
+              </div>
+            </div>
+
             <div style={{ ...SPEC_CARD, ...(programmingLevelMismatch ? { opacity: 0.4, pointerEvents: 'none' as const } : {}) }}>
-              <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ ...SPEC_LABEL, display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 0 }}>
-                  Question Flow
+              <div className="es-card-b" style={SPEC_CARD_B}>
+                <div className="flex items-center" style={{ marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
+                    Question Flow <span style={{ color: D.orange }}>*</span>
+                  </span>
                   <InfoTooltip content="Free Flow lets students answer in any order; Controlled Flow locks the sequence." side="right" />
-                </span>
+                </div>
                 <div style={{
                   display: 'flex', background: D.surface2, border: `1px solid ${D.border2}`,
-                  borderRadius: 8, padding: 3, gap: 3,
+                  borderRadius: 8, padding: 3, gap: 3, height: 34, boxSizing: 'border-box',
                 }}>
                   {questionFlowOptions.map(opt => {
                     const sel = formData.programmingConfig.questionFlow === opt.value;
@@ -4453,7 +4529,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                       <button key={opt.value} type="button" aria-pressed={sel}
                         onClick={() => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, questionFlow: opt.value as any } }))}
                         style={{
-                          flex: 1, height: 27, border: 'none', borderRadius: 5, cursor: 'pointer',
+                          flex: 1, height: '100%', border: 'none', borderRadius: 5, cursor: 'pointer',
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
                           fontSize: 12, fontWeight: 600,
                           background: sel ? '#fff' : 'transparent',
@@ -4467,39 +4543,21 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                 </div>
               </div>
             </div>
-
-            <div style={SPEC_CARD}>
-              <div className="es-card-b" style={SPEC_CARD_B}>
-                <EvaluationMethodConfig
-                  value={formData.evaluationMethod}
-                  onChange={next => setFormData(prev => ({ ...prev, evaluationMethod: next }))}
-                  D={D}
-                  ODropdown={ODropdown}
-                  font={FONT}
-                  dense
-                />
-              </div>
-            </div>
           </div>
 
-          {/* ── ATTEMPT LIMIT ── */}
+          {/* ── ATTEMPT LIMIT · ALL QUESTIONS REQUIRED ──
+              One 2-col row so the two toggles sit on the same line. Combined
+              renders this same config inside its Programming tab and keeps the
+              standalone All Questions Required strip below the tabs, so there
+              it stays a single full-width card. */}
+          <div className="es-2col" style={{ display: 'grid', gridTemplateColumns: isCombined ? '1fr' : '1fr 1fr', gap: 12, alignItems: 'start', marginTop: 12 }}>
           <div style={SPEC_CARD}>
             <div className="es-card-b" style={{ ...SPEC_CARD_B, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.6, fontWeight: 600, color: D.textMain }}>Attempt Limit</div>
-                  <div style={{ fontSize: 11.4, color: D.textMuted, marginTop: 1 }}>
-                    {formData.programmingConfig.attemptLimitEnabled
-                      ? 'Students can submit a limited number of times.'
-                      : 'Students can attempt this exercise any number of times.'}
-                  </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#101828', fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  Attempt Limit
+                  <InfoTooltip content="When ON, students can submit only a limited number of times. When OFF, they can attempt this exercise any number of times." />
                 </div>
-                <span style={{
-                  fontSize: 11, fontWeight: 700,
-                  color: formData.programmingConfig.attemptLimitEnabled ? D.emerald : D.textHint,
-                }}>
-                  {formData.programmingConfig.attemptLimitEnabled ? 'Enabled' : 'Off'}
-                </span>
                 <button type="button" role="switch" aria-checked={formData.programmingConfig.attemptLimitEnabled}
                   onClick={() => setFormData(prev => ({ ...prev, programmingConfig: { ...prev.programmingConfig, attemptLimitEnabled: !prev.programmingConfig.attemptLimitEnabled, submissionAttempts: !prev.programmingConfig.attemptLimitEnabled ? (prev.programmingConfig.submissionAttempts > 1 ? prev.programmingConfig.submissionAttempts : 2) : 1 } }))}
                   style={{
@@ -4513,11 +4571,17 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                     transform: formData.programmingConfig.attemptLimitEnabled ? 'translateX(15px)' : 'none',
                   }} />
                 </button>
+                <span style={{
+                  fontSize: 11, fontWeight: 700,
+                  color: formData.programmingConfig.attemptLimitEnabled ? D.emerald : D.textHint,
+                }}>
+                  {formData.programmingConfig.attemptLimitEnabled ? 'Enabled' : 'Off'}
+                </span>
               </div>
 
               {formData.programmingConfig.attemptLimitEnabled && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 12, borderTop: `1px solid ${D.border}` }}>
-                  <span style={{ ...SPEC_LABEL, marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ ...SPEC_LABEL, marginBottom: 0, fontSize: 11, color: '#101828', fontFamily: FONT, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     Attempts Allowed
                     <InfoTooltip content="Maximum number of code submissions allowed per student (1–10)" side="right" />
                   </span>
@@ -4530,6 +4594,14 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
                 </div>
               )}
             </div>
+          </div>
+          {!isCombined && (
+            <div style={SPEC_CARD}>
+              <div className="es-card-b" style={SPEC_CARD_B}>
+                {allQuestionsRequiredRow}
+              </div>
+            </div>
+          )}
           </div>
 
           {validationErrors.programmingTotalMarks && touchedFields.has('programmingTotalMarks') && (
@@ -4551,6 +4623,7 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
     questionFlowOptions,
     updateLevelScoringConfig,
     configOptions,
+    allQuestionsRequiredRow,
   ]);
   // ==========================================================================
   // RENDER: Schedule — matches ScheduleStep.tsx layout (compact, orange palette)
@@ -4617,42 +4690,16 @@ const renderNotifications = useCallback(() => (
 
         return (
           <>
-            {/* Step-2 header (2026-08-31): title + subtitle wrap the branch-
-                specific config renderers so every exercise type gets the same
-                page-header rhythm as Step 1's "Exercise setup". Padding matches
-                the .es-step body so the title's left edge lines up with the
-                first section below. */}
-            <div style={{ padding: '18px 22px 0', fontFamily: FONT }}>
-              <h2 style={{ fontSize: 20, fontWeight: 700, color: '#101828', margin: 0, lineHeight: 1.25 }}>
-                Question configuration
-              </h2>
-              <p style={{ fontSize: 13, color: '#667085', margin: '6px 0 0', lineHeight: 1.5 }}>
-                Define the number of questions, difficulty mix, and scoring rules.
-              </p>
-            </div>
+            {/* Step-2 header removed 2026-09-01 — the modal's right-pane
+                header already renders "Question configuration" + subtitle
+                for this substep, so the inline h2 duplicated it. */}
             {typeConfig}
-            <div className="px-10 py-2.5 border-t" style={{ borderColor: D.border }}>
-              <div className="flex items-center gap-2.5">
-                <div className="">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold" style={{ color: '#000000', fontFamily: FONT }}>All Questions Required</span>
-                    <InfoTooltip content="When ON, students must complete every question before they can submit. When OFF, partial submission is allowed." />
-                  </div>
-                  <span className="text-[11px]" style={{ color: D.textMuted }}>Student must attempt all questions before submitting the test</span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button type="button" role="switch" aria-checked={formData.allQuestionsRequired}
-                    onClick={() => setFormData(prev => ({ ...prev, allQuestionsRequired: !prev.allQuestionsRequired }))}
-                    className="relative inline-flex items-center h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 focus:outline-none p-[2px]"
-                    style={{ background: formData.allQuestionsRequired ? D.orange : '#e5e7eb' }}>
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-200 ${formData.allQuestionsRequired ? 'translate-x-5' : 'translate-x-0'}`} />
-                  </button>
-                  <span className="text-[10px] font-bold" style={{ color: formData.allQuestionsRequired ? D.emerald : D.red }}>
-                    {formData.allQuestionsRequired ? 'On' : 'Off'}
-                  </span>
-                </div>
-              </div>
-            </div>
+            {/* Programming pairs this beside its Attempt Limit card inside
+                renderProgrammingConfiguration; MCQ / Other / Combined keep it
+                as a standalone strip here. */}
+            {formData.exerciseType !== 'Programming' && (
+              <div className="px-10 py-2.5">{allQuestionsRequiredRow}</div>
+            )}
           </>
         );
       }
@@ -4738,7 +4785,7 @@ const renderNotifications = useCallback(() => (
                 storage from the checkbox set, so downstream (Add Question
                 quota gating, buildFullPayload, Custom distribution matrix
                 below) reads exactly what it always did. */}
-            <div className="px-3 py-2.5 rounded-md" style={{ background: '#FAFAF7', border: `1px solid ${D.border}` }}>
+            <div style={{ paddingTop: 8 }}>
               <QuestionSourcePicker
                 value={{ primary: questionSource, sub: customSources }}
                 onChange={next => {
@@ -4761,7 +4808,7 @@ const renderNotifications = useCallback(() => (
                 }}
                 D={D}
                 hideThirdParty={noThirdParty}
-                label={formData.exerciseType === 'Combined' ? 'Programming Source' : 'Question Source'}
+                title={formData.exerciseType === 'Combined' ? 'Programming sources' : 'Question sources'}
                 required
                 emptyHint="Pick a source to see how to add questions."
                 font={FONT}
@@ -4877,21 +4924,21 @@ const renderNotifications = useCallback(() => (
                   <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: D.border }}>
                     <div className="flex items-center gap-1.5">
                       <Layers size={12} style={{ color: D.textMuted }} />
-                      <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>Distribution</span>
+                      <span className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: D.textMuted, fontFamily: FONT }}>Distribution</span>
                     </div>
-                    <span className="text-[11px] font-bold" style={{ color: grandBalanced ? D.emerald : D.red }}>
+                    <span className="text-[13px] font-semibold" style={{ color: grandBalanced ? D.emerald : D.red }}>
                       {grandSum} / {target.total} {grandBalanced && <Check size={10} style={{ display: 'inline' }} />}
                     </span>
                   </div>
                   <div className="overflow-hidden">
-                    <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+                    <table className="w-full text-[13px]" style={{ borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ background: '#fff' }}>
-                          <th className="px-2 py-1.5 text-left font-bold" style={{ color: D.textMuted, borderBottom: `1px solid ${D.border}` }}></th>
+                          <th className="px-2 py-1.5 text-left font-semibold" style={{ color: D.textMuted, borderBottom: `1px solid ${D.border}` }}></th>
                           {activeCols.map(col => (
-                            <th key={col} className="px-2 py-1.5 text-center font-bold" style={{ color: D.textMain, borderBottom: `1px solid ${D.border}` }}>{colLabel(col)}</th>
+                            <th key={col} className="px-2 py-1.5 text-center font-semibold" style={{ color: D.textMain, borderBottom: `1px solid ${D.border}` }}>{colLabel(col)}</th>
                           ))}
-                          <th className="px-2 py-1.5 text-center font-bold" style={{ color: D.textMuted, borderBottom: `1px solid ${D.border}` }}>Row / Target</th>
+                          <th className="px-2 py-1.5 text-center font-semibold" style={{ color: D.textMuted, borderBottom: `1px solid ${D.border}` }}>Row / Target</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4900,7 +4947,7 @@ const renderNotifications = useCallback(() => (
                           const rBalanced = rowSum(row) === rowTarget[row];
                           return (
                             <tr key={row}>
-                              <td className="px-2 py-1.5 font-bold capitalize" style={{ color: rColor, borderBottom: `1px solid ${D.border}` }}>
+                              <td className="px-2 py-1.5 font-semibold capitalize" style={{ color: rColor, borderBottom: `1px solid ${D.border}` }}>
                                 <span className="inline-flex items-center gap-1">
                                   <Circle size={8} fill={rColor} style={{ color: rColor }} /> {rowCaption(row)}
                                 </span>
@@ -4914,7 +4961,7 @@ const renderNotifications = useCallback(() => (
                                       style={{ border: `1px solid ${D.border}`, background: '#fff', color: D.textMuted, cursor: customDistribution[row][col] === 0 ? 'not-allowed' : 'pointer', opacity: customDistribution[row][col] === 0 ? 0.5 : 1 }}>
                                       <Minus size={10} />
                                     </button>
-                                    <span className="w-6 text-center font-bold" style={{ color: D.textMain }}>{customDistribution[row][col]}</span>
+                                    <span className="w-6 text-center font-semibold" style={{ color: D.textMain }}>{customDistribution[row][col]}</span>
                                     <button type="button" onClick={() => bump(row, col, +1)}
                                       disabled={rowSum(row) >= rowTarget[row]}
                                       className="w-5 h-5 rounded flex items-center justify-center"
@@ -4924,7 +4971,7 @@ const renderNotifications = useCallback(() => (
                                   </div>
                                 </td>
                               ))}
-                              <td className="px-2 py-1.5 text-center font-bold" style={{ color: rBalanced ? D.emerald : D.red, borderBottom: `1px solid ${D.border}` }}>
+                              <td className="px-2 py-1.5 text-center font-semibold" style={{ color: rBalanced ? D.emerald : D.red, borderBottom: `1px solid ${D.border}` }}>
                                 {rowSum(row)} / {rowTarget[row]} {rBalanced && <Check size={10} style={{ display: 'inline' }} />}
                               </td>
                             </tr>
@@ -4932,11 +4979,11 @@ const renderNotifications = useCallback(() => (
                         })}
                         {/* Column totals */}
                         <tr style={{ background: '#fff' }}>
-                          <td className="px-2 py-1.5 font-bold uppercase text-[10px]" style={{ color: D.textMuted }}>Column</td>
+                          <td className="px-2 py-1.5 font-semibold uppercase text-[12px]" style={{ color: D.textMuted }}>Column</td>
                           {activeCols.map(col => (
-                            <td key={col} className="px-2 py-1.5 text-center font-bold" style={{ color: D.textMain }}>{colSum(col)}</td>
+                            <td key={col} className="px-2 py-1.5 text-center font-semibold" style={{ color: D.textMain }}>{colSum(col)}</td>
                           ))}
-                          <td className="px-2 py-1.5 text-center font-bold" style={{ color: grandBalanced ? D.emerald : D.red }}>
+                          <td className="px-2 py-1.5 text-center font-semibold" style={{ color: grandBalanced ? D.emerald : D.red }}>
                             {grandSum} / {target.total}
                           </td>
                         </tr>
@@ -4977,21 +5024,6 @@ const renderNotifications = useCallback(() => (
               );
             })()}
 
-            {/* Save decision trigger — moved here from the removed Preview sub-view */}
-            {(() => {
-              const grandReady = filledTotal === target.total && target.total > 0
-                && (target.easy + target.medium + target.hard === 0 || (filled.easy === target.easy && filled.medium === target.medium && filled.hard === target.hard));
-              return (
-                <div className="flex items-center justify-end pt-2">
-                  <button type="button" disabled={!grandReady} onClick={() => setSaveDecisionOpen(true)}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold underline"
-                    style={{ color: grandReady ? D.orange : D.textMuted, cursor: grandReady ? 'pointer' : 'not-allowed', opacity: grandReady ? 1 : 0.6 }}>
-                    <Check size={11} /> Save to Question Bank…
-                  </button>
-                </div>
-              );
-            })()}
-
           </div>
         );
       }
@@ -5000,7 +5032,7 @@ const renderNotifications = useCallback(() => (
       case 'Grade Settings': return renderGradeSettings();
       default: return null;
     }
-  }, [steps, currentStep, formData.exerciseType, formData.allQuestionsRequired, formData.mcqConfig.generalQuestionCount, formData.programmingConfig, formData.othersConfig, questionSource, customSources, customDistribution, saveDecisionOpen, patternTotalMismatch, getProgrammingTotalQuestions, getOthersTotalQuestions, initialData, localExerciseId, exercise_Id, onOpenQuestionAuthor, renderExerciseDetails, renderMCQConfiguration, renderProgrammingConfiguration, renderOthersConfiguration, renderCombinedConfiguration, renderScheduleConfiguration, renderNotifications, renderGradeSettings]);
+  }, [steps, currentStep, formData.exerciseType, formData.allQuestionsRequired, formData.mcqConfig.generalQuestionCount, formData.programmingConfig, formData.othersConfig, questionSource, customSources, customDistribution, saveDecisionOpen, patternTotalMismatch, getProgrammingTotalQuestions, getOthersTotalQuestions, initialData, localExerciseId, exercise_Id, onOpenQuestionAuthor, renderExerciseDetails, renderMCQConfiguration, renderProgrammingConfiguration, renderOthersConfiguration, renderCombinedConfiguration, renderScheduleConfiguration, renderNotifications, renderGradeSettings, allQuestionsRequiredRow]);
   // ==========================================================================
   // MAIN RENDER
   // ==========================================================================
@@ -5084,6 +5116,84 @@ const renderNotifications = useCallback(() => (
         : formData.programmingConfig;
     return cfg?.attemptLimitEnabled ? String(cfg.submissionAttempts || 1) : 'Unlimited';
   }, [formData.exerciseType, formData.mcqConfig, formData.othersConfig, formData.programmingConfig]);
+
+  // ── Sidebar display model — 2026-09-01 rebuild ──────────────────────────────
+  // Per user: the sidebar shows EVERY dynamic substep, not merged groups.
+  // We reuse the existing `steps` array but map each step's internal title
+  // onto a mockup-styled display title + subtitle + right-pane page header.
+  // Nothing about save payloads, validation, or gating changes.
+  //
+  //   • Exercise Details         → "Assignment Details"  (page: "Assignment setup")
+  //   • Question Configuration   → "Question Configuration"
+  //   • Add Questions            → "Add Questions"
+  //   • Schedule                 → "Schedule"
+  //   • Notifications            → "Notifications"
+  //   • Grade Settings           → "Grade Settings"     (only when isGraded)
+  type StepMeta = { title: string; description: string; pageHeader: string; pageSubtitle: string };
+  const STEP_META: Record<string, StepMeta> = useMemo(() => ({
+    'Exercise Details': {
+      title: 'Basic details',
+      description: '',
+      pageHeader: 'Basic details',
+      pageSubtitle: '',
+    },
+    'Question Configuration': {
+      title: 'Question Configuration',
+      description: '',
+      pageHeader: 'Question configuration',
+      pageSubtitle: 'Define the number of questions, difficulty mix, and scoring rules.',
+    },
+    'Add Questions': {
+      title: 'Question sources',
+      description: '',
+      pageHeader: 'Question sources',
+      pageSubtitle: 'Pick a source and attach the questions students will answer.',
+    },
+    Schedule: {
+      title: 'Schedule',
+      description: '',
+      pageHeader: 'Schedule & availability',
+      pageSubtitle: 'Control access, timing, deadlines and marking reminders.',
+    },
+    Notifications: {
+      title: 'Notifications',
+      description: '',
+      pageHeader: 'Notifications',
+      pageSubtitle: 'Choose who is notified and when reminders are sent.',
+    },
+    'Grade Settings': {
+      title: 'Grade Settings',
+      description: '',
+      pageHeader: 'Grade Settings',
+      pageSubtitle: 'Configure passing score, mark distribution and grading rules.',
+    },
+  }), []);
+
+  const currentStepMeta = useMemo(() => {
+    const st = steps.find(s => s.id === currentStep);
+    const key = st?.title ?? '';
+    return STEP_META[key] ?? {
+      title: key || 'Step',
+      description: '',
+      pageHeader: key || 'Step',
+      pageSubtitle: '',
+    };
+  }, [steps, currentStep, STEP_META]);
+  const currentStepIdx = useMemo(() => steps.findIndex(s => s.id === currentStep), [steps, currentStep]);
+  const firstStepId = steps[0]?.id ?? 1;
+
+  // Save status chip — mockup: green dot + label. `Saved just now` after any
+  // successful step save; `Saving…` while a save is in flight.
+  const saveStatusLabel = isSavingStep
+    ? 'Saving…'
+    : savedSteps.size > 0
+      ? 'Saved just now'
+      : 'Not saved yet';
+  const saveStatusColor = isSavingStep
+    ? '#F97316'
+    : savedSteps.size > 0
+      ? '#12B76A'
+      : '#98A2B3';
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(30,41,59,0.55)', backdropFilter: 'blur(6px)', fontFamily: FONT }}
@@ -5171,18 +5281,24 @@ const renderNotifications = useCallback(() => (
            Admins create many exercises a day, so the wizard buys rows on
            screen by squeezing VERTICAL rhythm only. Horizontal padding is
            left generous so fields keep room to breathe side to side. */
-        .es-step { padding: 8px 16px 10px !important; gap: 7px !important; }
-        .es-step .es-card-b { padding: 7px 11px 8px !important; gap: 7px !important; }
-        .es-step .es-card-h { padding: 4px 11px !important; }
+        .es-step { padding: 12px 24px 20px !important; gap: 14px !important; }
+        /* Flattened card body — no inner padding, since the section heading
+           + hairline are the only chrome now (Step 1 parity). */
+        .es-step .es-card-b { padding: 0 !important; gap: 10px !important; }
+        .es-step .es-card-h { padding: 4px 0 8px !important; }
         .es-step .es-mcell { padding: 3px 9px !important; }
-        /* Controls: 28px rows. Height is where the savings compound. */
+        /* Controls: 34px rows to match ODropdown's inline height, so
+           ONumberInput / numeric inputs / native selects and the modern
+           dropdown all sit on the same baseline. Was 28px which shrank the
+           number inputs below the dropdown, making rows like
+           "Config Strategy / Total Questions" look staggered. */
         .es-step input:not([type=checkbox]):not([type=radio]),
         .es-step select,
         .es-step [data-odrop-trigger] {
-          height: 28px !important; font-size: 12px !important;
+          height: 34px !important; font-size: 12.6px !important;
           padding-top: 0 !important; padding-bottom: 0 !important;
         }
-        .es-step textarea { min-height: 44px !important; font-size: 12px !important; }
+        .es-step textarea { min-height: 44px !important; font-size: 12.6px !important; }
         .es-step label, .es-step .es-lbl { margin-bottom: 2px !important; line-height: 1.25 !important; }
         /* Notes, pills and helper lines all lose their vertical slack. */
         .es-step .es-note { padding: 5px 9px !important; line-height: 1.4 !important; }
@@ -5194,43 +5310,58 @@ const renderNotifications = useCallback(() => (
         .es-head { padding: 8px 16px 6px !important; }
         .es-head h2 { font-size: 17px !important; line-height: 1.15 !important; }
         .es-head .es-head-sub { display: none !important; }
-        .es-foot { padding: 7px 16px !important; }
-        /* Footer buttons still carry Tailwind py-2.5/py-3 — flatten them to
-           one 30px row so the fixed bottom band stays thin. */
+        /* Footer buttons — flat 36px row so the fixed bottom band stays thin. */
         .es-foot button {
-          height: 30px !important; padding-top: 0 !important; padding-bottom: 0 !important;
-          font-size: 12.4px !important; border-radius: 8px !important;
+          height: 36px !important; padding-top: 0 !important; padding-bottom: 0 !important;
+          font-size: 12.8px !important; border-radius: 8px !important;
         }
-        /* Rail steps: the tallest thing in the left column. */
-        .es-rail li > button { padding-bottom: 7px !important; padding-top: 4px !important; }
-        .es-rail .es-connector { top: 25px !important; }
+        /* Sidebar step buttons — hover surface for non-active rows. */
+        .es-side .es-side-step:hover:not([disabled]) { background: rgba(255, 90, 10, 0.06); }
+        /* Red circular close in the right-pane header — darker on hover. */
+        .es-close:hover { background: #DC2626 !important; }
 
-        /* ── RESPONSIVE ───────────────────────────────────────────────────
-           The wizard is inline-styled, so collapsing has to happen here. */
+        /* ── RESPONSIVE ─────────────────────────────────────────────────── */
         @media (max-width: 1180px) {
           .es-2col { grid-template-columns: 1fr !important; }
           .es-3col { grid-template-columns: 1fr 1fr !important; }
         }
-        @media (max-width: 1000px) {
-          /* Rail becomes a horizontal strip above the body. */
-          .es-shell { flex-direction: column !important; }
-          .es-rail {
-            width: 100% !important; flex-direction: row !important;
-            overflow-x: auto !important; overflow-y: hidden !important;
-            border-right: none !important; border-bottom: 1px solid #F3E7D9 !important;
-            padding: 8px 12px !important; gap: 10px !important; align-items: center;
-          }
-          .es-rail .es-brand, .es-rail .es-summary { display: none !important; }
-          .es-rail ol { display: flex !important; gap: 4px; }
-          .es-rail li { position: static !important; }
-          .es-rail li > button { padding: 5px 8px !important; white-space: nowrap; }
-          .es-rail .es-connector { display: none !important; }
+        @media (max-width: 1024px) {
+          /* Tablet — narrower sidebar, tighter right-pane padding. */
+          .es-side { width: 220px !important; padding: 24px 16px !important; }
+          .es-right > div:first-child { padding: 24px 24px 16px !important; }
+          .es-right > div:nth-child(2) { padding: 0 16px !important; }
+          .es-foot { padding: 12px 20px !important; }
         }
         @media (max-width: 820px) {
           .es-3col { grid-template-columns: 1fr !important; }
           /* Difficulty matrix: label column narrows, cells tighten. */
           .es-matrix { grid-template-columns: 78px repeat(3, minmax(0,1fr)) !important; }
           .es-step { padding: 10px 12px !important; }
+        }
+        @media (max-width: 720px) {
+          /* Mobile — vertical stepper collapses into a compact horizontal
+             progress strip above the form; content stacks. */
+          .es-main { flex-direction: column !important; }
+          .es-side {
+            width: 100% !important; flex-direction: row !important; align-items: center;
+            border-right: none !important; border-bottom: 1px solid #E4E7EC !important;
+            padding: 12px 16px !important; overflow-x: auto; overflow-y: hidden;
+            gap: 8px;
+          }
+          .es-side > p { display: none !important; }
+          .es-side ol {
+            flex-direction: row !important; gap: 6px !important;
+            margin-top: 0 !important; align-items: center;
+          }
+          .es-side ol > span[aria-hidden] { display: none !important; }
+          .es-side .es-side-step {
+            padding: 6px 10px !important; box-shadow: none !important;
+            white-space: nowrap;
+          }
+          .es-side .es-side-step > span:last-child > span:last-child { display: none !important; }
+          .es-right > div:first-child { padding: 20px 20px 14px !important; }
+          .es-right > div:nth-child(2) { padding: 0 12px !important; }
+          .es-foot { padding: 12px 16px !important; gap: 8px !important; flex-wrap: wrap; }
         }
         @media (max-width: 620px) {
           /* Full-screen sheet on phones. */
@@ -5243,8 +5374,6 @@ const renderNotifications = useCallback(() => (
           /* Matrix scrolls sideways rather than crushing the columns. */
           .es-matrix-wrap { overflow-x: auto !important; }
           .es-matrix { min-width: 460px; }
-          .es-foot { padding: 9px 12px !important; }
-          .es-foot .es-foot-label { display: none !important; }
         }
         @keyframes es-slidein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         .animate-in { animation: es-slidein 0.18s ease both; }
@@ -5278,234 +5407,238 @@ const renderNotifications = useCallback(() => (
 }
       `}</style>
 
-      {/* ── CARD — the prototype's Concept 2 "Smart Adaptive Wizard": a cream
-          210px step rail beside the section body. The RENDERERS are unchanged;
-          only their host is. ── */}
-      <div className="es-main flex flex-col overflow-hidden"
+      {/* ── MODAL CARD — 2026-09-01 rebuild to the "Assignment setup" mockup.
+          96vw × 92vh (max 1900px), 18px radius, white surface, subtle border.
+          NO dark-green header, no "Edit exercise" title, no logo/breadcrumb —
+          the right pane owns its own header. ── */}
+      <div className="es-main flex overflow-hidden"
         style={{
-          width: 'min(1480px, 98%)', height: '94vh', minHeight: 560,
-          borderRadius: 14, background: '#ffffff', border: '1px solid #DFDAD4',
-          boxShadow: '0 14px 40px rgba(15,23,42,.14)',
+          width: '96vw', height: '92vh', maxWidth: 1900, minHeight: 560,
+          borderRadius: 18, background: '#FFFFFF',
+          border: '1px solid #E4E7EC',
+          boxShadow: '0 24px 60px rgba(15,23,42,.14)',
         }}>
 
-        {/* ── TEAL HEADER — 2026-08-30 redesign to match the mockup.
-              Row 1: sparkle + breadcrumb · centered title · saved status ·
-                     close button
-              Row 2: horizontal 5-step progress indicator with orange
-                     active step, subtle white dividers
-              The vertical cream rail + Summary panel + Non-graded note
-              were removed — the step titles/state come from the same
-              `steps` array as before, just rendered horizontally instead
-              of vertically. Everything below (step-header, content,
-              save/next actions) is unchanged. */}
-        <header className="flex flex-col flex-shrink-0" style={{ background: '#0F5B5D', color: '#fff' }}>
-          {/* Row 1 — chrome */}
-          <div className="flex items-center" style={{ gap: 12, padding: '12px 24px' }}>
-            <span className="flex items-center justify-center flex-shrink-0"
-              style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(140deg,#FF7A2C,#FF5A12)', color: '#fff', fontSize: 14 }}>
-              ✦
-            </span>
-            <nav aria-label="Breadcrumb" style={{ fontSize: 13 }}>
-              <span style={{ color: 'rgba(255,255,255,0.65)' }}>Exercises</span>
-              <span style={{ margin: '0 8px', color: 'rgba(255,255,255,0.35)' }}>/</span>
-              <span style={{ color: '#fff', fontWeight: 600 }}>
-                {formData.exerciseName?.trim() || (isEditing ? 'Edit exercise' : 'New exercise')}
-              </span>
-            </nav>
-            {/* Origin pill (kept — same "started from template" affordance
-                as before). */}
-            {seedLabel && (
-              <span className="inline-flex items-center flex-shrink-0" title="Started from a template"
-                style={{ gap: 5, height: 22, padding: '0 9px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-                  background: 'rgba(255,244,238,0.15)', border: '1px solid rgba(255,244,238,0.35)', color: '#FFE7D6' }}>
-                ▦ {seedLabel}
-              </span>
-            )}
-            {/* Centered title — absolutely centred so the flanking chrome
-                (breadcrumb / status / close) doesn't shift it as they grow
-                or shrink. */}
-            <h1 className="flex-1 text-center" style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.01em', color: '#fff', margin: 0 }}>
-              {isEditing ? 'Edit exercise' : 'Create exercise'}
-            </h1>
-            {/* Save status — small green dot + label. Matches the mockup's
-                "Saved just now" chip. */}
-            <span className="inline-flex items-center flex-shrink-0" style={{ gap: 6, fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-              <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: '#32D583' }} />
-              {savedSteps.size > 0 ? 'Saved just now' : 'Unsaved'}
-            </span>
-            <button onClick={requestClose} aria-label="Close"
-              className="flex items-center justify-center flex-shrink-0"
-              style={{ width: 32, height: 32, border: '1px solid transparent', background: 'transparent',
-                borderRadius: 8, color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}>
-              <X size={18} />
-            </button>
+        {/* ── LEFT SIDEBAR — fixed 280px vertical stepper. Renders every
+            dynamic substep from `steps` (typically 5 rows, 6 when graded).
+            Each row's display title / subtitle comes from `STEP_META`; the
+            existing gate `step1Unlocked` blocks navigation past Assignment
+            Details until it is saved. Save / Next still walks the underlying
+            substeps so all API calls and validation gates are preserved. ── */}
+        <aside className="es-side flex flex-col flex-shrink-0"
+          style={{
+            width: 280, background: '#F8FAFC',
+            borderRight: '1px solid #E4E7EC',
+            padding: '32px 24px',
+          }}>
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: '#667085', margin: 0, letterSpacing: '.01em' }}>
+            Step {Math.max(0, currentStepIdx) + 1} of {steps.length}
+          </p>
+
+          {/* Single-line rows (no subtitle). Fixed 44px row height + equal
+              gap keeps every step vertically balanced, so the eye scans the
+              list without any row feeling heavier than another. */}
+          <ol style={{
+            marginTop: 24, marginBottom: 0, padding: 0, listStyle: 'none',
+            display: 'flex', flexDirection: 'column', gap: 14,
+            position: 'relative',
+          }}>
+            {/* Vertical connector — runs through the centre of each 28px
+                badge column (row centre = 22px from row top; connector top
+                inset = 22px, bottom inset = 22px). */}
+            <span aria-hidden style={{
+              position: 'absolute', left: 25, top: 22, bottom: 22, width: 1,
+              background: '#E4E7EC', zIndex: 0,
+            }} />
+            {steps.map((step, i) => {
+              const meta = STEP_META[step.title] ?? {
+                title: step.title, description: '', pageHeader: step.title, pageSubtitle: '',
+              };
+              const isActive = step.id === currentStep;
+              const done = savedSteps.has(step.title);
+              const isStep1 = step.title === 'Exercise Details';
+              const stepLocked = !isStep1 && !step1Unlocked;
+              return (
+                <li key={step.id} style={{ position: 'relative', zIndex: 1 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleStepClick(step.id)}
+                    disabled={stepLocked}
+                    title={stepLocked ? 'Complete Basic details first' : meta.title}
+                    className="es-side-step focus:outline-none"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      width: '100%', height: 44,
+                      padding: '0 14px 0 11px',
+                      borderRadius: 10,
+                      background: isActive ? '#FFF3EC' : 'transparent',
+                      boxShadow: isActive ? 'inset 3px 0 0 #FF5A0A' : 'none',
+                      border: 'none',
+                      cursor: stepLocked ? 'not-allowed' : 'pointer',
+                      opacity: stepLocked ? 0.55 : 1,
+                      textAlign: 'left',
+                      transition: 'background 180ms ease, box-shadow 180ms ease',
+                    }}
+                  >
+                    <span aria-hidden style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 28, height: 28, flexShrink: 0, borderRadius: '50%',
+                      background: isActive ? '#FF5A0A' : '#FFFFFF',
+                      color: isActive ? '#FFFFFF' : done ? '#FF5A0A' : '#94A3B8',
+                      border: `1.5px solid ${isActive ? '#FF5A0A' : done ? '#FF5A0A' : '#CBD5E1'}`,
+                      fontSize: 12.5, fontWeight: 700,
+                    }}>
+                      {stepLocked
+                        ? <Lock size={12} />
+                        : (done && !isActive)
+                          ? <Check size={13} strokeWidth={3} />
+                          : (i + 1)}
+                    </span>
+                    <span style={{
+                      minWidth: 0, flex: 1,
+                      fontSize: 13.5, fontWeight: 600,
+                      color: isActive ? '#101828' : '#344054',
+                      lineHeight: 1.2, letterSpacing: '-.005em',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {meta.title}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </aside>
+
+        {/* ── RIGHT PANE — its own header (Assignment setup / Questions /
+            Schedule & Notifications) + scrollable body + sticky footer. ── */}
+        <section className="es-right flex-1 flex flex-col min-w-0" style={{ background: '#FFFFFF' }}>
+
+          {/* Header — compact title on the left, saved-status chip + close X
+              on the right; hairline divider below. Subtitle removed per user
+              (2026-09-01) — keeps the header dense and lets the sidebar
+              subtitle carry the framing. Left padding matches the body's
+              gutter so the heading lines up with the section content below
+              (was 48px → 24px per user "move left" 2026-09-01). */}
+          <div style={{
+            padding: '20px 24px 16px',
+            borderBottom: '1px solid #E4E7EC',
+            display: 'flex', alignItems: 'center', gap: 24, flexShrink: 0,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1 style={{
+                fontSize: 18, fontWeight: 700, color: '#101828',
+                letterSpacing: '-.01em', margin: 0, lineHeight: 1.25,
+              }}>
+                {currentStepMeta.pageHeader}
+              </h1>
+            </div>
+            <div className="flex items-center" style={{ flexShrink: 0 }}>
+              {/* Red circular close — replaces the "Saved just now" chip +
+                  neutral X (2026-09-01). The chip was noise; the modal has
+                  a discard-changes guard so an unsafe close is impossible. */}
+              <button onClick={requestClose} aria-label="Close"
+                className="es-close"
+                style={{
+                  width: 32, height: 32, border: 'none',
+                  background: '#EF4444', borderRadius: '50%',
+                  color: '#FFFFFF', cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 1px 2px rgba(239,68,68,.25)',
+                  transition: 'background 150ms ease',
+                }}>
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
           </div>
 
-          {/* Row 2 — horizontal stepper */}
-          <div className="flex items-center" style={{ gap: 0, padding: '0 24px 12px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: 12 }}>
-            <ol className="flex items-center flex-1 min-w-0" style={{ listStyle: 'none', margin: 0, padding: 0, gap: 0 }}>
-              {steps.map((step, idx) => {
-                const active = step.active;
-                const isStep1 = step.title === 'Exercise Details';
-                const isLocked_step = !isStep1 && !step1Unlocked;
-                const isLast = idx === steps.length - 1;
-                const stepIssueList = stepIssues[step.title] ?? [];
-                const stepHasError = stepIssueList.length > 0;
-                const done = savedSteps.has(step.title) && !active && !stepHasError;
-                return (
-                  <li key={step.id} className="flex items-center flex-1 min-w-0" style={{ gap: 10 }}>
-                    <button type="button"
-                      onClick={() => handleStepClick(step.id)}
-                      disabled={isLocked_step}
-                      title={isLocked_step ? 'Please complete Exercise Details first' : step.title}
-                      className="flex items-center flex-shrink-0 min-w-0 focus:outline-none"
-                      style={{
-                        gap: 10, padding: '4px 8px', borderRadius: 8,
-                        background: 'transparent', border: 'none',
-                        cursor: isLocked_step ? 'not-allowed' : 'pointer', opacity: isLocked_step ? 0.5 : 1,
-                      }}>
-                      <span className="flex items-center justify-center flex-shrink-0"
-                        style={{
-                          width: 26, height: 26, borderRadius: '50%', fontSize: 12, fontWeight: 700,
-                          background: active ? '#FF5A12' : 'transparent',
-                          color: active ? '#fff' : stepHasError ? '#FEC7C1' : done ? '#FF9D6C' : 'rgba(255,255,255,0.85)',
-                          border: `1.5px solid ${active ? '#FF5A12' : stepHasError ? '#FBD3CE' : done ? '#FF9D6C' : 'rgba(255,255,255,0.35)'}`,
-                        }}>
-                        {isLocked_step ? <Lock size={11} /> : done ? <Check size={13} strokeWidth={3} /> : (idx + 1)}
-                      </span>
-                      <span className="min-w-0 truncate" style={{
-                        fontSize: 13.5,
-                        fontWeight: active ? 700 : 500,
-                        color: active ? '#FF5A12' : stepHasError ? '#FEC7C1' : done ? '#fff' : 'rgba(255,255,255,0.85)',
-                        borderBottom: active ? '2px solid #FF5A12' : 'none',
-                        paddingBottom: active ? 2 : 4,
-                      }}>
-                        {step.title}
-                      </span>
-                    </button>
-                    {!isLast && (
-                      <span aria-hidden className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.2)', minWidth: 12 }} />
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-            <span className="flex-shrink-0" style={{ marginLeft: 16, fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
-              {(steps.findIndex(s => s.id === currentStep) + 1) || 1} of {steps.length}
-            </span>
-          </div>
-        </header>
-
-        <div className="es-shell flex flex-1 min-h-0">
-
-        {/* ── SECTION BODY (now full width — the vertical rail is gone) ── */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ background: '#ffffff' }}>
-
-          {/* Step-eyebrow band removed 2026-08-30 per user — the horizontal
-              stepper in the teal header already communicates "Step 1 of 5 —
-              Details" so the "Step 1 of 6 · Exercise Details · Section
-              valid" bar under it was pure redundant chrome. Kept the
-              currentIssues signalling by relying on the field-level error
-              strips inside each step; the "N issues" pill was duplicative
-              with the header stepper's own red step-badge state. */}
-
-          {/* Content + inline actions (single scroll container, no footer bar) */}
-          <div className="flex-1 overflow-y-auto flex flex-col">
+          {/* Body — the ONLY scrolling area in the modal. */}
+          <div className="flex-1 overflow-y-auto" style={{ padding: '0 24px' }}>
             {isLocked && (
-              <div className="mx-8 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl"
+              <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-xl"
                 style={{ background: D.emerald + '12', border: `1px solid ${D.emerald}35` }}>
                 <Lock size={12} style={{ color: D.emerald }} />
                 <span className="text-xs font-semibold" style={{ color: D.emerald }}>
-                  This exercise has been submitted and is now read-only.
+                  This assignment has been submitted and is now read-only.
                 </span>
               </div>
             )}
-
-            {/* "Fix before continuing" summary strip removed 2026-08-30 per
-                user — the toaster + per-field red state carry the same
-                information; a full aggregate list on top of that was noise.
-                `currentIssues` is still computed and drives the toaster on
-                Save/Next and the step's red-badge in the header stepper. */}
-
             <div style={isLocked ? { pointerEvents: 'none', userSelect: 'none', opacity: 0.82 } : {}}>
               {renderCurrentStep()}
             </div>
           </div>
 
-          {/* ── FOOTER — pinned action bar: Back left, Save/Next/Finish right.
+          {/* Sticky footer — Back on the left, Save + Next/Finish on the right.
               Sits outside the scroll container so the primary action is always
-              reachable on a long step. ── */}
-          {(() => {
-              const busy = isLoading || isSavingStep;
-              return (
-                <div className="es-foot flex items-center gap-3 flex-shrink-0"
-                  style={{ padding: '9px 16px', borderTop: '1px solid #F1EEEA' }}>
-                  {/* Back sits WITH the action cluster on the right, immediately
-                      before Save — the whole footer is one group now, so the
-                      spacer that used to push them apart lives here instead. */}
-                  <div className="ml-auto flex items-center gap-3">
-                  {currentStep > 1 && (
-                    <button onClick={handleBack} disabled={busy}
-                      className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all border disabled:opacity-50 hover:bg-slate-50"
-                      style={{ borderColor: D.border2, color: D.textSub, background: '#ffffff' }}>
-                      <ArrowLeft size={14} /> Back
-                    </button>
-                  )}
-                  {!isLastStep && !isLocked && (
-                    <button onClick={handleSave} disabled={busy}
-                      className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
-                      style={{ borderColor: D.emerald, color: D.emerald, background: '#ffffff', minWidth: 100 }}>
-                      {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
-                    </button>
-                  )}
-                  {!isLastStep && (
-                    <button onClick={handleNext} disabled={busy || (isOnStep1 && !step1Unlocked)}
-                      className="flex items-center justify-center gap-2 px-7 py-3 rounded-xl text-[14px] font-bold text-white transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                      title={isOnStep1 && !step1Unlocked ? 'Save Exercise Details first to continue' : undefined}
-                      style={{ background: '#0f172a', boxShadow: '0 8px 20px rgba(15,23,42,0.25)', minWidth: 130 }}>
-                      Next <ArrowRight size={15} />
-                    </button>
-                  )}
-                  {isLastStep && !isLocked && formData.isGraded !== false && (<>
-                    <button onClick={handleSave} disabled={busy}
-                      className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
-                      style={{ borderColor: D.emerald, color: D.emerald, background: '#ffffff', minWidth: 100 }}>
-                      {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
-                    </button>
-                    <button onClick={handleComplete}
-                      disabled={busy || !isLastStepSaved}
-                      title={!isLastStepSaved ? 'Save this step first to enable Finish' : undefined}
-                      className="flex items-center justify-center gap-2 px-7 py-3 rounded-xl text-[14px] font-bold text-white transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                      style={{ background: `linear-gradient(135deg, ${D.orange}, ${D.orangeDark})`, boxShadow: `0 8px 20px ${D.orangeGlow}`, minWidth: 130 }}>
-                      {isLoading ? <><Loader2 size={15} className="animate-spin" />Finishing…</> : <><Check size={15} />Finish</>}
-                    </button>
-                  </>)}
-                  {isLastStep && !isLocked && formData.isGraded === false && (<>
-                    <button onClick={handleSave} disabled={busy}
-                      className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
-                      style={{ borderColor: D.emerald, color: D.emerald, background: '#ffffff', minWidth: 100 }}>
-                      {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
-                    </button>
-                    <button onClick={handleComplete}
-                      disabled={busy || !isLastStepSaved}
-                      title={!isLastStepSaved ? 'Save this step first to enable Finish' : undefined}
-                      className="flex items-center justify-center gap-2 px-7 py-3 rounded-xl text-[14px] font-bold text-white transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                      style={{ background: `linear-gradient(135deg, ${D.emerald}, #059669)`, boxShadow: `0 8px 20px ${D.emerald}40`, minWidth: 130 }}>
-                      {isLoading ? <><Loader2 size={15} className="animate-spin" />Saving…</> : <><Check size={15} />Finish</>}
-                    </button>
-                  </>)}
-                  {isLocked && (
-                    <span className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-bold"
-                      style={{ background: D.emerald + '15', color: D.emerald, border: `1px solid ${D.emerald}40` }}>
-                      <Check size={13} strokeWidth={3} />Submitted
-                    </span>
-                  )}
-                  </div>
-                </div>
-              );
-            })()}
-        </div>{/* /section body */}
-        </div>{/* /shell */}
+              reachable on a long step. */}
+          <div className="es-foot flex items-center flex-shrink-0"
+            style={{
+              padding: '16px 32px', gap: 12,
+              borderTop: '1px solid #E4E7EC', background: '#FFFFFF',
+            }}>
+            <button onClick={handleBack} disabled={busy || currentStep === firstStepId}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold transition-all border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+              style={{ borderColor: '#D0D5DD', color: '#344054', background: '#FFFFFF' }}>
+              <ArrowLeft size={14} /> Back
+            </button>
+
+            <span style={{ flex: 1 }} />
+
+            {!isLastStep && !isLocked && (
+              <button onClick={handleSave} disabled={busy}
+                className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
+                style={{ borderColor: '#12B76A', color: '#12B76A', background: '#FFFFFF', minWidth: 110 }}>
+                {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
+              </button>
+            )}
+
+            {!isLastStep && (
+              <button onClick={handleNext} disabled={busy || (isOnStep1 && !step1Unlocked)}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                title={isOnStep1 && !step1Unlocked ? 'Save Assignment Details first to continue' : undefined}
+                style={{ background: '#101828', minWidth: 120 }}>
+                Next <ArrowRight size={14} />
+              </button>
+            )}
+
+            {isLastStep && !isLocked && formData.isGraded !== false && (<>
+              <button onClick={handleSave} disabled={busy}
+                className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
+                style={{ borderColor: '#12B76A', color: '#12B76A', background: '#FFFFFF', minWidth: 110 }}>
+                {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
+              </button>
+              <button onClick={handleComplete}
+                disabled={busy || !isLastStepSaved}
+                title={!isLastStepSaved ? 'Save this step first to enable Finish' : undefined}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: `linear-gradient(135deg, ${D.orange}, ${D.orangeDark})`, boxShadow: `0 8px 20px ${D.orangeGlow}`, minWidth: 130 }}>
+                {isLoading ? <><Loader2 size={14} className="animate-spin" />Finishing…</> : <><Check size={14} />Finish</>}
+              </button>
+            </>)}
+
+            {isLastStep && !isLocked && formData.isGraded === false && (<>
+              <button onClick={handleSave} disabled={busy}
+                className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
+                style={{ borderColor: '#12B76A', color: '#12B76A', background: '#FFFFFF', minWidth: 110 }}>
+                {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
+              </button>
+              <button onClick={handleComplete}
+                disabled={busy || !isLastStepSaved}
+                title={!isLastStepSaved ? 'Save this step first to enable Finish' : undefined}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-[13px] font-bold text-white transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: `linear-gradient(135deg, ${D.emerald}, #059669)`, boxShadow: `0 8px 20px ${D.emerald}40`, minWidth: 130 }}>
+                {isLoading ? <><Loader2 size={14} className="animate-spin" />Saving…</> : <><Check size={14} />Finish</>}
+              </button>
+            </>)}
+
+            {isLocked && (
+              <span className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-bold"
+                style={{ background: D.emerald + '15', color: D.emerald, border: `1px solid ${D.emerald}40` }}>
+                <Check size={13} strokeWidth={3} />Submitted
+              </span>
+            )}
+          </div>
+        </section>
       </div>{/* /card */}
     </div>
   );

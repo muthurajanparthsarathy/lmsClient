@@ -34,6 +34,12 @@ import { parseProgrammingFile } from './questionforms/parseQuestionsTxt';
 import QuestionPreview from './QuestionPreview';
 import ProgrammingQuestionForm from './questionforms/ProgrammingQuestionForm';
 import GenerateMCQAIQuestion from './questionforms/mcq/GenerateMCQAIQuestion';
+import {
+  describeBucketStatus as qmDescribeBucketStatus,
+  getNextPendingQuestion as qmGetNextPendingQuestion,
+  srcToBucket as qmSrcToBucket,
+  type QuotaBucket, type Difficulty,
+} from './questionsource/quotaModel';
 
 // ─── Design tokens (Login page parity) ────────────────────────────────────────
 const JKT: React.CSSProperties = {
@@ -96,7 +102,7 @@ interface QuestionsProps {
   breadcrumbs?: any[];
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
 const stripHtml = (html: string) => (html || '').replace(/<[^>]*>/g, '');
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -153,7 +159,12 @@ const Questions: React.FC<QuestionsProps> = ({
    */
   const backToAddOptions = useCallback(() => {
     if (quickAddMode) return;
-    setAddFlowDiff(null);   // reopen at the difficulty step
+    // Preserve the difficulty the user picked — closing a source is NOT a
+    // reason to force them through the level chooser a second time
+    // (per the Add Question UX spec: "Do not select difficulty more than
+    // once"). The source chooser reopens at whatever `addFlowDiff` still
+    // holds; if a caller genuinely wants to reset the level too, it can
+    // call `setAddFlowDiff(null)` explicitly before this.
     setShowAddOption(true);
   }, [quickAddMode]);
 
@@ -682,6 +693,59 @@ const handleAction = async (type: string, q: Question) => {
     } catch { /* ignore */ }
   }, [exercise._id]);
 
+  // ─── Plan progression (Add Question UX Phase 3) ─────────────────────────────
+  // After a successful save (single or batch), compute the NEXT pending slot
+  // using the shared quotaModel engine and — if one exists — nudge the user
+  // toward it: toast the location, and seed `addFlowDiff` + `nextFormAutoOpen`
+  // so the next "Add Question" click skips the difficulty step and lands on
+  // the correct source. When the plan is complete, toast a completion notice.
+  //
+  // We pass the just-saved shape(s) explicitly instead of relying on the
+  // freshly-refetched `questions` state (React state is async — the ref is
+  // updated by fetchQuestions but not visible to this function's closure).
+  // For projection we combine local `questions` with `savedNow`, giving a
+  // close-enough view of "what will exist after fetch completes".
+  const notifyPlanProgress = useCallback((savedNow: any[]) => {
+    const cd = (fullExData ?? exercise) as any;
+    if (cd?.questionSource !== 'custom' || !cd?.customDistribution) return; // no per-difficulty plan
+    const projected = [...questions, ...(Array.isArray(savedNow) ? savedNow : [savedNow])];
+    // Prefer the last-saved item's coordinates as "current" so progression
+    // walks the same cell / same bucket first per the spec.
+    const last = Array.isArray(savedNow) ? savedNow[savedNow.length - 1] : savedNow;
+    const currentDifficulty = ((last?.difficulty || last?.exerciseLevel) as Difficulty | undefined) ?? null;
+    const currentBucket = last?.source ? qmSrcToBucket(last.source) : null;
+    const next = qmGetNextPendingQuestion({
+      currentDifficulty,
+      currentBucket,
+      customDistribution: cd.customDistribution,
+      questions: projected,
+    });
+    if (!next) {
+      toast.success('Plan complete — all configured questions have been added.', {
+        id: 'plan-complete',
+        duration: 4200,
+        icon: '🎉',
+      });
+      return;
+    }
+    // Seed the chooser so the next click on "Add Question" opens directly at
+    // the pending slot's source. Difficulty is preserved via addFlowDiff and
+    // nextFormAutoOpen maps bucket → the form's expected value.
+    setAddFlowDiff(next.difficulty);
+    setNextFormAutoOpen(
+      next.bucket === 'ai' ? 'ai'
+      : next.bucket === 'otherPlatform' ? 'thirdParty'
+      : 'manual',
+    );
+    const bucketLabel = next.bucket === 'ai' ? 'AI'
+      : next.bucket === 'otherPlatform' ? 'Other Platform'
+      : 'Manual';
+    toast(
+      `Next up: ${next.difficulty[0].toUpperCase() + next.difficulty.slice(1)} · ${bucketLabel}. Click Add Question to continue.`,
+      { id: 'plan-progress', duration: 3800, icon: '↪️' },
+    );
+  }, [fullExData, exercise, questions, setAddFlowDiff, setNextFormAutoOpen]);
+
   const handleQuestionSaved = async (saved: any) => {
     const isSaveAndNext = saved?.__saveAndNext === true;
     const isUpdate = saved?.__isUpdate === true;
@@ -706,6 +770,9 @@ const handleAction = async (type: string, q: Question) => {
         isSaveAndNext ? (isUpdate ? 'Updated — continue!' : 'Saved — continue!') : (isUpdate ? 'Question updated!' : 'Question created!')
       );
       if (!isSaveAndNext) { setShowAddQuestion(false); setShowQuestionBank(false); if (quickAddMode) setTimeout(() => onClose?.(), 1500); }
+      // Plan-progression nudge: skip on Save & Next (the form is already
+      // walking its own flow) and on pure updates (no new slot was consumed).
+      if (!isSaveAndNext && !isUpdate) notifyPlanProgress(saved);
     }
   };
 
@@ -781,12 +848,16 @@ const handleAction = async (type: string, q: Question) => {
       const r = await addBatch(all); toast.dismiss(tid); setIsAddingQuestions(false);
       if (r.successCount > 0) toast.success(`${r.successCount} added!`);
       setShowQuestionBank(false); await fetchQuestions(); setDuplicateQuestions([]); setPendingBankQuestions([]);
+      // Plan-progression nudge for bank/doc batch imports — count only
+      // successfully-added questions (never counts unsuccessful additions).
+      if (r.successCount > 0) notifyPlanProgress(all.slice(0, r.successCount));
     } else if (action === 'skip') {
       if (pendingBankQuestions.length > 0) {
         setIsAddingQuestions(true); const tid = toast.loading(`Adding ${pendingBankQuestions.length} unique…`);
         const r = await addBatch(pendingBankQuestions); toast.dismiss(tid); setIsAddingQuestions(false);
         if (r.successCount > 0) toast.success(`${r.successCount} added!`);
         if (duplicateQuestions.length > 0) toast(`${duplicateQuestions.length} duplicate(s) skipped.`, { icon: 'ℹ️' });
+        if (r.successCount > 0) notifyPlanProgress(pendingBankQuestions.slice(0, r.successCount));
       } else toast('No new questions to add.', { icon: 'ℹ️' });
       setShowQuestionBank(false); await fetchQuestions(); setDuplicateQuestions([]); setPendingBankQuestions([]);
     } else if (action === 'edit' && duplicateQuestions.length > 0) {
@@ -1362,23 +1433,89 @@ const addBtnDisabled = isAddingQuestions || (() => {
       : /assignments?/i.test(subcategory || '') ? 'Assignment'
       : subcategory ? subcategory.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()) : 'Exercise';
 
-    // Compact option row — replaces the old p-4 cards with a small minimal
-    // list row (same gating/quota semantics, just denser UI).
-    const Row = ({ full, onClick, iconBg, icon, accent, title, sub, badge }: {
-      full?: boolean; onClick: () => void; iconBg: string; icon: React.ReactNode;
-      accent: string; title: React.ReactNode; sub: React.ReactNode; badge?: React.ReactNode;
+    // ─── Mockup palette (2026-09-02 rebuild to "Add a programming question")
+    // Central so the Row, header, and footer all pull from the same token
+    // set. The functional semantics of the modal (level picker, allocation,
+    // per-source gating) are unchanged; only the visual chrome moved.
+    const MK = {
+      coral:         '#FF704D',
+      violetPrimary: '#5542DA',
+      violetHover:   '#6655F4',
+      violetTile1:   '#F0EDFF',
+      violetTile2:   '#F4F1FF',
+      violetTag:     '#EEEBFF',
+      violetWash:    '#FAF9FF',
+      violetAlt:     '#5C45E5',
+      indigoCode:    '#5747E8',
+      teal:          '#008DA8',
+      tealTile:      '#EAF8FB',
+      ink:           '#12162A',
+      textSecondary: '#596174',
+      textMuted:     '#5F667A',
+      textLabel:     '#697086',
+      textHint:      '#677084',
+      textCancel:    '#424A60',
+      textCourse:    '#61697D',
+      panel:         '#F8F9FC',
+      panelBorder:   '#DDE1EB',
+      modalBorder:   '#E2E5ED',
+      cardBorder:    '#D9DDE7',
+      footerBorder:  '#E3E6ED',
+      keyBorder:     '#D7DBE5',
+    };
+
+    // ─── Option row — mockup layout: 56px icon tile, title (with optional
+    // tag), description, chevron. Hover applies the row's own accent to the
+    // border + wash so each option keeps its identity. Full-quota rows
+    // dim in place and swallow the click, preserving the original gate.
+    const Row = ({ full, onClick, tileBg, tileColor, accent, wash, icon, title, sub, badge, tag }: {
+      full?: boolean; onClick: () => void;
+      tileBg: string; tileColor: string;
+      accent: string; wash: string;
+      icon: React.ReactNode;
+      title: React.ReactNode; sub: React.ReactNode;
+      badge?: React.ReactNode; tag?: React.ReactNode;
     }) => (
       <button onClick={() => { if (full) return; onClick(); }}
-        className="group w-full text-left rounded-lg px-3 py-2 transition-all flex items-center gap-2.5"
-        style={{ border: '1px solid #e4e4ed', cursor: full ? 'not-allowed' : 'pointer', background: full ? '#fafafa' : '#fff', opacity: full ? 0.6 : 1 }}
-        onMouseEnter={e => { if (full) return; e.currentTarget.style.borderColor = accent; e.currentTarget.style.background = `${accent}08`; }}
-        onMouseLeave={e => { if (full) return; e.currentTarget.style.borderColor = '#e4e4ed'; e.currentTarget.style.background = '#fff'; }}>
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: iconBg }}>{icon}</div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[12px] font-semibold flex items-center gap-1.5" style={{ color: '#1a1a2e' }}>{title}{badge}</div>
-          <div className="text-[10px] truncate" style={{ color: full ? '#d97706' : '#8b8b9e' }}>{sub}</div>
+        className="group w-full text-left transition-all flex items-center gap-2.5"
+        style={{
+          border: `1px solid ${MK.cardBorder}`,
+          borderRadius: 10,
+          padding: '10px 12px',
+          background: full ? '#FAFBFD' : '#fff',
+          cursor: full ? 'not-allowed' : 'pointer',
+          opacity: full ? 0.72 : 1,
+        }}
+        onMouseEnter={e => {
+          if (full) return;
+          e.currentTarget.style.borderColor = accent;
+          e.currentTarget.style.borderWidth = '2px';
+          e.currentTarget.style.padding = '9px 11px';
+          e.currentTarget.style.background = wash;
+        }}
+        onMouseLeave={e => {
+          if (full) return;
+          e.currentTarget.style.borderColor = MK.cardBorder;
+          e.currentTarget.style.borderWidth = '1px';
+          e.currentTarget.style.padding = '10px 12px';
+          e.currentTarget.style.background = '#fff';
+        }}>
+        <div className="flex items-center justify-center flex-shrink-0"
+          style={{ width: 34, height: 34, background: tileBg, color: tileColor, borderRadius: 8 }}>
+          {icon}
         </div>
-        {!full && <ChevronRight size={13} className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all" style={{ color: accent }} />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap" style={{ marginBottom: 1 }}>
+            <span className="font-semibold" style={{ fontSize: 12.5, color: MK.ink, letterSpacing: '-.005em', lineHeight: 1.25 }}>{title}</span>
+            {tag}
+            {badge}
+          </div>
+          <div style={{ fontSize: 11, color: full ? '#D97706' : MK.textSecondary, lineHeight: 1.4 }}>{sub}</div>
+        </div>
+        {!full && (
+          <ChevronRight size={14} className="flex-shrink-0 transition-transform"
+            style={{ color: MK.textSecondary, marginLeft: 2 }} />
+        )}
       </button>
     );
 
@@ -1386,48 +1523,112 @@ const addBtnDisabled = isAddingQuestions || (() => {
     <>
       <Backdrop zIndex={100} />
       <div className="fixed inset-0 z-[101] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
-        <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden"
-          style={{ ...JKT, border: '1px solid #e4e4ed', pointerEvents: 'auto', boxShadow: '0 20px 60px rgba(26,26,46,0.18), 0 4px 16px rgba(242,119,87,0.08)' }}>
+        <div className="bg-white overflow-hidden flex flex-col"
+          style={{
+            ...JKT,
+            width: '100%', maxWidth: 460,
+            maxHeight: 'calc(100vh - 48px)',
+            border: `1px solid ${MK.modalBorder}`,
+            borderRadius: 16,
+            boxShadow: '0 20px 50px rgba(18,23,38,0.18)',
+            pointerEvents: 'auto',
+          }}>
 
-          {/* Header */}
-          <div className="px-4 pt-3.5 pb-3" style={{ borderBottom: '1px solid #e4e4ed' }}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                {/* Context lines — replaces the full breadcrumb trail: just the
-                    topic and the assignment/assessment this question goes into. */}
-                <div className="mb-1.5 space-y-0.5">
-                  <div className="text-[10px]" style={{ color: '#6b6b7e' }}>
-                    Topic: <span className="font-semibold" style={{ color: '#1a1a2e' }}>{nodeName || '—'}</span>
-                  </div>
-                  <div className="text-[10px]" style={{ color: '#6b6b7e' }}>
-                    {subcatNoun} name: <span className="font-semibold" style={{ color: '#F27757' }}>{exercise?.exerciseInformation?.exerciseName || '—'}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ background: 'rgba(242,119,87,0.1)' }}>
-                    <Plus size={11} style={{ color: '#F27757' }} />
-                  </div>
-                  <h2 className="text-[13.5px] font-bold" style={{ color: '#1a1a2e' }}>Add Question</h2>
-                </div>
-                <p className="text-[10.5px]" style={{ color: '#8b8b9e' }}>
-                  {isPureMCQ ? 'Add MCQ to this exercise' : isPureProg ? 'Add Programming question to this exercise' : 'Choose how to add questions'}
+          {/* ── Header ─────────────────────────────────────────────────
+              Mockup layout at modal-appropriate scale: coral outlined +
+              icon, title + one-line description, circular close. */}
+          <div style={{ padding: '18px 20px 14px', flexShrink: 0 }}>
+            <div className="flex items-start gap-2.5">
+              <div className="flex-shrink-0"
+                style={{
+                  width: 32, height: 32, borderRadius: 999,
+                  border: `1.75px solid ${MK.coral}`,
+                  display: 'grid', placeItems: 'center', marginTop: 1,
+                }}>
+                <Plus size={15} strokeWidth={2.4} style={{ color: MK.coral }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: MK.ink, letterSpacing: '-.01em', lineHeight: 1.25, margin: 0 }}>
+                  {isPureProg ? 'Add a programming question' : isPureMCQ ? 'Add an MCQ question' : 'Add a question'}
+                </h2>
+                <p style={{ fontSize: 12, color: MK.textMuted, lineHeight: 1.45, margin: '3px 0 0' }}>
+                  Choose how you’d like to add a question.
                 </p>
               </div>
               <button onClick={() => setShowAddOption(false)}
-                style={{ cursor: 'pointer', color: '#bcbccc', padding: '4px', borderRadius: '8px', lineHeight: 0, transition: 'all 0.15s' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#6b6b7e'; e.currentTarget.style.background = '#f5f5f8'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#bcbccc'; e.currentTarget.style.background = 'transparent'; }}>
-                <X size={15} />
+                aria-label="Close"
+                style={{
+                  width: 28, height: 28, borderRadius: 999,
+                  border: `1px solid ${MK.footerBorder}`, background: '#fff',
+                  color: MK.textSecondary,
+                  cursor: 'pointer', display: 'grid', placeItems: 'center',
+                  transition: 'background 150ms ease, border-color 150ms ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#F5F6FA'; e.currentTarget.style.borderColor = '#D5DAE3'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = MK.footerBorder; }}>
+                <X size={13} />
               </button>
             </div>
           </div>
+
+          {/* ── Assignment context panel — compact single-line identity
+              (F8F9FC card, indigo code tile, one label + assignment name). */}
+          {(nodeName || exercise?.exerciseInformation?.exerciseName) && (
+            <div style={{ padding: '0 20px 10px', flexShrink: 0 }}>
+              <div style={{
+                background: MK.panel, border: `1px solid ${MK.panelBorder}`,
+                borderRadius: 10, padding: '10px 12px',
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <div className="flex-shrink-0"
+                  style={{
+                    width: 34, height: 34, background: '#fff',
+                    border: `1px solid ${MK.panelBorder}`, borderRadius: 8,
+                    display: 'grid', placeItems: 'center', color: MK.indigoCode,
+                  }}>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="16 18 22 12 16 6" />
+                    <polyline points="8 6 2 12 8 18" />
+                    <line x1="14" y1="4" x2="10" y2="20" />
+                  </svg>
+                </div>
+                <div className="min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{
+                    fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px',
+                    color: MK.textLabel, lineHeight: 1,
+                  }}>
+                    Adding to
+                  </span>
+                  <div style={{
+                    fontSize: 13, fontWeight: 700, color: MK.ink, lineHeight: 1.25,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }} title={exercise?.exerciseInformation?.exerciseName || nodeName || ''}>
+                    {exercise?.exerciseInformation?.exerciseName || nodeName || '—'}
+                  </div>
+                  {nodeName && exercise?.exerciseInformation?.exerciseName && (
+                    <div style={{
+                      fontSize: 11, color: MK.textCourse, lineHeight: 1.35,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }} title={nodeName}>
+                      {nodeName}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Scrollable body — the only scrolling region in the modal.
+              Wraps both Step 1 (level picker) and Step 2 (source rows +
+              allocation panel) so the header + footer stay pinned. */}
+          <div className="flex-1 overflow-y-auto" style={{ padding: '0 24px' }}>
 
           {/* ── STEP 1 · WHICH LEVEL? ──────────────────────────────────────
               Shown only when the exercise has a level-based distribution, so
               general-strategy exercises keep their single-step flow. Which
               sources are legal depends on the level, so this must come first. */}
           {levelFirstDiffs.length > 0 && addFlowDiff === null && (
-            <div className="p-3 space-y-1.5">
+            <div className="space-y-2" style={{ padding: '4px 0 16px' }}>
               <p className="text-[10.5px] px-0.5" style={{ color: '#8b8b9e' }}>
                 Pick the difficulty first — the ways you can add a question depend on it.
               </p>
@@ -1459,17 +1660,70 @@ const addBtnDisabled = isAddingQuestions || (() => {
 
           {/* ── STEP 2 · WHICH SOURCE? ───────────────────────────────────── */}
           {(levelFirstDiffs.length === 0 || addFlowDiff !== null) && (
-          <div className="p-3 space-y-1.5">
+          <div className="space-y-2" style={{ padding: '4px 0 16px' }}>
             {addFlowDiff && (
-              <div className="flex items-center justify-between gap-2 px-0.5 pb-0.5">
-                <span className="text-[10.5px]" style={{ color: '#8b8b9e' }}>
-                  Adding an <span className="font-semibold capitalize" style={{ color: '#1a1a2e' }}>{addFlowDiff}</span> question
-                </span>
-                <button onClick={() => setAddFlowDiff(null)}
-                  className="text-[10.5px] font-semibold" style={{ color: '#F27757', cursor: 'pointer' }}>
-                  Change level
-                </button>
-              </div>
+              <>
+                <div className="flex items-center justify-between gap-2 px-0.5 pb-0.5">
+                  <span className="text-[10.5px]" style={{ color: '#8b8b9e' }}>
+                    Adding an <span className="font-semibold capitalize" style={{ color: '#1a1a2e' }}>{addFlowDiff}</span> question
+                  </span>
+                  <button onClick={() => setAddFlowDiff(null)}
+                    className="text-[10.5px] font-semibold" style={{ color: '#F27757', cursor: 'pointer' }}>
+                    Change level
+                  </button>
+                </div>
+                {/* Per-bucket allocation overview (Add Question UX spec):
+                    "Never silently hide a configured option. Display its
+                    status and reason." All three buckets are always shown
+                    for the chosen difficulty — even ones with zero quota —
+                    so trainers can see exactly why an option is disabled
+                    or missing. */}
+                {(() => {
+                  const cd = (fullExData ?? exercise) as any;
+                  const dist = cd?.questionSource === 'custom' ? cd?.customDistribution : null;
+                  if (!dist) return null;
+                  const rows: Array<{ bucket: QuotaBucket; label: string; dot: string }> = [
+                    { bucket: 'ai',            label: 'AI',             dot: '#6366f1' },
+                    { bucket: 'manual',        label: 'Manual',         dot: '#F27757' },
+                    { bucket: 'otherPlatform', label: 'Other Platform', dot: '#0d9488' },
+                  ];
+                  return (
+                    <div className="rounded-md" style={{ background: '#FAFAF7', border: '1px solid #EDEBE7', padding: '6px 8px' }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#6B7280', marginBottom: 4 }}>
+                        Allocation
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {rows.map(({ bucket, label, dot }) => {
+                          const st = qmDescribeBucketStatus(dist, questions, addFlowDiff as Difficulty, bucket);
+                          const isDone = st.configured > 0 && st.remaining === 0;
+                          const notAllocated = st.configured === 0;
+                          const color = notAllocated ? '#9CA3AF' : isDone ? '#10B981' : '#101828';
+                          return (
+                            <div key={bucket} className="flex items-center gap-2" style={{ fontSize: 10.5, lineHeight: 1.4, color }}>
+                              <span style={{ width: 6, height: 6, borderRadius: 999, background: notAllocated ? '#D1D5DB' : dot, flexShrink: 0 }} />
+                              <span className="font-semibold" style={{ minWidth: 92 }}>{label}</span>
+                              <span>
+                                {notAllocated
+                                  ? 'Not allocated for this difficulty'
+                                  : `${st.used}/${st.configured}${isDone ? ' — completed' : ` — ${st.remaining} remaining`}`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {(() => {
+                        const st = qmDescribeBucketStatus(dist, questions, addFlowDiff as Difficulty, 'manual');
+                        if (st.configured === 0) return null;
+                        return (
+                          <div className="text-[10px]" style={{ color: '#8b8b9e', marginTop: 4, fontStyle: 'italic' }}>
+                            Manual is shared by Scratch, Question Bank and Document Upload.
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
+              </>
             )}
             {/* Safety net: if source filtering hides every button, tell the
                 teacher instead of showing an empty popup. Click handler above
@@ -1499,12 +1753,27 @@ const addBtnDisabled = isAddingQuestions || (() => {
               <Row
                 full={full}
                 onClick={() => { setNextFormAutoOpen('manual'); setShowAddOption(false); setShowAddQuestion(true); }}
-                accent="#F27757"
-                iconBg="rgba(242,119,87,0.1)"
-                icon={<Plus size={14} style={{ color: '#F27757' }} />}
-                title="Create Question From Scratch"
+                tileBg={MK.violetTile1}
+                tileColor={MK.violetPrimary}
+                accent={MK.violetHover}
+                wash={MK.violetWash}
+                icon={
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                }
+                title="Start from scratch"
+                tag={!full ? (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center',
+                    fontSize: 9.5, fontWeight: 600,
+                    background: MK.violetTag, color: MK.violetPrimary,
+                    padding: '2px 7px', borderRadius: 999, lineHeight: 1.3,
+                  }}>Most flexible</span>
+                ) : undefined}
                 badge={full && <QuotaFullChip />}
-                sub={full ? 'All Manual slots in the distribution are used' : isPureProg ? 'Build a programming question from scratch' : 'Build from scratch with custom content'}
+                sub={full ? 'Manual quota completed — shared by Scratch, Question Bank & Document Upload' : isPureProg ? 'Write a new programming question and configure test cases.' : 'Write a new question and configure the answer.'}
               />
             ); })()}
 
@@ -1514,12 +1783,14 @@ const addBtnDisabled = isAddingQuestions || (() => {
               <Row
                 full={full}
                 onClick={() => { setBankSourceTag('scratch-bank'); setQbankFromMCQOpts(true); setShowAddOption(false); setShowQuestionBank(true); }}
-                accent="#a855f7"
-                iconBg="rgba(168,85,247,0.08)"
-                icon={<Database size={14} className="text-purple-600" />}
-                title="Create Question From Question Bank"
+                tileBg={MK.violetTile2}
+                tileColor={MK.violetAlt}
+                accent={MK.violetHover}
+                wash={MK.violetWash}
+                icon={<Database size={16} strokeWidth={2} />}
+                title="Choose from question bank"
                 badge={full && <QuotaFullChip />}
-                sub={full ? 'All Manual slots in the distribution are used' : isPureProg ? 'Import programming questions from repository' : 'Import from existing question repository'}
+                sub={full ? 'Manual quota completed — shared with Scratch & Document Upload' : 'Reuse a reviewed question from your shared library.'}
               />
             ); })()}
 
@@ -1530,12 +1801,14 @@ const addBtnDisabled = isAddingQuestions || (() => {
               <Row
                 full={full}
                 onClick={() => { qbHasContentRef.current = false; setBankSourceTag('thirdParty'); setQbankFromMCQOpts(true); setShowAddOption(false); setShowQuestionBank(true); }}
+                tileBg="rgba(13,148,136,0.10)"
+                tileColor="#0d9488"
                 accent="#0d9488"
-                iconBg="rgba(13,148,136,0.08)"
-                icon={<Database size={14} style={{ color: '#0d9488' }} />}
-                title="Import From Other Platform"
+                wash="rgba(13,148,136,0.05)"
+                icon={<Database size={16} strokeWidth={2} />}
+                title="Import from other platform"
                 badge={full && <QuotaFullChip />}
-                sub={full ? 'All Other Platform slots in the distribution are used' : 'Pick platform-imported questions — counted against the Other Platform quota'}
+                sub={full ? 'All Other Platform slots in the distribution are used' : 'Pick platform-imported questions — counted against the Other Platform quota.'}
               />
             ); })()}
 
@@ -1551,22 +1824,26 @@ const addBtnDisabled = isAddingQuestions || (() => {
                   if (isPureProg) { setNextFormAutoOpen('ai'); setShowAddQuestion(true); }
                   else { aiHasContentRef.current = false; setShowGenerateAI(true); }
                 }}
-                accent="#6366f1"
-                iconBg="linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.12))"
+                tileBg={MK.violetTile1}
+                tileColor={MK.violetPrimary}
+                accent={MK.violetHover}
+                wash={MK.violetWash}
                 icon={
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2l2.39 5.7L20 9.27l-4.5 4.07L17 20l-5-3-5 3 1.5-6.66L4 9.27l5.61-1.57L12 2z" stroke="url(#aiGrad)" strokeWidth="1.6" strokeLinejoin="round" />
-                    <defs>
-                      <linearGradient id="aiGrad" x1="4" y1="2" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-                        <stop stopColor="#6366f1" />
-                        <stop offset="1" stopColor="#a855f7" />
-                      </linearGradient>
-                    </defs>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2l2.39 5.7L20 9.27l-4.5 4.07L17 20l-5-3-5 3 1.5-6.66L4 9.27l5.61-1.57L12 2z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" fill="none" />
                   </svg>
                 }
                 title="Generate with AI"
-                badge={full ? <QuotaFullChip /> : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}>NEW</span>}
-                sub={full ? 'All AI slots in the distribution are used' : <>Let AI draft {isPureMCQ ? 'MCQs' : isPureProg ? 'programming questions' : 'questions'} from a topic — review and pick per slot</>}
+                badge={full ? <QuotaFullChip /> : (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center',
+                    fontSize: 10, fontWeight: 700, color: '#fff',
+                    padding: '2px 8px', borderRadius: 999,
+                    background: `linear-gradient(135deg, ${MK.violetPrimary}, #a855f7)`,
+                    letterSpacing: '.02em',
+                  }}>NEW</span>
+                )}
+                sub={full ? 'All AI slots in the distribution are used' : <>Let AI draft {isPureMCQ ? 'MCQs' : isPureProg ? 'programming questions' : 'questions'} from a topic — review and pick per slot.</>}
               />
             ); })()}
 
@@ -1577,23 +1854,57 @@ const addBtnDisabled = isAddingQuestions || (() => {
               <Row
                 full={full}
                 onClick={openDocFlow}
-                accent="#0891b2"
-                iconBg="rgba(8,145,178,0.08)"
-                icon={<FileText size={14} style={{ color: '#0891b2' }} />}
-                title="Create Question From Document"
+                tileBg={MK.tealTile}
+                tileColor={MK.teal}
+                accent={MK.teal}
+                wash="#F5FBFC"
+                icon={
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="8" y1="13" x2="16" y2="13" />
+                    <line x1="8" y1="17" x2="16" y2="17" />
+                    <line x1="8" y1="9" x2="10" y2="9" />
+                  </svg>
+                }
+                title="Import from document"
                 badge={full && <QuotaFullChip />}
-                sub={full ? 'All Manual slots in the distribution are used' : isPureProg ? 'Upload a .txt — pick which parsed questions to import' : 'Bulk import from JSON · CSV · TXT'}
+                sub={full ? 'Manual quota completed — shared with Scratch & Question Bank' : isPureProg ? 'Upload a .txt and pick which parsed questions to import.' : 'Bulk import from JSON · CSV · TXT.'}
               />
             ); })()}
           </div>
           )}
 
-          <div className="px-3 pb-3">
+          </div>{/* /scroll body */}
+
+          {/* ── Footer: physical Esc key chip + compact Cancel ────────── */}
+          <div className="flex-shrink-0" style={{
+            height: 52, padding: '0 20px',
+            borderTop: `1px solid ${MK.footerBorder}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: '#fff',
+          }}>
+            <div className="flex items-center" style={{ gap: 6, fontSize: 11, color: MK.textHint, lineHeight: 1 }}>
+              <kbd style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                minWidth: 26, height: 20, padding: '0 6px',
+                background: '#fff', border: `1px solid ${MK.keyBorder}`,
+                borderBottomWidth: 2, borderRadius: 4,
+                fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
+                color: MK.textCancel, lineHeight: 1,
+              }}>Esc</kbd>
+              <span>to close</span>
+            </div>
             <button onClick={() => setShowAddOption(false)}
-              className="w-full py-2 rounded-lg text-[11.5px] font-medium transition-all"
-              style={{ ...JKT, border: '1px solid #e4e4ed', color: '#6b6b7e', background: '#fafafa', cursor: 'pointer' }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f8')}
-              onMouseLeave={e => (e.currentTarget.style.background = '#fafafa')}>
+              style={{
+                minHeight: 32, padding: '0 12px',
+                fontSize: 12.5, fontWeight: 600, color: MK.textCancel,
+                background: 'transparent', border: 'none',
+                borderRadius: 6, cursor: 'pointer',
+                transition: 'background 150ms ease',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#F1F2F6')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
               Cancel
             </button>
           </div>
@@ -2276,15 +2587,22 @@ const addBtnDisabled = isAddingQuestions || (() => {
     }}
     tabType={tabType}
     onClose={() => {
-      // Other Platform slot cannot be silently bypassed — if the trainer
-      // opened the picker as OP (bankSourceTag === 'thirdParty') and clicks
-      // X without picking anything, refuse to close, run the trap.
-      // Internal Bank (scratch-bank / ai / scratch-manual) closes freely —
-      // only OP is the "source can't be silently switched" case.
-      if (bankSourceTag === 'thirdParty' && !qbHasContentRef.current) {
-        trapCloseAttempt('thirdParty');
-        return;
-      }
+      // Universal close/cancel contract (Add Question UX):
+      //   • Opening the Bank / Other Platform picker never consumes quota.
+      //   • Closing an UNTOUCHED picker (no questions checked, or checked
+      //     but never Added) returns to Choose Source silently.
+      //   • Scope changes / course selection / filters are pure navigation
+      //     state and do not warrant a discard warning.
+      //   • No trap, no toast, no auto-reopen.
+      // If the picker actually delivered questions to the exercise, the
+      // consuming code path (onSelect → handleBankSelect / etc.) has
+      // already fired and won't re-enter this branch. `addFlowDiff` is
+      // preserved by backToAddOptions so the difficulty stays selected.
+      //
+      // NOTE: the "N questions ticked but not Added" discard confirmation
+      // belongs to Phase 2 — QuestionBankSelector already surfaces the
+      // count via onSelect only when Add Selected is clicked, so today's
+      // untouched-close semantics are the acute fix.
       setShowQuestionBank(false); setQbankFromMCQOpts(false);
       backToAddOptions();
     }}
@@ -2343,14 +2661,21 @@ const addBtnDisabled = isAddingQuestions || (() => {
             return Math.max(0, (mc.mcqTotalMarks || 0) - used);
           })()}
           onClose={() => {
-            // AI slot cannot be silently bypassed. If the trainer opened AI
-            // and clicks X without generating anything, run the trap. The
-            // onSave path flips the flag first, so a real save closes
-            // cleanly on its follow-up onClose.
-            if (!aiHasContentRef.current) {
-              trapCloseAttempt('ai');
-              return;
-            }
+            // Universal close/cancel contract (Add Question UX):
+            //   • Opening the AI modal never creates a question or reserves a slot.
+            //   • Closing an UNTOUCHED AI modal returns to Choose Source silently.
+            //   • No trap, no toast, no auto-reopen — the user MUST be able to
+            //     back out and pick a different source without pressing Back
+            //     twice.
+            // If the modal produced content (aiHasContentRef flipped in the
+            // onSave path), the same close path still fires; the completed
+            // saves are already in the exercise, so returning to Choose
+            // Source is correct in both cases. `addFlowDiff` is preserved
+            // by backToAddOptions so the difficulty stays selected.
+            //
+            // NOTE: unsaved-drafts confirmation is a Phase 2 concern —
+            // GenerateMCQAIQuestion doesn't yet expose a "user has edits
+            // but hasn't saved" signal separate from `aiHasContentRef`.
             setShowGenerateAI(false);
             backToAddOptions();
           }}

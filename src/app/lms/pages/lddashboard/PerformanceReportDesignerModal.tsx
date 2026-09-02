@@ -1593,14 +1593,27 @@ export default function PerformanceReportDesignerModal({
                 y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
             }
 
-            // Per-exercise detail — one section per selected exercise, each
-            // starts on a fresh page so a head can print + hand out slices.
+            // Per-exercise detail — one section per selected exercise.
+            // Subsequent exercises start on a fresh page (so a head can print
+            // + hand out slices); the FIRST exercise reuses whatever room is
+            // still free on the current page — otherwise page 1 sits mostly
+            // blank whenever the header is the only thing above.
             if (shouldShow("exerciseDetail") && exerciseRosters.length > 0) {
                 const activeSum = SUM_COLS.filter((c) => sumCols.has(c.key));
                 const activeQ = Q_COLS.filter((c) => qCols.has(c.key));
-                exerciseRosters.forEach((er) => {
-                    doc.addPage();
-                    y = M;
+                const pageH = doc.internal.pageSize.getHeight();
+                // Room needed to open an exercise inline: title + stats line
+                // + a few table rows. Below this, force a fresh page.
+                const MIN_INLINE_ROOM = 160;
+                exerciseRosters.forEach((er, exIdx) => {
+                    if (exIdx > 0 || pageH - y < MIN_INLINE_ROOM) {
+                        doc.addPage();
+                        y = M;
+                    } else {
+                        // Small breather so the exercise heading doesn't butt
+                        // up against the section above (rule / previous table).
+                        y += 6;
+                    }
                     doc.setFont("helvetica", "bold");
                     doc.setFontSize(13);
                     doc.setTextColor(17, 24, 39);
@@ -1609,8 +1622,6 @@ export default function PerformanceReportDesignerModal({
                     doc.setFont("helvetica", "normal");
                     doc.setFontSize(9);
                     doc.setTextColor(107, 114, 128);
-                    doc.text(er.ex.path, M, y);
-                    y += 12;
                     doc.text(
                         `${er.ex.totalQuestions} questions · ${er.ex.totalMarks} marks · Submitted ${er.stats.submitted} · Started ${er.stats.started} · Not started ${er.stats.notStarted} · Avg ${er.stats.avgPct === null ? "—" : er.stats.avgPct + "%"}`,
                         M,

@@ -497,7 +497,7 @@ export const TimePicker: React.FC<{
 // ─── SectionLabel ────────────────────────────────────────────────────────────
 export const SectionLabel: React.FC<{ children: React.ReactNode; required?: boolean; info?: string; className?: string }> = ({ children, required, info, className = '' }) => (
   <div className={`flex items-center gap-1 mb-[5px] ${className}`}>
-    <label className="block font-semibold" style={{ fontSize: 11, color: '#4B5563', fontFamily: FONT }}>{children}</label>
+    <label className="block font-semibold" style={{ fontSize: 11, color: '#101828', fontFamily: FONT }}>{children}</label>
     {required && <span className="font-bold" style={{ fontSize: 11, color: D.orange }}>*</span>}
     {info && <InfoTooltip content={info} />}
   </div>
