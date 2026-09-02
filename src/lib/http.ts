@@ -4,7 +4,7 @@
 // `axios.create()` clones. Its configuration and interceptors replicate those
 // clones EXACTLY so migrating a service to this instance is behavior-neutral:
 //   - baseURL from NEXT_PUBLIC_API_URL (falls back to the historical
-//     http://localhost:5533 when unset, so nothing changes by default),
+//     https://lmsserver-yeve.onrender.com when unset, so nothing changes by default),
 //   - JSON content-type, 10s timeout,
 //   - request interceptor attaches `Authorization: Bearer <token>`,
 //   - response interceptor drops the token on 401 (no redirect — the redirect
@@ -18,7 +18,7 @@ import { getToken, clearToken } from "./session";
 
 // Single source of truth for the API host.
 export const API_BASE_URL: string =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5533";
+  process.env.NEXT_PUBLIC_API_URL ?? "https://lmsserver-yeve.onrender.com";
 
 export const http = axios.create({
   baseURL: API_BASE_URL,

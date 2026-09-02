@@ -19,7 +19,7 @@ import {
 // to change beyond the URL. The old direct-to-Piston env var still wins if
 // set — useful for local dev that wants to bypass auth.
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533"
+  process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com"
 export const PISTON_API_URL =
   process.env.NEXT_PUBLIC_PISTON_URL || `${API_BASE}/api/run/piston`
 
