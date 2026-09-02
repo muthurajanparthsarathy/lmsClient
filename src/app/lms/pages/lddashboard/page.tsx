@@ -90,7 +90,7 @@ const FeedbackReportDesignerModal = dynamic(
   { ssr: false },
 );
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
 const getToken = () =>
   typeof window === "undefined"
     ? ""

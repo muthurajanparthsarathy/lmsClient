@@ -1548,7 +1548,7 @@ const getExercisesForActivity = (): any[] => {
           let stash: any = { ...exercise, questions: qs, courseId, courseName: cname, context: { courseId, nodeId: selectedItem?.id, nodeTitle: selectedItem?.title, method: selectedMethod, activity: selectedActivity }, storedAt: new Date().toISOString() }
           try {
             const token = localStorage.getItem('smartcliff_token') || localStorage.getItem('token') || ''
-            const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exercise._id}`, {
+            const res = await fetch(`http://localhost:5533/exercise/${exercise._id}`, {
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
             })
             if (res.ok) {
@@ -1580,7 +1580,7 @@ const getExercisesForActivity = (): any[] => {
         // Single-file (existing inline path) — fetch full document and render inline.
         try {
           const token = localStorage.getItem('smartcliff_token') || localStorage.getItem('token') || ''
-          const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exercise._id}`, {
+          const res = await fetch(`http://localhost:5533/exercise/${exercise._id}`, {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
           })
           if (res.ok) {
@@ -2234,6 +2234,7 @@ const getExercisesForActivity = (): any[] => {
               onSearchChange={setSidebarSearch}
               courseId={courseId}
               studentProgress={studentProgress}
+              topicProgress={courseData?.topicProgress}
             />
           )}
         </CourseSidebar>
@@ -2273,6 +2274,7 @@ const getExercisesForActivity = (): any[] => {
                   onSearchChange={setSidebarSearch}
                   courseId={courseId}
                   studentProgress={studentProgress}
+                  topicProgress={courseData?.topicProgress}
                 />
               )}
             </CourseSidebar>
@@ -3558,7 +3560,7 @@ const getExercisesForActivity = (): any[] => {
             subcategory={loc.subcategory}
             folderPath={loc.folderPath}
             courseId={courseId}
-            apiBaseUrl="https://lmsserver-yeve.onrender.com"
+            apiBaseUrl="http://localhost:5533"
           />
         )
       })()}

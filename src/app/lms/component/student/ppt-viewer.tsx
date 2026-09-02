@@ -427,7 +427,7 @@ export default function PPTViewer({
   tabType = "",
   subcategory = "",
   folderPath = [],
-  apiBaseUrl = "https://lmsserver-yeve.onrender.com",
+  apiBaseUrl = "http://localhost:5533",
   courseId,
 }: PPTViewerProps) {
   const [autoSlideImages, setAutoSlideImages] = useState<string[]>(slideImages ?? [])
@@ -457,7 +457,7 @@ export default function PPTViewer({
 
     ;(async () => {
       try {
-        const res = await fetch('https://lmsserver-yeve.onrender.com/api/ppt/convert', {
+        const res = await fetch('http://localhost:5533/api/ppt/convert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pptUrl }),

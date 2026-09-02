@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 
 const FONT = "'Poppins','Poppins','Segoe UI','Roboto',system-ui,-apple-system,BlinkMacSystemFont,sans-serif";
-const API_BASE = "https://lmsserver-yeve.onrender.com";
+const API_BASE = "http://localhost:5533";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function formatDuration(minutes?: number): string {

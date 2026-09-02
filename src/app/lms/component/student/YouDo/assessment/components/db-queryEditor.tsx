@@ -2622,7 +2622,7 @@ export default function DBQueryEditorPage({
         toast.error(`${reason} — assessment locked.`, { toastId: 'sql-term' });
         try {
             const token = getToken() || localStorage.getItem('token') || '';
-            await fetch('https://lmsserver-yeve.onrender.com/exercise/lock', {
+            await fetch('http://localhost:5533/exercise/lock', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({
@@ -3158,7 +3158,7 @@ export default function DBQueryEditorPage({
               catch { /* fall through */ }
             }
             const response = await axios.post(
-                `${(process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com')}/courses/answers/submit-multiple-files`,
+                `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit-multiple-files`,
                 payload,
                 {
                     headers: {
@@ -3238,7 +3238,7 @@ export default function DBQueryEditorPage({
             }
 
             const response = await fetch(
-                `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
+                `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
@@ -3332,7 +3332,7 @@ export default function DBQueryEditorPage({
             }
 
             const response = await fetch(
-                `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
+                `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseData._id}&questionId=${currentQuestion._id}&category=${category}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,

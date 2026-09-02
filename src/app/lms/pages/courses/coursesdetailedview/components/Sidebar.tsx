@@ -8,10 +8,11 @@ import {
   Layers, Library, File as FileIcon,
   Crown, ArrowRight, ChevronsUpDown, ChevronsDownUp,
   AlertTriangle, PanelLeftClose, FileText, FolderOpen,
+  Check, Circle, Lock,
 } from "lucide-react"
 import { FONT_PRIMARY, FONT_INTER_IMPORT } from "./types/constants"
 import { hasChildItems, hasPedagogyData } from "./types/utils"
-import { CourseData, SelectedItem, SelectedItemType } from "./types/types"
+import { CourseData, SelectedItem, SelectedItemType, TopicProgressMap, TopicStatus } from "./types/types"
 import { fetchAllPedagogyViews } from "../../../../../../apiServices/pedagogyAndModuleAdd/pedagogy"
 
 /* ─── Design Tokens ──────────────────────────────────────────────────────── */
@@ -69,6 +70,84 @@ export function buildHoursMap(
     }
   }
   return map
+}
+
+/* ─── Topic completion indicator ────────────────────────────────────────────
+   One small circle at the right of each syllabus row — the sidebar tick
+   from the target screenshot. Fed by the server-authoritative
+   `topicProgress` map (server/utils/topicCompletion.js), NEVER by
+   selection or "opened" state. Selection remains a separate visual
+   (orange pill + orange text) so the two can never conflict.
+
+   Shapes carry meaning too so we don't rely on colour alone (spec):
+     completed   → filled green circle with a check
+     in_progress → pale-orange ring with an orange centre dot
+     not_started → hollow gray circle
+     locked      → muted lock icon                                              */
+const STATUS_LABEL: Record<TopicStatus, string> = {
+  completed: "Completed",
+  in_progress: "In progress",
+  not_started: "Not started",
+  locked: "Locked",
+}
+
+const TopicStatusIndicator: React.FC<{ status: TopicStatus | undefined }> = ({ status }) => {
+  const s = status || "not_started"
+  const label = STATUS_LABEL[s]
+  const common = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 16, height: 16,
+    borderRadius: "50%",
+    flexShrink: 0,
+  } as const
+
+  if (s === "completed") {
+    return (
+      <span
+        role="img"
+        aria-label={label}
+        title={label}
+        style={{ ...common, background: "#16A34A", color: "#ffffff" }}
+      >
+        <Check size={10} strokeWidth={3} />
+      </span>
+    )
+  }
+  if (s === "in_progress") {
+    return (
+      <span
+        role="img"
+        aria-label={label}
+        title={label}
+        style={{ ...common, background: "transparent", border: "1.5px solid #F97316" }}
+      >
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#F97316" }} />
+      </span>
+    )
+  }
+  if (s === "locked") {
+    return (
+      <span
+        role="img"
+        aria-label={label}
+        title={label}
+        style={{ ...common, background: "transparent", color: "#94a3b8" }}
+      >
+        <Lock size={10} strokeWidth={2} />
+      </span>
+    )
+  }
+  // not_started — hollow ring
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      style={{ ...common, background: "transparent", border: "1.5px solid #CBD5E1" }}
+    />
+  )
 }
 
 /* ─── Smooth collapse ────────────────────────────────────────────────────── */
@@ -177,7 +256,8 @@ const NavItem: React.FC<{
 const TreeModuleRow: React.FC<{
   icon: React.ReactNode; label: string
   isOpen: boolean; isActive?: boolean; depth?: number; onToggle: () => void
-}> = ({ icon, label, isOpen, isActive, depth = 0, onToggle }) => {
+  status?: TopicStatus
+}> = ({ icon, label, isOpen, isActive, depth = 0, onToggle, status }) => {
   const [hover, setHover] = useState(false)
   const pl = depth === 0 ? "8px 14px 8px 12px" : "6px 12px 6px 10px"
   const iSize = depth === 0 ? 25 : 20
@@ -224,6 +304,7 @@ const TreeModuleRow: React.FC<{
       }}>
         {label}
       </span>
+      {status && <TopicStatusIndicator status={status} />}
     </div>
   )
 }
@@ -231,7 +312,8 @@ const TreeModuleRow: React.FC<{
 /* ─── Leaf / subtopic row ────────────────────────────────────────────────── */
 const SubtopicRow: React.FC<{
   title: string; isSelected: boolean; isCurrentTopic?: boolean; onClick: () => void
-}> = ({ title, isSelected, isCurrentTopic, onClick }) => {
+  status?: TopicStatus
+}> = ({ title, isSelected, isCurrentTopic, onClick, status }) => {
   const [hover, setHover] = useState(false)
   return (
     <div
@@ -274,6 +356,7 @@ const SubtopicRow: React.FC<{
           Current Topic
         </span>
       )}
+      {status && <TopicStatusIndicator status={status} />}
     </div>
   )
 }
@@ -283,7 +366,8 @@ const SubtopicRow: React.FC<{
    the upload-resources sidebar's leaf styling. */
 const LeafRow: React.FC<{
   title: string; icon: React.ReactNode; isSelected: boolean; isCurrentTopic?: boolean; onClick: () => void
-}> = ({ title, icon, isSelected, isCurrentTopic, onClick }) => {
+  status?: TopicStatus
+}> = ({ title, icon, isSelected, isCurrentTopic, onClick, status }) => {
   const [hover, setHover] = useState(false)
   return (
     <div
@@ -330,6 +414,7 @@ const LeafRow: React.FC<{
           Current
         </span>
       )}
+      {status && <TopicStatusIndicator status={status} />}
     </div>
   )
 }
@@ -528,6 +613,12 @@ interface SidebarProps {
   onLogout?: () => void
   courseId?: string
   currentTopicId?: string
+  // Server-authoritative per-node completion (from courseData.topicProgress).
+  // Drives the right-edge status indicator on every syllabus row. Absent
+  // nodes fall through to `not_started`; the prop being undefined disables
+  // indicators entirely (unauthenticated/preview render).
+  topicProgress?: TopicProgressMap | null
+  /** @deprecated legacy prop kept only to avoid breaking older call sites. */
   studentProgress?: { visitedNodes: string[]; openedResources: string[] } | null
 }
 
@@ -536,7 +627,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   expandedModules, expandedSubModules, expandedTopics,
   sidebarSearch, onItemSelect,
   onToggleModule, onToggleSubModule, onToggleTopic,
-  courseId, currentTopicId,
+  courseId, currentTopicId, topicProgress,
 }) => {
   const [pedagogyViews, setPedagogyViews] = useState<PedagogyView[]>([])
 
@@ -575,6 +666,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     depth: number,
   ): React.ReactNode => {
     const isSel = selectedItem?.id === node._id
+    // Server-driven; falls back to `not_started` (hollow ring) when the map
+    // is present but this node isn't listed — never lies with a green tick.
+    // When the prop itself is absent (unauthenticated preview) we render no
+    // indicator at all rather than a misleading hollow ring on every row.
+    const status: TopicStatus | undefined = topicProgress
+      ? (topicProgress[node._id]?.status || "not_started")
+      : undefined
     const kids: { list: any[]; childType: SelectedItemType } | null =
       node.subModules?.length ? { list: node.subModules, childType: "submodule" }
       : node.topics?.length ? { list: node.topics, childType: "topic" }
@@ -589,6 +687,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon={getTypeIcon(type)}
           isSelected={isSel}
           isCurrentTopic={node._id === currentTopicId}
+          status={status}
           onClick={() => sel(node._id, node.title, type, hierarchy, node.pedagogy)}
         />
       )
@@ -612,6 +711,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isOpen={isOpen}
           isActive={isSel}
           depth={depth}
+          status={status}
           onToggle={() => {
             sel(node._id, node.title, type, hierarchy, node.pedagogy)
             toggle(node._id)

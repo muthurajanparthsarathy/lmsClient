@@ -397,6 +397,17 @@ export const TopBar: React.FC<TopBarProps> = ({ items, onAIClick, onSummaryClick
 }
 
 // ─── TabBar ────────────────────────────────────────────────────────────────────
+// Descriptive tooltip copy per the spec — browsers surface these on hover
+// AND on keyboard focus (both native for `title` + `aria-label`). Kept as
+// a lookup so both MainTabs (rendered above) and any consumer that wants
+// to echo the same text below stay in sync.
+export const TAB_TOOLTIP: Record<"Overview" | "I_Do" | "We_Do" | "You_Do", string> = {
+  Overview: "Course summary",
+  I_Do: "Instructor demonstration",
+  We_Do: "Guided practice",
+  You_Do: "Independent practice",
+}
+
 // Overview tab config
 const OVERVIEW_CFG = {
   label: "Overview",
@@ -513,6 +524,8 @@ export const MainTabs: React.FC<MainTabsProps> = ({
             <button
               disabled={isDis}
               onClick={() => handleTabClick(tab.key, isOverview, subs)}
+              title={TAB_TOOLTIP[tab.key as keyof typeof TAB_TOOLTIP] || tab.label}
+              aria-label={`${tab.label} — ${TAB_TOOLTIP[tab.key as keyof typeof TAB_TOOLTIP] || ''}`.trim()}
               style={{
                 flex: '0 0 auto',
                 // Label sinks to the BOTTOM of the tall (48px) TopBar

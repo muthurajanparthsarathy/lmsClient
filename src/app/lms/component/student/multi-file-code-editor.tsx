@@ -61,14 +61,14 @@ import BottomPanel, { type SubmitStatus, type TestResultCase, type TestResultSta
 import TraceVisualizer from "./multi-file/TraceVisualizer"
 
 // Backend base URL.
-//   • In local dev → https://lmsserver-yeve.onrender.com (matches server/server.js PORT 5533).
+//   • In local dev → http://localhost:5533 (matches server/server.js PORT 5533).
 //   • In production / non-localhost hosts → the Render-hosted backend.
 //   • Override either with NEXT_PUBLIC_API_URL.
 const API = (() => {
   const env = process.env.NEXT_PUBLIC_API_URL
   if (env) return env.replace(/\/+$/, "")
   if (typeof window !== "undefined" && /^(localhost|127\.|0\.0\.0\.0)/.test(window.location.hostname)) {
-    return "https://lmsserver-yeve.onrender.com"
+    return "http://localhost:5533"
   }
   return "https://lms-server-3-wedg.onrender.com"
 })()

@@ -198,7 +198,14 @@ const SmartCliffLogin = () => {
           if (loc) clientInfo.location = loc;
         }
       } catch { /* best effort — login is never blocked beyond the timeout */ }
-      const response = await fetch("https://lmsserver-yeve.onrender.com/user/login", {
+      // Respect NEXT_PUBLIC_API_URL — every other apiService in the codebase
+      // does. Hardcoding the deployed URL here meant a localhost dev
+      // session still authenticated against the Render instance (with its
+      // 30–60 s cold-start), and any server-side change under test would
+      // never be observable to a browser signed in this way. Falls back to
+      // the deployed URL so production behaviour is unchanged.
+      const LOGIN_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+      const response = await fetch(`${LOGIN_BASE}/user/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...credentials, clientInfo }),
@@ -254,7 +261,7 @@ const SmartCliffLogin = () => {
           localStorage.setItem("smartcliff_roleId", "");
           localStorage.setItem("smartcliff_originalRole", "User");
         }
-        const verifyResponse = await fetch("https://lmsserver-yeve.onrender.com/user/verify-token", {
+        const verifyResponse = await fetch("http://localhost:5533/user/verify-token", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         });

@@ -166,6 +166,12 @@ export interface CourseDetailResponse {
     I_Do?: unknown;
     We_Do?: unknown;
     You_Do?: unknown;
+    // Server-computed per-node completion for the sidebar tick. Keyed by
+    // node `_id`; entries populate only when the caller is authenticated.
+    // See server/utils/topicCompletion.js for the aggregation rules and
+    // `TopicProgressEntry` in coursesdetailedview/components/types/types.ts
+    // for the entry shape.
+    topicProgress?: Record<string, unknown>;
     [key: string]: unknown;
   };
 }

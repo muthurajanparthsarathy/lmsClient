@@ -1,7 +1,7 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -457,7 +457,7 @@ export const addParticipantsToCourse = async (
   hierarchy?: { degree?: string; department?: string; section?: string; semester?: string }
 ) => {
   try {
-    const response = await fetch(`https://lmsserver-yeve.onrender.com/add-participants/${courseId}`, {
+    const response = await fetch(`http://localhost:5533/add-participants/${courseId}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -492,7 +492,7 @@ export const addParticipantsToCourse = async (
 
 export const updateParticipantEnrollment = async (courseId: string, userId: string, enrollmentData: any, institutionId: string, token: string) => {
   try {
-    const response = await fetch(`https://lmsserver-yeve.onrender.com/update-enrollment/${courseId}/${userId}`, {
+    const response = await fetch(`http://localhost:5533/update-enrollment/${courseId}/${userId}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -523,7 +523,7 @@ export const removeParticipantFromCourse = async (
 ) => {
   try {
     const response = await fetch(
-      `https://lmsserver-yeve.onrender.com/delete/participant/${courseId}/${userId}${batchId ? `?batchId=${batchId}` : ''}`,
+      `http://localhost:5533/delete/participant/${courseId}/${userId}${batchId ? `?batchId=${batchId}` : ''}`,
       {
         method: 'DELETE',
         headers: {
@@ -563,7 +563,7 @@ export const removeMultipleParticipantsFromCourse = async (
 
     // First, debug the course structure
     const debugResponse = await fetch(
-      `https://lmsserver-yeve.onrender.com/api/debug/course/${courseId}`,
+      `http://localhost:5533/api/debug/course/${courseId}`,
       {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -580,7 +580,7 @@ export const removeMultipleParticipantsFromCourse = async (
 
     // Now attempt to delete
     const response = await fetch(
-      `https://lmsserver-yeve.onrender.com/delete-participants/multiple/${courseId}`,
+      `http://localhost:5533/delete-participants/multiple/${courseId}`,
       {
         method: 'DELETE',
         headers: {
@@ -797,7 +797,7 @@ export const getGroupDetails = async (groupId: any, institutionId: any, token: a
 export const fetchGroupsCourseData = async (courseId: string, institutionId: string, token: string) => {
   try {
     const response = await fetch(
-      `https://lmsserver-yeve.onrender.com/getAll/groups/courses-data/${courseId}`,
+      `http://localhost:5533/getAll/groups/courses-data/${courseId}`,
       {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -838,7 +838,7 @@ export const removeGroupLeader = async (
   token: string
 ): Promise<RemoveGroupLeaderResponse> => {
   const response = await fetch(
-    `https://lmsserver-yeve.onrender.com/remove-group-leader/${groupId}/${institution}`,
+    `http://localhost:5533/remove-group-leader/${groupId}/${institution}`,
     {
       method: "PUT",
       headers: {
@@ -883,7 +883,7 @@ export const fetchApprovalHierarchy = async (
   source?: 'course' | 'default' | 'none';
 }> => {
   const response = await fetch(
-    `https://lmsserver-yeve.onrender.com/courses/${courseId}/approval-hierarchy`,
+    `http://localhost:5533/courses/${courseId}/approval-hierarchy`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -948,7 +948,7 @@ export const fetchCourseApprovalsOverview = async (
   token: string
 ): Promise<CourseApprovalItem[]> => {
   const response = await fetch(
-    `https://lmsserver-yeve.onrender.com/courses/${courseId}/approvals/overview?tabType=${tabType}`,
+    `http://localhost:5533/courses/${courseId}/approvals/overview?tabType=${tabType}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -974,7 +974,7 @@ export type QuestionContext = {
 };
 
 const _qBody = async (path: string, body: any, token: string) => {
-  const r = await fetch(`https://lmsserver-yeve.onrender.com${path}`, {
+  const r = await fetch(`http://localhost:5533${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -1016,7 +1016,7 @@ export const approveExerciseStep = async (
   },
   token: string
 ) => {
-  const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/approve`, {
+  const response = await fetch(`http://localhost:5533/exercise/approve`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -1042,7 +1042,7 @@ export const rejectExerciseStep = async (
   },
   token: string
 ) => {
-  const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/reject`, {
+  const response = await fetch(`http://localhost:5533/exercise/reject`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -1067,7 +1067,7 @@ export const resubmitExerciseForApproval = async (
   },
   token: string
 ) => {
-  const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/resubmit`, {
+  const response = await fetch(`http://localhost:5533/exercise/resubmit`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -1090,7 +1090,7 @@ export const saveApprovalHierarchy = async (
   token: string
 ) => {
   const response = await fetch(
-    `https://lmsserver-yeve.onrender.com/courses/${courseId}/approval-hierarchy`,
+    `http://localhost:5533/courses/${courseId}/approval-hierarchy`,
     {
       method: 'PUT',
       headers: {

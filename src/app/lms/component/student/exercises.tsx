@@ -17,6 +17,7 @@ import DOMPurify from "dompurify"
 import DataTable, { type Column as DTColumn } from "@/app/lms/shared/listing/DataTable"
 import TableFooter from "@/app/lms/shared/listing/TableFooter"
 import SmartCliffRingLoader from "@/components/SmartCliffRingLoader"
+import { StatusPill, type StatusPillTone } from "@/app/lms/shared/ui/StatusPill"
 
 // Shared Poppins-first font stack for this roster-style list.
 const LIST_FONT = "'Poppins','Poppins','Segoe UI','Roboto',system-ui,-apple-system,BlinkMacSystemFont,sans-serif"
@@ -1766,15 +1767,33 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       className: 'w-[11%] px-3 text-left align-middle text-[13px] text-body',
       render: (ex) => {
         const s = resolveAssignmentState(ex, studentAnswers, method, subcategory)
-        // Semantic colours per state — restrained pale backgrounds so
-        // five rows in a column don't shout. Every state uses an icon +
-        // label so meaning isn't carried by colour alone.
+        // Rendered via the shared StatusPill primitive so admin surfaces
+        // and this student list carry ONE chip shape and semantic tone
+        // system instead of two — the inline <span> variant that used to
+        // live here was drifting palette-wise. Every state carries a
+        // label (never colour-only), an ARIA label, and its own icon.
+        //
+        // Tone map:
+        //   submitted / graded / active → success (green)
+        //   in-progress                 → info    (blue — spec-mandated)
+        //   upcoming                    → neutral
+        //   missed                      → danger  (soft red)
+        //   closed                      → neutral
+        const toneFor: Record<AssignmentStateKind, StatusPillTone> = {
+          submitted: 'success',
+          graded: 'success',
+          active: 'success',
+          'in-progress': 'info',
+          upcoming: 'neutral',
+          missed: 'danger',
+          closed: 'neutral',
+        }
+        // The visible text IS the accessible name — no extra aria-label
+        // needed. Tone plus dot are decorative.
         return (
-          <span className="inline-flex items-center gap-1.5 text-2xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-            style={{ background: s.tone.bg, color: s.tone.fg }}>
-            <s.Icon size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+          <StatusPill tone={toneFor[s.kind]} dot>
             {s.label}
-          </span>
+          </StatusPill>
         )
       },
     },
@@ -1825,21 +1844,51 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
           )
         }
         if (s.kind === 'submitted' || s.kind === 'graded') {
-          // Both submitted + graded route to the same grader screen —
-          // labelled "Grade" per the user's rename.
+          // Both statuses land on the same review screen. Label picks
+          // meaningful copy from the spec ("View result" for a plain
+          // submission, "View feedback" once a grade exists) so students
+          // can tell an ungraded submission apart from a graded one at a
+          // glance. The server doesn't (yet) expose a per-student graded
+          // flag on this shape — until it does, both read as "View
+          // result" and are style-identical.
+          const label = s.kind === 'graded' ? 'View feedback' : 'View result'
           return (
             <div className="flex items-center justify-center">
-              <button type="button" onClick={e => handleGradeClick(ex, e)} className={btnBase} style={secondary}>
-                Grade
+              <button
+                type="button"
+                onClick={e => handleGradeClick(ex, e)}
+                className={btnBase}
+                style={secondary}
+              >
+                {label}
               </button>
             </div>
           )
         }
-        // 'missed' | 'closed' — centred muted em dash so students see
-        // "no action possible" rather than a suspicious empty cell.
+        if (s.kind === 'missed') {
+          // Meaningful label instead of an em-dash — matches the spec's
+          // "Do not show unexplained dashes" rule. Soft-red tone mirrors
+          // the Missed status chip so the two cells read consistently.
+          return (
+            <div
+              className="inline-flex items-center justify-center text-2xs font-semibold"
+              style={{ color: '#B91C1C' }}
+              aria-label="Missed — no action available"
+              title="This assignment closed without a submission."
+            >
+              Missed
+            </div>
+          )
+        }
+        // 'closed' — explicitly disabled label, not a dash.
         return (
-          <div className="flex items-center justify-center text-subtle" aria-label="No action available">
-            —
+          <div
+            className="inline-flex items-center justify-center gap-1 text-2xs font-semibold text-subtle"
+            aria-label="Closed — no action available"
+            title="This assignment is closed."
+          >
+            <Lock size={11} style={{ flexShrink: 0 }} />
+            Closed
           </div>
         )
       },

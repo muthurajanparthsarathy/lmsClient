@@ -1402,7 +1402,7 @@ console.log('${fileName} loaded');
       }
 
       const response = await fetch(
-        `https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${question._id}&category=${category}`,
+        `http://localhost:5533/courses/answers/previous-submission?courseId=${courseId}&exerciseId=${exerciseId}&questionId=${question._id}&category=${category}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -2232,7 +2232,7 @@ console.log('${fileName} loaded');
         depth: folder.depth,
       }));
 
-      const response = await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit-multiple-files', {
+      const response = await fetch('http://localhost:5533/courses/answers/submit-multiple-files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
