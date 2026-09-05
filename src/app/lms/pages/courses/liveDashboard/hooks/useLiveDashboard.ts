@@ -8,7 +8,7 @@ import type {
   DashboardStudentJoined,
 } from "../types/liveDashboard.types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
 
 interface UseLiveDashboardArgs {
   assessmentId: string;

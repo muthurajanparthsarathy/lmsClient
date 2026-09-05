@@ -105,7 +105,7 @@ const FeedbackReportDesignerModal = dynamic(
   { ssr: false },
 );
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
 const getToken = () =>
   typeof window === "undefined"
     ? ""
@@ -4341,7 +4341,11 @@ function ReportShell({ title, sub, f, client = true, course = true, actions, ext
         }
       />
       <RPrintCtx.Provider value={printing}>
-        <div ref={boxRef}>{children}</div>
+        {/* ldr-shell: a hook for the shell's fit-mode CSS to chain flex:1
+            down through this wrapper and into the RTable's list, so lists
+            fill the viewport height and their pagination lands at the
+            bottom without forcing the page to scroll. Harmless elsewhere. */}
+        <div ref={boxRef} className="ldr-shell">{children}</div>
       </RPrintCtx.Provider>
     </>
   );
@@ -6530,12 +6534,15 @@ export const LDC_CSS = `
 /* Cap the table scroll so pagination stays visible inside the viewport
    instead of forcing the whole page to scroll. calc() reserves height for the
    page shell (header + filter row + list heading + pagination + margins), and
-   min-height keeps a usable table even when the viewport is short. */
-.ldc-scroll{overflow-x:auto; overflow-y:auto; max-height:min(58vh, calc(100vh - 340px)); min-height:220px;}
+   min-height keeps a usable table even when the viewport is short. The 420px
+   reservation (bumped from 340px) covers app chrome + filter row + list
+   heading + pagination + safety margin, so pagination lands above the fold. */
+.ldc-scroll{overflow-x:auto; overflow-y:auto; max-height:min(52vh, calc(100vh - 420px)); min-height:220px;}
 .ldc-list table{width:100%; border-collapse:collapse; font-size:12px;}
-/* Header: normal-case (not uppercase), no shaded fill — matches Client
-   Management's TABLE_HEAD_CELL rhythm (12px / semibold / subtle text). */
-.ldc-list th{text-align:left; font-size:11px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--muted); padding:6px 10px; background:transparent; border-bottom:1px solid var(--grid); position:sticky; top:0;}
+/* Header: normal-case, semibold, subtle text on the app's cool-gray canvas
+   (#f5f6f8 — the same var(--color-canvas) fill Client Management uses via
+   bg-canvas on TABLE_HEAD_CELL), so the header reads as a distinct band. */
+.ldc-list th{text-align:left; font-size:11px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--muted); padding:7px 10px; background:#f5f6f8; border-bottom:1px solid var(--grid); position:sticky; top:0;}
 .ldc-list th.r{text-align:right;}
 /* Denser body rows — 6px vertical padding + 12px cell text ≈ 32px row height,
    the minimal density the user asked for. */

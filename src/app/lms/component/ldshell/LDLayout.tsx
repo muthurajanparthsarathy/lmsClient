@@ -63,13 +63,13 @@ const GROUPS: NavGroup[] = [
     label: "Planning & Delivery",
     items: [
       {
-        // Approvals badge is LIVE — the parent page passes the pending count
-        // via the `apprBadge` prop (no hardcoded number here).
+        // Approvals is a single top-level item (no sub-items) that opens the
+        // shared admin Approvals page — /lms/pages/approvals hosts both the
+        // Pending Approvals queue and the Approval Setup tab, so the two
+        // former L&D sub-views (#appr-queue, #appr-rules) collapse into that
+        // one destination. The badge is still LIVE via the `apprBadge` prop.
         id: "appr-queue", label: "Approvals", icon: "approvals",
-        children: [
-          { id: "appr-queue", label: "Approval Queue" },
-          { id: "appr-rules", label: "Rules & Approvers" },
-        ],
+        href: "/lms/pages/approvals",
       },
       { id: "clients", label: "Clients", icon: "clients" },
       { id: "content", label: "Learning Content", icon: "content" },
@@ -261,6 +261,11 @@ export function LDSelect({
 /** Views that fit the viewport and scroll their own list instead of the page. */
 const FIT_VIEWS = new Set<LDView>([
   "clients", "courses", "content", "trainers", "perf-progress",
+  // Feedback summary: the RTable list should fill the viewport so its
+  // pagination sits at the bottom without page-scroll — same fit contract
+  // the other list views use. CSS below (.ldx-content.fit .ldr-shell /
+  // .ldc-list / .ldc-scroll) chains flex:1 down to the scroll region.
+  "fb-summary",
   // The hosted course screens manage their own internal scrolling.
   "course-structure", "course-calendar", "course-enrollment",
 ]);
@@ -284,6 +289,11 @@ const SIDEBAR_ALIAS: Partial<Record<LDView, LDView>> = {
   // Same pattern for Attendance — kept as a view for old bookmarks but the
   // rail highlights the standalone Attendance item in Monitoring.
   "rep-attendance": "attendance",
+  // Approvals collapsed to a single rail item (no sub-items). The rail
+  // sends users to /lms/pages/approvals now, but the dashboard's own
+  // internal links still open #appr-rules (settings-icon route) and
+  // #appr-queue (priority actions) — highlight the Approvals item for both.
+  "appr-rules": "appr-queue",
 };
 
 /* Hosted screens bring their own gutters and want every pixel — the shell's
@@ -383,13 +393,17 @@ export default function LDLayout({ active, children, apprBadge }: { active: LDVi
                   </div>
                 );
               }
-              // Explicit `href` (Reports → /lms/pages/reports/performance)
-              // takes precedence over the hash-based default. Active-state
-              // matches by id so highlighting still works whether the item
-              // is a hash view or a full page.
+              // Explicit `href` (Reports → /lms/pages/reports/performance,
+              // Approvals → /lms/pages/approvals) takes precedence over the
+              // hash-based default. Active-state matches by id so
+              // highlighting still works whether the item is a hash view or
+              // a full page. Badge renders here too — Approvals is now a
+              // single item, so its live pending count belongs on this pill.
+              const itBadge = badgeFor(it.id, it.badge);
               return (
                 <a key={it.id} href={it.href ?? navHref(it.id)} className={`ldx-nav ${navActive === it.id ? "on" : ""}`}>
                   <Ico name={it.icon} />{it.label}
+                  {itBadge ? <span className="ldx-badge">{itBadge}</span> : null}
                 </a>
               );
             })}
@@ -760,6 +774,15 @@ export const LDX_CSS = `
 /* Fit mode: no scroll here — the view is a column that hands its leftover
    height to the list, which scrolls internally. */
 .ldx-content.fit{overflow:hidden; display:flex; flex-direction:column; padding-bottom:16px;}
+/* Fit-mode flex chain for RTable-based views (e.g. fb-summary). The scroll
+   flow, ReportShell wrapper, and ldc-list all become flex columns so the
+   scroll region (.ldc-scroll) can flex:1 min-h:0 and fill the leftover
+   viewport height. Pagination (.ldr-pgn) keeps its natural height at the
+   bottom. Kept fit-mode-only so document-scroll views are untouched. */
+.ldx-content.fit .ldx-content-scroll-flow{display:flex; flex-direction:column; flex:1 1 auto; min-height:0;}
+.ldx-content.fit .ldr-shell{display:flex; flex-direction:column; flex:1 1 auto; min-height:0;}
+.ldx-content.fit .ldr-shell > .ldc-list{display:flex; flex-direction:column; flex:1 1 auto; min-height:0; margin-bottom:0;}
+.ldx-content.fit .ldr-shell > .ldc-list > .ldc-scroll{flex:1 1 auto; min-height:0; max-height:none;}
 /* Hosted course screens run edge to edge — they supply their own gutters. */
 .ldx-content.bleed{padding:0;}
 @media (min-width:1600px){ .ldx-content{padding:24px 36px 40px;} .ldx-content.fit{padding-bottom:20px;} .ldx-content.bleed{padding:0;} }

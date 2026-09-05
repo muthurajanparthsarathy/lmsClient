@@ -358,6 +358,21 @@ const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; required
     }
   }
 
+  // ── Approvals is a shared destination — the admin rail links here, and
+  //    the L&D rail's Approvals item now points at the SAME page (the two
+  //    former L&D hash views #appr-queue / #appr-rules collapsed into it).
+  //    An L&D console user typically holds `lddashboard` but not the
+  //    standalone `approvals` module, so grant access on either key rather
+  //    than forcing an extra permission grant just so the rail item works.
+  if (pathname.startsWith('/lms/pages/approvals')) {
+    const keys = getActivePermissionKeys()
+    if (keys.includes('lddashboard')) {
+      return { hasAccess: true, requiredPermission: 'approvals' }
+    }
+    // else fall through — `approvals` holders (admin / any role granted the
+    // module) pass via normal permission matching below.
+  }
+
   const permissionKeys = getActivePermissionKeys()
 
   if (permissionKeys.length === 0) return { hasAccess: false }
