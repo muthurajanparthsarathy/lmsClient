@@ -8,7 +8,6 @@ import {
   Layers, Library, File as FileIcon,
   Crown, ArrowRight, ChevronsUpDown, ChevronsDownUp,
   AlertTriangle, PanelLeftClose, FileText, FolderOpen,
-  Check, Circle, Lock,
 } from "lucide-react"
 import { FONT_PRIMARY, FONT_INTER_IMPORT } from "./types/constants"
 import { hasChildItems, hasPedagogyData } from "./types/utils"
@@ -91,64 +90,13 @@ const STATUS_LABEL: Record<TopicStatus, string> = {
   locked: "Locked",
 }
 
-const TopicStatusIndicator: React.FC<{ status: TopicStatus | undefined }> = ({ status }) => {
-  const s = status || "not_started"
-  const label = STATUS_LABEL[s]
-  const common = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 16, height: 16,
-    borderRadius: "50%",
-    flexShrink: 0,
-  } as const
-
-  if (s === "completed") {
-    return (
-      <span
-        role="img"
-        aria-label={label}
-        title={label}
-        style={{ ...common, background: "#16A34A", color: "#ffffff" }}
-      >
-        <Check size={10} strokeWidth={3} />
-      </span>
-    )
-  }
-  if (s === "in_progress") {
-    return (
-      <span
-        role="img"
-        aria-label={label}
-        title={label}
-        style={{ ...common, background: "transparent", border: "1.5px solid #F97316" }}
-      >
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#F97316" }} />
-      </span>
-    )
-  }
-  if (s === "locked") {
-    return (
-      <span
-        role="img"
-        aria-label={label}
-        title={label}
-        style={{ ...common, background: "transparent", color: "#94a3b8" }}
-      >
-        <Lock size={10} strokeWidth={2} />
-      </span>
-    )
-  }
-  // not_started — hollow ring
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      style={{ ...common, background: "transparent", border: "1.5px solid #CBD5E1" }}
-    />
-  )
-}
+// Completion circles removed per product decision — students found the
+// small right-edge circle (green check / orange dot / hollow ring / lock)
+// noisy on every row. Component now returns null so each syllabus row's
+// right cluster is clean; the row still receives the `status` prop from
+// its parent and could reinstate a visual here without a wider refactor.
+// STATUS_LABEL is kept above for the same reason.
+const TopicStatusIndicator: React.FC<{ status: TopicStatus | undefined }> = () => null
 
 /* ─── Smooth collapse ────────────────────────────────────────────────────── */
 const AnimCollapse: React.FC<{ open: boolean; children: React.ReactNode }> = ({ open, children }) => {

@@ -18,10 +18,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import {
-  Search, X, ArrowUpDown, ChevronDown, ChevronRight, Filter as FilterIcon,
-  FileText, FileVideo, FileImage, File as FileIco, Folder as FolderIco,
-  BookOpen, Link as LinkIcon, Presentation, Archive, Type as TypeIco,
-  Calendar as CalendarIcon,
+  Search, X, ArrowUpDown, ChevronDown, Filter as FilterIcon,
+  FileText, FileVideo, Folder as FolderIco,
+  BookOpen, Presentation,
 } from "lucide-react"
 import type { Resource, ResourceType } from "./types/types"
 // Reuse the SAME table + footer primitives the We Do Assignment list uses
@@ -125,45 +124,55 @@ const BADGE_TONE: Record<UiType, { bg: string; fg: string; ring: string }> = {
   folder:  { bg: "#EFF8FF", fg: "#175CD3", ring: "rgba(46,144,250,0.22)" },
 }
 
-// ── Detail-string derivation ────────────────────────────────────────────────
-// The "Details" column shows a learning-friendly hint of what's inside —
-// pages / min / slides / resources — NOT raw file size. Uses whatever
-// metadata the resource carries, with a sensible fallback per type so the
-// column is never empty.
-const detailsFor = (r: Resource, folderContentsCount?: number): string => {
+// ── Size derivation ─────────────────────────────────────────────────────────
+// The "Size" column shows the raw file size for uploaded assets (PDF, PPT,
+// video, doc, image, archive) and a plain "-" for anything that has no
+// meaningful byte count — folders, reading resources, external links, and
+// author-composed sections. Zero/undefined/null are treated as "no size"
+// so the column NEVER reads "0 KB". Format:
+//   < 1 MB → "127.2 KB" (one decimal)
+//   ≥ 1 MB → "1.4 MB"   (one decimal)
+//   0 <  n < 1 KB → "<1 KB" (avoids "0 KB" while still marking presence)
+const parseBytes = (raw: unknown): number => {
+  if (raw == null) return 0
+  if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : 0
+  if (typeof raw !== 'string') return 0
+  const s = raw.trim()
+  if (!s || s === '-' || s === '0') return 0
+  // Numeric string ("128737") — already bytes.
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = parseFloat(s)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
+  // Human string ("125.7 KB", "1.4 MB", "500B") — convert to bytes.
+  const m = s.toLowerCase().match(/^([\d.]+)\s*(kb|mb|gb|b)?$/)
+  if (!m) return 0
+  const n = parseFloat(m[1])
+  if (!Number.isFinite(n) || n <= 0) return 0
+  const unit = m[2] || 'b'
+  if (unit === 'gb') return n * 1024 * 1024 * 1024
+  if (unit === 'mb') return n * 1024 * 1024
+  if (unit === 'kb') return n * 1024
+  return n
+}
+
+const formatBytes = (bytes: number): string => {
+  if (!bytes || bytes <= 0) return '-'
+  if (bytes < 1024) return '<1 KB'
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Rows without a meaningful byte count always render "-": folders, reading
+// resources, links, pages/sections. Uploaded assets that legitimately
+// carry a fileSize render the formatted size.
+const sizeFor = (r: Resource): string => {
   const ui = bucketFor(r)
+  if (ui === 'folder' || ui === 'reading' || ui === 'section') return '-'
   const anyR = r as any
-  if (ui === "folder") {
-    const n = folderContentsCount ?? (Array.isArray(anyR.folderContents) ? anyR.folderContents.length : undefined)
-    return n != null ? `${n} ${n === 1 ? "resource" : "resources"}` : "Folder"
-  }
-  if (ui === "pdf") {
-    const p = anyR._pageCount ?? anyR.pageCount ?? anyR.pages
-    if (typeof p === "number" && p > 0) return `${p} pages`
-    if (r.fileSize) return r.fileSize
-    return "PDF"
-  }
-  if (ui === "slides") {
-    const p = anyR._pageCount ?? anyR.slideCount ?? anyR.pages
-    if (typeof p === "number" && p > 0) return `${p} slides`
-    if (r.fileSize) return r.fileSize
-    return "Slides"
-  }
-  if (ui === "video") {
-    const dur = anyR.duration ?? anyR.durationMin ?? anyR.durationMinutes
-    if (typeof dur === "number" && dur > 0) return `${dur} min`
-    if (typeof dur === "string" && dur) return dur
-    return "Video"
-  }
-  if (ui === "section") {
-    const n = anyR._pageCount ?? (anyR.combinedCode ? undefined : anyR.pages?.length)
-    if (typeof n === "number" && n > 1) return `${n} resources`
-    return "Section"
-  }
-  // reading / link / doc — approximate "N min read" if we can, else generic.
-  const words = typeof anyR.wordCount === "number" ? anyR.wordCount : null
-  if (words && words > 0) return `${Math.max(1, Math.round(words / 200))} min read`
-  return "Reading"
+  if (r.type === 'link' || r.type === 'reference') return '-'
+  const bytes = parseBytes(r.fileSize ?? anyR.size ?? anyR.bytes)
+  return formatBytes(bytes)
 }
 
 // ── Date helpers ────────────────────────────────────────────────────────────
@@ -349,11 +358,11 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
   } as const)[sort]
 
   // ── Columns for the shared DataTable ────────────────────────────────────
-  // Column widths mirror the We Do Assignment table (48/10/13/14/15) so
-  // the two lists sit at the same rhythm. Filename gets the most room;
-  // Action stays right-aligned so the Open button lands in a predictable
-  // click zone. NO secondary description ("Study Notes", "Video Lecture"…)
-  // per the user's ask — the icon + type badge already tell the story.
+  // Columns: # | Resource | Type | Added On | Size
+  // The Details + Action columns were removed — the whole row is now the
+  // Open action (wired via DataTable's onRowClick below). Widths sum to
+  // 100% and give the filename the most room. Size sits at the right
+  // because it's the shortest cell and reads best as a trailing metric.
   const columns: DTColumn<Resource>[] = [
     {
       key: 'num',
@@ -368,7 +377,7 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
       key: 'name',
       label: 'Resource',
       sortKey: 'name',
-      className: 'w-[46%] px-3 text-left align-middle text-[13.5px]',
+      className: 'w-[55%] px-3 text-left align-middle text-[13.5px]',
       skeletonWidth: '80%',
       render: (r) => {
         const ui = bucketFor(r)
@@ -395,7 +404,7 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
     {
       key: 'type',
       label: 'Type',
-      className: 'w-[10%] px-3 text-left align-middle text-[13px] text-body',
+      className: 'w-[13%] px-3 text-left align-middle text-[13px] text-body',
       render: (r) => {
         const ui = bucketFor(r)
         const b = BADGE_TONE[ui]
@@ -419,7 +428,7 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
       key: 'date',
       label: 'Added On',
       sortKey: 'date',
-      className: 'w-[13%] px-3 text-left align-middle text-[13px] text-body whitespace-nowrap',
+      className: 'w-[18%] px-3 text-left align-middle text-[13px] text-body whitespace-nowrap',
       render: (r) => (
         <span className="text-[13px] text-body">
           {formatAddedOn(r.uploadedAt as any)}
@@ -427,32 +436,11 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
       ),
     },
     {
-      key: 'details',
-      label: 'Details',
-      className: 'w-[12%] px-3 text-left align-middle text-[13px] text-body whitespace-nowrap',
-      render: (r) => {
-        const folderCount = Array.isArray((r as any).folderContents) ? (r as any).folderContents.length : undefined
-        return <span className="text-[13px] text-body">{detailsFor(r, folderCount)}</span>
-      },
-    },
-    {
-      key: 'action',
-      label: 'Action',
-      className: 'w-[15%] pl-3 pr-4 text-center align-middle whitespace-nowrap',
+      key: 'size',
+      label: 'Size',
+      className: 'w-[10%] px-3 pr-4 text-left align-middle text-[13px] text-body whitespace-nowrap tabular-nums',
       render: (r) => (
-        <div className="flex items-center justify-center">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onOpen(r) }}
-            className="inline-flex items-center justify-center gap-1 h-9 px-4 rounded-control text-[13px] font-semibold transition-colors"
-            style={{ border: '1px solid #F97316', color: '#F97316', background: '#FFFFFF' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#FFF7ED' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#FFFFFF' }}
-          >
-            Open
-            <ChevronRight size={13} />
-          </button>
-        </div>
+        <span className="text-[13px] text-body">{sizeFor(r)}</span>
       ),
     },
   ]
@@ -759,6 +747,11 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
           isFiltered={query.trim().length > 0 || hasChips}
           fixedLayout
           fillHeight
+          // Whole row is the Open action — the Action column and its per-row
+          // Open button were removed. Reuses the SAME onOpen handler the
+          // parent already provides (handleResourceClick), so folder /
+          // file / reading / link routing stays identical to before.
+          onRowClick={(r) => onOpen(r)}
           emptyTitle={merged.length === 0 ? 'No resources yet' : 'No matching resources'}
           emptyHint={merged.length === 0
             ? 'This activity has no content yet.'

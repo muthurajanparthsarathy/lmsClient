@@ -80,6 +80,7 @@ export function DataTable<T>({
     bulkActions,
     rowActions,
     rowClassName,
+    onRowClick,
 }: {
     rows: T[]
     columns: Column<T>[]
@@ -128,6 +129,12 @@ export function DataTable<T>({
     // Whatever this returns is appended to the base row classes so hover
     // and selected states still work; return "" for the default surface.
     rowClassName?: (row: T, index: number) => string
+    // Optional whole-row click handler. When set, each row becomes a
+    // button: `cursor-pointer` visual, `role=button`, keyboard-focusable
+    // (Tab), and Enter/Space activates it. Cells that already stop event
+    // propagation (kebab menu, checkbox) keep working. Absent = rows are
+    // presentational, matching the historical default.
+    onRowClick?: (row: T, index: number) => void
 }) {
     const showSkeleton = isLoading || loading
     const selectable = Boolean(selectedKeys && onSelectionChange)
@@ -312,7 +319,20 @@ export function DataTable<T>({
                                     // a clear separator without heavy grid lines.
                                     // rowClassName lets the caller tint a row
                                     // by state (active/inactive, submitted, etc.).
-                                    className={`border-b border-hairline last:border-0 transition-colors ${isSelected ? 'bg-brand-wash/60 hover:bg-brand-wash' : 'hover:bg-row-hover'} ${rowClassName ? rowClassName(row, i) : ''}`}
+                                    // When onRowClick is set, add cursor-pointer +
+                                    // ARIA role so the whole row reads as an action.
+                                    className={`border-b border-hairline last:border-0 transition-colors ${isSelected ? 'bg-brand-wash/60 hover:bg-brand-wash' : 'hover:bg-row-hover'} ${onRowClick ? 'cursor-pointer' : ''} ${rowClassName ? rowClassName(row, i) : ''}`}
+                                    {...(onRowClick ? {
+                                        role: 'button' as const,
+                                        tabIndex: 0,
+                                        onClick: () => onRowClick(row, i),
+                                        onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault()
+                                                onRowClick(row, i)
+                                            }
+                                        },
+                                    } : {})}
                                 >
                                     {selectable && (
                                         <td className="w-11 px-3 h-11 align-middle">
