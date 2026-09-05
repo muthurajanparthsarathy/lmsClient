@@ -14,11 +14,10 @@
 
 import React from "react"
 import {
-  Terminal as TerminalIcon,
   ClipboardCheck, Copy, CheckCircle2, XCircle, AlertTriangle,
   Loader2, RefreshCw,
 } from "lucide-react"
-import RunTerminal, { type TermLine } from "./RunTerminal"
+import { type TermLine } from "./RunTerminal"
 
 export type SubmitStatus =
   | 'evaluating'
@@ -103,21 +102,14 @@ const TONE: Record<'ok' | 'bad' | 'warn' | 'info', { fg: string; bg: string; bor
 }
 
 export default function BottomPanel(props: BottomPanelProps) {
+  // Terminal tab is hidden; the terminal props on the interface are kept
+  // for API compatibility with the parent but are intentionally unused.
   const {
-    activeTab, onTabChange, testResult,
-    termLines, running, stdin, lastRuntime, setStdin, onClearTerm,
-    interactive, awaitingInput, inputPrompt, onSubmitInput,
+    onTabChange, testResult,
     selectedCaseIndex, onSelectCase, onRetrySubmit, isSubmitting,
   } = props
 
   const isEval = testResult?.status === 'evaluating'
-  const resStatus = testResult?.status
-  const resIndicatorColor =
-    !testResult ? '#94A3B8' :
-    isEval ? '#175CD3' :
-    resStatus === 'accepted' ? '#12A765' :
-    (resStatus === 'wrong-answer' || resStatus === 'compilation-error' || resStatus === 'runtime-error' || resStatus === 'submission-failed') ? '#B42318' :
-    '#B54708'
 
   const copyResult = async () => {
     if (!testResult) return
@@ -147,85 +139,41 @@ export default function BottomPanel(props: BottomPanelProps) {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'stretch' }}>
-          <TabButton
-            id="terminal"
-            active={activeTab === 'terminal'}
-            onClick={() => onTabChange('terminal')}
-          >
-            <TerminalIcon size={12} style={{ color: activeTab === 'terminal' ? '#0F9D94' : '#667085' }} />
-            Terminal
-          </TabButton>
+          {/* Terminal tab intentionally hidden — the panel now shows only
+              Test Result. The tab strip stays so the Copy-result action has
+              a home and the panel still reads as a labeled surface. */}
           <TabButton
             id="test-result"
-            active={activeTab === 'test-result'}
+            active={true}
             onClick={() => onTabChange('test-result')}
           >
-            <ClipboardCheck size={12} style={{ color: activeTab === 'test-result' ? '#FF641A' : '#667085' }} />
+            <ClipboardCheck size={12} style={{ color: '#FF641A' }} />
             Test Result
-            {/* Inactive-tab indicator: spinner while evaluating, or a dot
-                colored by outcome after a submission. */}
-            {activeTab !== 'test-result' && testResult && (
-              isEval
-                ? <Loader2 size={11} className="animate-spin" style={{ color: '#175CD3' }} />
-                : <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: resIndicatorColor, display: 'inline-block' }} />
-            )}
           </TabButton>
         </div>
 
-        {/* Right-side action — Clear (Terminal tab) or Copy (Test Result tab) */}
+        {/* Right-side action — Copy result (Terminal tab is hidden). */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {activeTab === 'terminal' ? (
-            <button
-              type="button"
-              onClick={onClearTerm}
-              title="Clear terminal"
-              aria-label="Clear terminal output"
-              style={smallBtn}
-            >
-              Clear
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={copyResult}
-              disabled={!testResult || isEval}
-              title="Copy result"
-              aria-label="Copy result summary"
-              style={{ ...smallBtn, opacity: (!testResult || isEval) ? 0.5 : 1 }}
-            >
-              <Copy size={11} /> Copy result
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={copyResult}
+            disabled={!testResult || isEval}
+            title="Copy result"
+            aria-label="Copy result summary"
+            style={{ ...smallBtn, opacity: (!testResult || isEval) ? 0.5 : 1 }}
+          >
+            <Copy size={11} /> Copy result
+          </button>
         </div>
       </div>
 
-      {/* Content — one tab visible at a time; the other keeps its state
-          because both are mounted (hidden with `display:none` swap). */}
+      {/* Content — only Test Result is rendered now; Terminal panel and
+          RunTerminal are intentionally not mounted. */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div
           role="tabpanel"
-          aria-labelledby="terminal"
-          hidden={activeTab !== 'terminal'}
-          style={{ flex: activeTab === 'terminal' ? 1 : 0, minWidth: 0, display: activeTab === 'terminal' ? 'block' : 'none' }}
-        >
-          <RunTerminal
-            lines={termLines}
-            running={running}
-            stdin={stdin}
-            lastRuntimeMs={lastRuntime}
-            onStdinChange={setStdin}
-            onClear={onClearTerm}
-            interactive={interactive}
-            awaitingInput={awaitingInput}
-            inputPrompt={inputPrompt}
-            onSubmitInput={onSubmitInput}
-          />
-        </div>
-        <div
-          role="tabpanel"
           aria-labelledby="test-result"
-          hidden={activeTab !== 'test-result'}
-          style={{ flex: activeTab === 'test-result' ? 1 : 0, minWidth: 0, display: activeTab === 'test-result' ? 'block' : 'none' }}
+          style={{ flex: 1, minWidth: 0, display: 'block' }}
         >
           <TestResultView
             state={testResult}

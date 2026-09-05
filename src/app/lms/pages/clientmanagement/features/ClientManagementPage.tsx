@@ -1108,13 +1108,11 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                                         </DropdownMenuItem>
                                     )}
                                     {canNewMapping && (
-                                        // Label reads "New mapping" — the row kebab's
-                                        // shortcut into Service Mapping opens the New
-                                        // Mapping wizard on this client, so the label
-                                        // names the destination screen rather than
-                                        // describing the sub-action.
+                                        // Label reads "Map new service" — names the
+                                        // action (mapping a new service to this client)
+                                        // rather than the destination screen.
                                         <DropdownMenuItem onClick={() => handleNewMapping(client._id)} className="cursor-pointer">
-                                            <Layers className="text-brand-strong" /> New mapping
+                                            <Layers className="text-brand-strong" /> Map new service
                                         </DropdownMenuItem>
                                     )}
                                     {canToggle && (

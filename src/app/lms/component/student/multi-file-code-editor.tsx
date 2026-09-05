@@ -196,12 +196,10 @@ export default function MultiFileCodeEditor({
   const [running, setRunning] = useState(false)
   const [lastRuntime, setLastRuntime] = useState<number | null>(null)
   const [showTerminal, setShowTerminal] = useState(true)
-  // Bottom-panel tabs — the ONE panel now hosts both the interactive
-  // Terminal (Run output) and the Test Result view (Submit answer result).
-  // Run activates 'terminal'; Submit activates 'test-result'. Neither clears
-  // the other's state — flipping tabs is cheap navigation. Types are
-  // exported from BottomPanel so both files share the shape.
-  const [bottomTab, setBottomTab] = useState<'terminal' | 'test-result'>('terminal')
+  // Bottom-panel tabs — Terminal tab is hidden now; only Test Result is
+  // visible in the strip, so bottomTab is pinned to 'test-result'. The state
+  // is kept for API compatibility with BottomPanel props.
+  const [bottomTab, setBottomTab] = useState<'terminal' | 'test-result'>('test-result')
   const [testResult, setTestResult] = useState<TestResultState | null>(null)
   const [selectedCaseIndex, setSelectedCaseIndex] = useState<number>(0)
   const runAbortRef = useRef<AbortController | null>(null)
@@ -270,8 +268,14 @@ export default function MultiFileCodeEditor({
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false)
+  // Run Testcase — evaluates the current code against the trainer's testcases
+  // (server-side judge, same endpoint Submit uses) but does NOT mark the
+  // question as solved. Separate loading flag so the Run Testcase button can
+  // spin independently of the Submit button.
+  const [isRunningTestCases, setIsRunningTestCases] = useState(false)
   const isSubmitGuardRef = useRef(false)
   const isSubmitQuestionGuardRef = useRef(false)
+  const isRunTestCasesGuardRef = useRef(false)
 
   const [showBackConfirm, setShowBackConfirm] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
@@ -420,12 +424,11 @@ export default function MultiFileCodeEditor({
     // Bottom-panel reset for the new question. The Test Result is tied to
     // the previous question's submission — showing it above the new
     // question would look like the new one had already been graded
-    // (that's the bug the user reported). Reset the panel back to the
-    // Terminal tab too, since Terminal state itself was already cleared
-    // above.
+    // (that's the bug the user reported). Terminal tab is hidden, so the
+    // panel stays pinned to 'test-result'.
     setTestResult(null)
     setSelectedCaseIndex(0)
-    setBottomTab('terminal')
+    setBottomTab('test-result')
 
     // Load per-question notes from localStorage for the freshly-selected
     // question. Miss = blank scratchpad. Storage key includes both
@@ -470,9 +473,26 @@ export default function MultiFileCodeEditor({
   // ═════════════════════════════════════════════════════════════════════════════
   // Load (draft → previous submission → starter) on question/exercise change
   // ═════════════════════════════════════════════════════════════════════════════
+  //
+  // `loadedForRef` tracks the (exerciseId, questionId) the files/folders in
+  // state actually correspond to. saveDraft consults it to refuse writes
+  // whose payload questionId doesn't match — this closes a race where, at
+  // the moment the student clicks Next, `currentQuestion?._id` has already
+  // moved to the new question but `files/folders` are still the previous
+  // question's contents. Without the guard, the heartbeat-effect cleanup
+  // fires `saveDraft(true)` and posts { NEW questionId, OLD files } to
+  // /draft/save, so when the load effect then reads /draft/load for the new
+  // question it hydrates the previous question's code — exactly the "typed
+  // solution follows me to the next question" bug the user reported.
+  const loadedForRef = useRef<{ exerciseId: string | null; questionId: string | null }>({ exerciseId: null, questionId: null })
+
   useEffect(() => {
     let cancelled = false
     const primary = availableLanguages[0] || "python"
+    // Mark files as no longer trustworthy for saving under any question —
+    // stale saves that fire during the async load window (heartbeat
+    // cleanup, in-flight debounced write) will now be dropped in saveDraft.
+    loadedForRef.current = { exerciseId: null, questionId: null }
     setReady(false)
     setSelectedLanguage((prev) => (availableLanguages.includes(prev) ? prev : primary))
 
@@ -513,6 +533,9 @@ export default function MultiFileCodeEditor({
       setOpenTabs(first ? [first.id] : [])
       setActiveFileId(first ? first.id : null)
       setSelectedLanguage(lang)
+      // Files now correspond to this exercise+question. Re-open the save
+      // gate; saveDraft will accept writes whose payload questionId matches.
+      loadedForRef.current = { exerciseId: exercise?._id || null, questionId: currentQuestion?._id || null }
       setReady(true)
       // A load that came from an existing draft or previous submission
       // (rather than a fresh seed) means the student already worked on
@@ -598,6 +621,13 @@ export default function MultiFileCodeEditor({
   const saveDraft = useCallback(async (keepalive = false) => {
     const payload = draftRef.current()
     if (!payload.exerciseId || !payload.questionId || !ready) return
+    // Guard: the files/folders in state must actually correspond to the
+    // payload's questionId. During a Next-question transition, currentQuestion
+    // updates BEFORE the async load hydrates new files, so draftRef.current()
+    // can briefly produce { NEW questionId, OLD files } — writing that would
+    // stamp the previous question's code onto the new question's draft.
+    const loaded = loadedForRef.current
+    if (loaded.exerciseId !== payload.exerciseId || loaded.questionId !== payload.questionId) return
     try {
       await fetch(`${API}/draft/save`, {
         method: "POST",
@@ -729,10 +759,7 @@ export default function MultiFileCodeEditor({
   const runCode = useCallback(async () => {
     if (running || vizRunning || !files.length) return
     setRunning(true)
-    // Run → always route to the Terminal tab. Test Result state is left
-    // untouched so a prior submission is still there when the student flips
-    // back to it.
-    setBottomTab('terminal')
+    // Terminal tab is hidden — no bottom-tab switch on Run.
     setShowTerminal(true)
     setLastRuntime(null)
     log("system", `$ Running (${LANGUAGE_CONFIG[selectedLanguage].label}) …`)
@@ -783,8 +810,7 @@ export default function MultiFileCodeEditor({
     const entry = pickPythonEntry()
     if (!entry || !entry.content.trim()) { toast("Write some Python first.", { icon: "ℹ️" }); return }
 
-    // Same routing as batch Run — Terminal tab, panel expanded.
-    setBottomTab('terminal')
+    // Terminal tab is hidden — no bottom-tab switch on Run.
     setShowTerminal(true)
     setInteractiveActive(true)
     setAwaitingInput(false)
@@ -1245,6 +1271,27 @@ export default function MultiFileCodeEditor({
     }
   }
 
+  // Run Testcase — evaluates the current code against the trainer's testcases
+  // and paints the Test Result panel, without recording the question as
+  // "Submitted ✓". Uses the same server-side judge Submit uses (only endpoint
+  // available), so behaviour differs from Submit ONLY in that we skip the
+  // `setSolvedQuestions` bookkeeping. Students can iterate freely.
+  const runTestCases = async () => {
+    if (isRunTestCasesGuardRef.current) return
+    isRunTestCasesGuardRef.current = true
+    setIsRunningTestCases(true)
+    try {
+      await saveDraft(false)
+      const result = await postSubmission(false)
+      if (!result.ok) log("error", `Run testcase failed: ${result.message}`)
+    } catch (e: any) {
+      log("error", `Run testcase error: ${e?.message || e}`)
+    } finally {
+      setIsRunningTestCases(false)
+      isRunTestCasesGuardRef.current = false
+    }
+  }
+
   const submitExercise = async (opts?: { auto?: boolean }) => {
     if (isSubmitGuardRef.current) return
     isSubmitGuardRef.current = true
@@ -1682,8 +1729,10 @@ export default function MultiFileCodeEditor({
                 Visualize
               </button>
 
-              {running ? (
-                <button onClick={stopRun} style={{
+              {/* Run / Stop buttons intentionally hidden — the workspace is
+                  submission-only now; students see only Test Result output. */}
+              {running || interactiveActive ? (
+                <button onClick={() => { running ? stopRun() : stopInteractive() }} style={{
                   display: "inline-flex", alignItems: "center", gap: 5,
                   height: 32, padding: "0 12px", borderRadius: 8,
                   border: "1px solid #fca5a5", background: "#fee2e2", color: "#b91c1c",
@@ -1691,46 +1740,46 @@ export default function MultiFileCodeEditor({
                 }}>
                   <Square size={12} /> Stop
                 </button>
-              ) : interactiveActive ? (
-                <button onClick={stopInteractive} style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  height: 32, padding: "0 12px", borderRadius: 8,
-                  border: "1px solid #fca5a5", background: "#fee2e2", color: "#b91c1c",
-                  fontSize: 12, fontWeight: 600, fontFamily: FONT, cursor: "pointer",
-                }}>
-                  <Square size={12} /> Stop
-                </button>
-              ) : (
+              ) : null}
+
+              {/* Run Testcase — evaluates against the trainer's testcases and
+                  paints Test Result; does NOT mark the question as solved.
+                  Sits in the slot the old Run button used to occupy so the
+                  right-cluster rhythm (Visualize / Run Testcase / Submit /
+                  Finish) reads left-to-right in order of commitment. */}
+              {exercise && (
                 <button
-                  onClick={() => { selectedLanguage === "python" ? runInteractive() : runCode() }}
-                  disabled={!ready || vizRunning}
-                  title={selectedLanguage === "python" ? "Run with live input" : "Run your program"}
+                  onClick={runTestCases}
+                  disabled={!ready || isRunningTestCases || isSubmittingQuestion || isSubmitting}
+                  title="Run your code against the testcases (does not submit)"
+                  aria-label="Run testcase"
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 5,
                     height: 32, padding: "0 14px", borderRadius: 8,
-                    border: "none", background: "#12A765", color: "#fff",
-                    fontSize: 12, fontWeight: 700, fontFamily: FONT,
-                    cursor: (ready && !vizRunning) ? "pointer" : "not-allowed",
-                    opacity: (ready && !vizRunning) ? 1 : 0.5,
+                    border: "none",
+                    background: (!ready || isRunningTestCases || isSubmittingQuestion || isSubmitting) ? "#94A3B8" : "#12A765",
+                    color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: FONT,
+                    cursor: (!ready || isRunningTestCases || isSubmittingQuestion || isSubmitting) ? "not-allowed" : "pointer",
                   }}
                 >
-                  <Play size={12} /> Run
+                  {isRunningTestCases ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                  Run Testcase
                 </button>
               )}
 
               {exercise && (
                 <button
                   onClick={submitQuestion}
-                  disabled={isSubmittingQuestion || isSubmitting}
+                  disabled={isSubmittingQuestion || isSubmitting || isRunningTestCases}
                   title="Submit your answer to this question"
                   aria-label="Submit answer"
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 5,
                     height: 32, padding: "0 14px", borderRadius: 8,
                     border: "none",
-                    background: (isSubmittingQuestion || isSubmitting) ? "#94A3B8" : "#FF641A",
+                    background: (isSubmittingQuestion || isSubmitting || isRunningTestCases) ? "#94A3B8" : "#FF641A",
                     color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: FONT,
-                    cursor: (isSubmittingQuestion || isSubmitting) ? "not-allowed" : "pointer",
+                    cursor: (isSubmittingQuestion || isSubmitting || isRunningTestCases) ? "not-allowed" : "pointer",
                   }}
                 >
                   {isSubmittingQuestion ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
