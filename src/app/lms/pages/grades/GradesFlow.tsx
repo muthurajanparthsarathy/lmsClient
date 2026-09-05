@@ -596,7 +596,7 @@ export default function GradesFlow({
 
     if (!data || data.length === 0) return [];
 
-    return data.filter((item: any) => {
+    const filtered = data.filter((item: any) => {
       // Search filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
@@ -690,6 +690,28 @@ export default function GradesFlow({
 
       return true;
     });
+
+    // Exercises tab: show the most recently ADDED assignment/assessment at
+    // the top so newly-created rows are visible without paging. `createdAt`
+    // comes straight from the API (getCourseExercisesAdminView populates it
+    // from the exercise doc); when absent — legacy rows written before the
+    // field was persisted — we fall back to the ObjectId, whose 4-byte
+    // timestamp prefix orders lexicographically the same as by creation
+    // time, so those rows still slot in at the correct age. Other tabs
+    // keep their existing (unsorted / server-ordered) rendering.
+    if (activeTab === "exercises") {
+      const stamp = (row: any): number => {
+        const t = row?.createdAt ? new Date(row.createdAt).getTime() : NaN;
+        if (Number.isFinite(t)) return t;
+        const oid = String(row?._id || "");
+        // First 8 hex chars of an ObjectId = seconds-since-epoch.
+        return oid.length >= 8 ? parseInt(oid.slice(0, 8), 16) * 1000 : 0;
+      };
+      // Slice before sort so we never mutate the query cache's array.
+      return filtered.slice().sort((a: any, b: any) => stamp(b) - stamp(a));
+    }
+
+    return filtered;
   }, [activeTab, exercises, students, questions, searchTerm, statusFilter, sectionFilter, difficultyFilter, passFailFilter]);
 
   // ── Pagination ─────────────────────────────────────────────────────────
