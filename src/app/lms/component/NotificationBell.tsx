@@ -17,7 +17,7 @@ import {
   Info,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { notificationsService, notificationKeys, type Notification } from "@/apiServices/notifications";
+import { notificationsService, notificationKeys, type Notification } from "@/app/lms/pages/notifications/api/notifications";
 
 // Header notification bell — surfaces the EXISTING notification system
 // (same `notificationsService` data used by the sidebar/TopBar). Do not

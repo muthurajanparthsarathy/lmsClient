@@ -4,8 +4,8 @@ import { getToken } from "@/lib/session";
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Search, Loader2, Users, Check } from 'lucide-react'
-import { serviceMappingApi, type ServiceMapping } from '@/apiServices/serviceMappingService'
-import { fetchUsers, addParticipantsToCourse } from '@/apiServices/userService'
+import { serviceMappingApi, type ServiceMapping } from '@/app/lms/pages/servicemapping/api/serviceMappingService'
+import { fetchUsers, addParticipantsToCourse } from '@/app/lms/pages/usermanagement/api/userService'
 import { toast } from 'sonner'
 
 // Enroll students into a course by picking one of the client's SERVICES first —

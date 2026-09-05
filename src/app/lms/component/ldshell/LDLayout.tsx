@@ -26,6 +26,9 @@ export type LDView =
   | "fb-summary"
   // "reports" is the legacy hash — it now lands on the first report page.
   | "reports"
+  // "rep-overview" is the L&D Overview — Reports’ landing page and where
+  // the legacy "reports" hash now resolves.
+  | "rep-overview"
   | "rep-performance" | "rep-attendance" | "rep-delivery" | "rep-feedback" | "rep-clients"
   | "profile";
  
@@ -36,7 +39,17 @@ export interface FilterBar {
   onClient: (v: string) => void; onCourse: (v: string) => void;
 }
  
-interface NavItem { id: LDView; label: string; badge?: number; icon: string; children?: { id: LDView; label: string; badge?: number }[] }
+interface NavItem {
+  id: LDView;
+  label: string;
+  badge?: number;
+  icon: string;
+  /** Override the default hash-based href — used by items that should
+   *  navigate to a full page instead of a hash view. Example: Reports
+   *  now points at the standalone /lms/pages/reports/performance page. */
+  href?: string;
+  children?: { id: LDView; label: string; badge?: number; href?: string }[];
+}
 interface NavGroup { label: string; items: NavItem[] }
  
 const GROUPS: NavGroup[] = [
@@ -75,21 +88,23 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
+    // 2026-09-04: sidebar restructured. Overview and Reports are now
+    // sibling top-level items with NO children.
+    //   • Overview → the L&D executive summary at #rep-overview.
+    //   • Reports → the Learner Progress & Performance Report page.
+    // Course Delivery and Clients & Services were dropped from the rail
+    // (they were dashboard-driven detailed reports; the day-to-day L&D
+    // reporting flow the redesign asked for lives under Reports alone).
+    // They remain reachable via existing hash links inside the L&D
+    // dashboard, so nothing routes to a dead page.
     label: "Reporting",
-    items: [{
-      // Parent id = first child's id (rail convention, same as Approvals).
-      id: "rep-performance", label: "Reports", icon: "reports",
-      children: [
-        { id: "rep-performance", label: "Performance" },
-        // Attendance intentionally omitted here — the standalone Attendance
-        // item in Monitoring already covers it; a second entry would duplicate.
-        { id: "rep-delivery", label: "Course Delivery" },
-        // Feedback intentionally omitted here — the standalone Feedback item
-        // (fb-summary) above already renders the same FeedbackReport, so a
-        // second entry inside Reports would just duplicate it.
-        { id: "rep-clients", label: "Clients & Services" },
-      ],
-    }],
+    items: [
+      { id: "rep-overview", label: "Overview", icon: "performance" },
+      // Reports opens the standalone Learner Progress & Performance
+      // Report page directly — no hash view, no Create-Report modal.
+      // The `href` overrides the default hash-based nav.
+      { id: "rep-performance", label: "Reports", icon: "reports", href: "/lms/pages/reports/performance" },
+    ],
   },
   { label: "Account", items: [{ id: "profile", label: "Profile & Access", icon: "profile" }] },
 ];
@@ -258,7 +273,7 @@ const SIDEBAR_ALIAS: Partial<Record<LDView, LDView>> = {
   "course-calendar": "courses",
   "course-enrollment": "courses",
   // Legacy #reports bookmarks land on the first report page.
-  "reports": "rep-performance",
+  "reports": "rep-overview",
   // Student Performance has no rail entry anymore; its screens are reached
   // from the dashboard's alerts/quick actions, so Dashboard stays lit.
   "perf-progress": "dashboard",
@@ -368,8 +383,12 @@ export default function LDLayout({ active, children, apprBadge }: { active: LDVi
                   </div>
                 );
               }
+              // Explicit `href` (Reports → /lms/pages/reports/performance)
+              // takes precedence over the hash-based default. Active-state
+              // matches by id so highlighting still works whether the item
+              // is a hash view or a full page.
               return (
-                <a key={it.id} href={navHref(it.id)} className={`ldx-nav ${navActive === it.id ? "on" : ""}`}>
+                <a key={it.id} href={it.href ?? navHref(it.id)} className={`ldx-nav ${navActive === it.id ? "on" : ""}`}>
                   <Ico name={it.icon} />{it.label}
                 </a>
               );

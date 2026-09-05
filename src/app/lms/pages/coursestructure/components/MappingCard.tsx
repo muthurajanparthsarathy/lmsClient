@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { StatusPill } from "../../../shared/ui";
-import type { ServiceMapping } from "@/apiServices/serviceMappingService";
+import type { ServiceMapping } from "@/app/lms/pages/servicemapping/api/serviceMappingService";
 import {
   ClientAvatar,
   ModelBadges,

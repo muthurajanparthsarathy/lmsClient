@@ -4,11 +4,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart2, Image, Upload, X, FileText, Bold, Italic, Underline, List, ListOrdered, Folder, FolderOpen, File, FileStack, Info, GraduationCap, User, Users, UserCheck } from 'lucide-react';
 import InfoTooltip from '@/components/ui/reusabletooltip';
-import { ValidationMessage } from './ValidationMessage';
-import { FormData, ValidationErrors, PedagogyActivity } from './types';
+import { ValidationMessage } from '../../pages/coursestructure/components/ValidationMessage';
+import { FormData, ValidationErrors, PedagogyActivity } from '../../pages/coursestructure/components/types';
 import TipTapEditor from '../tiptopEditor';
-import ResourceTypeSection from '../Resourcetypesection ';
-import TestConfigurationSection, { TestConfiguration } from './TestConfigurationSection';
+import ResourceTypeSection from '../../pages/coursestructure/components/Resourcetypesection ';
+import TestConfigurationSection, { TestConfiguration } from '../../pages/coursestructure/components/TestConfigurationSection';
 
 interface Step2CourseDetailsProps {
     formData: FormData;

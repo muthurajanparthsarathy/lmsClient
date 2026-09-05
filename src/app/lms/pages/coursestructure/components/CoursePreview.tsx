@@ -8,9 +8,9 @@ import {
     User, UserCheck, Users, Video, X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { fetchCourseStructureById } from '@/apiServices/createCourseStucture'
+import { fetchCourseStructureById } from '@/app/lms/pages/coursestructure/api/createCourseStucture'
 import { usePermissions } from '@/hooks/usePermissions'
-import { PERMISSION_IDS } from '@/components/permissions'
+import { PERMISSION_IDS } from '@/app/lms/pages/usermanagement/components/permissions/index'
 
 // "Save and display" lands here: the SAVED record rendered the way a student
 // will meet it — hero, schedule, description, pedagogy — instead of the

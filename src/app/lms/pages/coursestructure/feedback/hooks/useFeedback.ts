@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CreateFeedbackPayload, UpdateFeedbackPayload, ToggleStatusPayload } from '../types/feedback';
 import toast from 'react-hot-toast';
-import { feedbackService } from '@/apiServices/feedbackService';
+import { feedbackService } from '@/app/lms/pages/coursestructure/feedback/api/feedbackService';
 
 // Query Keys
 export const feedbackKeys = {

@@ -17,13 +17,36 @@ import { DifficultyChip, StatusChip } from "./GradeBadges";
 //                          affordance discoverable without hovering)
 const BODY = "h-11 px-3 align-middle text-[12px] text-body";
 export function ExerciseCells({ item, index }: { item: any; index: number }) {
+  // Section badge — WE DO (Assignment) vs YOU DO (Assessment). Sits inline
+  // with the exercise name so the trainer can eyeball the split even when
+  // both types are shown together. Tones split the visual meaning:
+  //   • We Do  → info (blue) — trainer-led practice
+  //   • You Do → brand (orange) — learner assessment
+  // Anything without a section is left unbadged rather than badged as
+  // "Exercise", which reads as noise on rows that already carry a name.
+  const isWeDo = item.section === "We_Do";
+  const isYouDo = item.section === "You_Do";
   return (
     <>
       {/* `#` — its own narrow, right-aligned cell so long exercise names in
           the next column can truncate without eating the number. */}
       <td className={`${BODY} text-right tabular-nums text-faint w-10`}>{index + 1}</td>
       <td className={BODY}>
-        <span className="truncate block">{item.exerciseName}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          {(isWeDo || isYouDo) && (
+            <span
+              className={`inline-flex items-center h-5 rounded-full px-2 text-2xs font-semibold ring-1 ring-inset shrink-0 ${
+                isWeDo
+                  ? "bg-info-50 text-info-700 ring-info-500/20"
+                  : "bg-brand-wash text-brand-strong ring-brand/20"
+              }`}
+              title={isWeDo ? "We Do — Assignment" : "You Do — Assessment"}
+            >
+              {isWeDo ? "We Do" : "You Do"}
+            </span>
+          )}
+          <span className="truncate block">{item.exerciseName}</span>
+        </div>
       </td>
       {/* Right-aligned to match the "Total Questions" / "Total Marks"
           headers above them — number columns read as one visual block

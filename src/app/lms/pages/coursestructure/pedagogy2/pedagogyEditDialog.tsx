@@ -5,106 +5,34 @@
 // no component boundary, so React renders it exactly as before. The values each
 // closed over arrive in one loosely-typed deps object.
 
-"use client"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import React from "react"
-import { useState, useRef, useEffect, useMemo, Fragment, JSX, useCallback } from "react"
-import { motion, AnimatePresence } from "framer-motion";
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
+import { Fragment,} from "react"
+import { motion } from "framer-motion";
 import {
-    CheckCircle2,
     Merge,
-    Split,
-    HelpCircle,
-    X,
-    Plus,
-    Pencil,
-    Trash,
-    AlertTriangle,
-    ChevronDown,
-    ZoomIn,
-    ZoomOut,
-    Move,
     Eye,
     FileText,
-    SearchIcon,
-    Check,
-    Sliders,
-    MoreVertical,
-    Printer,
-    BookOpen,
-    User,
     Users,
-    Presentation,
     FolderOpen,
-    Info,
-    MoreHorizontal,
-    AlertCircle,
-    CheckCircle,
     Layers,
     ChevronDownIcon,
     ChevronRightIcon,
     ChevronRight,
-    ChevronUpCircle,
-    ChevronUpIcon,
-    Settings,
-    Copy,
-    RotateCcw,
-    Loader2,
-    CheckSquare,
     User2,
-    Trash2,
     SquarePen,
     File,
 } from "lucide-react"
-import ExcelJS from 'exceljs'
-import { saveAs } from 'file-saver';
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { courseStructureApi, fetchCourseStructureById } from "@/apiServices/createCourseStucture"
-import { moduleApi } from "@/apiServices/pedagogyAndModuleAdd/addmodule"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { subModuleApi } from "@/apiServices/pedagogyAndModuleAdd/addsubmodule"
-import { topicApi } from "@/apiServices/pedagogyAndModuleAdd/addtopic"
-import { subTopicApi } from "@/apiServices/pedagogyAndModuleAdd/addsubtopic"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { pedagogyViewApi } from "@/apiServices/pedagogyAndModuleAdd/pedagogy"
-import { levelViewApi } from "@/apiServices/levelsView";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import PrintComponent, { PrintComponentRef } from "@/components/ui/PrintComponent";
-import DropdownSection from "@/components/ui/dropdownSection";
-import { toast, Toaster } from 'sonner';
-import { createPortal } from "react-dom";
+import { Dialog, DialogContent,  DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { toast } from 'sonner';
 import PedagogyTestConfigurationSection from "./components/pedagogyTestConfigurationSection";
-// Types, the zoom puck and the popup motion variants now live beside this file.
-// They were moved verbatim during the split — same declarations, same shapes,
-// only relocated so this file holds the screen's logic rather than everything.
-import type {
-    Modules, MergeRange, SubModuleCreateData, PreviewTableProps, ModuleFormData,
-    Topic, TopicCreateData, SubTopic, SubTopicCreateData, ExportSelections,
-    CourseHours, MergedCell, Course, MergedLevel, ActivityType, PedagogyType,
-    HierarchyMerges,
-} from "./types"
-import DraggableZoomControls from "./DraggableZoomControls"
-import { popupVariants, popAnimation } from "./constants"
+import { popupVariants } from "./constants"
 import LevelMultiSelect from "./LevelMultiSelect"
-import PreviewTable from "./PreviewTable"
-import FullCoursePreviewTable from "./FullCoursePreviewTable"
-import { exportToExcelImpl } from "./exportToExcel"
-import { checkAndDeleteExistingMergedCellsImpl } from "./pedagogyDeletions"
-import { handleModuleDropImpl, handleSubModuleDropImpl, handleTopicDropImpl, handleSubtopicDropImpl } from "./dragDropHandlers"
-import { handleModuleSubmitImpl, handleSubModuleSubmitImpl, handleTopicSubmitImpl, handleSubTopicSubmitImpl } from "./submitHandlers"
-import { createTableRowsImpl, createDuplicateTableRowsImpl, processPedagogyDataImpl, collectCompleteHierarchyIdsImpl, getAllSelectedHierarchyIdsImpl, fetchAndSetPedagogyDataImpl } from "./dataBuilders"
-import { confirmUnmergeImpl, confirmCellDeleteImpl, handleDeleteLevelImpl, isCellMergedImpl, isLevelMergedImpl } from "./mergeHelpers"
-
-
 import type { PedagogyDialogsDeps } from "./pedagogyDialogs"
 
-// Split out of pedagogyDialogs.tsx (the single largest render function, the
-// module/level edit dialog) so no one file is oversized. Same function,
-// same deps type — a pure relocation.
 
 export function renderMainEditDialog(deps: PedagogyDialogsDeps) {
     const { activityTypes, addOnlyPedagogyLevel, areAllModuleTopicsCompleted, areAllSubModulesCompleted, clearLevelMergeSelections, clearPedagogyMergeSelections, currentMergeActivity, dialogType, disableAddonlyMode, editLevelMergeSelections, editMode, editPedagogyMergeSelections, errorMessage, expandedModules, expandedSubModules, expandedTopics, getCourseSkillSet, getHeaderText, getLevelMergeSelectionCount, handleModuleFormChange, handleModuleSubmit, handleSkillSetChange, handleSubModuleFormChange, handleSubModuleSubmit, handleSubTopicFormChange, handleSubTopicSubmit, handleTopicFormChange, handleTopicSubmit, hasActualMergeSelection, hasPedagogyHoursGreaterThanZero, isCreatingModule, isCreatingSubModule, isCreatingSubTopic, isCreatingTopic, isLastHierarchy, isMergeSectionOpen, moduleFormData, moduleTestConfig, pedagogyHours, resetAllFormStates, saveLevelMergeSelections, savePedagogyMergeSelections, savedLevelMergeSelections, savedPedagogyMergeSelections, selected, selectedCourse, selectedLevel, selectedLevelModulesForMerge, selectedLevelSubModulesForMerge, selectedLevelSubTopicsForMerge, selectedLevelTopicsForMerge, selectedModuleForSubModule, selectedPedagogyActivities, selectedPedagogyModulesForMerge, selectedPedagogySubModulesForMerge, selectedPedagogySubTopicsForMerge, selectedPedagogyTopicsForMerge, selectedSubModuleForTopic, setAddOnlyPedagogyLevel, setCurrentMergeActivity, setExpandedModules, setExpandedSubModules, setExpandedTopics, setPedagogyHours, setSelectedLevel, setSelectedLevelModulesForMerge, setSelectedLevelSubModulesForMerge, setSelectedLevelSubTopicsForMerge, setSelectedLevelTopicsForMerge, setSelectedPedagogyActivities, setSelectedPedagogyModulesForMerge, setSelectedPedagogySubModulesForMerge, setSelectedPedagogySubTopicsForMerge, setSelectedPedagogyTopicsForMerge, setShowDialog, setShowFullPreviewDialog, setShowLevelSection, setShowMergeLevelSection, setShowMergePedagogySection, setShowPedagogySection, shouldShowPedagogyLevelToggle, showDialog, showLevelSection, showMergeLevelSection, showMergePedagogySection, showPedagogySection, sortedModules, sortedSubModules, sortedSubTopics, sortedTopics, subModuleFormData, subTopicFormData, toggleExpansion, topicFormData, topicSubTopics } = deps

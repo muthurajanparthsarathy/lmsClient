@@ -20,7 +20,7 @@ import {
     fetchMappingPageExport,
     type MappingPageFilters,
     type ServiceMapping,
-} from '@/apiServices/serviceMappingService'
+} from '@/app/lms/pages/servicemapping/api/serviceMappingService'
 import { MappingTable } from './MappingTable'
 import { MappingCardGrid } from './MappingCard'
 import CourseSearchResults, { buildClientCourseMatches } from './CourseSearchResults'
@@ -202,18 +202,19 @@ export default function MappingList({
         return () => clearTimeout(timer)
     }, [search])
 
-    // Auto-fit page size to the table wrapper. Same math as Client Management:
-    // header 32 + row 44 + footer 44, minus half a row of safety so the last
-    // visible row never lands under the overflow-hidden edge and rolls to
-    // page 2 silently.
+    // Auto-fit page size to the table wrapper. Same math as Client Management
+    // and Service Mapping, using the shared DataTable metrics MappingTable now
+    // mirrors: header 40 (h-10) + row 48 (h-12) + footer 44, minus half a row
+    // of safety so the last visible row never lands under the overflow-hidden
+    // edge and rolls to page 2 silently.
     useEffect(() => {
         if (!autoFitPageSize) return
         if (viewMode !== 'table') return
         const el = tableCardRef.current
         if (!el) return
-        const HEADER_H = 32
+        const HEADER_H = 40
         const FOOTER_H = 44
-        const ROW_H = 44
+        const ROW_H = 48
         const SAFETY = Math.round(ROW_H / 2)
         const compute = () => {
             const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY)
@@ -1097,6 +1098,10 @@ export default function MappingList({
                             sortDir={sortDir}
                             onSort={handleSort}
                             onOpen={onOpen}
+                            // Row-number offset. Continuous across pages, the
+                            // same way Service Mapping numbers rows, so page 2
+                            // starts where page 1 left off.
+                            startIndex={(safePage - 1) * pageSize}
                             emptyState={emptyState}
                         />
                     )}

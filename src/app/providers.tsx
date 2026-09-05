@@ -203,9 +203,27 @@ const POC_COMPANION_ROUTES: Record<string, string[]> = {
   pocdashboard: ['/lms/pages/reports'],
 }
 
+// ── Public routes ─────────────────────────────────────────────────────────
+// Reachable with no token and no permission. This was three inline copies of
+// the same array (one of which listed '/login' twice); it is one definition
+// now so a route added here is public in ALL of the places that ask.
+//
+// PREFIXES exist for the external-assessment invitation link: an external
+// participant is NOT an LMS user, has no account and no token, and reaches
+// their assessment through a per-participant URL mailed to them
+// (/assessment/<invitation-token>). The token IS the credential and the
+// server validates it on every call, so the whole /assessment subtree has to
+// sit outside the LMS auth gate — a redirect to /login would strand exactly
+// the person the link was sent to.
+const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/']
+const PUBLIC_ROUTE_PREFIXES = ['/assessment']
+
+export const isPublicPath = (pathname: string): boolean =>
+  PUBLIC_ROUTES.includes(pathname)
+  || PUBLIC_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
+
 const hasPermissionForRoute = (pathname: string): { hasAccess: boolean; requiredPermission?: string } => {
-  const publicRoutes = ['/login', '/login', '/register', '/forgot-password', '/']
-  if (publicRoutes.includes(pathname)) return { hasAccess: true }
+  if (isPublicPath(pathname)) return { hasAccess: true }
 
   const userRole = localStorage.getItem("smartcliff_originalRole") || ''
   const isStudent = userRole.toLowerCase().includes('student')
@@ -439,8 +457,7 @@ function AuthWrapper({ children }: { children: ReactNode }) {
       }
     }
 
-    const publicRoutes = ['/login', '/login', '/register', '/forgot-password', '/']
-    if (!publicRoutes.includes(pathname) && !isSuperAdminRoute) {
+    if (!isPublicPath(pathname) && !isSuperAdminRoute) {
       refreshPermissions()
     }
   }, [pathname, permissionsRefreshed, isSuperAdminRoute, queryClient])
@@ -450,8 +467,7 @@ function AuthWrapper({ children }: { children: ReactNode }) {
       setAccessDenied(false)
 
       try {
-        const publicRoutes = ['/login', '/login', '/register', '/forgot-password', '/']
-        if (publicRoutes.includes(pathname) || isSuperAdminRoute) {
+        if (isPublicPath(pathname) || isSuperAdminRoute) {
           setIsLoading(false)
           return
         }

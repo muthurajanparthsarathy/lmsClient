@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin, User, Settings, Zap, CheckCircle } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
-import { PERMISSION_IDS } from '@/components/permissions';
+import { PERMISSION_IDS } from '@/app/lms/pages/usermanagement/components/permissions/index';
 
 interface Course {
   _id: string;

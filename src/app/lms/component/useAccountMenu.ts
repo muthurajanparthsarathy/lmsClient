@@ -18,7 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { clearAllStorage, getToken } from "@/lib/session";
 import { logoutUser } from "@/apiServices/tokenVerify";
-import { postLogout } from "@/apiServices/activityLog";
+import { postLogout } from "@/app/lms/pages/logs/api/activityLog";
 import { useCurrentUserQuery } from "@/queries/auth";
 
 /** Shape persisted under `smartcliff_roleSwitch` while previewing as a student. */

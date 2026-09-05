@@ -16,7 +16,7 @@
 //   atcoder    → our server proxy (kenkoooo Problems API + history JSON)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
 
 export type PlatformKey = 'leetcode' | 'codeforces' | 'codechef' | 'hackerrank' | 'atcoder';
 

@@ -26,7 +26,7 @@ import {
   setGroupLeader,
   fetchGroupsCourseData, 
   removeGroupLeader
-} from '@/apiServices/userService'
+} from '@/app/lms/pages/usermanagement/api/userService'
 
 interface GroupEnrollmentTabProps {
   courseId: string

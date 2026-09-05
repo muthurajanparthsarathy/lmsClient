@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 import Image from "next/image"
 import { StudentLayout } from "@/app/lms/component/student/student-layout"
 import { usePermissions } from "@/hooks/usePermissions"
-import { PERMISSION_IDS } from "@/components/permissions"
+import { PERMISSION_IDS } from "@/app/lms/pages/usermanagement/components/permissions/index"
 
 interface UserData {
   _id: string;

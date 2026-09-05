@@ -34,6 +34,14 @@ export const queryKeys = {
     // key only stops it being paid four times.
     staffStudents: (userId: string | null) =>
       ["analytics", "staff-students", { userId }] as const,
+    // `GET /analytics/staff/analytics/ld-signals` — attempt-level practice
+    // health plus the weekly submission series behind the L&D Overview's
+    // Training Performance Trend. Institution-scoped server-side like its
+    // sibling above, so it is keyed per user for the same reason. Filtering by
+    // client/course happens in the derivation, not in the key: the payload is
+    // institution-wide, so changing a filter re-derives from cache.
+    ldSignals: (userId: string | null) =>
+      ["analytics", "ld-signals", { userId }] as const,
   },
   // The "users" root is a CONTRACT: PermissionModal and BulkPermissionModal
   // invalidate ['users'] after permission saves — keep the root string if you

@@ -53,7 +53,7 @@ const elementIcons: Record<string, React.ComponentType<{ className?: string }>> 
 }
 
 const PPT_URL = "https://yromfbntadbtdyanclef.supabase.co/storage/v1/object/public/smartlms/course/ppts/1757046939955_Animated-Intro-for-Social-Media-Platforms-by-Slidesgo.pptx"
-const API_BASE = "https://lmsserver-yeve.onrender.com"
+const API_BASE = "http://localhost:5533"
 
 export function LearningActivities({ methods, subtopicTitle }: LearningActivitiesProps) {
   const [showPPTViewer, setShowPPTViewer] = useState(false)

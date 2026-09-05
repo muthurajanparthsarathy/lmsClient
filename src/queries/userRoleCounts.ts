@@ -17,7 +17,7 @@ import axios from "axios";
 // types in the search box.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
 const TWO_MIN = 2 * 60 * 1000;
 
 export interface UserRoleCount {

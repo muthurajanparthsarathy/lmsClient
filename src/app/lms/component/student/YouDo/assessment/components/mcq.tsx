@@ -994,7 +994,7 @@ const sendFinalSubmission = async () => {
     fd.append('submitType', _autoReason ? 'AUTO' : 'USER');
     fd.append('autoSubmitReason', _autoReason || '');
 
-    await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
+    await fetch('http://localhost:5533/courses/answers/submit', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body: fd,
@@ -1057,7 +1057,7 @@ const sendFinalSubmission = async () => {
         const finalId=urlExerciseId||propExercise?._id;
         if(!finalId){ toast.error('Exercise ID is required'); setLoading(false); return; }
         const token=getToken()||localStorage.getItem('token')||'';
-        const res=await fetch(`https://lmsserver-yeve.onrender.com/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
+        const res=await fetch(`http://localhost:5533/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const data=await res.json();
         if(data.message?.[0]?.key==='success'&&data.data?.exercise){
@@ -1129,7 +1129,7 @@ const sendFinalSubmission = async () => {
       let changed = false;
       for (const q of qs) {
         try {
-          const res = await fetch(`https://lmsserver-yeve.onrender.com/courses/answers/previous-submission?courseId=${fCId}&exerciseId=${exId}&questionId=${q._id}&category=${fCat}`, { headers: { Authorization: `Bearer ${token}` } });
+          const res = await fetch(`http://localhost:5533/courses/answers/previous-submission?courseId=${fCId}&exerciseId=${exId}&questionId=${q._id}&category=${fCat}`, { headers: { Authorization: `Bearer ${token}` } });
           if (!res.ok) continue;
           const data = await res.json();
           const ca: string = (data?.success && data?.data?.codeAnswer != null) ? String(data.data.codeAnswer) : '';
@@ -1253,7 +1253,7 @@ const sendFinalSubmission = async () => {
           await attemptSession.saveAnswer({ questionId: q._id, body });
           return;
         }
-        await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com')}/courses/answers/submit`, {
+        await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: fd,

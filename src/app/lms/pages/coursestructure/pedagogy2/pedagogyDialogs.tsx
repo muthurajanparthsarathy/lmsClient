@@ -1,103 +1,32 @@
 "use client"
-
-// JSX render functions extracted verbatim from page.tsx's return. Each is a
-// plain function returning the same subtree, called inline as {renderX(deps)} —
-// no component boundary, so React renders it exactly as before. The values each
-// closed over arrive in one loosely-typed deps object.
-
-"use client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import React from "react"
-import { useState, useRef, useEffect, useMemo, Fragment, JSX, useCallback } from "react"
-import { motion, AnimatePresence } from "framer-motion";
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
+import { motion } from "framer-motion";
 import {
-    CheckCircle2,
-    Merge,
-    Split,
-    HelpCircle,
     X,
-    Plus,
-    Pencil,
-    Trash,
     AlertTriangle,
     ChevronDown,
-    ZoomIn,
-    ZoomOut,
-    Move,
-    Eye,
     FileText,
-    SearchIcon,
-    Check,
-    Sliders,
-    MoreVertical,
     Printer,
-    BookOpen,
     User,
     Users,
     Presentation,
-    FolderOpen,
-    Info,
-    MoreHorizontal,
-    AlertCircle,
-    CheckCircle,
-    Layers,
-    ChevronDownIcon,
-    ChevronRightIcon,
     ChevronRight,
-    ChevronUpCircle,
-    ChevronUpIcon,
-    Settings,
-    Copy,
-    RotateCcw,
-    Loader2,
-    CheckSquare,
-    User2,
-    Trash2,
-    SquarePen,
-    File,
+    Loader2
 } from "lucide-react"
-import ExcelJS from 'exceljs'
-import { saveAs } from 'file-saver';
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { courseStructureApi, fetchCourseStructureById } from "@/apiServices/createCourseStucture"
-import { moduleApi } from "@/apiServices/pedagogyAndModuleAdd/addmodule"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { subModuleApi } from "@/apiServices/pedagogyAndModuleAdd/addsubmodule"
-import { topicApi } from "@/apiServices/pedagogyAndModuleAdd/addtopic"
-import { subTopicApi } from "@/apiServices/pedagogyAndModuleAdd/addsubtopic"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { pedagogyViewApi } from "@/apiServices/pedagogyAndModuleAdd/pedagogy"
-import { levelViewApi } from "@/apiServices/levelsView";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import PrintComponent, { PrintComponentRef } from "@/components/ui/PrintComponent";
 import DropdownSection from "@/components/ui/dropdownSection";
-import { toast, Toaster } from 'sonner';
-import { createPortal } from "react-dom";
-import PedagogyTestConfigurationSection from "./components/pedagogyTestConfigurationSection";
-// Types, the zoom puck and the popup motion variants now live beside this file.
-// They were moved verbatim during the split — same declarations, same shapes,
-// only relocated so this file holds the screen's logic rather than everything.
 import type {
-    Modules, MergeRange, SubModuleCreateData, PreviewTableProps, ModuleFormData,
-    Topic, TopicCreateData, SubTopic, SubTopicCreateData, ExportSelections,
-    CourseHours, MergedCell, Course, MergedLevel, ActivityType, PedagogyType,
-    HierarchyMerges,
+  ExportSelections,
+  
 } from "./types"
-import DraggableZoomControls from "./DraggableZoomControls"
-import { popupVariants, popAnimation } from "./constants"
+import { popupVariants } from "./constants"
 import LevelMultiSelect from "./LevelMultiSelect"
 import PreviewTable from "./PreviewTable"
-import FullCoursePreviewTable from "./FullCoursePreviewTable"
-import { exportToExcelImpl } from "./exportToExcel"
-import { checkAndDeleteExistingMergedCellsImpl } from "./pedagogyDeletions"
-import { handleModuleDropImpl, handleSubModuleDropImpl, handleTopicDropImpl, handleSubtopicDropImpl } from "./dragDropHandlers"
-import { handleModuleSubmitImpl, handleSubModuleSubmitImpl, handleTopicSubmitImpl, handleSubTopicSubmitImpl } from "./submitHandlers"
-import { createTableRowsImpl, createDuplicateTableRowsImpl, processPedagogyDataImpl, collectCompleteHierarchyIdsImpl, getAllSelectedHierarchyIdsImpl, fetchAndSetPedagogyDataImpl } from "./dataBuilders"
-import { confirmUnmergeImpl, confirmCellDeleteImpl, handleDeleteLevelImpl, isCellMergedImpl, isLevelMergedImpl } from "./mergeHelpers"
 
 export interface PedagogyDialogsDeps {
     activateGlobalDeleteMode?: any;

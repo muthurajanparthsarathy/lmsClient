@@ -37,6 +37,25 @@ export type Column<T> = {
 
 export type SortDir = 'asc' | 'desc'
 
+// Shared header cell styling used by DataTable and any purpose-built listing
+// table in the app (e.g. Course Setup's MappingTable). Extracted so a single
+// source of truth defines the header typography — h-10 / 12 px / semibold /
+// natural case / subtle text — and every list stays visually consistent
+// (Client Management, Service Mapping and Course Setup all read the same).
+// `!normal-case` is explicit rather than a bare "no uppercase class"
+// omission — a sibling utility (or a future theme change) can't sneak
+// text-transform: uppercase back in this way. Column labels are authored
+// in Title Case in the JSX so the header renders "Business Model", not
+// "BUSINESS MODEL". Callers still append their own width/alignment classes
+// to this. The `!` prefixes are needed because DataTable merges the
+// column's own className (which normally targets body cells with things
+// like `text-[13px] text-body`) onto the header — without `!` those leak
+// in and overwrite the header rhythm. On a purpose-built table that
+// doesn't share column classes with the body, the `!` prefixes are
+// harmless.
+export const TABLE_HEAD_CELL =
+    'h-10 !text-[12px] !font-semibold !normal-case !text-subtle align-middle bg-canvas border-b border-hairline whitespace-nowrap'
+
 export function DataTable<T>({
     rows,
     columns,
@@ -179,15 +198,17 @@ export function DataTable<T>({
                                     // Border on the cell, not the row: a sticky
                                     // <tr>'s own border scrolls away in Chrome
                                     // and leaves the header visually floating.
-                                    // `!` on the size / weight / color so column
+                                    // TABLE_HEAD_CELL is the shared constant
+                                    // (top of file) — using it here keeps every
+                                    // listing table in the app on the same
+                                    // header rhythm, so DataTable-based lists
+                                    // (Client Management, Service Mapping) and
+                                    // purpose-built ones (Course Setup) look
+                                    // identical. Its `!` prefixes stop column
                                     // classes (which target BODY cells with
-                                    // things like `text-[12px] text-body`) can't
-                                    // overwrite the header rhythm. Without this
-                                    // the You_Do assessment header rendered as
-                                    // designed (dark 10 px uppercase) but the
-                                    // We_Do assignment header leaked the body
-                                    // text-body colour + text-[12px] size.
-                                    className={`${c.className || 'px-3 text-left'} h-10 !text-[12px] !font-semibold !text-ink-600 align-middle bg-canvas border-b border-hairline`}
+                                    // `text-[13px] text-body`) leaking into the
+                                    // header.
+                                    className={`${c.className || 'px-3 text-left'} ${TABLE_HEAD_CELL}`}
                                 >
                                     {c.sortKey ? (
                                         <button

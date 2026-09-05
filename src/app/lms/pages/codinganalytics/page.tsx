@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { StudentLayout } from '../../component/student/student-layout';
 import { usePermissions } from '@/hooks/usePermissions';
-import { PERMISSION_IDS } from '@/components/permissions';
+import { PERMISSION_IDS } from '@/app/lms/pages/usermanagement/components/permissions/index';
 import {
   CODING_ACCOUNTS, PLATFORM_META, fetchPlatformReport,
   type PlatformKey, type PlatformReport, type SeriesPoint, type Verdict,

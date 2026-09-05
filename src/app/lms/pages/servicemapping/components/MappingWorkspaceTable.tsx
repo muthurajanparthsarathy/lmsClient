@@ -20,7 +20,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ClientAvatar, type MappingRowVM } from "./workspaceShared";
-import { MODEL_TONES, businessModelFullName } from "@/features/clientmanagement/lib";
+import { MODEL_TONES, businessModelFullName } from "@/app/lms/pages/clientmanagement/features/lib";
 
 // The Service Mapping listing table — purpose-built so a row click opens the
 // detail panel, the status pill stays a live toggle, and the header sticks while

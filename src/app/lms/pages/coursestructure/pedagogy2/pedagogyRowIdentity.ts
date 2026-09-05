@@ -1,20 +1,4 @@
 "use client"
-
-// Which hierarchy node a pedagogy (hours) row actually belongs to.
-//
-// A row stores an id for EVERY level of the course hierarchy, not just its own:
-// hours typed into a topic's cell are saved as
-// { module: [m], subModule: [sm], topic: [t], iDo: [...] }.
-// So "pedagogy.module.includes(moduleId)" is true for every row in the module —
-// every topic and subtopic under it — not just the module's own hours.
-//
-// Editing an item used that containment test to decide which rows were "its own"
-// and therefore safe to replace or delete. Editing a module's title consequently
-// collapsed every descendant row into one, wiping the course's hours.
-//
-// A row belongs to exactly one node: the DEEPEST level it populates. That is the
-// same identity rule the server uses to match rows in updatePedagogyView.
-
 export type HierarchyType = "module" | "submodule" | "topic" | "subtopic"
 
 const LEVEL_FIELD: Record<HierarchyType, "module" | "subModule" | "topic" | "subTopic"> = {

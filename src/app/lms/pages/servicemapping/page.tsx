@@ -19,8 +19,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
+import {
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import DashboardLayout from '../../component/layout'
-import { useClients, type Client } from '@/apiServices/clientManagementService'
+import { useClients, type Client } from '@/app/lms/pages/clientmanagement/api/clientManagementService'
 import {
     useServiceMappingsPage, useClientGroupsPage, useMappingsByClient,
     useCreateServiceMapping, useUpdateServiceMapping,
@@ -28,41 +32,29 @@ import {
     useInvalidateMappingCaches, fetchMappingPageExport,
     type ServiceMapping, type ServiceMappingInput, type MappedClientRef,
     type HierarchyLevelConfig, type MasterDataEntry, type BatchConfig, type MappedCourse,
-} from '@/apiServices/serviceMappingService'
-import { useServices } from '@/apiServices/dynamicFields/servicemodel'
-import { degreeService, type Degree } from '@/apiServices/dynamicFields/degreeService'
-// Course setup — the mapping now creates the course itself, reusing the Course
-// Management popup's data plumbing, for the category and course-name lists.
+} from '@/app/lms/pages/servicemapping/api/serviceMappingService'
+import { useServices } from '@/app/lms/pages/dynamicfieldsettings/api/servicemodel'
+import { degreeService, type Degree } from '@/app/lms/pages/dynamicfieldsettings/api/degreeService'
 import { useCourseData } from '../../component/Addcoursestructure/useCourseData'
-import { initialCourseFormData } from '../../component/Addcoursestructure/utils/constants'
+import { initialCourseFormData } from '../coursestructure/utils/constants'
 import type {
     FormData as CourseFormData,
     Category as CourseCategory,
-} from '../../component/Addcoursestructure/types'
-import { createCourseStructure, updateCourseStructure, courseStructuresSummaryQuery } from '@/apiServices/createCourseStucture'
-// Step 3 reuses Course Setup's own Resource Type section verbatim — see
-// ResourceDefaultsStep below.
-import ResourceTypeSection from '../../component/Resourcetypesection '
-import { initializeResourcesType } from '../../component/Addcoursestructure/utils/helpers'
+} from '../coursestructure/components/types'
+import { createCourseStructure, updateCourseStructure, courseStructuresSummaryQuery } from '@/app/lms/pages/coursestructure/api/createCourseStucture'
+import ResourceTypeSection from '../coursestructure/components/Resourcetypesection '
+import { initializeResourcesType } from '../coursestructure/utils/helpers'
 import { FieldLabel, FieldError } from './components/shared/primitives'
 import MappingPreview, { type MappingPreviewProps } from './components/MappingPreview'
-// Step 2's two narrow flows are Moodle-style accordions of their own, matching
-// Course Setup. Both are pure presentation — every value and mutation below is
-// still owned here and handed down.
 import PlacementForm from './components/PlacementForm'
 import SimpleCourseForm, { DEFAULT_BATCH_COUNT } from './components/SimpleCourseForm'
 import { FieldRow } from './components/shared/SectionForm'
 import DegreeSetupForm from './components/DegreeSetupForm'
 import WizardTour, { type WizardTourHandle } from './components/WizardTour'
-// The listing chrome is the shared Business Management kit, so Services and
-// Clients stay one implementation rather than two that drift.
 import DataTable, { type Column, type SortDir } from '../../shared/listing/DataTable'
 import TableFooter from '../../shared/listing/TableFooter'
 import { EmptyState, pageEnter } from '../../shared/ui'
-// Redesigned listing workspace (presentation only — all data + handlers stay in
-// ServiceMappingView below and are passed down).
-import { buildRowVM, extractHierarchy, type MappingRowVM } from './components/workspaceShared'
-import MappingWorkspaceTable from './components/MappingWorkspaceTable'
+import { buildRowVM, extractHierarchy, ClientAvatar, type MappingRowVM } from './components/workspaceShared'
 import MappingHierarchyCards from './components/MappingHierarchyCards'
 import { MappingWorkspaceFilterPanel } from './components/MappingWorkspaceFilterPanel'
 import MappingDetailPanel from './components/MappingDetailPanel'
@@ -70,29 +62,12 @@ import Workbench from './components/HierarchyBuilder/Workbench'
 import { PATH_SEP, blankCourse, type CourseEntry, type CourseApi, type DegreeView } from './components/HierarchyBuilder/types'
 import { isUnder, type Scope } from './components/HierarchyBuilder/scope'
 import { usePermissions } from '@/hooks/usePermissions'
-import { PERMISSION_IDS } from '@/components/permissions'
-// Reuse Client Management's business-model helpers so the mapping listing
-// renders the same coloured B2B / B2I pill and the two pages stay in lockstep.
-import { businessModelFullName, businessModelLabel } from '@/features/clientmanagement/lib'
+import { PERMISSION_IDS } from '@/app/lms/pages/usermanagement/components/permissions/index'
+import { businessModelFullName, businessModelLabel } from '@/app/lms/pages/clientmanagement/features/lib'
 
-// ─── Configuration (data-driven — extend here, no component changes needed) ───
-
-// Hierarchy levels shown in Step 2 for generic services, top → bottom (matches
-// the legacy Client Management structure — courses live in Course Management).
-// `Phase` is intentionally NOT here: it only applies to the Placement Training
-// flow, which supplies its own fixed level list (see the wizard).
 const HIERARCHY_LEVELS = ['Batch', 'Degree', 'Department', 'Section', 'Semester']
 
-// Every level the wizard can ever persist (superset of HIERARCHY_LEVELS plus the
-// Placement-Training-only `Phase`). Used when saving the hierarchy config so a
-// level is never dropped just because it isn't in the generic list.
 const ALL_LEVELS = ['Batch', 'Phase', 'Degree', 'Department', 'Section', 'Semester']
-
-// Per-level wizard metadata: hint + example shown in Steps 2/3 and the live
-// structure preview; `single: true` renders one input instead of a value list
-// (only honoured when the level is not a parent of another enabled level).
-// `auto: true` — values aren't typed; they're derived (Semester count comes from
-// each degree's length in Degree Management, so B.Sc gets 1–6, B.E gets 1–8).
 const LEVEL_META: Record<string, { hint: string; example: string; single?: boolean; auto?: boolean }> = {
     Batch: { hint: '', example: 'Graduation batch', single: true },
     Phase: { hint: 'Phases under each batch', example: 'Phase 1, Phase 2' },
@@ -102,10 +77,6 @@ const LEVEL_META: Record<string, { hint: string; example: string; single?: boole
     Section: { hint: 'Sections under each department', example: 'A, B, C' },
 }
 
-// Which hierarchy levels are mandatory for a given service model. Matched
-// against the (dynamic) service model name, so new models can define rules by
-// adding a row here. (Placement Training is handled specially in the wizard
-// because its structure depends on the "Degree based" toggle.)
 const MANDATORY_LEVEL_RULES: { match: RegExp; levels: string[] }[] = [
     { match: /degree\s*program/i, levels: ['Batch', 'Degree', 'Department'] },
 ]
@@ -3635,6 +3606,45 @@ function ClientMappingsModal({
     // L&D FloatingPicker — kept inline because FloatingPicker isn't exported.
     const pickerClass = 'h-9 rounded-md border border-hairline bg-surface px-2.5 text-xs font-medium text-heading outline-none transition-colors hover:border-hairline-strong focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 cursor-pointer'
 
+    // Per-service in-flight toggle set. Tracks which mapping._ids are mid-
+    // update so their switch renders disabled and repeated clicks can't queue
+    // duplicate requests. On failure we surface the error and let the cache
+    // invalidation re-hydrate the row — the switch snaps back to whatever the
+    // server confirms — so we never carry a local optimistic state that could
+    // diverge from the source of truth.
+    const toggleStatusMut = useToggleServiceMappingStatus()
+    const [togglingServiceIds, setTogglingServiceIds] = useState<Set<string>>(new Set())
+    const isServiceToggling = (id: string) => togglingServiceIds.has(id)
+    const handleToggleServiceStatus = async (mapping: ServiceMapping) => {
+        const id = mapping._id
+        if (!id || isServiceToggling(id)) return
+        // The previous status is captured off the mapping the row was rendered
+        // from — the toggle endpoint returns just a message, so this is what
+        // we compare against for the toast wording and (if the request throws)
+        // it's the state the invalidation should restore.
+        const wasActive = mapping.status === 'active'
+        setTogglingServiceIds((prev) => {
+            const next = new Set(prev)
+            next.add(id)
+            return next
+        })
+        try {
+            await toggleStatusMut.mutateAsync(id)
+            notify.success(wasActive ? 'Service deactivated' : 'Service activated')
+        } catch (e: any) {
+            // The cache invalidation from the hook fires only on success, so
+            // we do NOT need to roll back state manually — the switch is a
+            // controlled prop off m.status, which the parent has not changed.
+            notify.error(e?.response?.data?.message || e?.message || 'Failed to update service status')
+        } finally {
+            setTogglingServiceIds((prev) => {
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+            })
+        }
+    }
+
     return (
         <AnimatePresence>
             {open && row && (
@@ -3719,34 +3729,71 @@ function ClientMappingsModal({
                                         </button>
                                     )}
                                 </div>
-                                <select
-                                    value={modelFilter}
-                                    onChange={(e) => setModelFilter(e.target.value)}
-                                    aria-label="Filter by service model"
-                                    className={`${pickerClass} min-w-[160px]`}
-                                >
-                                    <option value="all">All models</option>
-                                    {allModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                                <select
-                                    value={yearFilter}
-                                    onChange={(e) => setYearFilter(e.target.value)}
-                                    aria-label="Filter by year"
-                                    className={`${pickerClass} min-w-[120px]`}
-                                >
-                                    <option value="all">All years</option>
-                                    {allYears.map((y) => <option key={y} value={y}>{y}</option>)}
-                                </select>
-                                <select
-                                    value={statusFilter}
-                                    onChange={(e) => setStatusFilter(e.target.value)}
-                                    aria-label="Filter by status"
-                                    className={`${pickerClass} min-w-[120px]`}
-                                >
-                                    <option value="all">All status</option>
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                </select>
+                                {/* Modern custom dropdowns — Radix Select. Each
+                                    trigger keeps its own explicit min-width so the
+                                    three read as a consistent row; SelectContent
+                                    inherits the trigger's exact width via the
+                                    --radix-select-trigger-width CSS var, so the
+                                    option list opens flush under the field, with
+                                    the same width, on every viewport. Radix
+                                    handles arrow-key navigation, Enter to select,
+                                    Escape and outside-click to close, focus
+                                    trapping, and viewport-edge collision — the
+                                    menu automatically flips or shifts to stay on
+                                    screen. Selected value is highlighted and
+                                    marked with a checkmark by SelectItem's
+                                    built-in ItemIndicator. All three share the
+                                    same trigger height and radius as the search
+                                    input beside them. */}
+                                <Select value={modelFilter} onValueChange={setModelFilter}>
+                                    <SelectTrigger
+                                        aria-label="Filter by service model"
+                                        className="h-9 min-w-[160px] rounded-md border-hairline"
+                                    >
+                                        <SelectValue placeholder="All models" />
+                                    </SelectTrigger>
+                                    <SelectContent
+                                        sideOffset={4}
+                                        style={{ width: 'var(--radix-select-trigger-width)' }}
+                                        className="max-h-[280px]"
+                                    >
+                                        <SelectItem value="all">All models</SelectItem>
+                                        {allModels.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                                <Select value={yearFilter} onValueChange={setYearFilter}>
+                                    <SelectTrigger
+                                        aria-label="Filter by year"
+                                        className="h-9 min-w-[120px] rounded-md border-hairline"
+                                    >
+                                        <SelectValue placeholder="All years" />
+                                    </SelectTrigger>
+                                    <SelectContent
+                                        sideOffset={4}
+                                        style={{ width: 'var(--radix-select-trigger-width)' }}
+                                        className="max-h-[280px]"
+                                    >
+                                        <SelectItem value="all">All years</SelectItem>
+                                        {allYears.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                                    <SelectTrigger
+                                        aria-label="Filter by status"
+                                        className="h-9 min-w-[120px] rounded-md border-hairline"
+                                    >
+                                        <SelectValue placeholder="All status" />
+                                    </SelectTrigger>
+                                    <SelectContent
+                                        sideOffset={4}
+                                        style={{ width: 'var(--radix-select-trigger-width)' }}
+                                        className="max-h-[280px]"
+                                    >
+                                        <SelectItem value="all">All status</SelectItem>
+                                        <SelectItem value="active">Active</SelectItem>
+                                        <SelectItem value="inactive">Inactive</SelectItem>
+                                    </SelectContent>
+                                </Select>
                                 <button
                                     type="button"
                                     onClick={clearAllFilters}
@@ -3808,12 +3855,41 @@ function ClientMappingsModal({
                                                                     : <span className="text-sm font-medium text-brand-700 dark:text-brand-400">Not configured</span>}
                                                             </td>
                                                             <td className="px-3 py-2 align-middle">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className={`inline-block size-1.5 shrink-0 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                                                                    <span className={`truncate text-sm font-semibold ${active ? 'text-emerald-700 dark:text-emerald-300' : 'text-subtle'}`}>
-                                                                        {active ? 'Active' : 'Inactive'}
-                                                                    </span>
-                                                                </div>
+                                                                {/* Radix Switch drives the toggle: keyboard-
+                                                                    accessible out of the box (Space/Enter),
+                                                                    focus ring visible on tab, and the ON/OFF
+                                                                    state comes straight from m.status —
+                                                                    nothing here defaults to Active. Label
+                                                                    color mirrors the state (emerald when on,
+                                                                    subtle when off). Disabled while this
+                                                                    row's toggle mutation is in flight so
+                                                                    quick repeated clicks can't queue
+                                                                    duplicate requests. */}
+                                                                {(() => {
+                                                                    const busy = isServiceToggling(m._id)
+                                                                    return (
+                                                                        <div className="flex items-center gap-2">
+                                                                            <Switch
+                                                                                checked={active}
+                                                                                disabled={busy}
+                                                                                onCheckedChange={() => handleToggleServiceStatus(m)}
+                                                                                aria-label={active ? 'Deactivate service' : 'Activate service'}
+                                                                                title={active ? 'Active — click to deactivate' : 'Inactive — click to activate'}
+                                                                                className="data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-ink-300"
+                                                                            />
+                                                                            <span
+                                                                                aria-live="polite"
+                                                                                className={`truncate text-sm font-semibold ${
+                                                                                    active
+                                                                                        ? 'text-emerald-700 dark:text-emerald-300'
+                                                                                        : 'text-subtle'
+                                                                                } ${busy ? 'opacity-70' : ''}`}
+                                                                            >
+                                                                                {active ? 'Active' : 'Inactive'}
+                                                                            </span>
+                                                                        </div>
+                                                                    )
+                                                                })()}
                                                             </td>
                                                             <td className="px-3 py-2 text-right align-middle">
                                                                 <DropdownMenu>
@@ -4248,8 +4324,18 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
 
     const [currentPage, setCurrentPage] = useState<number>(1)
     // pageSize is auto-computed to fit as many rows as the table area allows
-    // without scrolling; overflow rows spill onto the next page.
+    // without scrolling; overflow rows spill onto the next page. The initial
+    // 10 is only used before the fit effect first runs — it is overwritten on
+    // the first layout tick, and again on every resize. Once the user picks a
+    // size manually from the TableFooter, `autoFitPageSize` flips to false
+    // and their choice is preserved through subsequent resizes.
     const [pageSize, setPageSize] = useState<number>(10)
+    const [autoFitPageSize, setAutoFitPageSize] = useState<boolean>(true)
+    // Ref to the flex column that holds DataTable + TableFooter. The effect
+    // below measures this element's clientHeight and back-computes how many
+    // rows fit under the header/footer. Kept scoped to the table view so
+    // the cards view (which paginates per-mapping) is unaffected.
+    const tableCardRef = useRef<HTMLDivElement | null>(null)
     const [search, setSearch] = useState('')
     const [statusFilter, setStatusFilter] = useState<'' | 'active' | 'inactive'>('')
     const [yearFilter, setYearFilter] = useState('')
@@ -4448,6 +4534,38 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         setCurrentPage((p) => Math.min(p, activeTotalPages))
     }, [activeTotalPages])
 
+    // Auto-fit the table's page size to whatever the viewport allows, so
+    // page 1 shows only as many complete rows as fit without any vertical
+    // scroll (page or table). Constants below match DataTable's header
+    // (h-10 → 40px) and body row (h-12 → 48px), plus the TableFooter's
+    // ~44px footprint. A SAFETY margin of half a row keeps the last row
+    // clear of the container's bottom edge — otherwise a row can land
+    // right at the boundary and clip inside overflow-hidden, which then
+    // "hides" that row onto the next page. Recomputes on every element
+    // resize (window resize, filter panel toggle, sidebar collapse). The
+    // effect only runs while `autoFitPageSize` is true; a manual pick in
+    // TableFooter flips it off so the user's choice sticks. Cards view
+    // paginates per-mapping and is intentionally excluded from the fit.
+    useEffect(() => {
+        if (!autoFitPageSize) return
+        if (viewMode !== 'table') return
+        const el = tableCardRef.current
+        if (!el) return
+        const HEADER_H = 40
+        const FOOTER_H = 44
+        const ROW_H = 48
+        const SAFETY = Math.round(ROW_H / 2)
+        const compute = () => {
+            const budget = Math.max(0, el.clientHeight - HEADER_H - FOOTER_H - SAFETY)
+            const fits = Math.max(3, Math.min(50, Math.floor(budget / ROW_H)))
+            setPageSize((prev) => (prev === fits ? prev : fits))
+        }
+        compute()
+        const ro = new ResizeObserver(compute)
+        ro.observe(el)
+        return () => ro.disconnect()
+    }, [autoFitPageSize, viewMode])
+
 
     const clearFilters = () => {
         setSearch('')
@@ -4497,7 +4615,7 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         setWizard({ open: true, mapping, clientId: null })
 
     // ── Deep link from Client Management ──
-    // Its row kebab ("New Mapping") sends ?newMapping=1&clientId=… — open the
+    // Its row kebab ("New mapping") sends ?newMapping=1&clientId=… — open the
     // wizard on that client once, then strip the params so a refresh or a
     // Back/Forward step doesn't re-open it. Guarded by a ref as well, because
     // the replace() lands a render later than the effect.
@@ -4505,6 +4623,13 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
     const pathname = usePathname()
     const router = useRouter()
     const deepLinkHandled = useRef(false)
+    // Set when the wizard is opened from the Client Management deep link. If
+    // the user then closes the wizard (X / Cancel / Discard) without saving,
+    // we hand them back to the Clients list they came from instead of leaving
+    // them on an empty Service Mapping page. Cleared as soon as the redirect
+    // fires (or when the wizard opens for any other reason) so a manual open
+    // afterwards behaves normally.
+    const openedFromClientMgmt = useRef(false)
     useEffect(() => {
         if (deepLinkHandled.current) return
         if (searchParams.get('newMapping') !== '1') return
@@ -4512,12 +4637,21 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
         // reports "no grants" — deciding then would silently drop the link.
         if (!permsReady) return
         deepLinkHandled.current = true
-        if (canMap || canNewMappingFromClient) openCreate(searchParams.get('clientId') || null)
+        if (canMap || canNewMappingFromClient) {
+            openedFromClientMgmt.current = true
+            openCreate(searchParams.get('clientId') || null)
+        }
         router.replace(pathname, { scroll: false })
         // openCreate is a stable setState wrapper; re-running on it would loop.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams, pathname, router, permsReady, canMap, canNewMappingFromClient])
-    const closeWizard = () => setWizard({ open: false, mapping: null, clientId: null })
+    const closeWizard = () => {
+        setWizard({ open: false, mapping: null, clientId: null })
+        if (openedFromClientMgmt.current) {
+            openedFromClientMgmt.current = false
+            router.push('/lms/pages/clientmanagement')
+        }
+    }
 
     // Save the mapping — and, on a FULL save (coursePayload present), its course
     // with it. Partial saves (Step 1/2) store the mapping alone so it shows in
@@ -4590,6 +4724,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
             // serviceMappingApi.update follow-up above that bypasses the hook.
             queryClient.invalidateQueries({ queryKey: serviceMappingKeys.all })
             queryClient.invalidateQueries({ queryKey: ['courseStructures'] })
+            // Any save success — partial or full — means the user is now
+            // engaged with data on this page. Clear the deep-link flag so the
+            // eventual close (Done from the preview, or a later X) leaves them
+            // on Service Mapping instead of bouncing them back to Clients.
+            openedFromClientMgmt.current = false
             // Closing is the wizard's decision, never this handler's: a partial
             // save keeps stepping, and a full save shows the in-modal preview
             // whose Done button calls onClose (closeWizard). Closing from here
@@ -5189,9 +5328,6 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
 
     const tableMaxH = `calc(100dvh - ${18 + (filterChips.length > 0 ? 2.5 : 0) + (showFilters ? 16 : 0)}rem)`
 
-    // (Row rendering now lives in MappingWorkspaceTable / MappingHierarchyCards,
-    // driven by currentVMs; all row actions call back into the handlers above.)
-
     // ── Render ──
     return (
         <Shell>
@@ -5335,8 +5471,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                     {viewMode === 'table' ? (
                         // flex-1 min-h-0 = fill remaining height; flex-col so
                         // the scroll region can flex-1 while the pagination
-                        // footer keeps its natural height at the bottom.
-                        <div className="mt-2 flex flex-1 min-h-0 flex-col">
+                        // footer keeps its natural height at the bottom. The
+                        // ref feeds the auto-fit page-size effect above —
+                        // measuring THIS box tells the effect how many rows
+                        // fit without vertical scroll on any given viewport.
+                        <div ref={tableCardRef} className="mt-2 flex flex-1 min-h-0 flex-col">
                             <DataTable<ClientRow>
                                 rows={currentClientAggregated}
                                 rowKey={(row) => row._id}
@@ -5347,10 +5486,27 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                 isFiltered={hasActiveFilters}
                                 fillHeight
                                 fixedLayout
-                                emptyTitle={hasActiveFilters ? 'No services match these filters' : 'No services mapped yet'}
-                                emptyHint={hasActiveFilters
-                                    ? 'Try widening or clearing them to see more.'
-                                    : 'Map a service to a client to see it listed here.'}
+                                // "No matching clients found." is the specific
+                                // empty message when the SEARCH box drove the
+                                // zero result — the table groups by client, so
+                                // "clients" is the right unit. Panel filters
+                                // (status / year / model / client) keep their
+                                // own message because the reader can act on
+                                // them directly by clearing the drawer.
+                                emptyTitle={
+                                    debouncedSearch.trim()
+                                        ? 'No matching clients found.'
+                                        : hasActiveFilters
+                                            ? 'No services match these filters'
+                                            : 'No services mapped yet'
+                                }
+                                emptyHint={
+                                    debouncedSearch.trim()
+                                        ? 'Check the spelling, or clear the search to see every client.'
+                                        : hasActiveFilters
+                                            ? 'Try widening or clearing them to see more.'
+                                            : 'Map a service to a client to see it listed here.'
+                                }
                                 emptyAction={(hasActiveFilters || canMap) ? (hasActiveFilters ? 'Clear filters' : '+ New Mapping') : undefined}
                                 onEmptyAction={(hasActiveFilters || canMap) ? (hasActiveFilters ? clearFilters : () => openCreate()) : undefined}
                                 columns={[
@@ -5372,11 +5528,43 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                         sortKey: 'client',
                                         className: 'w-[32%] px-3 text-left align-middle',
                                         skeletonWidth: '60%',
-                                        render: (row) => (
-                                            <span className="block truncate text-body" title={row.client.clientCompany || '—'}>
-                                                {row.client.clientCompany || '—'}
-                                            </span>
-                                        ),
+                                        // Circular first-letter avatar next to the full
+                                        // client name. The avatar letter is derived from
+                                        // the client name at render time (ClientAvatar
+                                        // uses charAt(0).toUpperCase()), so it always
+                                        // matches whatever the client is called — e.g.
+                                        // "K" for "Karpagam Academy of Higher Education".
+                                        // Small "sm" avatar (24px) keeps the row minimal
+                                        // and compact — the initial is a subtle prefix,
+                                        // not a hero — while the name still reads at
+                                        // the app's standard body size.
+                                        render: (row) => {
+                                            const name = row.client.clientCompany || '—'
+                                            // Uploaded client logo (if any) — the avatar
+                                            // primitive falls back to the first-letter
+                                            // circle when the URL is missing or the
+                                            // image fails to load, so the row is safe
+                                            // for both cases.
+                                            const logoUrl = (row.client as { clientLogo?: string }).clientLogo || undefined
+                                            return (
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <ClientAvatar name={name} size="sm" logoUrl={logoUrl} />
+                                                    {/* Same typography as the Client Name
+                                                        column in Client Management: no
+                                                        explicit weight/color/size, so the
+                                                        span inherits DataTable's cell
+                                                        defaults (`text-[13px] text-body`,
+                                                        regular weight). The two pages
+                                                        read as one system. */}
+                                                    <span
+                                                        className="block truncate"
+                                                        title={name}
+                                                    >
+                                                        {name}
+                                                    </span>
+                                                </div>
+                                            )
+                                        },
                                     },
                                     {
                                         key: 'businessModel',
@@ -5400,13 +5588,42 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                     {
                                         key: 'servicesCount',
                                         label: 'Services',
-                                        className: 'w-[15%] px-3 text-left align-middle',
-                                        skeletonWidth: '40px',
+                                        // Widened from 15% to 17% to leave room for the
+                                        // "N Active" pill alongside the total. Slimmed
+                                        // back from 19% now that the total no longer
+                                        // repeats inside the pill ("N Active", not
+                                        // "A/N Active").
+                                        className: 'w-[17%] px-3 text-left align-middle',
+                                        skeletonWidth: '64px',
+                                        // Bare total + a green "A Active" pill. The
+                                        // column header already says Services and the
+                                        // total sits right beside the pill, so we drop
+                                        // the "Services:" prefix and the redundant
+                                        // denominator inside the pill — the two numbers
+                                        // are visually adjacent, so "3" and "2 Active"
+                                        // read as active / total on their own. Counts
+                                        // stay live via aggServiceCount / aggActiveCount
+                                        // (server aggregate when present, else counted
+                                        // off the row's own mappings). A client with
+                                        // no services renders "0" and "0 Active".
                                         render: (row) => {
                                             const total = aggServiceCount(row)
-                                            if (total === 0) return <span className="text-xs text-line-muted">—</span>
+                                            const active = aggActiveCount(row)
                                             return (
-                                                <span className="text-body tabular-nums" title={`${total} service${total === 1 ? '' : 's'} mapped`}>{total}</span>
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span
+                                                        className="text-sm font-semibold text-heading tabular-nums"
+                                                        title={`${total} service${total === 1 ? '' : 's'} mapped`}
+                                                    >
+                                                        {total}
+                                                    </span>
+                                                    <span
+                                                        className="inline-flex items-center h-[20px] px-2 rounded-chip bg-success-50 text-success-700 border border-success-500/20 text-2xs font-semibold tabular-nums whitespace-nowrap"
+                                                        title={`${active} of ${total} service${total === 1 ? '' : 's'} active`}
+                                                    >
+                                                        {active} Active
+                                                    </span>
+                                                </div>
                                             )
                                         },
                                     },
@@ -5471,7 +5688,11 @@ function ServiceMappingView({ embedded = false }: { embedded?: boolean }) {
                                     to={Math.min(currentPage * pageSize, clientTotal)}
                                     total={clientTotal}
                                     pageSize={pageSize}
-                                    onPageSize={(n) => { setPageSize(n); setCurrentPage(1) }}
+                                    // Manual pick pins the size and stops the
+                                    // auto-fit observer from overriding it on
+                                    // the next resize — the user's choice is
+                                    // more informative than the fit.
+                                    onPageSize={(n) => { setAutoFitPageSize(false); setPageSize(n); setCurrentPage(1) }}
                                     currentPage={currentPage}
                                     totalPages={clientTotalPages}
                                     onPage={setCurrentPage}

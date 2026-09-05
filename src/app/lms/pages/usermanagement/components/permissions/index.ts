@@ -1,0 +1,64 @@
+// Barrel + auto-derived PERMISSION_IDS.
+//
+// The IDs are generated from `client/src/config/permissions.tree.ts` at
+// runtime so pages can never drift out of sync — add a page to the tree and
+// its constant appears here automatically (UPPER_SNAKE_CASE from the id).
+
+export { Can, default } from "./Can";
+export { usePermissions, permissionCheck } from "@/hooks/usePermissions";
+export type { StoredPermission, UsePermissionsResult } from "@/hooks/usePermissions";
+
+import { PERMISSION_IDS as GENERATED } from "@/app/lms/pages/usermanagement/config/permissions.helpers";
+
+// Explicit named exports for the ids used by pages today. The generic
+// generated map is exported below for anything not listed by name.
+export const PERMISSION_IDS = {
+  // ── Admin ────────────────────────────────────────────
+  ADMIN_DASHBOARD: GENERATED.ADMIN_DASHBOARD,
+  ADMIN_USER_MANAGEMENT: GENERATED.ADMIN_USERMANAGEMENT,
+  ADMIN_CLIENT_MANAGEMENT: GENERATED.ADMIN_CLIENTMANAGEMENT,
+  ADMIN_SERVICE_MAPPING: GENERATED.ADMIN_SERVICEMAPPING,
+  ADMIN_COURSE_MANAGEMENT: GENERATED.ADMIN_COURSE_MANAGE,
+  ADMIN_APPROVALS: GENERATED.ADMIN_APPROVALS,
+  ADMIN_QUESTION_BANKS: GENERATED.ADMIN_QUESTION_BANKS,
+  ADMIN_GRADES: GENERATED.ADMIN_GRADES,
+  ADMIN_CALENDAR: GENERATED.ADMIN_CALENDAR,
+  ADMIN_ATTENDANCE: GENERATED.ADMIN_ATTENDANCEMANAGEMENT,
+  ADMIN_DYNAMIC_FIELD_SETTINGS: GENERATED.ADMIN_DYNAMIC_FIELD_SETTINGS,
+  ADMIN_NOTIFICATION: GENERATED.ADMIN_NOTIFICATION,
+  ADMIN_AUDIT_LOGS: GENERATED.ADMIN_AUDITLOGS,
+  ADMIN_PROFILE: GENERATED.ADMIN_PROFILE,
+  ADMIN_PROGRAM_CALENDAR: GENERATED.ADMIN_PROGRAMCALENDAR,
+  ADMIN_INSTITUTION: GENERATED.ADMIN_INSTITUTIONMANAGEMENT,
+
+  // ── External (assessments/events for non-LMS participants) ──
+  ADMIN_EXTERNAL_ASSESSMENT: GENERATED.ADMIN_EXTERNAL_ASSESSMENT,
+  ADMIN_EXTERNAL_EVENT: GENERATED.ADMIN_EXTERNAL_EVENT,
+
+  // ── Trainer / Staff ─────────────────────────────────
+  STAFF_DASHBOARD: GENERATED.STAFF_DASHBOARD,
+  STAFF_COURSES: GENERATED.STAFF_COURSES,
+  STAFF_GRADES: GENERATED.STAFF_GRADES,
+  STAFF_ATTENDANCE: GENERATED.STAFF_ATTENDANCEMANAGEMENT,
+  STAFF_NOTIFICATION: GENERATED.STAFF_NOTIFICATION,
+  STAFF_PROFILE: GENERATED.STAFF_PROFILE,
+  STAFF_LOG_ACTIVITY: GENERATED.STAFF_LOGACTIVITY,
+
+  // Kept for existing call-sites that still use these names.
+  STAFF_USER_MANAGEMENT: "staff-usermanagement",
+  STAFF_QUESTION_BANKS: "staff-question-banks",
+
+  // ── Student ─────────────────────────────────────────
+  STUDENT_DASHBOARD: GENERATED.STUDENT_DASHBOARD,
+  STUDENT_COURSES: GENERATED.STUDENT_COURSES,
+  STUDENT_CODING_ANALYTICS: GENERATED.STUDENT_CODINGANALYTICS,
+  STUDENT_NOTIFICATION: GENERATED.STUDENT_NOTIFICATION,
+  STUDENT_PROFILE: GENERATED.STUDENT_PROFILE,
+  STUDENT_GRADE: GENERATED.STUDENT_GRADE,
+} as const;
+
+export type PermissionId = (typeof PERMISSION_IDS)[keyof typeof PERMISSION_IDS];
+
+// Also expose the raw generated map so unlisted new tree pages are reachable
+// without touching this file: `PERMISSION_IDS_ALL.ADMIN_APPROVALS`.
+export const PERMISSION_IDS_ALL = GENERATED;

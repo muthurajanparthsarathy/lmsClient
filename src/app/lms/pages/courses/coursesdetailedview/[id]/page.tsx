@@ -55,6 +55,7 @@ import { TabBar, MainTabs } from "../components/TabBar"
 import InlineAIChat from "../components/InlineAIChat"
 import InlineSummaryChat from "../components/InlineSummaryChat"
 import { ResourceCard, ResourceSkeleton, ResourceItem, ResourceGroupRow, EmptyCard, ResIcon, ResourceTableHeader, SidebarSkeleton, TableSkeleton } from "../components/ResourceComponents"
+import { LectureResourceList } from "../components/LectureResourceList"
 import {
   CourseData, SelectedItem, SelectedItemType, Resource, ResourceType,
   PedagogyPage, PedagogyFolder, PedagogyFile, LearningElement,
@@ -1548,7 +1549,7 @@ const getExercisesForActivity = (): any[] => {
           let stash: any = { ...exercise, questions: qs, courseId, courseName: cname, context: { courseId, nodeId: selectedItem?.id, nodeTitle: selectedItem?.title, method: selectedMethod, activity: selectedActivity }, storedAt: new Date().toISOString() }
           try {
             const token = localStorage.getItem('smartcliff_token') || localStorage.getItem('token') || ''
-            const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exercise._id}`, {
+            const res = await fetch(`http://localhost:5533/exercise/${exercise._id}`, {
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
             })
             if (res.ok) {
@@ -1580,7 +1581,7 @@ const getExercisesForActivity = (): any[] => {
         // Single-file (existing inline path) — fetch full document and render inline.
         try {
           const token = localStorage.getItem('smartcliff_token') || localStorage.getItem('token') || ''
-          const res = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exercise._id}`, {
+          const res = await fetch(`http://localhost:5533/exercise/${exercise._id}`, {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
           })
           if (res.ok) {
@@ -2928,357 +2929,21 @@ const getExercisesForActivity = (): any[] => {
                           )
                         }
 
-                        // ── Resource list fallback (unchanged) ──────────────────────────────────
+                        // ── Resource list — redesigned per spec ──────────────────────────────
+                        // Full block (toolbar / type-tabs / grid+list body) was replaced by the
+                        // self-contained <LectureResourceList /> so the 5-column table + Filter
+                        // popover + Sort dropdown can evolve without touching this monolith.
+                        // Open behaviour still routes through handleResourceClick.
                         const avail = getAvailableResourceTypes()
                         if (avail.length === 0) return <EmptyCard icon={File} title="No resources yet" sub="This activity has no content yet." color="gray" />
                         return (
-                          <div className="flex flex-col flex-1 overflow-clip min-h-0 gap-2.5">
-                            <div className="flex items-center gap-2 justify-between flex-wrap">
-                              <div
-                                className={`flex items-center gap-2 h-9 px-3 flex-1 min-w-[200px] rounded-lg border bg-white transition-all duration-200 ${isSearchFocused ? 'border-gray-400' : 'border-gray-200 hover:border-gray-300'
-                                  }`}
-                              >
-                                <Search size={14} className="flex-shrink-0 text-gray-400" />
-                                <input
-                                  value={resourceSearch}
-                                  onChange={(e) => setResourceSearch(e.target.value)}
-                                  onFocus={() => setIsSearchFocused(true)}
-                                  onBlur={() => setIsSearchFocused(false)}
-                                  placeholder="Search files and folders..."
-                                  className="w-full bg-transparent border-none outline-none text-[13.5px] text-gray-700 placeholder:text-gray-400"
-                                />
-                                {resourceSearch && (
-                                  <button
-                                    onClick={() => setResourceSearch("")}
-                                    className="flex-shrink-0 w-5 h-5 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors cursor-pointer"
-                                    title="Clear search"
-                                  >
-                                    <X size={12} className="text-gray-500" />
-                                  </button>
-                                )}
-                                {isLoadingResources && (
-                                  <Loader2 size={14} className="flex-shrink-0 text-gray-400 animate-spin" />
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-2 ml-auto">
-                                {canToggleHeader && isHeaderCollapsed && (
-                                  <button
-                                    onClick={() => setIsHeaderCollapsed(false)}
-                                    className="h-9 px-3 rounded-lg border border-[#e3e8f2] bg-white flex items-center gap-1.5 text-[12.5px] font-semibold cursor-pointer hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 transition-colors"
-                                    title="Show header"
-                                  >
-                                    <ChevronDown size={14} />
-                                    <span>Show</span>
-                                  </button>
-                                )}
-
-                                <div className="h-9 rounded-lg border border-[#e3e8f2] bg-[#f8fafc] p-0.5 inline-flex items-center gap-0.5">
-                                  <button
-                                    onClick={() => setResourceView("grid")}
-                                    className="w-8 h-8 rounded-md inline-flex items-center justify-center border-none cursor-pointer touch-friendly mobile-touch-target"
-                                    style={{ background: resourceView === "grid" ? '#FFF7ED' : 'transparent', color: resourceView === "grid" ? '#F97316' : '#64748b' }}
-                                    title="Grid view"
-                                  >
-                                    <LayoutGrid size={14} />
-                                  </button>
-                                  <button
-                                    onClick={() => setResourceView("list")}
-                                    className="w-8 h-8 rounded-md inline-flex items-center justify-center border-none cursor-pointer touch-friendly mobile-touch-target"
-                                    style={{ background: resourceView === "list" ? '#FFF7ED' : 'transparent', color: resourceView === "list" ? '#F97316' : '#64748b' }}
-                                    title="List view"
-                                  >
-                                    <List size={14} />
-                                  </button>
-                                </div>
-
-                                <div style={{ position: 'relative' } } ref={sortDropdownRef}>
-                                  <button
-                                    onClick={() => {
-                                      setShowSortDropdown(v => !v)
-                                    }}
-                                    className="h-9 px-3 rounded-lg border border-[#e3e8f2] bg-white flex items-center gap-1.5 text-[12.5px] font-medium cursor-pointer touch-friendly"
-                                    style={{ color: showSortDropdown ? '#F97316' : '#475569' }}
-                                  >
-                                    <ArrowUpDown size={13} />
-                                    <span>Sort by:</span>
-                                    <span className="font-semibold text-[#334155]">
-                                      {sortOption === "newest" && "Newest"}
-                                      {sortOption === "oldest" && "Oldest"}
-                                      {sortOption === "name_asc" && "Name A-Z"}
-                                      {sortOption === "name_desc" && "Name Z-A"}
-                                      {sortOption === "size_desc" && "Size Large-Small"}
-                                      {sortOption === "size_asc" && "Size Small-Large"}
-                                    </span>
-                                    <ChevronDown size={12} className={`transition-transform ${showSortDropdown ? 'rotate-180' : ''}`} />
-                                  </button>
-
-                                  {showSortDropdown && (
-                                    <div
-                                      className="absolute top-full left-0 mt-1 w-[180px] rounded-lg border border-[#e3e8f2] bg-white shadow-lg overflow-hidden z-50"
-                                      style={{ boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}
-                                    >
-                                      {[
-                                        { value: "newest", label: "Newest", icon: Calendar },
-                                        { value: "oldest", label: "Oldest", icon: Calendar },
-                                        { value: "name_asc", label: "Name A-Z", icon: ArrowDown },
-                                        { value: "name_desc", label: "Name Z-A", icon: ArrowUp },
-                                        { value: "size_desc", label: "Size Large-Small", icon: FileDigit },
-                                        { value: "size_asc", label: "Size Small-Large", icon: FileDigit },
-                                      ].map((opt) => {
-                                        const Icon = opt.icon
-                                        const isSelected = sortOption === opt.value
-                                        return (
-                                          <button
-                                            key={opt.value}
-                                            onClick={() => {
-                                              setSortOption(opt.value as any)
-                                              setShowSortDropdown(false)
-                                            }}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12.5px] font-medium transition-colors hover:bg-gray-50 cursor-pointer"
-                                            style={{
-                                              color: isSelected ? '#F97316' : '#475569',
-                                              background: isSelected ? '#FFF7ED' : 'transparent',
-                                            }}
-                                          >
-                                            <Icon size={14} style={{ color: isSelected ? '#F97316' : '#94a3b8' }} />
-                                            <span>{opt.label}</span>
-                                            {isSelected && (
-                                              <CheckCircle size={12} className="ml-auto" style={{ color: '#F97316' }} />
-                                            )}
-                                          </button>
-                                        )
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <button
-                                  onClick={() => {
-                                    setShowResourceFilters(v => !v)
-                                    setShowSortDropdown(false)
-                                  }}
-                                  className="h-9 px-3 rounded-lg border border-[#e3e8f2] bg-white flex items-center gap-1.5 text-[12.5px] font-medium cursor-pointer touch-friendly"
-                                  style={{ color: showResourceFilters ? '#F97316' : '#475569' }}
-                                >
-                                  <Filter size={13} />
-                                  <span>Filters</span>
-                                  {selectedFilterCount > 0 && (
-                                    <span className="px-1.5 h-[16px] rounded-full text-[11.5px] font-bold inline-flex items-center justify-center bg-[#F97316] text-white">
-                                      {selectedFilterCount}
-                                    </span>
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-
-                            {(() => {
-                              const FILTER_PNG: Record<string, string> = {
-                                page: '/icons/page.png', folder: '/icons/folder.png',
-                                pdf: '/active-images/pdfFile.png', ppt: '/icons/ppt.png', link: '/icons/link.png',
-                              }
-                              const FilterIcon = ({ type, sel }: { type: string; sel: boolean }) => {
-                                const src = FILTER_PNG[type]
-                                if (src) {
-                                  const isPdf = type === "pdf"
-                                  return (
-                                    <img
-                                      src={src}
-                                      alt={type}
-                                      className={`${isPdf ? 'w-[17px] h-[17px]' : 'w-[14px] h-[14px]'} object-contain block flex-shrink-0 transition-[filter]`}
-                                      style={{ filter: sel ? 'brightness(0) saturate(100%) invert(33%) sepia(79%) saturate(1954%) hue-rotate(207deg) brightness(98%) contrast(94%)' : 'grayscale(1) brightness(0.55)' }}
-                                    />
-                                  )
-                                }
-                                return <ResIcon type={type} size={12} />
-                              }
-                              const chipBase = (delay: number) => ({
-                                className: `flex items-center gap-1.5 px-3 py-[6px] rounded-md text-[12.5px] font-medium cursor-pointer transition-all flex-shrink-0 border filter-chip`,
-                                style: {
-                                  animation: showResourceFilters ? `chipSlideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms both` : 'none',
-                                }
-                              })
-                              if (!showResourceFilters) return null
-                              const types = ["page", "folder", "pdf", "ppt", "video", "zip", "link", "image", "word", "reference"] as ResourceType[]
-                              const visibleTypes = types.filter(type => {
-                                if (type === "folder") return getFolders().length > 0
-                                else if (type === "page") return getPagesForActivity().length > 0
-                                else return getResourcesByType(type).length > 0
-                              })
-                              return (
-                                <div
-                                  className="sb-scroll flex-shrink-0 flex items-center gap-1 py-0 overflow-x-auto"
-                                  style={{ animation: 'filterContainerSlide 0.3s cubic-bezier(0.22, 1, 0.36, 1)' }}
-                                >
-                                  <button
-                                    onClick={() => { setSelectedResourceType("all"); setUserSelectedResourceType(true) }}
-                                    {...chipBase(0)}
-                                    style={{
-                                      background: '#ffffff',
-                                      borderColor: selectedResourceType === "all" ? '#cbd5e1' : '#e2e8f0',
-                                      color: selectedResourceType === "all" ? '#f97316' : '#334155',
-                                      boxShadow: selectedResourceType === "all" ? 'inset 0 -2px 0 #f97316' : 'none',
-                                    }}
-                                  >
-                                    <File size={12} />
-                                    All
-                                    <span
-                                      className="px-1.5 py-0.5 rounded-md text-[11.5px] font-semibold"
-                                      style={{ background: '#f1f5f9', color: selectedResourceType === "all" ? '#f97316' : '#64748b' }}
-                                    >
-                                      {getAllResources().length + getFolders().length}
-                                    </span>
-                                  </button>
-                                  {visibleTypes.map((type, idx) => {
-                                    const isSel = selectedResourceType === type
-                                    let count = 0
-                                    if (type === "folder") count = getFolders().length
-                                    else if (type === "page") count = getPagesForActivity().length
-                                    else count = getResourcesByType(type).length
-                                    return (
-                                      <button
-                                        key={type}
-                                        onClick={() => { setSelectedResourceType(type); setUserSelectedResourceType(true) }}
-                                        {...chipBase((idx + 1) * 50)}
-                                        style={{
-                                          background: '#ffffff',
-                                          borderColor: isSel ? '#cbd5e1' : '#e2e8f0',
-                                          color: isSel ? '#f97316' : '#334155',
-                                          boxShadow: isSel ? 'inset 0 -2px 0 #f97316' : 'none',
-                                        }}
-                                      >
-                                        <FilterIcon type={type} sel={isSel} />
-                                        {type === "folder" ? "Folders" : RES_LABEL[type]}
-                                        <span
-                                          className="px-1.5 py-0.5 rounded-md text-[11.5px] font-semibold"
-                                          style={{ background: '#f1f5f9', color: isSel ? '#f97316' : '#64748b' }}
-                                        >
-                                          {count}
-                                        </span>
-                                      </button>
-                                    )
-                                  })}
-                                </div>
-                              )
-                            })()}
-
-                            <div className="flex-1 overflow-hidden border-[1.5px] border-gray-200 flex flex-col">
-                              {selectedResourceType === "page" ? (() => {
-                                const pages = filteredPages
-                                if (!pages.length) return null
-                                const page = pages[inlinePageIndex]
-                                const processedContent = preparePageContent(page)
-                                return (
-                                  <div className="flex-1 flex flex-col overflow-hidden">
-                                    <div className="flex items-center justify-between px-3.5 py-2 border-b border-gray-100 bg-white flex-shrink-0">
-                                      <button
-                                        disabled={inlinePageIndex === 0}
-                                        onClick={() => setInlinePageIndex(i => i - 1)}
-                                        className="flex items-center gap-1 px-3 py-1 rounded-lg border border-gray-200 text-[13.5px] font-semibold disabled:cursor-not-allowed disabled:text-gray-300 disabled:bg-gray-50 cursor-pointer"
-                                      >
-                                        <ChevronLeft size={13} />Prev
-                                      </button>
-                                      <span className="text-[13.5px] font-semibold text-gray-500">{page.title}&nbsp;·&nbsp;{inlinePageIndex + 1} / {pages.length}</span>
-                                      <button
-                                        disabled={inlinePageIndex === pages.length - 1}
-                                        onClick={() => setInlinePageIndex(i => i + 1)}
-                                        className="flex items-center gap-1 px-3 py-1 rounded-lg border border-gray-200 text-[13.5px] font-semibold disabled:cursor-not-allowed disabled:text-gray-300 disabled:bg-gray-50 cursor-pointer"
-                                      >
-                                        Next<ChevronRightIcon size={13} />
-                                      </button>
-                                    </div>
-                                    <iframe key={page.id} srcDoc={processedContent} sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" className="flex-1 border-none w-full bg-white" title={page.title} />
-                                  </div>
-                                )
-                              })() : (
-                                isLoadingResources ? (
-                                  <div className="sb-scroll flex-1 overflow-y-auto">
-                                    <ResourceTableHeader />
-                                    {[...Array(6)].map((_, i) => (
-                                      <ResourceSkeleton key={`skeleton-${i}`} />
-                                    ))}
-                                  </div>
-                                ) : filteredResourcesToDisplay.length > 0 ? (
-                                  resourceView === "grid" ? (
-                                    <div className="sb-scroll flex-1 overflow-y-auto p-3">
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                        {sortResources(filteredResourcesToDisplay).map((r, idx) => (
-                                          <div
-                                            key={r.id}
-                                            className="group relative rounded-xl border border-gray-200 bg-white p-4 cursor-pointer transition-all duration-300 hover:border-orange-300 hover:shadow-lg hover:-translate-y-1 touch-friendly mobile-card"
-                                            style={{ animation: `gridCardIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) ${idx * 80}ms both` }}
-                                            onClick={() => handleResourceClick(r)}
-                                          >
-                                            <div className="flex items-start gap-3 mb-3">
-                                              <div className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-110 touch-friendly"
-                                                style={{
-                                                  background: r.type === 'pdf' ? 'rgba(239,68,68,0.1)' :
-                                                    r.type === 'video' ? 'rgba(37,99,235,0.1)' :
-                                                      r.type === 'ppt' ? 'rgba(245,158,11,0.1)' :
-                                                        r.type === 'folder' ? 'rgba(100,116,139,0.1)' :
-                                                          'rgba(16,185,129,0.1)',
-                                                }}
-                                              >
-                                                <ResIcon type={r.type} size={20} />
-                                              </div>
-                                              <div className="flex-1 min-w-0">
-                                                <p className="m-0 text-[14.5px] font-bold text-gray-800 truncate leading-tight">{r.title}</p>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                  <span className="text-[11.5px] font-semibold px-2 py-0.5 rounded-full"
-                                                    style={{
-                                                      background: r.type === 'pdf' ? '#fef2f2' : r.type === 'video' ? '#eff6ff' : r.type === 'ppt' ? '#fffbeb' : r.type === 'folder' ? '#f1f5f9' : '#f0fdf4',
-                                                      color: r.type === 'pdf' ? '#dc2626' : r.type === 'video' ? '#2563eb' : r.type === 'ppt' ? '#d97706' : r.type === 'folder' ? '#64748b' : '#16a34a',
-                                                    }}
-                                                  >
-                                                    {r.type === 'folder' ? 'Folder' : RES_LABEL[r.type] || r.type.toUpperCase()}
-                                                  </span>
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <div className="flex items-center justify-between text-[12px] text-gray-500 mt-2">
-                                              <span>{r.fileSize}</span>
-                                              <span>{new Date(r.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                            </div>
-                                            <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-orange-600/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="sb-scroll flex-1 overflow-y-auto">
-                                      <ResourceTableHeader />
-                                      {(() => {
-                                        const animType = selectedMethod === "i-do" ? "resource" : selectedMethod === "we-do" ? "wedo" : "none"
-                                        const sorted = sortResources(filteredResourcesToDisplay)
-                                        const grouped = groupResources(sorted)
-                                        return grouped.map((row, i) => row.kind === "group"
-                                          ? <ResourceGroupRow key={`g-${row.groupId}`} groupId={row.groupId} groupName={row.groupName} items={row.items} subGroups={row.subGroups} index={i} onClick={handleResourceClick} onDownload={handleDownloadClick} animType={animType} defaultExpanded={expandedGroups.has(row.groupId)} />
-                                          : <ResourceItem key={row.resource.id} resource={row.resource} index={i} onClick={handleResourceClick} onDownload={handleDownloadClick} animType={animType} />
-                                        )
-                                      })()}
-                                    </div>
-                                  )
-                                ) : (
-                                  <div className="flex-1 flex items-center justify-center p-8">
-                                    <div className="text-center" style={{ padding: '36px 44px', borderRadius: 24, background: 'linear-gradient(180deg, #ffffff 0%, #fafbfc 100%)', border: '1.5px solid #e2e8f0', maxWidth: 280, boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-                                      <div style={{ width: 56, height: 56, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', background: 'linear-gradient(135deg, rgba(249,115,22,0.12) 0%, rgba(249,115,22,0.25) 100%)', border: '1px solid rgba(249,115,22,0.25)', boxShadow: '0 2px 8px rgba(249,115,22,0.12)' }}>
-                                        <Search size={24} style={{ color: '#f97316' }} />
-                                      </div>
-                                      <p className="font-bold text-[15.5px] text-gray-800 m-0 mb-1.5">No matching resources</p>
-                                      <p className="text-[14px] text-gray-500 m-0 mb-3">Try adjusting your search or filters</p>
-                                      <button
-                                        onClick={() => { setResourceSearch(""); setSelectedResourceType("all"); }}
-                                        className="px-4 py-2 rounded-xl text-[13.5px] font-semibold text-white bg-orange-600 hover:bg-orange-700 transition-all cursor-pointer"
-                                        style={{ boxShadow: '0 2px 8px rgba(249,115,22,0.25)' }}
-                                      >
-                                        Clear filters
-                                      </button>
-                                    </div>
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          </div>
+                          <LectureResourceList
+                            resources={getAllResources().filter(r => !r.isFolder && r.type !== ("folder" as any))}
+                            folders={getFolders()}
+                            pages={getPagesForActivity() as any}
+                            onOpen={handleResourceClick}
+                            isLoading={isLoadingResources}
+                          />
                         )
                       })()}
                     </div>
@@ -3560,7 +3225,7 @@ const getExercisesForActivity = (): any[] => {
             subcategory={loc.subcategory}
             folderPath={loc.folderPath}
             courseId={courseId}
-            apiBaseUrl="https://lmsserver-yeve.onrender.com"
+            apiBaseUrl="http://localhost:5533"
           />
         )
       })()}

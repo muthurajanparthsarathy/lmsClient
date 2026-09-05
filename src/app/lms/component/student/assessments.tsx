@@ -489,9 +489,11 @@ function formatDate(dateString: string) {
 function formatDateTime(dateString: string) {
   if (!dateString) return 'No Date'
   try {
+    // `hour: 'numeric'` (not `'2-digit'`) so 6 PM renders as "6:09 PM",
+    // never "06:09 PM" — matches the shared 12-hour rule in time12.ts.
     return new Date(dateString).toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
+      hour: 'numeric', minute: '2-digit', hour12: true,
     })
   } catch { return dateString }
 }
@@ -2250,7 +2252,7 @@ export default function Assessments({
                         <span className="flex items-center gap-1 whitespace-nowrap">
                           <Calendar size={11} className="text-faint flex-shrink-0" />
                           {exercise.availabilityPeriod?.startDate
-                            ? `${new Date(exercise.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+                            ? `${new Date(exercise.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
                             : '—'}
                         </span>
                       </td>
@@ -2260,7 +2262,7 @@ export default function Assessments({
                         <span className="flex items-center gap-1 whitespace-nowrap">
                           <Clock size={11} className="text-faint flex-shrink-0" />
                           {exercise.availabilityPeriod?.endDate
-                            ? `${new Date(exercise.availabilityPeriod.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+                            ? `${new Date(exercise.availabilityPeriod.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(exercise.availabilityPeriod.endDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
                             : '—'}
                         </span>
                       </td>

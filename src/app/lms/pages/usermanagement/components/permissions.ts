@@ -1,6 +1,6 @@
 import { ApiPermission } from "./types";
 import type { StatusPillTone } from "../../../shared/ui";
-import { getFlatPages, storedListMatches } from "@/config/permissions.helpers";
+import { getFlatPages, storedListMatches } from "@/app/lms/pages/usermanagement/config/permissions.helpers";
 
 // Permission utility functions.
 //

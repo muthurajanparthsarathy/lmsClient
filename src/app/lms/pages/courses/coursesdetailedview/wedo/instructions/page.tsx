@@ -25,7 +25,7 @@ const API_BASE = (() => {
   const env = process.env.NEXT_PUBLIC_API_URL;
   if (env) return env.replace(/\/+$/, "");
   if (typeof window !== "undefined" && /^(localhost|127\.|0\.0\.0\.0)/.test(window.location.hostname)) {
-    return "https://lmsserver-yeve.onrender.com";
+    return "http://localhost:5533";
   }
   return "https://lms-server-3-wedg.onrender.com";
 })();

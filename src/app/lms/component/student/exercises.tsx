@@ -18,6 +18,18 @@ import DataTable, { type Column as DTColumn } from "@/app/lms/shared/listing/Dat
 import TableFooter from "@/app/lms/shared/listing/TableFooter"
 import SmartCliffRingLoader from "@/components/SmartCliffRingLoader"
 import { StatusPill, type StatusPillTone } from "@/app/lms/shared/ui/StatusPill"
+// Pure state resolver — extracted so the Status chip AND the Action column
+// can never disagree, and so the priority order (graded > submitted >
+// missed/closed > in-progress > due-soon > active > upcoming) is unit-
+// testable outside of React. See assignmentState.test.ts for the full spec.
+import {
+  resolveAssignmentState as _resolveAssignmentState,
+  formatDeadline,
+  matchesChip,
+  type AssignmentStateKind as _AssignmentStateKind,
+  type ResolvedState,
+  type FilterChip,
+} from "./assignmentState"
 
 // Shared Poppins-first font stack for this roster-style list.
 const LIST_FONT = "'Poppins','Poppins','Segoe UI','Roboto',system-ui,-apple-system,BlinkMacSystemFont,sans-serif"
@@ -466,96 +478,15 @@ function getExerciseAvailability(exercise: Exercise): {
   }
 }
 
-// ─── Assignment-state resolver ───────────────────────────────────────────────
-// Reduces the raw availability + submission signals to ONE of seven states
-// so the Status pill and Action cell always agree on what the row is doing.
-// Ordering is important: higher-priority terminal states (submitted/graded)
-// win over transient window states (upcoming/active).
-export type AssignmentStateKind =
-  | 'upcoming' | 'active' | 'in-progress'
-  | 'submitted' | 'graded' | 'missed' | 'closed'
-
-export interface AssignmentStateInfo {
-  kind: AssignmentStateKind
-  label: string
-  Icon: any
-  tone: { bg: string; fg: string }
-  /** Short hint the Upcoming action cell shows next to the lock icon. */
-  actionHint?: string
-}
-
-function resolveAssignmentState(
-  exercise: Exercise,
-  studentAnswers?: ExercisesProps['studentAnswers'],
-  method?: string,
-  subcategory?: string,
-): AssignmentStateInfo {
-  const testSubs = getTestSubmissions(exercise, studentAnswers, method, subcategory)
-  const isCompleted = testSubs >= 1
-  const availability = getExerciseAvailability(exercise)
-
-  // Terminal (post-submission) states win. Server doesn't currently expose
-  // a per-student "graded" flag on this shape — treat all submissions as
-  // Submitted for now; the resolver stays ready to promote to Graded once
-  // that field lands (check `exercise.answers?.[i]?.gradedAt` etc.).
-  if (isCompleted) {
-    return {
-      kind: 'submitted',
-      label: 'Submitted',
-      Icon: CheckCircle,
-      tone: { bg: '#ECFDF3', fg: '#15803D' },
-    }
-  }
-
-  // Availability window drives the pre-submission states.
-  if (availability.status === 'upcoming') {
-    const startDate = (exercise as any)?.availabilityPeriod?.startDate
-    const openHint = startDate ? `Opens ${formatShortDate(startDate)}` : 'Not yet open'
-    return {
-      kind: 'upcoming',
-      label: 'Upcoming',
-      Icon: Clock,
-      tone: { bg: '#EEF2F7', fg: '#475569' },
-      actionHint: openHint,
-    }
-  }
-  if (availability.status === 'expired') {
-    return {
-      kind: 'missed',
-      label: 'Missed',
-      Icon: AlertCircle,
-      tone: { bg: '#FEF2F2', fg: '#B91C1C' },
-    }
-  }
-
-  // Available now — split Active vs In Progress on whether the student
-  // has started but not submitted yet (localStorage marker from the editor).
-  if (availability.canStart) {
-    const inProgress = getExerciseAttemptData(exercise._id).inProgress
-    if (inProgress) {
-      return {
-        kind: 'in-progress',
-        label: 'In Progress',
-        Icon: Zap,
-        tone: { bg: '#FFF4EC', fg: '#C2410C' },
-      }
-    }
-    return {
-      kind: 'active',
-      label: 'Active',
-      Icon: Zap,
-      tone: { bg: '#ECFDF3', fg: '#15803D' },
-    }
-  }
-
-  // Anything else — closed for any reason we don't have a specific name for.
-  return {
-    kind: 'closed',
-    label: 'Closed',
-    Icon: Lock,
-    tone: { bg: '#F1F5F9', fg: '#64748B' },
-  }
-}
+// ─── Assignment-state resolver — re-exported from ./assignmentState ─────────
+// The full priority order + attempt-driven "In progress" detection lives in
+// the pure module so it can be unit-tested (`assignmentState.test.ts`).
+// This alias keeps the historical export name so any external caller that
+// imported the type from here still compiles. `resolveAssignmentState` is
+// the same function; `AssignmentStateKind` includes the newer `due-soon`.
+export type AssignmentStateKind = _AssignmentStateKind
+export type AssignmentStateInfo = ResolvedState
+export const resolveAssignmentState = _resolveAssignmentState
 
 // Short "23 Aug" style date for the Upcoming action hint. Falls back to the
 // full formatter when the input is unparseable.
@@ -1384,24 +1315,21 @@ const filteredExercises = useMemo(
       })
     }
     
-    // Apply status filter
-    if (filterStatus !== "all") {
+    // Apply status filter — driven by the resolver's kind + the spec's
+    // chip grouping so the same row that shows an "In progress" chip
+    // matches the "Active" chip filter (§"Search and filters").
+    if (filterStatus.length > 0) {
       result = result.filter(ex => {
-        const availability = getExerciseAvailability(ex)
-        const submissionAttempts = getSubmissionAttempts(ex)
-        const testSubmissions = getTestSubmissions(ex, studentAnswers, method, subcategory)
-        const isCompleted = testSubmissions >= 1
-        const limitReached = testSubmissions >= submissionAttempts
-
-        if (filterStatus.length > 0) {
-          const checks: boolean[] = []
-          if (filterStatus.includes("active"))       checks.push(availability.canStart)
-          if (filterStatus.includes("inactive"))     checks.push(!availability.canStart)
-          if (filterStatus.includes("submitted"))    checks.push(isCompleted)
-          if (filterStatus.includes("not-submitted"))checks.push(!isCompleted)
-          return checks.some(Boolean)
-        }
-        return true
+        const kind = resolveAssignmentState(ex, studentAnswers, method, subcategory).kind
+        // Legacy multi-select values map onto the new chip vocabulary.
+        return filterStatus.some((f) => {
+          if (f === 'active')         return matchesChip(kind, 'active')
+          if (f === 'submitted')      return matchesChip(kind, 'submitted')
+          if (f === 'pending' || f === 'not-submitted') return matchesChip(kind, 'pending')
+          if (f === 'missed')         return matchesChip(kind, 'missed')
+          if (f === 'inactive')       return !matchesChip(kind, 'active')
+          return true
+        })
       })
     }
     
@@ -1458,12 +1386,13 @@ useEffect(() => {
 // Reset to page 1 when filters change
 useEffect(() => { setCurrentPage(1) }, [searchQuery, filterLevel, filterStatus.join(','), filterDue])
 
-// Status chip counts for the toolbar — computed off the same base list
-// the table renders from (config-gated + search-scoped) so the chip
-// totals always match the number of rows the user will actually see.
-// "Active" = row Status column reads Active. "Submitted" = row Status
-// reads Submitted. "Pending" = row Status reads Not Submitted (upcoming
-// / expired / never attempted).
+// Status chip counts for the toolbar — driven by the SAME resolver that
+// paints the Status column, so the chip totals always match the number
+// of rows the user will actually see. Grouping matches the spec:
+//   Active    = active + due-soon + in-progress
+//   Submitted = submitted + graded
+//   Pending   = upcoming (window hasn't opened)
+//   Missed    = missed + closed (past deadline, no valid submission)
 const statusCounts = useMemo(() => {
   const scoped = exercises.filter(ex => isExerciseFullyConfigured(ex)).filter((ex) => {
     if (!searchQuery) return true
@@ -1473,36 +1402,37 @@ const statusCounts = useMemo(() => {
       ex.exerciseInformation.exerciseId?.toLowerCase().includes(q)
     )
   })
-  let active = 0
-  let submitted = 0
-  let pending = 0
+  const counts = { all: scoped.length, active: 0, submitted: 0, pending: 0, missed: 0 }
   scoped.forEach((ex) => {
-    const availability = getExerciseAvailability(ex)
-    const testSubs = getTestSubmissions(ex, studentAnswers, method, subcategory)
-    if (testSubs >= 1) submitted++
-    else if (availability.canStart) active++
-    else pending++
+    const kind = resolveAssignmentState(ex, studentAnswers, method, subcategory).kind
+    if (matchesChip(kind, 'active'))    counts.active++
+    if (matchesChip(kind, 'submitted')) counts.submitted++
+    if (matchesChip(kind, 'pending'))   counts.pending++
+    if (matchesChip(kind, 'missed'))    counts.missed++
   })
-  return { all: scoped.length, active, submitted, pending }
+  return counts
 }, [exercises, searchQuery, studentAnswers, method, subcategory])
 
 // Which chip is currently pressed. Derived from filterStatus so the
 // dropdown Filter panel and the chip row stay in sync — a chip click
-// replaces the multi-select entirely, and clicking All clears it.
-const activeChip: 'all' | 'active' | 'submitted' | 'pending' = (() => {
+// replaces the multi-select entirely, and clicking All clears it. Adds
+// `missed` per the spec's five-chip toolbar.
+const activeChip: FilterChip = (() => {
   if (filterStatus.length === 0) return 'all'
   if (filterStatus.length === 1) {
     if (filterStatus[0] === 'active') return 'active'
     if (filterStatus[0] === 'submitted') return 'submitted'
-    if (filterStatus[0] === 'not-submitted') return 'pending'
+    if (filterStatus[0] === 'not-submitted' || filterStatus[0] === 'pending') return 'pending'
+    if (filterStatus[0] === 'missed') return 'missed'
   }
   return 'all'
 })()
-const setChip = (chip: 'all' | 'active' | 'submitted' | 'pending') => {
+const setChip = (chip: FilterChip) => {
   if (chip === 'all') setFilterStatus([])
   else if (chip === 'active') setFilterStatus(['active'])
   else if (chip === 'submitted') setFilterStatus(['submitted'])
-  else setFilterStatus(['not-submitted'])
+  else if (chip === 'pending') setFilterStatus(['pending'])
+  else if (chip === 'missed') setFilterStatus(['missed'])
 }
 
 const ITEMS_PER_PAGE = itemsPerPage
@@ -1523,7 +1453,6 @@ const getPageNums = (): (number | '...')[] => {
 const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   e.stopPropagation()
 
-  // ← ADD THIS BLOCK
   const totalQ = getTotalQuestions(exercise)
   if (totalQ === 0) {
     showToast('This exercise has not been configured yet. Please contact your instructor.')
@@ -1541,6 +1470,18 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
     return
   }
 
+  // In-progress detection now comes from the SERVER-DRIVEN resolver
+  // (studentAnswers), not localStorage. This closes the reported bug:
+  // a partial attempt saved by another device / another session no
+  // longer shows "Start" and orphan-creates a new attempt on click.
+  // The localStorage flag is still respected as a same-device fallback
+  // so a draft that isn't yet in `answers` (e.g. the student is on the
+  // pre-start page) still routes to resume.
+  const resolvedKind = resolveAssignmentState(exercise, studentAnswers, method, subcategory).kind
+  const hasServerAttempt = resolvedKind === 'in-progress'
+  const hasLocalDraft = getExerciseAttemptData(exercise._id).inProgress
+  const hasResumableAttempt = hasServerAttempt || hasLocalDraft
+
   // Fresh We_Do start → the standalone pre-start page replaces the old
   // StartExercisePopup modal. Retake / in-progress-resume still go through
   // the popup / resume dialog because they carry a confirmation payload
@@ -1548,8 +1489,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   const methodKey = (method || '').toLowerCase().replace(/[_\s-]+/g, '')
   const isFreshWeDoStart = methodKey === 'wedo' && !isRetake
   if (isFreshWeDoStart) {
-    const { inProgress } = getExerciseAttemptData(exercise._id)
-    if (inProgress) {
+    if (hasResumableAttempt) {
       setResumeModalExercise(exercise)
       return
     }
@@ -1591,8 +1531,9 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
   if (isRetake) {
     setPopupExercise({ exercise, isRetake: true })
   } else {
-    const { inProgress } = getExerciseAttemptData(exercise._id)
-    if (inProgress) {
+    // Same server-first check as the We_Do branch above — a server-side
+    // draft always routes to the resume modal, never to a fresh Start.
+    if (hasResumableAttempt) {
       setResumeModalExercise(exercise)
     } else {
       setPopupExercise({ exercise, isRetake: false })
@@ -1606,8 +1547,15 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       setIsStartingExercise(true)
       onExerciseSelect(popupExercise.exercise, { resetProgress: true })
     } else {
-      const { inProgress } = getExerciseAttemptData(popupExercise.exercise._id)
-      if (inProgress) {
+      // Server + local sanity check: if a resumable attempt appeared
+      // between the click that opened this popup and the click on
+      // Confirm (e.g. the student submitted an answer on another
+      // device), swap to the resume dialog rather than silently
+      // overwriting their draft.
+      const serverInProgress =
+        resolveAssignmentState(popupExercise.exercise, studentAnswers, method, subcategory).kind === 'in-progress'
+      const localInProgress = getExerciseAttemptData(popupExercise.exercise._id).inProgress
+      if (serverInProgress || localInProgress) {
         setResumeModalExercise(popupExercise.exercise)
         setPopupExercise(null)
         return
@@ -1718,7 +1666,7 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
           title={ex.availabilityPeriod?.startDate ? formatDateTime(ex.availabilityPeriod.startDate) : ''}>
           <Calendar size={11} className="text-faint flex-shrink-0" />
           {ex.availabilityPeriod?.startDate
-            ? `${new Date(ex.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(ex.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
+            ? `${new Date(ex.availabilityPeriod.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(ex.availabilityPeriod.startDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
             : '—'}
         </span>
       ),
@@ -1729,15 +1677,45 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       sortKey: 'end',
       className: 'w-[18%] px-3 text-left align-middle text-[13px] text-body',
       skeletonWidth: '75%',
-      render: (ex) => (
-        <span className="flex items-center gap-1 whitespace-nowrap"
-          title={ex.availabilityPeriod?.endDate ? formatDateTime(ex.availabilityPeriod.endDate) : ''}>
-          <Clock size={11} className="text-faint flex-shrink-0" />
-          {ex.availabilityPeriod?.endDate
-            ? `${new Date(ex.availabilityPeriod.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date(ex.availabilityPeriod.endDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
-            : '—'}
-        </span>
-      ),
+      // Two-line deadline copy per the spec's §"Due-date presentation":
+      //   Due today  / 6:00 PM        — deadline lands on the local calendar today
+      //   Due tomorrow / 10:00 AM     — deadline on the local calendar tomorrow
+      //   Due Sep 7, 2026 / 5:00 PM   — future
+      //   Submitted <date> / <time>   — student's final submission is in
+      //   Closed <date> / <time>      — window closed without a submission
+      // Local calendar is authoritative (not "< 24h from now") so a 23:30
+      // click on a 00:30-next-day deadline still reads "Due tomorrow".
+      // All formatting lives in ./assignmentState.formatDeadline so the
+      // rule set is unit-tested and never diverges by component.
+      render: (ex) => {
+        const state = resolveAssignmentState(ex, studentAnswers, method, subcategory)
+        const dl = formatDeadline(state)
+        const isUrgent = dl.variant === 'today' || dl.variant === 'tomorrow'
+        const isTerminal = dl.variant === 'submitted' || dl.variant === 'closed'
+        const IconCmp = dl.variant === 'submitted' ? CheckCircle : Clock
+        const headlineColor = isUrgent ? '#C2410C'         // brand-strong orange for today/tomorrow urgency
+                            : dl.variant === 'closed' ? '#64748B'
+                            : dl.variant === 'submitted' ? '#15803D'
+                            : '#101828'                    // slate for regular future dates
+        const headlineWeight = isUrgent || isTerminal ? 600 : 500
+        return (
+          <div className="flex items-start gap-1.5 whitespace-nowrap"
+            title={ex.availabilityPeriod?.endDate ? formatDateTime(ex.availabilityPeriod.endDate) : ''}>
+            <IconCmp size={12} className="mt-0.5 flex-shrink-0"
+              style={{ color: isUrgent ? '#F97316' : dl.variant === 'submitted' ? '#22C55E' : '#94a3b8' }} />
+            <div className="flex flex-col leading-tight">
+              <span style={{ color: headlineColor, fontWeight: headlineWeight, fontSize: 13 }}>
+                {dl.headline}
+              </span>
+              {dl.timeLine && (
+                <span className="text-[12px] text-subtle" style={{ marginTop: 2 }}>
+                  {dl.timeLine}
+                </span>
+              )}
+            </div>
+          </div>
+        )
+      },
     },
     {
       key: 'level',
@@ -1767,32 +1745,13 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
       className: 'w-[11%] px-3 text-left align-middle text-[13px] text-body',
       render: (ex) => {
         const s = resolveAssignmentState(ex, studentAnswers, method, subcategory)
-        // Rendered via the shared StatusPill primitive so admin surfaces
-        // and this student list carry ONE chip shape and semantic tone
-        // system instead of two — the inline <span> variant that used to
-        // live here was drifting palette-wise. Every state carries a
-        // label (never colour-only), an ARIA label, and its own icon.
-        //
-        // Tone map:
-        //   submitted / graded / active → success (green)
-        //   in-progress                 → info    (blue — spec-mandated)
-        //   upcoming                    → neutral
-        //   missed                      → danger  (soft red)
-        //   closed                      → neutral
-        const toneFor: Record<AssignmentStateKind, StatusPillTone> = {
-          submitted: 'success',
-          graded: 'success',
-          active: 'success',
-          'in-progress': 'info',
-          upcoming: 'neutral',
-          missed: 'danger',
-          closed: 'neutral',
-        }
-        // The visible text IS the accessible name — no extra aria-label
-        // needed. Tone plus dot are decorative.
+        // Chip tone comes STRAIGHT from the resolver so the priority
+        // decisions (graded > submitted > missed > in-progress > due-soon >
+        // active > upcoming) never have to be reconstructed at the render
+        // layer. `labelSuffix` carries the "· 92%" for graded rows.
         return (
-          <StatusPill tone={toneFor[s.kind]} dot>
-            {s.label}
+          <StatusPill tone={s.tone as StatusPillTone} dot>
+            {s.label}{s.labelSuffix}
           </StatusPill>
         )
       },
@@ -1807,90 +1766,80 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
         const s = resolveAssignmentState(ex, studentAnswers, method, subcategory)
 
         // Shared button classes so Start / Continue / View Submission /
-        // View Feedback all render at identical dimensions. Bumped from
-        // h-7/w-112/text-2xs → h-9/w-[128px]/text-[13px] so the row CTA
-        // sits at a comfortable click target and matches the toolbar
-        // rhythm (36px controls) instead of looking shrunken.
-        const btnBase = 'inline-flex items-center justify-center gap-1.5 h-9 w-[128px] text-[13px] font-semibold rounded-control transition-colors duration-150'
+        // View Feedback all render at identical dimensions (h-9, 128 px).
+        const btnBase = 'inline-flex items-center justify-center gap-1.5 h-9 w-[128px] text-[13px] font-semibold rounded-control transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30'
         const primary: React.CSSProperties = { background: '#F97316', color: '#FFFFFF', border: 'none', cursor: 'pointer' }
         const secondary: React.CSSProperties = { background: '#FFFFFF', color: '#F97316', border: '1px solid #F97316', cursor: 'pointer' }
 
-        // "Upcoming" — no interaction yet, just a quiet lock + open-date
-        // reminder so the empty cell doesn't look like missing data.
-        if (s.kind === 'upcoming') {
-          return (
-            <div className="flex items-center justify-center gap-1.5 text-2xs text-subtle whitespace-nowrap">
-              <Lock size={12} style={{ flexShrink: 0 }} />
-              <span>{s.actionHint || 'Not yet open'}</span>
-            </div>
-          )
-        }
-        if (s.kind === 'active') {
+        // Which click handler applies. Continue / Start route to the
+        // start flow (which auto-resumes an existing attempt — see
+        // handleStartClick); View submission / View feedback go to the
+        // review screen. Disabled + none produce non-interactive labels.
+        const isReview = s.kind === 'submitted' || s.kind === 'graded'
+        const isStart  = s.kind === 'active' || s.kind === 'due-soon' || s.kind === 'in-progress'
+        const onClick  = isReview
+          ? (e: React.MouseEvent) => handleGradeClick(ex, e)
+          : isStart
+            ? (e: React.MouseEvent) => handleStartClick(ex, e)
+            : undefined
+
+        if (s.actionKind === 'primary' && s.actionLabel) {
+          // Continue — orange filled, only for in-progress rows.
           return (
             <div className="flex items-center justify-center">
-              <button type="button" onClick={e => handleStartClick(ex, e)} className={btnBase} style={primary}>
-                Start
+              <button type="button" onClick={onClick} className={btnBase} style={primary}>
+                {s.actionLabel}
               </button>
             </div>
           )
         }
-        if (s.kind === 'in-progress') {
+        if (s.actionKind === 'secondary' && s.actionLabel) {
+          // Start — orange outlined; used for both Active and Due Soon.
           return (
             <div className="flex items-center justify-center">
-              <button type="button" onClick={e => handleStartClick(ex, e)} className={btnBase} style={primary}>
-                Continue
+              <button type="button" onClick={onClick} className={btnBase} style={secondary}>
+                {s.actionLabel}
               </button>
             </div>
           )
         }
-        if (s.kind === 'submitted' || s.kind === 'graded') {
-          // Both statuses land on the same review screen. Label picks
-          // meaningful copy from the spec ("View result" for a plain
-          // submission, "View feedback" once a grade exists) so students
-          // can tell an ungraded submission apart from a graded one at a
-          // glance. The server doesn't (yet) expose a per-student graded
-          // flag on this shape — until it does, both read as "View
-          // result" and are style-identical.
-          const label = s.kind === 'graded' ? 'View feedback' : 'View result'
+        if (s.actionKind === 'text' && s.actionLabel) {
+          // View submission / View feedback — accessible blue text button
+          // per spec §"Action styling". Same height so the row rhythm is
+          // uniform.
           return (
             <div className="flex items-center justify-center">
               <button
                 type="button"
-                onClick={e => handleGradeClick(ex, e)}
-                className={btnBase}
-                style={secondary}
+                onClick={onClick}
+                className="inline-flex items-center justify-center h-9 px-3 text-[13px] font-semibold rounded-control text-info-700 hover:bg-info-50 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info-500/30"
+                style={{ color: '#175CD3' }}
               >
-                {label}
+                {s.actionLabel}
               </button>
             </div>
           )
         }
-        if (s.kind === 'missed') {
-          // Meaningful label instead of an em-dash — matches the spec's
-          // "Do not show unexplained dashes" rule. Soft-red tone mirrors
-          // the Missed status chip so the two cells read consistently.
+        if (s.actionKind === 'disabled' && s.actionLabel) {
+          // Closed / Not available — explicit label, never an em-dash.
+          // Icon disambiguates by shape (spec: no colour-only cues).
+          const IconCmp = s.kind === 'upcoming' ? Clock : Lock
+          const hover  = s.kind === 'upcoming'
+            ? 'This assignment is not yet open.'
+            : 'This assignment is closed. Contact your instructor if you need an extension.'
           return (
             <div
-              className="inline-flex items-center justify-center text-2xs font-semibold"
-              style={{ color: '#B91C1C' }}
-              aria-label="Missed — no action available"
-              title="This assignment closed without a submission."
+              className="inline-flex items-center justify-center gap-1.5 h-9 text-[12.5px] font-semibold text-subtle whitespace-nowrap"
+              aria-label={`${s.actionLabel} — no action available`}
+              title={hover}
             >
-              Missed
+              <IconCmp size={12} style={{ flexShrink: 0 }} />
+              {s.actionLabel}
             </div>
           )
         }
-        // 'closed' — explicitly disabled label, not a dash.
-        return (
-          <div
-            className="inline-flex items-center justify-center gap-1 text-2xs font-semibold text-subtle"
-            aria-label="Closed — no action available"
-            title="This assignment is closed."
-          >
-            <Lock size={11} style={{ flexShrink: 0 }} />
-            Closed
-          </div>
-        )
+        // Fallback — never a dash. Empty span keeps the row height stable.
+        return <span className="sr-only">No action</span>
       },
     },
   ]
@@ -2026,10 +1975,11 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             className="inline-flex items-stretch h-9 rounded-control border border-hairline-strong bg-surface overflow-hidden shrink-0"
           >
             {([
-              { key: 'all' as const,       label: 'All',       count: statusCounts.all },
-              { key: 'active' as const,    label: 'Active',    count: statusCounts.active },
-              { key: 'submitted' as const, label: 'Submitted', count: statusCounts.submitted },
-              { key: 'pending' as const,   label: 'Pending',   count: statusCounts.pending },
+              { key: 'all' as FilterChip,       label: 'All',       count: statusCounts.all },
+              { key: 'active' as FilterChip,    label: 'Active',    count: statusCounts.active },
+              { key: 'submitted' as FilterChip, label: 'Submitted', count: statusCounts.submitted },
+              { key: 'pending' as FilterChip,   label: 'Pending',   count: statusCounts.pending },
+              { key: 'missed' as FilterChip,    label: 'Missed',    count: statusCounts.missed },
             ]).map((c, i) => {
               const selected = activeChip === c.key
               return (
@@ -2277,16 +2227,20 @@ const handleStartClick = (exercise: Exercise, e: React.MouseEvent) => {
             // pager is expected when the current page has fewer rows
             // than the viewport can show.
             fillHeight
-            // All rows stay white. Only the CURRENTLY-ACTIVE assignment
-            // (available to start now, not yet submitted) gets a subtle
-            // 3px orange left rail so a student's eye lands on their
-            // next thing to do. Submitted / Not Submitted rows carry no
-            // background tint — the Status badge conveys the state.
+            // Row urgency comes from the resolver: an IN-PROGRESS row
+            // (`isUrgent: true`) gets a pale-orange background + a 3 px
+            // orange left border so a student's eye lands on the draft
+            // they've already started but not submitted — this is the
+            // "Loops Practice" row in the target screenshot. Every other
+            // state keeps the neutral white surface with a transparent
+            // left rail (kept for layout stability so borders don't
+            // reflow the row width). The Status chip carries all other
+            // meaning.
             rowClassName={(ex) => {
-              const availability = getExerciseAvailability(ex)
-              const testSubs = getTestSubmissions(ex, studentAnswers, method, subcategory)
-              const isActive = availability.canStart && testSubs === 0
-              return isActive ? 'border-l-[3px] border-l-[#F97316]' : 'border-l-[3px] border-l-transparent'
+              const s = resolveAssignmentState(ex, studentAnswers, method, subcategory)
+              return s.isUrgent
+                ? 'border-l-[3px] border-l-[#F97316] bg-[#FFF4EC]/70 hover:bg-[#FFF4EC]'
+                : 'border-l-[3px] border-l-transparent'
             }}
             emptyTitle={hasAnyExercises ? 'No exercises found' : 'No exercises yet'}
             emptyHint={

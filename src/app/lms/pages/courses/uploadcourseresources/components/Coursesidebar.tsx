@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { getToken, clearAllStorage } from "@/lib/session";
-import { postLogout } from "@/apiServices/activityLog";
+import { postLogout } from "@/app/lms/pages/logs/api/activityLog";
 import { logoutUser } from "@/apiServices/tokenVerify";
 
 import type { CourseNode } from "./Types";

@@ -6,105 +6,31 @@
 "use client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import React from "react"
-import { useState, useRef, useEffect, useMemo, Fragment, JSX, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import {
     CheckCircle2,
-    Merge,
-    Split,
     HelpCircle,
     X,
     Plus,
-    Pencil,
-    Trash,
-    AlertTriangle,
-    ChevronDown,
-    ZoomIn,
-    ZoomOut,
-    Move,
     Eye,
-    FileText,
-    SearchIcon,
     Check,
     Sliders,
-    MoreVertical,
-    Printer,
-    BookOpen,
-    User,
-    Users,
-    Presentation,
-    FolderOpen,
-    Info,
-    MoreHorizontal,
-    AlertCircle,
-    CheckCircle,
-    Layers,
     ChevronDownIcon,
-    ChevronRightIcon,
-    ChevronRight,
-    ChevronUpCircle,
-    ChevronUpIcon,
     Settings,
     Copy,
-    RotateCcw,
-    Loader2,
-    CheckSquare,
-    User2,
     Trash2,
-    SquarePen,
-    File,
     Maximize2,
     Minimize2,
 } from "lucide-react"
-import ExcelJS from 'exceljs'
-import { saveAs } from 'file-saver';
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { courseStructureApi, fetchCourseStructureById } from "@/apiServices/createCourseStucture"
-import { moduleApi } from "@/apiServices/pedagogyAndModuleAdd/addmodule"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { subModuleApi } from "@/apiServices/pedagogyAndModuleAdd/addsubmodule"
-import { topicApi } from "@/apiServices/pedagogyAndModuleAdd/addtopic"
-import { subTopicApi } from "@/apiServices/pedagogyAndModuleAdd/addsubtopic"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { pedagogyViewApi } from "@/apiServices/pedagogyAndModuleAdd/pedagogy"
-import { levelViewApi } from "@/apiServices/levelsView";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import PrintComponent, { PrintComponentRef } from "@/components/ui/PrintComponent";
-import DropdownSection from "@/components/ui/dropdownSection";
-import { toast, Toaster } from 'sonner';
-import { createPortal } from "react-dom";
-import PedagogyTestConfigurationSection from "./components/pedagogyTestConfigurationSection";
-// Types, the zoom puck and the popup motion variants now live beside this file.
-// They were moved verbatim during the split — same declarations, same shapes,
-// only relocated so this file holds the screen's logic rather than everything.
-import type {
-    Modules, MergeRange, SubModuleCreateData, PreviewTableProps, ModuleFormData,
-    Topic, TopicCreateData, SubTopic, SubTopicCreateData, ExportSelections,
-    CourseHours, MergedCell, Course, MergedLevel, ActivityType, PedagogyType,
-    HierarchyMerges,
-} from "./types"
 import DraggableZoomControls from "./DraggableZoomControls"
 import { popupVariants, popAnimation } from "./constants"
-import PreviewTable from "./PreviewTable"
-import FullCoursePreviewTable from "./FullCoursePreviewTable"
-import { exportToExcelImpl } from "./exportToExcel"
-import { checkAndDeleteExistingMergedCellsImpl } from "./pedagogyDeletions"
-import { handleModuleDropImpl, handleSubModuleDropImpl, handleTopicDropImpl, handleSubtopicDropImpl } from "./dragDropHandlers"
-import { handleModuleSubmitImpl, handleSubModuleSubmitImpl, handleTopicSubmitImpl, handleSubTopicSubmitImpl } from "./submitHandlers"
-import { createTableRowsImpl, createDuplicateTableRowsImpl, processPedagogyDataImpl, collectCompleteHierarchyIdsImpl, getAllSelectedHierarchyIdsImpl, fetchAndSetPedagogyDataImpl } from "./dataBuilders"
-import { confirmUnmergeImpl, confirmCellDeleteImpl, handleDeleteLevelImpl, isCellMergedImpl, isLevelMergedImpl } from "./mergeHelpers"
-import {
-    renderErrorDialog, renderSummaryDialog, renderInstructionsDialog,
-    renderEditingMergeDialog, renderPreviewDialog, renderFullPreviewDialog, renderLevelDialog,
-    renderLevelDeleteDialog, renderMergeLevelDialog, renderMultipleDeleteDialog,
-    renderPedagogyDialog, renderDeleteConfirmationDialog,
-} from "./pedagogyDialogs"
-import { renderMainEditDialog } from "./pedagogyEditDialog"
+
 
 export interface PedagogyMainViewDeps {
     /** Hosted inside another shell (the L&D console), which supplies its own

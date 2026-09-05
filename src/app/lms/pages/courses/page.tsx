@@ -31,12 +31,12 @@ import {
 } from '@/queries/courses';
 import { useQueries } from '@tanstack/react-query';
 import { feedbackKeys } from '../coursestructure/feedback/hooks/useFeedback';
-import { fetchPublishedFeedbackFlag } from '@/apiServices/feedbackService';
+import { fetchPublishedFeedbackFlag } from '@/app/lms/pages/coursestructure/feedback/api/feedbackService';
 import { StudentLayout } from '../../component/student/student-layout';
 import DashboardLayout from '../../component/layout';
 import { StaffLayout } from '../../component/stafflayout/staff-layout';
 import { usePermissions } from '@/hooks/usePermissions';
-import { PERMISSION_IDS } from '@/components/permissions';
+import { PERMISSION_IDS } from '@/app/lms/pages/usermanagement/components/permissions/index';
 
 // Per-course progress comes from the student dashboard's own metrics engine —
 // see the note on computeCourseProgress below for what it replaced.

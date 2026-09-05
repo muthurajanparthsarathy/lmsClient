@@ -8,8 +8,9 @@ import {
   ChevronsUpDown,
   Settings2,
 } from "lucide-react";
-import type { ServiceMapping } from "@/apiServices/serviceMappingService";
-import { businessModelFullName } from "@/features/clientmanagement/lib";
+import type { ServiceMapping } from "@/app/lms/pages/servicemapping/api/serviceMappingService";
+import { businessModelFullName } from "@/app/lms/pages/clientmanagement/features/lib";
+import { TABLE_HEAD_CELL } from "@/app/lms/shared/listing/DataTable";
 import { type MappingRowVM } from "./mappingPresentation";
 
 // The Course Setup list table — purpose-built (not the shared DataTable) so rows
@@ -28,14 +29,20 @@ interface MappingTableProps {
   sortDir: SortDir;
   onSort: (key: string) => void;
   onOpen: (mapping: ServiceMapping) => void;
+  // Row-number offset for the leading "#" column. Continuous across pages
+  // (page 2 with pageSize 10 passes 10 → rows show 11, 12, …), matching
+  // how Service Mapping numbers its rows.
+  startIndex?: number;
   emptyState: React.ReactNode;
 }
 
-// Matches the shared DataTable metrics — same header/row heights and text sizes
-// as Client Management, so the two lists read as one system.
-const HEAD_CELL =
-  "h-8 px-3 text-[10px] font-semibold uppercase tracking-wider text-subtle align-middle bg-canvas border-b border-hairline whitespace-nowrap";
-const BODY_CELL = "h-11 px-3 align-middle text-[12px] text-body";
+// Matches the shared DataTable metrics used by Service Mapping and Client
+// Management — h-10 (40px) header at 12px, h-12 (48px) body row at 13px — so
+// the three lists read as one system. Header styling comes from the shared
+// TABLE_HEAD_CELL token exported by DataTable, so any future adjustment
+// there flows here automatically instead of having to be duplicated.
+const HEAD_CELL = `${TABLE_HEAD_CELL} px-3`;
+const BODY_CELL = "h-12 px-3 align-middle text-[13px] text-body";
 
 function SortButton({
   label,
@@ -54,7 +61,10 @@ function SortButton({
     <button
       type="button"
       onClick={() => onSort(columnKey)}
-      className="inline-flex items-center gap-1.5 uppercase tracking-wider hover:text-heading transition-colors duration-150"
+      // Header label is rendered in natural Title Case — the shared
+      // TABLE_HEAD_CELL token drops `uppercase`/`tracking-wider`, so the
+      // sort button must not add them back.
+      className="inline-flex items-center gap-1.5 hover:text-heading transition-colors duration-150"
     >
       {label}
       {active ? (
@@ -124,10 +134,11 @@ export function MappingTable({
   sortDir,
   onSort,
   onOpen,
+  startIndex = 0,
   emptyState,
 }: MappingTableProps) {
-  // Client + BusinessModel + ServiceModel + ProvidingYear + AvailableCourses + Action
-  const COL_SPAN = 6;
+  // # + Client + BusinessModel + ServiceModel + ProvidingYear + AvailableCourses + Action
+  const COL_SPAN = 7;
 
   // Pagination page-move animation — the User Management stagger, made
   // visibly kinetic: every row is a motion.tr that fades AND slides up into
@@ -139,7 +150,13 @@ export function MappingTable({
       <table className="w-full table-fixed border-collapse">
         <thead className="sticky top-0 z-sticky">
           <tr>
-            <th className={`${HEAD_CELL} w-[26%] text-left`}>
+            {/* # — row number, continuous across pages (startIndex+i+1). 5%
+                is enough for up to three digits at the app's tabular-nums
+                sizing; the remaining columns absorb it from Client (26→22)
+                and Available Courses (17→16) so the widths still sum to
+                100% under table-fixed. */}
+            <th className={`${HEAD_CELL} w-[5%] pl-4 sm:pl-5 text-left`}>#</th>
+            <th className={`${HEAD_CELL} w-[22%] text-left`}>
               <SortButton label="Client" columnKey="client" active={sortKey === "client"} dir={sortDir} onSort={onSort} />
             </th>
             <th className={`${HEAD_CELL} w-[12%] text-left`}>Business Model</th>
@@ -147,7 +164,7 @@ export function MappingTable({
             <th className={`${HEAD_CELL} w-[12%] text-left`}>
               <SortButton label="Providing Year" columnKey="year" active={sortKey === "year"} dir={sortDir} onSort={onSort} />
             </th>
-            <th className={`${HEAD_CELL} w-[17%] text-left`}>Available Courses</th>
+            <th className={`${HEAD_CELL} w-[16%] text-left`}>Available Courses</th>
             <th className={`${HEAD_CELL} w-[15%] pl-2 pr-4 sm:pr-5 text-right`}>Action</th>
           </tr>
         </thead>
@@ -156,6 +173,9 @@ export function MappingTable({
           {isLoading ? (
             Array.from({ length: Math.max(6, Math.min(skeletonRows, 12)) }).map((_, i) => (
               <tr key={i} className="border-b border-hairline">
+                <td className={`${BODY_CELL} pl-4 sm:pl-5`}>
+                  <div className="h-3 w-4 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
+                </td>
                 <td className={BODY_CELL}>
                   <div className="h-3 w-40 rounded bg-ink-100 animate-pulse" style={{ animationDelay: `${i * 55}ms` }} />
                 </td>
@@ -191,6 +211,12 @@ export function MappingTable({
                 transition={{ duration: 0.22, ease: "easeOut", delay: Math.min(i, 10) * 0.02 }}
                 className="group border-b border-hairline last:border-0 transition-colors duration-150 hover:bg-row-hover"
               >
+                {/* # — row number, continuous across pages so page 2 begins
+                    where page 1 ended (matches Service Mapping's numbering). */}
+                <td className={`${BODY_CELL} pl-4 sm:pl-5 text-xs text-faint tabular-nums`}>
+                  {startIndex + i + 1}
+                </td>
+
                 {/* Client — plain text, no service subline. */}
                 <td className={BODY_CELL}>
                   <span className="block truncate" title={row.clientName}>{row.clientName}</span>

@@ -85,7 +85,10 @@ export const ADMIN_SIDEBAR_KEYS = [
     "clientmanagement",     // ─┐ Business Management. The merger splices the
     "servicemapping",       // ─┘ group in at the FIRST of these two, so their
                             //    position here is the group's position.
-    "coursestructure",      // Course Management
+    "coursestructure",      // Course Management — a standalone top-level entry
+                            //                    (peer of Approvals / Report /
+                            //                    Calendar, NOT nested under
+                            //                    Business Management).
     "notifications",        // Notification
     "approvals",            // Approvals
     "attendancemanagement", // Attendance Management
@@ -303,23 +306,25 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
     }
 
     // ── Business Management umbrella ──
-    // 2026-08-30 user request: nest Course Management INSIDE Business
-    // Management alongside Client Management and Service Mapping. So the
-    // rail reads as one Business heading with three tabs underneath:
+    // Business Management wraps Client Management + Service Mapping only.
+    // Course Management (coursestructure) is a peer top-level rail entry —
+    // the user reads it as a sibling of Approvals, Report, Calendar, not as
+    // something living under a Business heading. Its slot in the admin
+    // rail's order comes from ADMIN_SIDEBAR_KEYS above.
     //
     //   Business Management ▾
     //     ├─ Client Management     → /lms/pages/clientmanagement
-    //     ├─ Service Mapping       → /lms/pages/servicemapping
-    //     └─ Course Management     → /lms/pages/coursestructure
+    //     └─ Service Mapping       → /lms/pages/servicemapping
+    //   Course Management          → /lms/pages/coursestructure   (top-level)
     //
     // Only children the user is actually granted appear (permission gates
-    // are unchanged). If NONE of the three keys are granted, no Business
-    // heading appears at all. If Business Management is the umbrella but a
-    // user only has (say) Course Management, the umbrella still renders
-    // with the one child so the module isn't hidden behind a missing
-    // parent — matches the existing "no action hidden" pattern used for
-    // the Question Bank and System Settings mergers.
-    const BUSINESS_KEYS = ["clientmanagement", "servicemapping", "coursestructure", "businessmanagement"];
+    // are unchanged). If NEITHER key is granted, no Business heading
+    // appears at all. If Business Management is the umbrella but a user
+    // only has one of the two, the umbrella still renders with the one
+    // child so the module isn't hidden behind a missing parent — matches
+    // the existing "no action hidden" pattern used for the Question Bank
+    // and System Settings mergers.
+    const BUSINESS_KEYS = ["clientmanagement", "servicemapping", "businessmanagement"];
     const firstBusinessIdx = items.findIndex(
         i => BUSINESS_KEYS.includes(canonicalPermissionKey(i.permissionKey)),
     );
@@ -327,7 +332,7 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
         const sectionColor = items[firstBusinessIdx].color;
 
         // Build children only for the keys this user actually holds.
-        // Order is fixed (Client → Service → Course) so the section reads
+        // Order is fixed (Client → Service) so the section reads
         // consistently regardless of grant order.
         const held = new Set(items.map(i => canonicalPermissionKey(i.permissionKey)));
         const businessChildren: SidebarItem[] = [];
@@ -351,22 +356,12 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
                 permissionKey: "servicemapping",
             });
         }
-        if (held.has("coursestructure")) {
-            businessChildren.push({
-                title: "Course Management",
-                href: "/lms/pages/coursestructure",
-                icon: getIconByName("BookOpen"),
-                iconName: "BookOpen",
-                color: sectionColor,
-                permissionKey: "coursestructure",
-            });
-        }
 
         if (businessChildren.length > 0) {
             const merged: SidebarItem = {
                 title: "Business Management",
-                // Parent opens the first granted child (Client → Service →
-                // Course) since there's no combined landing page.
+                // Parent opens the first granted child (Client → Service)
+                // since there's no combined landing page.
                 href: businessChildren[0].href,
                 icon: getIconByName("Briefcase"),
                 iconName: "Briefcase",
@@ -378,8 +373,8 @@ export const buildSidebarItems = (permissions: UserPermission[], adminOnly: bool
             // Strip every underlying key + any old top-level Business
             // Management entry, then splice the merged section in at the
             // position of the first Business-scoped item so ordering
-            // relative to unrelated items (Question Bank, System Settings,
-            // etc.) is preserved.
+            // relative to unrelated items (Course Management, Question
+            // Bank, System Settings, etc.) is preserved.
             const filtered = items.filter(
                 i => !BUSINESS_KEYS.includes(canonicalPermissionKey(i.permissionKey)),
             );

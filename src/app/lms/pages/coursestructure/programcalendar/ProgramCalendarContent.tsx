@@ -1,12 +1,12 @@
 ﻿"use client"
 import { getToken, getSessionItem, SESSION_KEYS } from "@/lib/session";
-import { attendanceApi } from "@/apiServices/attendanceApi";
+import { attendanceApi } from "@/app/lms/pages/attendancemanagement/api/attendanceApi";
 
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useCourseBatchesQuery } from '@/queries/courseBatches'
+import { useCourseBatchesQuery } from '@/app/lms/pages/coursestructure/course-batches/queries/courseBatches'
 import { queryKeys } from '@/lib/queryKeys'
 import {
     ArrowLeft, Plus, X, Clock, CalendarDays, Sparkles, Coffee,
@@ -23,14 +23,14 @@ import {
     BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import DashboardLayout from '@/app/lms/component/layout'
-import { moduleApi } from '@/apiServices/pedagogyAndModuleAdd/addmodule'
-import { subModuleApi } from '@/apiServices/pedagogyAndModuleAdd/addsubmodule'
-import { topicApi } from '@/apiServices/pedagogyAndModuleAdd/addtopic'
-import { subTopicApi } from '@/apiServices/pedagogyAndModuleAdd/addsubtopic'
-import { pedagogyViewApi } from '@/apiServices/pedagogyAndModuleAdd/pedagogy'
-import { courseStructureApi } from '@/apiServices/createCourseStucture'
-import { programCalendarApi } from '@/apiServices/programCalendarApi'
-import { instituteHolidayCalendarApi } from '@/apiServices/instituteHolidayCalendarApi'
+import { moduleApi } from '@/app/lms/pages/coursestructure/pedagogy2/api/addmodule'
+import { subModuleApi } from '@/app/lms/pages/coursestructure/pedagogy2/api/addsubmodule'
+import { topicApi } from '@/app/lms/pages/coursestructure/pedagogy2/api/addtopic'
+import { subTopicApi } from '@/app/lms/pages/coursestructure/pedagogy2/api/addsubtopic'
+import { pedagogyViewApi } from '@/app/lms/pages/coursestructure/pedagogy2/api/pedagogy'
+import { courseStructureApi } from '@/app/lms/pages/coursestructure/api/createCourseStucture'
+import { programCalendarApi } from '@/app/lms/pages/coursestructure/programcalendar/api/programCalendarApi'
+import { instituteHolidayCalendarApi } from '@/app/lms/pages/calendar/api/instituteHolidayCalendarApi'
 import { scopeIdFor } from '@/app/lms/pages/calendar/components/ClientList'
 import { userPermission } from '@/apiServices/tokenVerify'
 

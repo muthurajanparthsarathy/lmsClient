@@ -1,5 +1,5 @@
 import { Permission, UserData } from ".";
-import { getFlatPages, storedListMatches } from "@/config/permissions.helpers";
+import { getFlatPages, storedListMatches } from "@/app/lms/pages/usermanagement/config/permissions.helpers";
 
 const USER_DATA_KEY = "smartcliff_userData";
 

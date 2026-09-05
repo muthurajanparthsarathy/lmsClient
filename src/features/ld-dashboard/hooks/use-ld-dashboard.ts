@@ -20,11 +20,11 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
-import { api } from "@/lib/apiClient";
+import { api } from "@/app/lms/pages/clientmanagement/lib/apiClient";
 import { queryKeys } from "@/lib/queryKeys";
 import { readStoredUserData } from "@/app/lms/shared/ui/navItems";
-import { attendanceApi } from "@/apiServices/attendanceApi";
-import { courseStructureApi } from "@/apiServices/createCourseStucture";
+import { attendanceApi } from "@/app/lms/pages/attendancemanagement/api/attendanceApi";
+import { courseStructureApi } from "@/app/lms/pages/coursestructure/api/createCourseStucture";
 import type { Async, DashFilter, DashboardModel } from "../types";
 import { deriveModel, parseAnalytics, parseFeedback, pickFocusCourse } from "../lib/metrics";
 

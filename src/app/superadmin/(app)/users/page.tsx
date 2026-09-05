@@ -24,7 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { PermissionModal } from '@/app/lms/component/PermissionModal';
+import { PermissionModal } from '@/app/lms/pages/usermanagement/components/PermissionModal';
 import {
   PageHeader, Panel, EmptyState, FieldSelect, StatusBadge, SearchInput, MetricCard, Toolbar, RefreshButton,
   useSort, SortLabel, useConfirm,

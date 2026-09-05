@@ -7,6 +7,13 @@ import { D, generateCalendarDays } from './constants';
 import { FormDataType, ValidationErrors } from './types';
 import { InfoTooltip } from './UIComponents';
 import { fetchApprovalHierarchy, type ApprovalStep } from '@/apiServices/userService';
+// Shared 12-hour helpers — see client/src/app/lms/shared/time12.ts.
+// Same import as the orange sibling so both files render identical
+// preview strings and share the same input clamps + AM/PM conversion.
+import {
+  to12, from12, formatDateTime12, formatTime12,
+  type Period,
+} from '@/app/lms/shared/time12';
 
 interface ScheduleStepProps {
   formData: FormDataType;
@@ -28,13 +35,10 @@ const DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 const GRN = '#10b981';
 const GRN_LIGHT = 'rgba(16,185,129,0.10)';
 
-const fmtDateTime = (v: DateValue) => {
-  if (!hasDate(v)) return '';
-  const h = v.hour, m = v.minute;
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hh = h % 12 === 0 ? 12 : h % 12;
-  return `${MONTHS_SHORT[v.month - 1]} ${v.day}, ${v.year}, ${String(hh).padStart(2,'0')}:${String(m).padStart(2,'0')} ${ampm}`;
-};
+// Preview banner format lives in the shared 12h helper so orange +
+// green ScheduleSteps + the student assessments list all render the
+// same string ("Sep 3, 2026, 6:09 PM" — no leading zero on hour).
+const fmtDateTime = (v: DateValue) => formatDateTime12(hasDate(v) ? v : null);
 
 // ── Editable segment input (DD, MM, YYYY, HH, MM) ───────────────────────────
 const SegInput: React.FC<{
@@ -88,11 +92,15 @@ const SegInput: React.FC<{
 };
 
 // ── Spinner (up/down arrows + value in green circle) ─────────────────────────
-const Spinner: React.FC<{ value: number; max: number; onChange: (v: number) => void }> = ({ value, max, onChange }) => (
+// `min` defaults to 0 (matches MINUTE 0..59). HOUR12 callers pass min=1 so
+// the wrap boundary flips 12 ↔ 1 instead of 12 ↔ 0.
+const Spinner: React.FC<{
+  value: number; max: number; min?: number; onChange: (v: number) => void;
+}> = ({ value, max, min = 0, onChange }) => (
   <div className="flex flex-col items-center gap-0.5">
     <button
       type="button"
-      onClick={() => onChange(value >= max ? 0 : value + 1)}
+      onClick={() => onChange(value >= max ? min : value + 1)}
       className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
     >
       <ChevronUp size={12} style={{ color: GRN }} />
@@ -105,11 +113,44 @@ const Spinner: React.FC<{ value: number; max: number; onChange: (v: number) => v
     </div>
     <button
       type="button"
-      onClick={() => onChange(value <= 0 ? max : value - 1)}
+      onClick={() => onChange(value <= min ? max : value - 1)}
       className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
     >
       <ChevronDown size={12} style={{ color: GRN }} />
     </button>
+  </div>
+);
+
+// ── PERIOD segmented AM/PM (green theme) ────────────────────────────────────
+const PeriodSelector: React.FC<{ value: Period; onChange: (p: Period) => void }> = ({
+  value, onChange,
+}) => (
+  <div
+    className="inline-flex overflow-hidden select-none"
+    role="group"
+    aria-label="AM or PM"
+    style={{ border: `1px solid #ecedf1`, borderRadius: 999, height: 30 }}
+  >
+    {(['AM', 'PM'] as const).map((p) => {
+      const selected = value === p;
+      return (
+        <button
+          key={p}
+          type="button"
+          aria-pressed={selected}
+          onClick={() => onChange(p)}
+          style={{
+            padding: '0 12px', minWidth: 40, height: '100%', border: 'none',
+            background: selected ? GRN : '#fff',
+            color: selected ? '#fff' : '#6b6b7e',
+            fontWeight: 700, fontSize: 11.5, letterSpacing: '.02em',
+            cursor: 'pointer',
+          }}
+        >
+          {p}
+        </button>
+      );
+    })}
   </div>
 );
 
@@ -129,8 +170,14 @@ const CalendarPopup: React.FC<CalendarPopupProps> = ({ fieldLabel, value, onConf
   const [selDay, setSelDay]         = useState(hasDate(value) ? value.day       : 0);
   const [selMonth, setSelMonth]     = useState(hasDate(value) ? value.month     : 0);
   const [selYear, setSelYear]       = useState(hasDate(value) ? value.year      : 0);
-  const [hour, setHour]             = useState(value.hour);
-  const [minute, setMinute]         = useState(value.minute);
+  // Internal 24-hour storage, but the picker only shows the 12-hour view.
+  const [hour, setHour]             = useState(value.hour);   // 0..23
+  const [minute, setMinute]         = useState(value.minute); // 0..59
+  const { h12, period }             = to12(hour);
+  const setH12 = (n: number) => setHour(from12({ h12: n, period }));
+  const setPeriod = (p: Period) => setHour(from12({ h12, period: p }));
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  useEffect(() => { setRangeError(null); }, [hour, minute]);
   const popRef                      = useRef<HTMLDivElement>(null);
   const [pos, setPos]               = useState<React.CSSProperties>({ position: 'fixed', top: -9999, left: -9999, zIndex: 9999, visibility: 'hidden' });
 
@@ -141,7 +188,8 @@ const CalendarPopup: React.FC<CalendarPopupProps> = ({ fieldLabel, value, onConf
     const frame = requestAnimationFrame(() => {
       if (!anchorEl || !popRef.current) return;
       const r  = anchorEl.getBoundingClientRect();
-      const pw = 360;
+      // Wider (was 360) to fit HOUR + MINUTE + PERIOD side by side.
+      const pw = 440;
       const ph = popRef.current.offsetHeight || 360;   // real rendered height
 
       // Prefer right of anchor; flip left if no room
@@ -197,6 +245,15 @@ const CalendarPopup: React.FC<CalendarPopupProps> = ({ fieldLabel, value, onConf
 
   const confirm = () => {
     if (!selDay) return;
+    // Time-aware minDate check — same guard as the orange sibling so a
+    // same-day time earlier than minDate can't slip past Confirm.
+    if (minDate) {
+      const picked = new Date(selYear, selMonth - 1, selDay, hour, minute);
+      if (picked < minDate) {
+        setRangeError(`Must be on or after ${formatDateTime12(minDate)}`);
+        return;
+      }
+    }
     onConfirm({ day: selDay, month: selMonth, year: selYear, hour, minute });
     onClose();
   };
@@ -204,7 +261,7 @@ const CalendarPopup: React.FC<CalendarPopupProps> = ({ fieldLabel, value, onConf
   const selVal: DateValue = { day: selDay, month: selMonth, year: selYear, hour, minute };
 
   return (
-    <div ref={popRef} style={pos} className="bg-white rounded-xl shadow-2xl border border-[#ecedf1] w-[360px] overflow-hidden select-none">
+    <div ref={popRef} style={pos} className="bg-white rounded-xl shadow-2xl border border-[#ecedf1] w-[440px] overflow-hidden select-none">
       {/* Header */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[#ecedf1]">
         <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: GRN_LIGHT }}>
@@ -262,13 +319,24 @@ const CalendarPopup: React.FC<CalendarPopupProps> = ({ fieldLabel, value, onConf
           </div>
         </div>
 
-        {/* Time spinner */}
-        <div className="w-24 flex flex-col items-center justify-center gap-2 px-2 py-2">
+        {/* TIME pane — three explicit columns per the target image:
+              HOUR (1-12), MINUTE (00-59), PERIOD (AM/PM segmented). */}
+        <div className="flex flex-col items-center justify-center gap-2 px-3 py-2" style={{ width: 168 }}>
           <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: D.textMuted }}>TIME</span>
-          <div className="flex items-center gap-1">
-            <Spinner value={hour}   max={23} onChange={setHour} />
-            <span className="text-sm font-bold" style={{ color: GRN }}>:</span>
-            <Spinner value={minute} max={59} onChange={setMinute} />
+          <div className="flex items-start justify-center gap-2">
+            <div className="flex flex-col items-center">
+              <span style={{ fontSize: 8.5, fontWeight: 700, color: D.textMuted, letterSpacing: '.08em', marginBottom: 2 }}>HOUR</span>
+              <Spinner value={h12} min={1} max={12} onChange={setH12} />
+            </div>
+            <span className="text-sm font-bold self-center" style={{ color: GRN, marginTop: 12 }}>:</span>
+            <div className="flex flex-col items-center">
+              <span style={{ fontSize: 8.5, fontWeight: 700, color: D.textMuted, letterSpacing: '.08em', marginBottom: 2 }}>MINUTE</span>
+              <Spinner value={minute} min={0} max={59} onChange={setMinute} />
+            </div>
+            <div className="flex flex-col items-center" style={{ marginLeft: 4 }}>
+              <span style={{ fontSize: 8.5, fontWeight: 700, color: D.textMuted, letterSpacing: '.08em', marginBottom: 2 }}>PERIOD</span>
+              <PeriodSelector value={period} onChange={setPeriod} />
+            </div>
           </div>
         </div>
       </div>
@@ -280,6 +348,12 @@ const CalendarPopup: React.FC<CalendarPopupProps> = ({ fieldLabel, value, onConf
           {selDay ? fmtDateTime(selVal) : 'No date selected'}
         </span>
       </div>
+      {rangeError && (
+        <div className="mx-3 mb-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: '#FEF3F2', border: '1px solid #FBD3CE' }}>
+          <AlertCircle size={11} style={{ color: '#B42318' }} />
+          <span className="text-xs font-semibold truncate" style={{ color: '#B42318' }}>{rangeError}</span>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between px-3 pb-2.5">
@@ -363,14 +437,32 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
   const set = useCallback((key: string, val: DateValue) => {
     setFormData(prev => ({ ...prev, schedule: { ...prev.schedule, [key]: val } }));
     setValidationErrors(prev => {
-      const n = { ...prev };
+      const n: any = { ...prev };
       if (key === 'startDate')      delete n.startDate;
       if (key === 'endDate')        delete n.endDate;
-      if (key === 'cutOffDate')     delete (n as any).cutOffDate;
+      if (key === 'cutOffDate')     delete n.cutOffDate;
       if (key === 'gracePeriodDate') delete n.gracePeriod;
+      // End > Start / Cut-off ≥ End / Grace ≥ End|Cut-off — inline edits
+      // bypass the CalendarPopup guard, so re-check here.
+      const nextSched: any = { ...(formData as any).schedule, [key]: val };
+      const toMs = (v: DateValue) => hasDate(v) ? dvToDate(v)!.getTime() : null;
+      const startMs = toMs(nextSched.startDate || EMPTY);
+      const endMs   = toMs(nextSched.endDate   || EMPTY);
+      const cutMs   = toMs(nextSched.cutOffDate|| EMPTY);
+      const graceMs = toMs(nextSched.gracePeriodDate || EMPTY);
+      if (key === 'endDate' && startMs != null && endMs != null && endMs <= startMs) {
+        n.endDate = 'End date & time must be later than Start.';
+      }
+      if (key === 'cutOffDate' && endMs != null && cutMs != null && cutMs < endMs) {
+        n.cutOffDate = 'Cut-off must be on or after End.';
+      }
+      if (key === 'gracePeriodDate' && graceMs != null) {
+        const floor = cutMs ?? endMs;
+        if (floor != null && graceMs < floor) n.gracePeriod = 'Grace deadline must be on or after End / Cut-off.';
+      }
       return n;
     });
-  }, [setFormData, setValidationErrors]);
+  }, [setFormData, setValidationErrors, formData]);
 
   // The "base" date a quick-offset chip is added to.
   // endDate offsets from startDate; cutOffDate offsets from endDate;
@@ -592,9 +684,55 @@ export const ScheduleStep: React.FC<ScheduleStepProps> = ({
 
                   {/* HH : MM — editable inputs */}
                   <span className="inline-flex items-center gap-1 ml-2">
-                    <SegInput value={val.hour}   placeholder="HH" min={0} max={23} onChange={h => set(fieldKey, { ...val, hour: h })} />
+                    {/* Hour is now 12h with an AM/PM chip; storage stays 24h so
+                        downstream Date + UTC serialization is unaffected. */}
+                    {(() => {
+                      const t = to12(val.hour || 0);
+                      return (
+                        <>
+                          <SegInput value={t.h12} placeholder="HH" min={1} max={12}
+                            onChange={h12 => set(fieldKey, { ...val, hour: from12({ h12, period: t.period }) })} />
+                        </>
+                      );
+                    })()}
                     <span className="text-[#9b9bae] text-xs font-bold">:</span>
                     <SegInput value={val.minute} placeholder="MM" min={0} max={59} onChange={m => set(fieldKey, { ...val, minute: m })} />
+                    {/* AM/PM chip — flips the 24h stored hour without changing minute. */}
+                    {(() => {
+                      const t = to12(val.hour || 0);
+                      return (
+                        <div
+                          className="inline-flex overflow-hidden ml-1"
+                          role="group"
+                          aria-label="AM or PM"
+                          style={{ border: '1px solid #ecedf1', borderRadius: 6, height: 24 }}
+                        >
+                          {(['AM', 'PM'] as const).map((p) => {
+                            const selected = t.period === p;
+                            return (
+                              <button
+                                key={p}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => set(fieldKey, { ...val, hour: from12({ h12: t.h12 || 12, period: p }) })}
+                                style={{
+                                  height: '100%', minWidth: 26, padding: '0 6px', border: 'none',
+                                  background: selected ? GRN : '#fff',
+                                  color: selected ? '#fff' : '#6b6b7e',
+                                  fontWeight: 700, fontSize: 10.5, letterSpacing: '.02em',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {p}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                    <span className="text-[11px] text-[#9b9bae] ml-1" title="12-hour clock — flip AM/PM to switch">
+                      {formatTime12(val.hour || 0, val.minute || 0)}
+                    </span>
                   </span>
 
                   {/* Calendar icon button — triggers popup */}

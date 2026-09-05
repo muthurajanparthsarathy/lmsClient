@@ -13,7 +13,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { SESSION_KEYS } from "@/lib/session";
-import { findPage, storedListMatches } from "@/config/permissions.helpers";
+import { findPage, storedListMatches } from "@/app/lms/pages/usermanagement/config/permissions.helpers";
 
 export interface StoredPermission {
   id?: string;

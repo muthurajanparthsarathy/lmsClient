@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Building2, CalendarDays, Search, X } from 'lucide-react'
-import { useClients, type Client, type ContactPerson } from '@/apiServices/clientManagementService'
-import { instituteHolidayCalendarApi } from '@/apiServices/instituteHolidayCalendarApi'
+import { useClients, type Client, type ContactPerson } from '@/app/lms/pages/clientmanagement/api/clientManagementService'
+import { instituteHolidayCalendarApi } from '@/app/lms/pages/calendar/api/instituteHolidayCalendarApi'
 import { motion } from 'framer-motion'
 import DataTable, { type Column } from '@/app/lms/shared/listing/DataTable'
 import TableFooter from '@/app/lms/shared/listing/TableFooter'
 import { usePermissions } from '@/hooks/usePermissions'
-import { PERMISSION_IDS } from '@/components/permissions'
+import { PERMISSION_IDS } from '@/app/lms/pages/usermanagement/components/permissions/index'
 import { scopeIdFor } from './types'
 
 // Re-exported from ./types, where the definition now lives so the read-only

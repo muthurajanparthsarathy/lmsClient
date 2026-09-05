@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useClients } from "@/apiServices/clientManagementService";
-import { useServiceMappings } from "@/apiServices/serviceMappingService";
-import { degreeService } from "@/apiServices/dynamicFields/degreeService";
+import { useClients } from "@/app/lms/pages/clientmanagement/api/clientManagementService";
+import { useServiceMappings } from "@/app/lms/pages/servicemapping/api/serviceMappingService";
+import { degreeService } from "@/app/lms/pages/dynamicfieldsettings/api/degreeService";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Institution reference lists (clients, service mappings, degrees) for the

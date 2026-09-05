@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
-import { api, ApiError } from "@/lib/apiClient";
+import { api, ApiError } from "@/app/lms/pages/clientmanagement/lib/apiClient";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin dashboard analytics — `GET /student-Dashboard/courses-data/analytics`.

@@ -7,7 +7,7 @@
 
 import type React from "react"
 import { toast } from "sonner"
-import { pedagogyViewApi } from "@/apiServices/pedagogyAndModuleAdd/pedagogy"
+import { pedagogyViewApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/pedagogy"
 import type { MergedCell, MergedLevel } from "./types"
 
 export interface MergeHelpersDeps {

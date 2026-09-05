@@ -6,19 +6,12 @@ import { motion } from 'framer-motion'
 import {
   ArrowLeft, BookOpen, GitBranch, Layers, UserPlus, SearchX,
 } from "lucide-react"
-import ApprovalHierarchyModal from '@/app/lms/component/ApprovalHierarchyModal'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
+import ApprovalHierarchyModal from '@/app/lms/pages/approvals/components/ApprovalHierarchyModal'
 import DashboardLayout from '@/app/lms/component/layout'
 import EnrollmentTab from '@/app/lms/component/EnrollmentTab'
 import { EmptyState, Skeleton, SkeletonTable, StatusPill } from '@/app/lms/shared/ui'
-import { useCourseBatchesQuery } from '@/queries/courseBatches'
-import { useServiceMapping } from '@/apiServices/serviceMappingService'
+import { useCourseBatchesQuery } from '@/app/lms/pages/coursestructure/course-batches/queries/courseBatches'
+import { useServiceMapping } from '@/app/lms/pages/servicemapping/api/serviceMappingService'
 
 /* Standalone the screen brings the admin chrome with it; hosted inside another
    shell (the L&D console) it must not render a second sidebar and navbar.

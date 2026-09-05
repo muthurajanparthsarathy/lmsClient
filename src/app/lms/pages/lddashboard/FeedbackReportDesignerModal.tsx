@@ -23,7 +23,7 @@ import {
     CATEGORY_COLORS,
     type CategoryLegendEntry,
     type QuestionBar,
-} from "@/features/feedback/components/FeedbackCategoryCharts";
+} from "@/app/lms/component/FeedbackCategoryCharts";
 
 // Aggregated shape the single-chart FeedbackQuestionsChart consumes.
 type FeedbackChartData = {

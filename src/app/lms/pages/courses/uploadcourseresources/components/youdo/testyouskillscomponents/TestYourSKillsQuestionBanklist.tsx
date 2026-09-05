@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Filter, Loader, Check, ChevronRight, ChevronLeft, BookOpen, Code, Database, Layout, AlertCircle, Eye, Info, CheckCircle } from 'lucide-react';
-import { questionBankService } from '@/apiServices/questionBankService';
+import { questionBankService } from '@/app/lms/pages/questionbanks/api/questionBankService';
 import { toast } from 'react-toastify';
 
 interface Question {

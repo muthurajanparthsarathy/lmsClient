@@ -11,7 +11,7 @@ import type {
   ScreenStudentViolation,
 } from "../types/liveScreens.types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
 
 interface UseProctorScreensArgs {
   assessmentId: string;

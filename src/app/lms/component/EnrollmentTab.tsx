@@ -8,7 +8,7 @@ import { GraduationCap, Mail, Phone, UserIcon, UserPlus, Trash2, Calendar, Clock
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchUsers, addUser, addParticipantsToCourse, removeParticipantFromCourse, removeMultipleParticipantsFromCourse, updateParticipantEnrollment } from '@/apiServices/userService'
+import { fetchUsers, addUser, addParticipantsToCourse, removeParticipantFromCourse, removeMultipleParticipantsFromCourse, updateParticipantEnrollment } from '@/app/lms/pages/usermanagement/api/userService'
 import { fetchRoles } from '@/apiServices/rolesApi'
 import { userPermission } from '@/apiServices/tokenVerify'
 import { UserModals } from '@/app/lms/pages/usermanagement/components/UserModals'

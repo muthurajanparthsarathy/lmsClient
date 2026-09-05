@@ -12,7 +12,7 @@ import {
   getInstitutionPermissions, updateInstitutionPermissions, InstitutionPermission,
 } from '@/apiServices/superadmin/institutionService';
 import { toApiError } from '@/lib/superAdminApiClient';
-import { PermissionModal } from '@/app/lms/component/PermissionModal';
+import { PermissionModal } from '@/app/lms/pages/usermanagement/components/PermissionModal';
 import { cn } from '@/lib/utils';
 import { showSuccessToast, showErrorToast } from '@/components/ui/toastUtils';
 import { Button } from '@/components/ui/button';

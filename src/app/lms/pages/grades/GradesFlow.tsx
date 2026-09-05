@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, X, ArrowLeft, ChevronRight, ChevronDown, Check,
   GraduationCap, Dumbbell, Users, HelpCircle, Download, SearchX,
-  Printer, FileSpreadsheet, FileText,
+  Printer, FileSpreadsheet, FileText, Layers,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from "@/app/lms/component/layout";
@@ -15,11 +15,12 @@ import { pageEnter } from "@/app/lms/shared/ui";
 import TableFooter from "@/app/lms/shared/listing/TableFooter";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { headersFor } from "./components/gradeHelpers";
 import { ExerciseCells, StudentCells, QuestionCells } from "./components/GradeRows";
 import StudentDetailsDrawer from "./components/StudentDetailsDrawer";
-import { api } from "@/lib/apiClient";
+import { api } from "@/app/lms/pages/clientmanagement/lib/apiClient";
 import { courseDataApi } from "@/apiServices/coursesData";
 import { CourseSidebar } from "@/app/lms/pages/courses/uploadcourseresources/components/Coursesidebar";
 import { transformToCourseNodes, findPathToNode } from "@/app/lms/pages/courses/uploadcourseresources/components/courseTree";
@@ -342,6 +343,10 @@ export default function GradesFlow({
   const deepLinkOpenTab = openTabProp
     || (searchParams?.get("openTab") as "exercises" | "students" | "questions" | null)
     || null;
+
+  // Needed by the Overall report, which fetches each exercise's student list
+  // on demand (through the cache) rather than mounting a query per exercise.
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<"exercises" | "students" | "questions">("exercises");
   const [courseId, setCourseId] = useState<string | null>(courseIdProp ?? null);
@@ -949,12 +954,31 @@ export default function GradesFlow({
   const toggleOne = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   // ── Rows-to-export helper ─────────────────────────────────────────────
-  // Reused by the bulk-select "Export CSV" button, the toolbar Export
+  // Reused by the bulk-select "Export" buttons, the toolbar Export
   // dropdown, and the Print handler. Priority: explicit selection > the
-  // current filtered set > every student. Columns match the on-screen
-  // Student List: #, Name, Email, Total Questions, Attended, Marks
-  // Scored, Grade, Status.
+  // current filtered set > every row. Columns match the on-screen table
+  // for that tab so a print/export never disagrees with what is visible.
   const buildExportRows = () => {
+    // Exercises tab — the assignment/assessment list. Selection wins,
+    // otherwise the currently filtered set (respects search + We_Do /
+    // You_Do filter). "Type" column carries the section (Assignment /
+    // Assessment) so an export of the mixed list keeps the split visible
+    // even without the on-screen filter chip.
+    if (activeTab === "exercises") {
+      const source: any[] = selectedIds.length
+        ? exercises.filter((e: any) => selectedIds.includes(rowId(e)))
+        : filteredData;
+      return source.map((e: any, i: number) => ({
+        "#": i + 1,
+        Type: e.section === "We_Do" ? "Assignment"
+          : e.section === "You_Do" ? "Assessment"
+          : "Exercise",
+        "Assignment/Assessment": e.exerciseName || "",
+        "Total Questions": Number(e.totalQuestions) || 0,
+        "Total Marks": Number(e.totalPoints) || 0,
+        Status: String(e.status || "active").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+      }));
+    }
     // Questions tab — one row per question on this student's attempt.
     // Columns mirror the on-screen QuestionCells: #, Question, Difficulty,
     // Mark Scored (X/Y), Attempts, Status (Submitted / Not attempted).
@@ -974,68 +998,292 @@ export default function GradesFlow({
       selectedIds.length ? students.filter(s => selectedIds.includes(rowId(s)))
         : activeTab === "students" ? filteredData
           : students;
-    return source.map((s, i) => {
-      const p = s.exerciseProgress || {};
-      // Mirrors StudentCells exactly so an export can never disagree with the
-      // table it was taken from: totals summed from the per-question attempts
-      // (per-question scores are strings, so the server's own `overallScore`
-      // reduce used to concatenate rather than add), and the real
-      // `questionsTotal` / `questionsAttempted` field names.
-      const atts: any[] = Array.isArray(p.questionAttempts) ? p.questionAttempts : [];
-      const scoreTotal = atts.length
-        ? atts.reduce((sum, q) => sum + (Number(q?.score) || 0), 0)
-        : Number(p.overallScore) || 0;
-      // From `totalMaxScore`, not summed from the attempts — their
-      // `totalScore` is null on stored records. See the note in StudentCells.
-      const scoreMax = Number(p.totalMaxScore) || Number(selectedExercise?.totalPoints) || 0;
-      const pct = scoreMax > 0 ? (scoreTotal / scoreMax) * 100 : 0;
-      const totalQ = Number(
-        p.questionsTotal ?? p.totalQuestions ?? selectedExercise?.totalQuestions
-        ?? selectedExercise?.questions?.length ?? atts.length ?? 0,
-      ) || 0;
-      const attendedQ = Number(
-        p.questionsAttempted ?? p.attemptedQuestions ?? p.attendedQuestions
-        ?? p.completedCount ?? p.completedQuestions ?? p.answeredQuestions
-        ?? (Number(p.completionPercentage) > 0 && totalQ > 0
-              ? Math.round((Number(p.completionPercentage) / 100) * totalQ) : 0),
-      ) || 0;
-      const gradeLabel = pct >= 85 ? "Excellent" : pct >= 60 ? "Good" : pct >= 40 ? "Average" : (scoreTotal > 0 ? "Poor" : "—");
-      const serverStatus = String(p.status || "").toLowerCase();
-      const submittedByServer = serverStatus === "completed" || serverStatus === "evaluated" || serverStatus === "submitted";
-      const status = submittedByServer || scoreTotal > 0 || attendedQ > 0
-        ? "Completed" : "Not Started";
-      return {
-        "#": i + 1,
-        "Student Name": s.name || "",
-        Email: s.email || "",
-        // One column, matching the merged on-screen "Attended" cell.
-        Attended: `${attendedQ}/${totalQ}`,
-        Marks: scoreMax > 0 ? `${scoreTotal}/${scoreMax}` : "",
-        Grade: gradeLabel,
-        Status: status,
-      };
-    });
+    return source.map((s, i) => studentExportRow(s, i, selectedExercise));
   };
 
-  // CSV — sanitises quotes, one row per student, header row derived from
+  // One student → one export row. Extracted from buildExportRows so the
+  // Overall report (which walks EVERY exercise, not just the selected one)
+  // derives its student rows through exactly the same rules — a single
+  // definition means a nested Overall row can never disagree with the
+  // per-exercise Student List it mirrors.
+  //
+  // `exercise` is passed in rather than read off `selectedExercise` because
+  // Overall has a different exercise in hand on every iteration.
+  const studentExportRow = (s: any, i: number, exercise: any) => {
+    const p = s.exerciseProgress || {};
+    // Mirrors StudentCells exactly so an export can never disagree with the
+    // table it was taken from: totals summed from the per-question attempts
+    // (per-question scores are strings, so the server's own `overallScore`
+    // reduce used to concatenate rather than add), and the real
+    // `questionsTotal` / `questionsAttempted` field names.
+    const atts: any[] = Array.isArray(p.questionAttempts) ? p.questionAttempts : [];
+    const scoreTotal = atts.length
+      ? atts.reduce((sum, q) => sum + (Number(q?.score) || 0), 0)
+      : Number(p.overallScore) || 0;
+    // From `totalMaxScore`, not summed from the attempts — their
+    // `totalScore` is null on stored records. See the note in StudentCells.
+    const scoreMax = Number(p.totalMaxScore) || Number(exercise?.totalPoints) || 0;
+    const pct = scoreMax > 0 ? (scoreTotal / scoreMax) * 100 : 0;
+    const totalQ = Number(
+      p.questionsTotal ?? p.totalQuestions ?? exercise?.totalQuestions
+      ?? exercise?.questions?.length ?? atts.length ?? 0,
+    ) || 0;
+    const attendedQ = Number(
+      p.questionsAttempted ?? p.attemptedQuestions ?? p.attendedQuestions
+      ?? p.completedCount ?? p.completedQuestions ?? p.answeredQuestions
+      ?? (Number(p.completionPercentage) > 0 && totalQ > 0
+            ? Math.round((Number(p.completionPercentage) / 100) * totalQ) : 0),
+    ) || 0;
+    const gradeLabel = pct >= 85 ? "Excellent" : pct >= 60 ? "Good" : pct >= 40 ? "Average" : (scoreTotal > 0 ? "Poor" : "—");
+    const serverStatus = String(p.status || "").toLowerCase();
+    const submittedByServer = serverStatus === "completed" || serverStatus === "evaluated" || serverStatus === "submitted";
+    const status = submittedByServer || scoreTotal > 0 || attendedQ > 0
+      ? "Completed" : "Not Started";
+    return {
+      "#": i + 1,
+      "Student Name": s.name || "",
+      Email: s.email || "",
+      // One column, matching the merged on-screen "Attended" cell.
+      Attended: `${attendedQ}/${totalQ}`,
+      Marks: scoreMax > 0 ? `${scoreTotal}/${scoreMax}` : "—",
+      Grade: gradeLabel,
+      Status: status,
+    };
+  };
+
+  // ── Overall report data ───────────────────────────────────────────────
+  // The nested "every exercise + its student list underneath" shape. Walks
+  // the exercises the trainer currently has in view (selection first, then
+  // the We_Do / You_Do filter and search — so an Overall taken while the
+  // Activity filter reads "Assignment" covers assignments only), and fetches
+  // each one's student list through the same endpoint the Students tab uses.
+  //
+  // Requests go out in parallel but through the React Query cache, so an
+  // exercise the trainer has already opened costs nothing to include, and a
+  // failed fetch degrades to an empty student list for that exercise rather
+  // than failing the whole report.
+  const buildOverallData = async () => {
+    // Apply the We_Do / You_Do filter to the exercise source on EVERY tab.
+    // `filteredData` only carries it while the Exercises tab is the active
+    // one — drilled into a student, `filteredData` holds students, so an
+    // Overall taken from there used to silently widen back to every
+    // activity on the course. The trainer's Activity pick has to survive
+    // the drill, or "filter to We Do, then Overall" quietly lies.
+    const sectionScoped = (list: any[]) =>
+      sectionFilter.length > 0 && sectionFilter.length < SECTION_OPTIONS_ALL.length
+        ? list.filter((e: any) => sectionFilter.includes(e.section))
+        : list;
+    const source: any[] = selectedIds.length
+      // An explicit tick is explicit intent — those rows were already
+      // visible under the filter, so they are taken as picked.
+      ? exercises.filter((e: any) => selectedIds.includes(rowId(e)))
+      : activeTab === "exercises" ? filteredData : sectionScoped(exercises);
+    if (!source.length) return [];
+    return Promise.all(source.map(async (ex: any) => {
+      const exId = ex._id || ex.id;
+      let list: any[] = [];
+      try {
+        list = await queryClient.fetchQuery({
+          queryKey: ["grades", "students", courseId, exId],
+          queryFn: async () => {
+            const res: any = await api.get(`/exercises/${courseId}/${exId}/students`);
+            if (!res?.success) throw new Error("Failed to load students");
+            return res.data?.students || [];
+          },
+        });
+      } catch {
+        list = [];
+      }
+      return {
+        exercise: {
+          name: ex.exerciseName || "Unnamed Exercise",
+          kind: ex.section === "We_Do" ? "Assignment"
+            : ex.section === "You_Do" ? "Assessment"
+            : "Exercise",
+          section: ex.section || "",
+          totalQuestions: Number(ex.totalQuestions) || 0,
+          totalMarks: Number(ex.totalPoints) || 0,
+        },
+        students: (list || []).map((s: any, i: number) => studentExportRow(s, i, ex)),
+      };
+    }));
+  };
+
+  // ── Report header — the meta strip PDF / XLSX / Print all share ──
+  // Assignment vs Assessment comes from the exercise's We_Do / You_Do
+  // section (missing → "Exercise"). Same wording the header rules on the
+  // Exercises tab use for the Activity column label, so trainers see the
+  // same term twice. Hoisted above the exporters so every one of them can
+  // call buildReportMeta() without a use-before-define lint warning —
+  // JavaScript closures are fine here at runtime, but the file reads more
+  // naturally with helpers defined before their callers.
+  const activityKind = selectedExercise?.section === "We_Do" ? "Assignment"
+    : selectedExercise?.section === "You_Do" ? "Assessment"
+      : "Exercise";
+
+  // Which Activity filter produced this report. Every export and print
+  // stamps this line, so a "We Do only" PDF says so on its face rather
+  // than looking like a short full list — the trainer filters to We Do,
+  // prints, files it, and the sheet still explains itself weeks later.
+  // `onlySection` is non-null only when exactly one of the two boxes is
+  // ticked; both (or neither) is the unfiltered default.
+  const onlySection = sectionFilter.length === 1 ? sectionFilter[0] : null;
+  const activityFilterLabel = onlySection === "We_Do" ? "We Do (Assignment) only"
+    : onlySection === "You_Do" ? "You Do (Assessment) only"
+      : "All — We Do (Assignment) + You Do (Assessment)";
+  // Short form for filenames: course_we_do_exercise_list.xlsx
+  const activityFilterSlug = onlySection === "We_Do" ? "_we_do"
+    : onlySection === "You_Do" ? "_you_do" : "";
+  // Chip-length form for the Export / Print menu headings, so the trainer
+  // reads the scope BEFORE clicking rather than discovering it in the file.
+  const activityScopeShort = onlySection === "We_Do" ? "We Do only"
+    : onlySection === "You_Do" ? "You Do only" : "All activities";
+
+  const buildReportMeta = () => ({
+    course: courseData?.name || "Course",
+    activityKind,
+    exerciseName: selectedExercise?.exerciseName || "",
+    studentName: activeTab === "questions" ? (selectedStudent?.name || "") : "",
+    activityFilter: activityFilterLabel,
+    generatedAt: new Date().toLocaleString(),
+    rowCount: (typeof filteredData !== "undefined" ? filteredData.length : 0),
+  });
+
+  // File slug — tab-aware: exercise_list on the Exercises tab,
+  // student_list on the Students tab, <student>_questions on Questions.
+  // Includes the selection count when the user is exporting a picked
+  // subset so a "3_selected" file cannot be confused with the full list.
+  const exportSlug = () => {
+    const base = activeTab === "exercises" ? "exercise_list"
+      : activeTab === "questions"
+        ? `${(selectedStudent?.name || "student").replace(/\s+/g, "_")}_questions`
+        : "student_list";
+    const selectedFlag = selectedIds.length ? `_${selectedIds.length}_selected` : "";
+    // Activity slug only on the Exercises tab — that is the only list the
+    // We_Do / You_Do filter actually narrows, so tagging a student-list
+    // filename with "_we_do" would claim a filter that did not apply to it.
+    const activityFlag = activeTab === "exercises" ? activityFilterSlug : "";
+    return `${(courseData?.name || "course").replace(/\s+/g, "_")}_${
+      selectedExercise?.exerciseName ? selectedExercise.exerciseName.replace(/\s+/g, "_") + "_" : ""
+    }${base}${activityFlag}${selectedFlag}`;
+  };
+
+  // Blob → download. Was routed through `file-saver`, whose ESM build
+  // exposes `saveAs` on the module default rather than as a named export
+  // under this bundler — `import("file-saver")` therefore destructured
+  // `undefined` and every Excel click threw "saveAs is not a function".
+  // An anchor + object URL is the same three lines file-saver runs for
+  // modern browsers anyway, with no interop guesswork. Revoked on the
+  // next tick because Safari cancels an in-flight download when the URL
+  // is revoked synchronously.
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // CSV — sanitises quotes, one row per record, header row derived from
   // the object keys so column order never drifts from the on-screen table.
   const exportCsv = () => {
     const rows = buildExportRows();
     if (!rows.length) return;
     const headers = Object.keys(rows[0]);
     const csv = [headers.join(","), ...rows.map(r => headers.map(h => `"${String((r as any)[h]).replace(/"/g, '""')}"`).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    // Filename slug is tab-aware: student_list for the Students tab,
-    // <student>_questions for the Questions drill.
-    const suffix = activeTab === "questions"
-      ? `${(selectedStudent?.name || "student").replace(/\s+/g, "_")}_questions`
-      : "student_list";
-    a.download = `${(courseData?.name || "course").replace(/\s+/g, "_")}_${selectedExercise?.exerciseName ? selectedExercise.exerciseName.replace(/\s+/g, "_") + "_" : ""}${suffix}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `${exportSlug()}.csv`);
+  };
+
+  // XLSX — real Excel file via exceljs. Layout, top to bottom:
+  //   • Course name (bold, 14pt)
+  //   • Assignment/Assessment: <exercise>       (10pt subtle)
+  //   • Student: <name>                          (Questions tab only)
+  //   • Report / generated / row count meta line
+  //   • blank spacer
+  //   • column header row (bold, gray fill, frozen)
+  //   • data rows
+  // Numeric columns are right-aligned so they sort correctly in Excel.
+  const exportXlsx = async () => {
+    const rows = buildExportRows();
+    if (!rows.length) return;
+    const { default: ExcelJS } = await import("exceljs");
+    const headers = Object.keys(rows[0]);
+    const meta = buildReportMeta();
+    const listLabel = activeTab === "exercises" ? "Exercise List"
+      : activeTab === "questions" ? "Question List"
+      : "Student List";
+    const NUMERIC = new Set(["#", "Total Questions", "Total Marks", "Attended", "Marks", "Mark Scored", "Attempts"]);
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "LMS";
+    wb.created = new Date();
+    const ws = wb.addWorksheet(listLabel.slice(0, 31)); // Excel caps sheet names at 31 chars
+
+    // Title block — build row-by-row so we know exactly where the column
+    // header lands (needed for the freeze pane below).
+    const titleLines: { text: string; bold?: boolean; size?: number; color?: string }[] = [];
+    titleLines.push({ text: meta.course, bold: true, size: 14, color: "FF111827" });
+    if (meta.exerciseName) {
+      titleLines.push({ text: `${meta.activityKind}: ${meta.exerciseName}`, size: 10, color: "FF374151" });
+    }
+    if (meta.studentName) {
+      titleLines.push({ text: `Student: ${meta.studentName}`, size: 10, color: "FF374151" });
+    }
+    if (activeTab === "exercises") {
+      titleLines.push({ text: `Activity: ${meta.activityFilter}`, size: 10, color: "FF374151" });
+    }
+    titleLines.push({
+      text: `Report: ${listLabel} · Generated on ${meta.generatedAt} · ${rows.length} row${rows.length === 1 ? "" : "s"}`,
+      size: 9,
+      color: "FF6B7280",
+    });
+
+    titleLines.forEach(line => {
+      const r = ws.addRow([line.text]);
+      r.getCell(1).font = { bold: !!line.bold, size: line.size, color: { argb: line.color || "FF111827" } };
+    });
+    ws.addRow([]); // spacer between title block and the data table
+
+    // Header row.
+    const headerRowIdx = ws.rowCount + 1;
+    const headerRow = ws.addRow(headers);
+    headerRow.font = { bold: true, color: { argb: "FF374151" } };
+    headerRow.alignment = { vertical: "middle" };
+    headerRow.eachCell(cell => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF9FAFB" } };
+      cell.border = { bottom: { style: "thin", color: { argb: "FFE5E7EB" } } };
+    });
+
+    // Data rows — right-align numeric columns and use array-of-values so
+    // Excel infers types (integers stay numeric, sortable).
+    rows.forEach(r => {
+      const row = ws.addRow(headers.map(h => (r as any)[h]));
+      headers.forEach((h, i) => {
+        if (NUMERIC.has(h)) row.getCell(i + 1).alignment = { horizontal: "right" };
+      });
+    });
+
+    // Auto-fit column widths using the longest value seen in each column,
+    // clamped so a runaway exercise name cannot blow the sheet out.
+    headers.forEach((h, i) => {
+      let max = h.length;
+      for (let r = headerRowIdx + 1; r <= ws.rowCount; r++) {
+        const len = String(ws.getRow(r).getCell(i + 1).value ?? "").length;
+        if (len > max) max = len;
+      }
+      ws.getColumn(i + 1).width = Math.min(60, Math.max(12, max + 2));
+    });
+
+    ws.views = [{ state: "frozen", ySplit: headerRowIdx }];
+
+    const buf = await wb.xlsx.writeBuffer();
+    downloadBlob(
+      new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      `${exportSlug()}.xlsx`,
+    );
   };
 
   // Print / PDF — writes the table into a fresh window and triggers the
@@ -1048,23 +1296,6 @@ export default function GradesFlow({
   // meant the user had to pick "Save as PDF" in the OS dialog. Now the
   // browser downloads the .pdf on click, matching the trainer's ask.
   // Same rows/columns as the CSV so nothing drifts between formats.
-  // ── Report header — the meta strip on both PDF and Print ──
-  // Assignment vs Assessment comes from the exercise's We_Do / You_Do
-  // section (missing → "Exercise"). Same wording the header rules on the
-  // Exercises tab use for the Activity column label, so trainers see the
-  // same term twice.
-  const activityKind = selectedExercise?.section === "We_Do" ? "Assignment"
-    : selectedExercise?.section === "You_Do" ? "Assessment"
-      : "Exercise";
-  const buildReportMeta = () => ({
-    course: courseData?.name || "Course",
-    activityKind,
-    exerciseName: selectedExercise?.exerciseName || "",
-    studentName: activeTab === "questions" ? (selectedStudent?.name || "") : "",
-    generatedAt: new Date().toLocaleString(),
-    rowCount: (typeof filteredData !== "undefined" ? filteredData.length : 0),
-  });
-
   const exportPdf = async () => {
     const rows = buildExportRows();
     if (!rows.length) return;
@@ -1075,10 +1306,14 @@ export default function GradesFlow({
     const autoTable = (autotableMod as any).default || (autotableMod as any);
     const headers = Object.keys(rows[0]);
     const meta = buildReportMeta();
-    const listLabel = activeTab === "questions" ? "Question List" : "Student List";
-    const rowNoun = activeTab === "questions"
-      ? `question${rows.length === 1 ? "" : "s"}`
-      : `student${rows.length === 1 ? "" : "s"}`;
+    const listLabel = activeTab === "exercises" ? "Exercise List"
+      : activeTab === "questions" ? "Question List"
+      : "Student List";
+    const rowNoun = activeTab === "exercises"
+      ? `exercise${rows.length === 1 ? "" : "s"}`
+      : activeTab === "questions"
+        ? `question${rows.length === 1 ? "" : "s"}`
+        : `student${rows.length === 1 ? "" : "s"}`;
 
     // Landscape so the widest column set (Students) fits without wrapping.
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
@@ -1109,6 +1344,12 @@ export default function GradesFlow({
     }
     doc.text(`Report: ${listLabel}`, 40, y);
     y += 16;
+    // Activity filter — only meaningful on the Exercises tab, which is the
+    // list the We_Do / You_Do pick narrows.
+    if (activeTab === "exercises") {
+      doc.text(`Activity: ${meta.activityFilter}`, 40, y);
+      y += 16;
+    }
     doc.setFontSize(9);
     doc.setTextColor(120, 120, 120);
     doc.text(`Generated on ${meta.generatedAt}  ·  ${rows.length} ${rowNoun}`, 40, y);
@@ -1118,7 +1359,7 @@ export default function GradesFlow({
     // Column alignment — numeric columns right-aligned. Different sets
     // between tabs so we build the map from the header names rather than
     // hardcoding indices.
-    const NUMERIC = new Set(["#", "Total Questions", "Attended", "Marks", "Mark Scored", "Attempts"]);
+    const NUMERIC = new Set(["#", "Total Questions", "Total Marks", "Attended", "Marks", "Mark Scored", "Attempts"]);
     const columnStyles: Record<number, { halign: "left" | "right" | "center" }> = {};
     headers.forEach((h, i) => {
       if (NUMERIC.has(h)) columnStyles[i] = { halign: "right" };
@@ -1134,11 +1375,7 @@ export default function GradesFlow({
       columnStyles,
       margin: { top: y + 8, left: 30, right: 30, bottom: 30 },
     });
-    const suffix = activeTab === "questions"
-      ? `${(selectedStudent?.name || "student").replace(/\s+/g, "_")}_questions`
-      : "student_list";
-    const fname = `${meta.course.replace(/\s+/g, "_")}_${meta.exerciseName ? meta.exerciseName.replace(/\s+/g, "_") + "_" : ""}${suffix}.pdf`;
-    doc.save(fname);
+    doc.save(`${exportSlug()}.pdf`);
   };
 
   const openPrintWindow = () => {
@@ -1146,14 +1383,18 @@ export default function GradesFlow({
     if (!rows.length) return;
     const headers = Object.keys(rows[0]);
     const meta = buildReportMeta();
-    const listLabel = activeTab === "questions" ? "Question List" : "Student List";
-    const rowNoun = activeTab === "questions"
-      ? `question${rows.length === 1 ? "" : "s"}`
-      : `student${rows.length === 1 ? "" : "s"}`;
+    const listLabel = activeTab === "exercises" ? "Exercise List"
+      : activeTab === "questions" ? "Question List"
+      : "Student List";
+    const rowNoun = activeTab === "exercises"
+      ? `exercise${rows.length === 1 ? "" : "s"}`
+      : activeTab === "questions"
+        ? `question${rows.length === 1 ? "" : "s"}`
+        : `student${rows.length === 1 ? "" : "s"}`;
     // Numeric-column set matches the PDF exporter so both formats align
     // the same columns. Derived by header NAME so the mapping survives
     // when the columns change between tabs.
-    const NUMERIC = new Set(["#", "Total Questions", "Attended", "Marks", "Mark Scored", "Attempts"]);
+    const NUMERIC = new Set(["#", "Total Questions", "Total Marks", "Attended", "Marks", "Mark Scored", "Attempts"]);
     const escape = (s: string) => String(s).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     })[c] || c);
@@ -1165,6 +1406,7 @@ export default function GradesFlow({
       ${meta.exerciseName ? `<div class="meta"><span class="lbl">${escape(meta.activityKind)}:</span> ${escape(meta.exerciseName)}</div>` : ""}
       ${meta.studentName ? `<div class="meta"><span class="lbl">Student:</span> ${escape(meta.studentName)}</div>` : ""}
       <div class="meta"><span class="lbl">Report:</span> ${escape(listLabel)}</div>
+      ${activeTab === "exercises" ? `<div class="meta"><span class="lbl">Activity:</span> ${escape(meta.activityFilter)}</div>` : ""}
       <div class="sub">Printed on ${escape(meta.generatedAt)} · ${rows.length} ${rowNoun}</div>
     `;
     const html = `
@@ -1189,6 +1431,13 @@ export default function GradesFlow({
           <tbody>${rows.map(r => `<tr>${headers.map(h => `<td${NUMERIC.has(h) ? ' class="num"' : ""}>${escape(String((r as any)[h] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody>
         </table>
       </body></html>`;
+    printHtml(html);
+  };
+
+  // Shared "open a window, write this document, fire the print dialog".
+  // Both the normal and the Overall print route through here so the popup
+  // handling (blocked-popup guard, readyState race) lives in one place.
+  const printHtml = (html: string) => {
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.open();
@@ -1199,9 +1448,290 @@ export default function GradesFlow({
     else win.onload = () => setTimeout(doPrint, 100);
   };
 
-  // Kept for the bulk-select action bar's "Export CSV" — same code path,
-  // its own callable name for readability at the call site.
-  const exportSelected = exportCsv;
+  // ── Overall report — every exercise, with its student list underneath ──
+  // Shared bits first: the escaper, the student column set, and the shared
+  // stylesheet the Overall print uses.
+  const OVERALL_STUDENT_COLS = ["#", "Student Name", "Email", "Attended", "Marks", "Grade", "Status"];
+  const OVERALL_NUMERIC = new Set(["#", "Attended", "Marks"]);
+  const htmlEscape = (s: string) => String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c] || c);
+
+  // Overall PRINT — one section per exercise: a header strip naming the
+  // activity (with its We Do / You Do kind, question count and total marks)
+  // followed by that exercise's student table. Sections avoid breaking
+  // across pages where they fit; an exercise with no enrolled students
+  // prints an explicit "No students" line rather than an empty table, so
+  // the reader can tell "nobody enrolled" from "data failed to load".
+  const printOverall = async () => {
+    const data = await buildOverallData();
+    if (!data.length) return;
+    const meta = buildReportMeta();
+    const totalStudents = data.reduce((n, d) => n + d.students.length, 0);
+    const sections = data.map((d, i) => `
+      <section class="ex">
+        <div class="exhead">
+          <span class="idx">${i + 1}</span>
+          <span class="kind ${d.exercise.section === "We_Do" ? "wedo" : d.exercise.section === "You_Do" ? "youdo" : ""}">${htmlEscape(d.exercise.kind)}</span>
+          <span class="exname">${htmlEscape(d.exercise.name)}</span>
+          <span class="exmeta">${d.exercise.totalQuestions} question${d.exercise.totalQuestions === 1 ? "" : "s"} · ${d.exercise.totalMarks} mark${d.exercise.totalMarks === 1 ? "" : "s"} · ${d.students.length} student${d.students.length === 1 ? "" : "s"}</span>
+        </div>
+        ${d.students.length ? `
+        <table>
+          <thead><tr>${OVERALL_STUDENT_COLS.map(h => `<th${OVERALL_NUMERIC.has(h) ? ' class="num"' : ""}>${htmlEscape(h)}</th>`).join("")}</tr></thead>
+          <tbody>${d.students.map(r => `<tr>${OVERALL_STUDENT_COLS.map(h => `<td${OVERALL_NUMERIC.has(h) ? ' class="num"' : ""}>${htmlEscape(String((r as any)[h] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>` : `<p class="empty">No students enrolled for this activity.</p>`}
+      </section>`).join("");
+    const html = `
+      <html><head><meta charset="utf-8"><title>${htmlEscape(meta.course + " — Overall Report")}</title>
+      <style>
+        *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Poppins',sans-serif}
+        body{margin:24px;color:#111827}
+        h1{font-size:18px;font-weight:700;margin:0 0 6px}
+        .meta{font-size:12px;color:#374151;margin:2px 0}
+        .meta .lbl{color:#6b7280;font-weight:600;margin-right:4px}
+        .sub{font-size:11px;color:#9ca3af;margin:8px 0 18px}
+        .ex{margin:0 0 22px;page-break-inside:avoid}
+        .exhead{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-bottom:none;border-radius:6px 6px 0 0}
+        .idx{font-size:11px;font-weight:700;color:#9ca3af;min-width:16px}
+        .kind{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;background:#f3f4f6;color:#4b5563}
+        .kind.wedo{background:#eff6ff;color:#1d4ed8}
+        .kind.youdo{background:#fff7ed;color:#c2410c}
+        .exname{font-size:13px;font-weight:600;color:#111827}
+        .exmeta{margin-left:auto;font-size:10px;color:#9ca3af;white-space:nowrap}
+        table{width:100%;border-collapse:collapse;font-size:11px;border:1px solid #e5e7eb}
+        th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+        th{background:#fcfcfd;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:600}
+        tbody tr:last-child td{border-bottom:none}
+        tr{page-break-inside:avoid}
+        .num{text-align:right;font-variant-numeric:tabular-nums}
+        .empty{margin:0;padding:12px 10px;font-size:11px;color:#9ca3af;border:1px solid #e5e7eb;border-top:none;background:#fff}
+        @page{margin:14mm}
+      </style></head><body>
+        <h1>${htmlEscape(meta.course)}</h1>
+        <div class="meta"><span class="lbl">Report:</span> Overall — activities with student results</div>
+        <div class="meta"><span class="lbl">Activity:</span> ${htmlEscape(meta.activityFilter)}</div>
+        <div class="sub">Printed on ${htmlEscape(meta.generatedAt)} · ${data.length} activit${data.length === 1 ? "y" : "ies"} · ${totalStudents} student record${totalStudents === 1 ? "" : "s"}</div>
+        ${sections}
+      </body></html>`;
+    printHtml(html);
+  };
+
+  // Overall filename slug — mirrors exportSlug's shape but names the
+  // report rather than the tab, since Overall is the same document
+  // regardless of which tab the trainer launched it from.
+  const overallSlug = () =>
+    `${(courseData?.name || "course").replace(/\s+/g, "_")}_overall_report${
+      activityFilterSlug
+    }${selectedIds.length ? `_${selectedIds.length}_selected` : ""}`;
+
+  // Overall EXCEL — one sheet, exercises stacked with their student tables
+  // indented underneath. An exercise header row is bold on a tinted fill so
+  // the sections stay scannable when the sheet is scrolled; the student
+  // header repeats per section because Excel has no notion of a repeating
+  // sub-table header.
+  const exportOverallXlsx = async () => {
+    const data = await buildOverallData();
+    if (!data.length) return;
+    const { default: ExcelJS } = await import("exceljs");
+    const meta = buildReportMeta();
+    const totalStudents = data.reduce((n, d) => n + d.students.length, 0);
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "LMS";
+    wb.created = new Date();
+    const ws = wb.addWorksheet("Overall Report");
+
+    const title = ws.addRow([meta.course]);
+    title.getCell(1).font = { bold: true, size: 14, color: { argb: "FF111827" } };
+    const act = ws.addRow([`Activity: ${meta.activityFilter}`]);
+    act.getCell(1).font = { size: 10, color: { argb: "FF374151" } };
+    const sub = ws.addRow([
+      `Overall report · Generated on ${meta.generatedAt} · ${data.length} activit${data.length === 1 ? "y" : "ies"} · ${totalStudents} student record${totalStudents === 1 ? "" : "s"}`,
+    ]);
+    sub.getCell(1).font = { size: 9, color: { argb: "FF6B7280" } };
+    ws.addRow([]);
+
+    data.forEach((d, i) => {
+      // Exercise banner — index, kind, name, then the counts.
+      const ex = ws.addRow([
+        `${i + 1}. [${d.exercise.kind}] ${d.exercise.name}`,
+        "", "", "",
+        `${d.exercise.totalQuestions} Q`,
+        `${d.exercise.totalMarks} marks`,
+        `${d.students.length} students`,
+      ]);
+      ex.font = { bold: true, size: 11, color: { argb: "FF111827" } };
+      ex.eachCell({ includeEmpty: true }, cell => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          // We Do → blue tint, You Do → orange tint, anything else neutral.
+          fgColor: {
+            argb: d.exercise.section === "We_Do" ? "FFEFF6FF"
+              : d.exercise.section === "You_Do" ? "FFFFF7ED"
+              : "FFF3F4F6",
+          },
+        };
+        cell.border = { bottom: { style: "thin", color: { argb: "FFE5E7EB" } } };
+      });
+
+      if (!d.students.length) {
+        const none = ws.addRow(["", "No students enrolled for this activity."]);
+        none.getCell(2).font = { italic: true, size: 9, color: { argb: "FF9CA3AF" } };
+        ws.addRow([]);
+        return;
+      }
+
+      const head = ws.addRow(["", ...OVERALL_STUDENT_COLS]);
+      head.font = { bold: true, size: 9, color: { argb: "FF6B7280" } };
+      head.eachCell({ includeEmpty: false }, cell => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCFCFD" } };
+        cell.border = { bottom: { style: "thin", color: { argb: "FFE5E7EB" } } };
+      });
+
+      d.students.forEach(r => {
+        const row = ws.addRow(["", ...OVERALL_STUDENT_COLS.map(h => (r as any)[h])]);
+        OVERALL_STUDENT_COLS.forEach((h, ci) => {
+          if (OVERALL_NUMERIC.has(h)) row.getCell(ci + 2).alignment = { horizontal: "right" };
+        });
+      });
+      ws.addRow([]);
+    });
+
+    // Fixed widths — the indent column is narrow, then the student columns
+    // in their on-screen order. Sized to the widest value each realistically
+    // holds rather than measured, since the sheet mixes banner rows (which
+    // span) with table rows and a measured fit would be skewed by the banner.
+    ws.getColumn(1).width = 3;
+    [6, 26, 34, 12, 12, 12, 14].forEach((w, i) => { ws.getColumn(i + 2).width = w; });
+
+    const buf = await wb.xlsx.writeBuffer();
+    downloadBlob(
+      new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      `${overallSlug()}.xlsx`,
+    );
+  };
+
+  // Overall CSV — flat file with an "Activity" / "Type" column repeated on
+  // every student row. CSV has no sections, so denormalising is the only
+  // shape that stays machine-readable (and pivots cleanly in Excel).
+  const exportOverallCsv = async () => {
+    const data = await buildOverallData();
+    if (!data.length) return;
+    const headers = ["Type", "Assignment/Assessment", ...OVERALL_STUDENT_COLS];
+    const lines: string[][] = [];
+    data.forEach(d => {
+      if (!d.students.length) {
+        lines.push([d.exercise.kind, d.exercise.name, "", "No students enrolled", "", "", "", "", ""]);
+        return;
+      }
+      d.students.forEach(r => {
+        lines.push([d.exercise.kind, d.exercise.name, ...OVERALL_STUDENT_COLS.map(h => String((r as any)[h] ?? ""))]);
+      });
+    });
+    const csv = [headers, ...lines]
+      .map(cols => cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `${overallSlug()}.csv`);
+  };
+
+  // Overall PDF — one autotable per exercise, each preceded by a banner
+  // row drawn as a single-cell table so it shares the table's page-break
+  // handling. `didDrawPage` is not needed: autotable chains off the previous
+  // table's finalY, and starts a new page on its own when a section runs out
+  // of room.
+  const exportOverallPdf = async () => {
+    const data = await buildOverallData();
+    if (!data.length) return;
+    const [{ default: jsPDF }, autotableMod] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const autoTable = (autotableMod as any).default || (autotableMod as any);
+    const meta = buildReportMeta();
+    const totalStudents = data.reduce((n, d) => n + d.students.length, 0);
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+
+    let y = 44;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(17, 24, 39);
+    doc.text(meta.course, 40, y);
+    y += 18;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(55, 65, 81);
+    doc.text("Report: Overall — activities with student results", 40, y);
+    y += 15;
+    doc.text(`Activity: ${meta.activityFilter}`, 40, y);
+    y += 15;
+    doc.setFontSize(9);
+    doc.setTextColor(120, 120, 120);
+    doc.text(
+      `Generated on ${meta.generatedAt}  ·  ${data.length} activit${data.length === 1 ? "y" : "ies"}  ·  ${totalStudents} student record${totalStudents === 1 ? "" : "s"}`,
+      40, y,
+    );
+    doc.setTextColor(0);
+    let cursorY = y + 16;
+
+    const columnStyles: Record<number, { halign: "left" | "right" }> = {};
+    OVERALL_STUDENT_COLS.forEach((h, i) => {
+      if (OVERALL_NUMERIC.has(h)) columnStyles[i] = { halign: "right" };
+    });
+
+    data.forEach((d, i) => {
+      // Banner — a one-row, one-column table so autotable owns the page
+      // breaks for it too (a raw doc.text() here could strand a heading at
+      // the bottom of a page with its table pushed to the next one).
+      autoTable(doc, {
+        startY: cursorY,
+        body: [[
+          `${i + 1}.  [${d.exercise.kind}]  ${d.exercise.name}`
+          + `        ${d.exercise.totalQuestions} Q · ${d.exercise.totalMarks} marks · ${d.students.length} student${d.students.length === 1 ? "" : "s"}`,
+        ]],
+        theme: "plain",
+        styles: {
+          fontSize: 10,
+          fontStyle: "bold",
+          cellPadding: 6,
+          textColor: [17, 24, 39],
+          fillColor: d.exercise.section === "We_Do" ? [239, 246, 255]
+            : d.exercise.section === "You_Do" ? [255, 247, 237]
+            : [243, 244, 246],
+        },
+        margin: { left: 30, right: 30 },
+      });
+      cursorY = (doc as any).lastAutoTable.finalY;
+
+      if (!d.students.length) {
+        autoTable(doc, {
+          startY: cursorY,
+          body: [["No students enrolled for this activity."]],
+          theme: "plain",
+          styles: { fontSize: 9, fontStyle: "italic", textColor: [156, 163, 175], cellPadding: 6 },
+          margin: { left: 30, right: 30 },
+        });
+        cursorY = (doc as any).lastAutoTable.finalY + 14;
+        return;
+      }
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [OVERALL_STUDENT_COLS],
+        body: d.students.map(r => OVERALL_STUDENT_COLS.map(h => String((r as any)[h] ?? ""))),
+        styles: { fontSize: 8.5, cellPadding: 5, overflow: "linebreak" },
+        headStyles: { fillColor: [252, 252, 253], textColor: 85, fontStyle: "bold", lineWidth: 0.5, lineColor: [229, 231, 235] },
+        alternateRowStyles: { fillColor: [252, 252, 253] },
+        columnStyles,
+        margin: { left: 30, right: 30, bottom: 30 },
+      });
+      cursorY = (doc as any).lastAutoTable.finalY + 14;
+    });
+
+    doc.save(`${overallSlug()}.pdf`);
+  };
 
   const pageTitle = courseData?.name || "Grades";
   const contextLabel =
@@ -1378,51 +1908,127 @@ export default function GradesFlow({
           <div className="ml-auto flex items-center gap-1.5 flex-wrap">
             {/* Export + Print — directly after the search box and ahead of
                 the filters, giving the toolbar a single left-to-right reading
-                order: search · Export · Print · Status · Result. They act on
-                whatever the search and filters have narrowed to, so they
-                belong in this row rather than up on the heading. */}
-            {(activeTab === "students" || activeTab === "questions") && (
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    {/* Coloured Export — success-tone (green), the design
-                        system's palette for "data download" style actions.
-                        Stands out from the neutral Print sibling next to
-                        it, so the trainer's eye lands on the primary
-                        download choice first. */}
-                    <button
-                      type="button"
-                      aria-label={activeTab === "questions" ? "Export question list" : "Export student list"}
-                      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-success-500/30 bg-success-50 text-success-700 text-xs font-semibold hover:bg-success-50/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success-500/30"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Export</span>
-                      <ChevronDown className="w-3 h-3" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={6} className="w-40">
-                    <DropdownMenuItem onClick={exportCsv} className="cursor-pointer">
-                      <FileSpreadsheet className="h-4 w-4 text-success-700" /> CSV
-                    </DropdownMenuItem>
-                    {/* PDF downloads DIRECTLY via jsPDF + autotable — no
-                        more print dialog + Save-as-PDF dance. Same
-                        column set as the CSV. */}
-                    <DropdownMenuItem onClick={exportPdf} className="cursor-pointer">
-                      <FileText className="h-4 w-4 text-danger-500" /> PDF
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <button
-                  type="button"
-                  onClick={openPrintWindow}
-                  title={activeTab === "questions" ? "Print the question list" : "Print the student list"}
-                  className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Print</span>
-                </button>
-              </div>
-            )}
+                order: search · Export · Print · filters. They act on the
+                CURRENT selection first — with checkboxes ticked, only the
+                selected rows go out — and otherwise on whatever the search
+                and filters have narrowed to. That way "overall" export and
+                "selected" export share the same buttons; nothing extra to
+                learn on either side. Now enabled for every tab (Exercises,
+                Students, Questions). */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  {/* Coloured Export — success-tone (green), the design
+                      system's palette for "data download" style actions.
+                      Stands out from the neutral Print sibling next to
+                      it, so the trainer's eye lands on the primary
+                      download choice first. Label tells the trainer up
+                      front whether the click hits the whole visible list
+                      or just their selection — "Export (3)" reads as
+                      "you're about to export 3 rows", so nothing ambiguous
+                      about scope. */}
+                  <button
+                    type="button"
+                    aria-label={
+                      activeTab === "exercises" ? "Export exercise list"
+                        : activeTab === "questions" ? "Export question list"
+                          : "Export student list"
+                    }
+                    className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-success-500/30 bg-success-50 text-success-700 text-xs font-semibold hover:bg-success-50/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success-500/30"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">
+                      Export{selectedIds.length ? ` (${selectedIds.length})` : ""}
+                    </span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                {/* Two groups, same as Print below:
+                      NORMAL  — just the list currently on screen
+                      OVERALL — every activity WITH its student list nested
+                                underneath, one section per exercise
+                    Overall is offered on every tab because it always
+                    describes the same document (the whole course), and
+                    a trainer drilled into one student still wants a
+                    one-click way to take the full picture. */}
+                <DropdownMenuContent align="end" sideOffset={6} className="w-56">
+                  <DropdownMenuLabel className="text-2xs uppercase tracking-wider text-faint font-semibold">
+                    Normal — {activeTab === "exercises" ? activityScopeShort : activeTab === "questions" ? "question list" : "student list"}
+                  </DropdownMenuLabel>
+                  {/* Excel first — the format the trainer's ask names
+                      explicitly ("xl"). Green tone matches the header
+                      button. */}
+                  <DropdownMenuItem onClick={exportXlsx} className="cursor-pointer">
+                    <FileSpreadsheet className="h-4 w-4 text-success-700" /> Excel (.xlsx)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportCsv} className="cursor-pointer">
+                    <FileSpreadsheet className="h-4 w-4 text-ink-500" /> CSV
+                  </DropdownMenuItem>
+                  {/* PDF downloads DIRECTLY via jsPDF + autotable — no
+                      more print dialog + Save-as-PDF dance. Same
+                      column set as the other formats. */}
+                  <DropdownMenuItem onClick={exportPdf} className="cursor-pointer">
+                    <FileText className="h-4 w-4 text-danger-500" /> PDF
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-2xs uppercase tracking-wider text-faint font-semibold">
+                    Overall — {activityScopeShort} + students
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem onClick={exportOverallXlsx} className="cursor-pointer">
+                    <Layers className="h-4 w-4 text-success-700" /> Excel (.xlsx)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportOverallCsv} className="cursor-pointer">
+                    <Layers className="h-4 w-4 text-ink-500" /> CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportOverallPdf} className="cursor-pointer">
+                    <Layers className="h-4 w-4 text-danger-500" /> PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Print is a dropdown now, mirroring Export's two groups:
+                    Normal  — prints exactly what the table shows
+                    Overall — prints every activity with its student list
+                              nested underneath (the shape the trainer
+                              sketched: exercise header, then its students) */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Print options"
+                    className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs font-medium text-body hover:bg-row-hover hover:text-heading transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/15"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">
+                      Print{selectedIds.length ? ` (${selectedIds.length})` : ""}
+                    </span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={6} className="w-56">
+                  <DropdownMenuItem onClick={openPrintWindow} className="cursor-pointer">
+                    <Printer className="h-4 w-4 text-ink-500" />
+                    <div className="flex flex-col">
+                      <span>Normal print</span>
+                      <span className="text-2xs text-faint">
+                        {activeTab === "exercises" ? activityScopeShort
+                          : activeTab === "questions" ? "This question list"
+                            : "This student list"}
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={printOverall} className="cursor-pointer">
+                    <Layers className="h-4 w-4 text-brand-strong" />
+                    <div className="flex flex-col">
+                      <span>Overall print</span>
+                      <span className="text-2xs text-faint">{activityScopeShort} + their students</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
             {activeTab === "exercises" && (
               <>
                 <FloatingMultiSelect
@@ -1533,7 +2139,12 @@ export default function GradesFlow({
           const onlyYouDo = sectionFilter.length === 1 && sectionFilter[0] === "You_Do";
           const activityLabel = onlyWeDo ? "Assignment" : onlyYouDo ? "Assessment" : "Assignment/Assessment";
           const cols = headersFor(activeTab, { activityLabel });
-          const colSpan = cols.length + (activeTab === "students" ? 1 : 0);
+          // Checkbox column is offered on both Exercises and Students tabs
+          // (Questions doesn't drill further so bulk-print of a subset is
+          // not useful there). colSpan mirrors that same rule so the
+          // empty-state row spans the full width.
+          const selectable = activeTab === "exercises" || activeTab === "students";
+          const colSpan = cols.length + (selectable ? 1 : 0);
           return (
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* Vertical scroll is the safety valve for the 7-row floor above:
@@ -1577,11 +2188,12 @@ export default function GradesFlow({
                 </colgroup>
               )}
               {activeTab === "exercises" && (
-                // #(3) + Activity name (auto) + Total Questions(13) +
-                // Total Marks(12) + Actions(14). Numeric columns widened
-                // from 10 % → 13/12 % so the newly-restored "Total X"
-                // headers fit on one line at all viewport widths.
+                // Checkbox(4) + #(3) + Activity name (auto) +
+                // Total Questions(13) + Total Marks(12) + Actions(14).
+                // Numeric columns are widened enough that the restored
+                // "Total X" headers stay on one line at any width.
                 <colgroup>
+                  <col style={{ width: "4%" }} />
                   <col style={{ width: "3%" }} />
                   <col />
                   <col style={{ width: "13%" }} />
@@ -1605,7 +2217,7 @@ export default function GradesFlow({
               )}
               <thead className="sticky top-0 z-10 bg-canvas border-b border-hairline">
                 <tr>
-                  {activeTab === "students" && (
+                  {selectable && (
                     <th className="w-10 pl-4 pr-2 py-2.5">
                       <input type="checkbox" aria-label="Select all" checked={allSelected} ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }} onChange={toggleAll} disabled={loading || filteredData.length === 0} className="size-4 rounded border-hairline-strong accent-brand" />
                     </th>
@@ -1619,7 +2231,7 @@ export default function GradesFlow({
                 {loading ? (
                   Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i} className="border-b border-hairline">
-                      {activeTab === "students" && <td className="pl-4 pr-2 py-3"><div className="size-4 rounded bg-ink-100 animate-pulse" /></td>}
+                      {selectable && <td className="pl-4 pr-2 py-3"><div className="size-4 rounded bg-ink-100 animate-pulse" /></td>}
                       {cols.map((_, j) => (
                         <td key={j} className="px-3 py-3">
                           {j === 0 && activeTab !== "exercises"
@@ -1667,9 +2279,15 @@ export default function GradesFlow({
                         onClick={() => { if (activeTab === "exercises") handleSelectExercise(item); else if (activeTab === "students") handleSelectStudent(item); }}
                         className={`group border-b border-hairline last:border-0 transition-colors ${selectedIds.includes(id) ? "bg-brand-wash/50" : "hover:bg-row-hover"} ${clickable ? "cursor-pointer" : ""}`}
                       >
-                        {activeTab === "students" && (
+                        {selectable && (
                           <td className="pl-4 pr-2 py-3" onClick={(e) => e.stopPropagation()}>
-                            <input type="checkbox" aria-label={`Select ${item.name}`} checked={selectedIds.includes(id)} onChange={() => toggleOne(id)} className="size-4 rounded border-hairline-strong accent-brand" />
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${item.exerciseName || item.name || "row"}`}
+                              checked={selectedIds.includes(id)}
+                              onChange={() => toggleOne(id)}
+                              className="size-4 rounded border-hairline-strong accent-brand"
+                            />
                           </td>
                         )}
                         {/* `index` is the ABSOLUTE position across pages
@@ -1732,38 +2350,65 @@ export default function GradesFlow({
         })()}
       </div>
 
-      {/* ── Bulk bar (students selection) ── */}
+      {/* ── Bulk bar (rows selected on Exercises or Students) ──
+          Floats over the workspace. Excel + PDF + Print all act on the
+          SAME selection because `buildExportRows()` reads `selectedIds`
+          first (see that helper), so the trainer picks a subset once and
+          all three actions honour it. Only mounted on tabs that CAN
+          select (Exercises, Students) — Questions has no checkbox
+          column, so the bar can never appear there. */}
       <AnimatePresence>
-        {activeTab === "students" && selectedIds.length > 0 && (
+        {(activeTab === "exercises" || activeTab === "students") && selectedIds.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-            className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl border border-hairline-strong bg-surface px-3 py-2 shadow-xl"
+            className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-2xl border border-hairline-strong bg-surface px-3 py-2 shadow-xl"
           >
             <span className="inline-flex items-center gap-2 pl-1 text-sm font-medium text-heading">
               <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-brand-strong px-1.5 text-2xs font-bold text-white tabular-nums">{selectedIds.length}</span>
               selected
             </span>
             <div className="h-5 w-px bg-hairline" />
-            {/* CSV + PDF side by side — both act on the SAME selection
-                because `buildExportRows()` reads `selectedIds` first (see
-                that helper). Icons and colour cues match the toolbar's
-                Export dropdown so the trainer sees the same treatment
-                in both places. */}
             <button
               type="button"
-              onClick={exportSelected}
+              onClick={exportXlsx}
+              title="Export the selected rows as Excel"
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control border border-success-500/25 bg-success-50 text-sm font-semibold text-success-700 hover:bg-success-50/70 transition-colors"
             >
-              <FileSpreadsheet className="h-4 w-4" /> Export CSV
+              <FileSpreadsheet className="h-4 w-4" /> Export Excel
             </button>
             <button
               type="button"
               onClick={exportPdf}
+              title="Export the selected rows as PDF"
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control border border-danger-500/25 bg-danger-50 text-sm font-semibold text-danger-700 hover:bg-danger-50/70 transition-colors"
             >
               <FileText className="h-4 w-4" /> Export PDF
             </button>
+            {/* Print on the bulk bar carries the same Normal / Overall
+                split as the toolbar, so a trainer who has already picked
+                rows never has to go back up to the toolbar to choose the
+                nested report — both honour the selection. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  title="Print the selected rows"
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control border border-hairline-strong bg-surface text-sm font-semibold text-body hover:bg-row-hover hover:text-heading transition-colors"
+                >
+                  <Printer className="h-4 w-4" /> Print
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" side="top" sideOffset={6} className="w-52">
+                <DropdownMenuItem onClick={openPrintWindow} className="cursor-pointer">
+                  <Printer className="h-4 w-4 text-ink-500" /> Normal print
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={printOverall} className="cursor-pointer">
+                  <Layers className="h-4 w-4 text-brand-strong" /> Overall print
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <button type="button" onClick={() => setSelectedIds([])} className="inline-flex items-center h-8 px-2.5 rounded-control text-sm font-medium text-subtle hover:bg-row-hover hover:text-heading transition-colors">Clear</button>
           </motion.div>
         )}

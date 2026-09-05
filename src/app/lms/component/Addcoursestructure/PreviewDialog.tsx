@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from '@/components/ui/button';
 import { Eye, X, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { FormData } from './types';
+import { FormData } from '../../pages/coursestructure/components/types';
 
 interface PreviewDialogProps {
     isOpen: boolean;

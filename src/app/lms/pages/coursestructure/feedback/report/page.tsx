@@ -55,7 +55,7 @@ import {
   CATEGORY_COLORS,
   type CategoryLegendEntry,
   type QuestionBar,
-} from '@/features/feedback/components/FeedbackCategoryCharts';
+} from '@/app/lms/component/FeedbackCategoryCharts';
 
 const poppins = Poppins({
   subsets: ['latin'],

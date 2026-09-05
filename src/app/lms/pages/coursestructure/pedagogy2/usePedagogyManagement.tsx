@@ -65,15 +65,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { courseStructureApi, fetchCourseStructureById } from "@/apiServices/createCourseStucture"
-import { moduleApi } from "@/apiServices/pedagogyAndModuleAdd/addmodule"
+import { courseStructureApi, fetchCourseStructureById } from "@/app/lms/pages/coursestructure/api/createCourseStucture"
+import { moduleApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/addmodule"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { subModuleApi } from "@/apiServices/pedagogyAndModuleAdd/addsubmodule"
-import { topicApi } from "@/apiServices/pedagogyAndModuleAdd/addtopic"
-import { subTopicApi } from "@/apiServices/pedagogyAndModuleAdd/addsubtopic"
+import { subModuleApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/addsubmodule"
+import { topicApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/addtopic"
+import { subTopicApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/addsubtopic"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { pedagogyViewApi } from "@/apiServices/pedagogyAndModuleAdd/pedagogy"
+import { pedagogyViewApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/pedagogy"
 import { levelViewApi } from "@/apiServices/levelsView";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import PrintComponent, { PrintComponentRef } from "@/components/ui/PrintComponent";
@@ -102,16 +102,6 @@ import { handleModuleSubmitImpl, handleSubModuleSubmitImpl, handleTopicSubmitImp
 import { createTableRowsImpl, createDuplicateTableRowsImpl, processPedagogyDataImpl, collectCompleteHierarchyIdsImpl, getAllSelectedHierarchyIdsImpl, fetchAndSetPedagogyDataImpl } from "./dataBuilders"
 import { isOwnPedagogyRow, isOwnLevelRow, type HierarchyType } from "./pedagogyRowIdentity"
 import { confirmUnmergeImpl, confirmCellDeleteImpl, handleDeleteLevelImpl, isCellMergedImpl, isLevelMergedImpl } from "./mergeHelpers"
-import {
-    renderErrorDialog, renderSummaryDialog, renderInstructionsDialog,
-    renderEditingMergeDialog, renderPreviewDialog, renderFullPreviewDialog, renderLevelDialog,
-    renderLevelDeleteDialog, renderMergeLevelDialog, renderMultipleDeleteDialog,
-    renderPedagogyDialog, renderDeleteConfirmationDialog,
-} from "./pedagogyDialogs"
-import { renderMainEditDialog } from "./pedagogyEditDialog"
-import { renderMainContent } from "./pedagogyMainView"
-
-
 
 /**
  * @param courseIdOverride the course to open, for hosts that have no

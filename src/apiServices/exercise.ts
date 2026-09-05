@@ -1,7 +1,7 @@
 import { ExercisePayload } from '@/app/lms/component/ExerciseSettings';
 import axios from 'axios';
 
-const BASE_URL = 'https://lmsserver-yeve.onrender.com';
+const BASE_URL = 'http://localhost:5533';
 
 export type EntityType = 'modules' | 'submodules' | 'topics' | 'subtopics';
 

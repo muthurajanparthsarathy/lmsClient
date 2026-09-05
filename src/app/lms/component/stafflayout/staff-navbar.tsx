@@ -36,7 +36,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { notificationsService, notificationKeys } from "@/apiServices/notifications"
+import { notificationsService, notificationKeys } from "@/app/lms/pages/notifications/api/notifications"
 import { useAccountMenu } from "../useAccountMenu"
 
 // Known route keys → display names for the breadcrumb; anything unknown is

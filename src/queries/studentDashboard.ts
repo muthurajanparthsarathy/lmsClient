@@ -2,8 +2,8 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { queryKeys } from "@/lib/queryKeys";
 import { getStudentDashboardAnalytics, getUserSpecificAnalytics } from "@/apiServices/studentAnalytics";
-import { attendanceApi, type AttendanceRecord } from "@/apiServices/attendanceApi";
-import { fetchMyLearningTime, type LearningTimeSummary } from "@/apiServices/activityLog";
+import { attendanceApi, type AttendanceRecord } from "@/app/lms/pages/attendancemanagement/api/attendanceApi";
+import { fetchMyLearningTime, type LearningTimeSummary } from "@/app/lms/pages/logs/api/activityLog";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Student dashboard data.

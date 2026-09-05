@@ -3,12 +3,12 @@ import { getToken } from "@/lib/session";
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { User, Users } from 'lucide-react';
-import { useServices } from '@/apiServices/dynamicFields/servicemodel';
-import { fetchCategories } from '@/apiServices/dynamicFields/category';
-import { courseStructureApi, courseStructuresSummaryQuery } from '@/apiServices/createCourseStucture';
-import { pedagogyStructureApi } from '@/apiServices/dynamicFields/pedagogyStructureService';
-import { FormData, Service, Category, Client, PedagogyActivity } from './types';
-import { initializeResourcesType } from './utils/helpers';
+import { useServices } from '@/app/lms/pages/dynamicfieldsettings/api/servicemodel';
+import { fetchCategories } from '@/app/lms/pages/dynamicfieldsettings/api/category';
+import { courseStructureApi, courseStructuresSummaryQuery } from '@/app/lms/pages/coursestructure/api/createCourseStucture';
+import { pedagogyStructureApi } from '@/app/lms/pages/dynamicfieldsettings/api/pedagogyStructureService';
+import { FormData, Service, Category, Client, PedagogyActivity } from '../../pages/coursestructure/components/types';
+import { initializeResourcesType } from '../../pages/coursestructure/utils/helpers';
 import { transformTestConfigurationForFrontend } from './Step2CourseDetails';
 
 interface UseCourseDataProps {

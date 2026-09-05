@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BookOpen, ChevronDown, Settings2 } from 'lucide-react'
-import type { ServiceMapping } from '@/apiServices/serviceMappingService'
+import type { ServiceMapping } from '@/app/lms/pages/servicemapping/api/serviceMappingService'
 import { ClientAvatar, type MappingRowVM } from './mappingPresentation'
 import { groupCourses } from './mappingTree'
 

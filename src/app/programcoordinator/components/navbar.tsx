@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { logoutUser } from "@/apiServices/tokenVerify";
-import { postLogout } from "@/apiServices/activityLog";
+import { postLogout } from "@/app/lms/pages/logs/api/activityLog";
 import { toast } from "sonner";
 
 export function Navbarpro() {

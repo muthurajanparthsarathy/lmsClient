@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Download, X, CheckCircle, XCircle, Loader2, Building2, Briefcase, ShieldCheck, FileSpreadsheet, ChevronDown, UserPlus, AlertTriangle, Copy, Info, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { addUser } from "@/apiServices/userService";
-import { type ServiceMapping, type MasterDataEntry } from "@/apiServices/serviceMappingService";
-import { type Degree } from "@/apiServices/dynamicFields/degreeService";
+import { addUser } from "@/app/lms/pages/usermanagement/api/userService";
+import { type ServiceMapping, type MasterDataEntry } from "@/app/lms/pages/servicemapping/api/serviceMappingService";
+import { type Degree } from "@/app/lms/pages/dynamicfieldsettings/api/degreeService";
 import { useClientsQuery, useDegreesQuery, useServiceMappingsQuery } from "@/queries/referenceData";
 import { Role, User } from "./types";
 

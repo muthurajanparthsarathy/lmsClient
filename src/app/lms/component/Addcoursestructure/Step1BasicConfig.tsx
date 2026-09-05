@@ -23,8 +23,8 @@ import {
   X
 } from 'lucide-react';
 import InfoTooltip from '@/components/ui/reusabletooltip';
-import { ValidationMessage } from './ValidationMessage';
-import { FormData, ValidationErrors, Client, Service, Category, CourseClientConfig } from './types';
+import { ValidationMessage } from '../../pages/coursestructure/components/ValidationMessage';
+import { FormData, ValidationErrors, Client, Service, Category, CourseClientConfig } from '../../pages/coursestructure/components/types';
  
 interface Step1BasicConfigProps {
   formData: FormData;

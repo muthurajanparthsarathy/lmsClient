@@ -38,7 +38,7 @@ const OthersPageContent = () => {
         if (!token) throw new Error('Authentication token not found');
         if (!exerciseId) throw new Error('Exercise ID is required');
 
-        const response = await fetch(`https://lmsserver-yeve.onrender.com/exercise/${exerciseId}`, {
+        const response = await fetch(`http://localhost:5533/exercise/${exerciseId}`, {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
         });

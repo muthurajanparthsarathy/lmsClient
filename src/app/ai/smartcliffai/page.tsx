@@ -119,7 +119,7 @@ const SmartCliffCompiler: React.FC = () => {
 
   const checkOllamaConnection = async () => {
     try {
-      const response = await fetch('https://lmsserver-yeve.onrender.com/api/chat/health');
+      const response = await fetch('http://localhost:5533/api/chat/health');
       const data = await response.json();
       setIsOllamaConnected(data.success);
     } catch (error) {
@@ -131,7 +131,7 @@ const SmartCliffCompiler: React.FC = () => {
   const testOllamaConnection = async () => {
     setIsTestingConnection(true);
     try {
-      const response = await fetch('https://lmsserver-yeve.onrender.com/api/chat/simple', {
+      const response = await fetch('http://localhost:5533/api/chat/simple', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -338,7 +338,7 @@ const SmartCliffCompiler: React.FC = () => {
   const stopGeneration = async () => {
     if (currentStreamId) {
       try {
-        await fetch('https://lmsserver-yeve.onrender.com/api/chat/stop-generation', {
+        await fetch('http://localhost:5533/api/chat/stop-generation', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -390,7 +390,7 @@ const SmartCliffCompiler: React.FC = () => {
     setMessages(prev => [...prev, aiMessage]);
 
     try {
-      const response = await fetch('https://lmsserver-yeve.onrender.com/api/chat/ollama-stream', {
+      const response = await fetch('http://localhost:5533/api/chat/ollama-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -11,8 +11,8 @@ import {
   UserCog, Info, ArrowLeft, Users, Plus,
 } from "lucide-react";
 import { toast } from "sonner";
-import { bulkAddServiceToUsers } from "@/apiServices/userService";
-import { type ServiceMapping } from "@/apiServices/serviceMappingService";
+import { bulkAddServiceToUsers } from "@/app/lms/pages/usermanagement/api/userService";
+import { type ServiceMapping } from "@/app/lms/pages/servicemapping/api/serviceMappingService";
 import { useClientsQuery, useServiceMappingsQuery } from "@/queries/referenceData";
 import { Role, User } from "./types";
 

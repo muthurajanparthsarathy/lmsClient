@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils"
 import { useSyncPermissions } from "@/hooks/useSyncPermissions"
 import { useQueryClient } from "@tanstack/react-query"
 import { clearAllStorage } from "@/lib/session"
-import { postLogout } from "@/apiServices/activityLog"
+import { postLogout } from "@/app/lms/pages/logs/api/activityLog"
 
 // The SAME next/font declaration the admin shell makes (component/layout.tsx),
 // weight list included. It is not cosmetic duplication: without it this shell

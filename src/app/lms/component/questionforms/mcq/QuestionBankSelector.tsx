@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Search, Filter, Loader, Check, ChevronRight, ChevronLeft, ChevronDown, BookOpen, Code, Database, Layout, AlertCircle, Plus, List, LayoutGrid, Globe, GraduationCap } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useQuestionBankQuery, useOtherPlatformQuestionBankQuery } from '@/queries/questionBank';
-import { fetchCourseStructuresSummary } from '@/apiServices/createCourseStucture';
-import { PROBLEM_TYPES } from '../../questionbank/create/createShared';
+import { useQuestionBankQuery, useOtherPlatformQuestionBankQuery } from '@/app/lms/pages/questionbanks/queries/questionBank';
+import { fetchCourseStructuresSummary } from '@/app/lms/pages/coursestructure/api/createCourseStucture';
+import { PROBLEM_TYPES } from '../../../pages/questionbanks/components/create/createShared';
 // IMPORTANT: use react-hot-toast (the same toaster mounted in app/layout.tsx).
 // react-toastify's ToastContainer is NOT mounted in this app, so toasts from
 // "react-toastify" never render — that was the bug that made the quota

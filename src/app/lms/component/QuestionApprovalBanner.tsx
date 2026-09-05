@@ -11,7 +11,7 @@ import { useMemo, useState } from "react"
 import { ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { resolveQuestionQuery, type QuestionContext } from "@/apiServices/userService"
+import { resolveQuestionQuery, type QuestionContext } from "@/app/lms/pages/usermanagement/api/userService"
 
 export type QuestionApprovalQuery = {
   raisedBy?: string

@@ -10,7 +10,6 @@ import {
   Clock as ClockIcon, Lock, AlertCircle, X, XCircle, RefreshCw, ArrowLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -20,7 +19,6 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCourseRosterQuery } from '@/queries/courseRoster'
 import { toast, Toaster } from 'sonner'
@@ -33,10 +31,9 @@ import {
   approveQuestion,
   approveAllQuestions,
   rejectQuestion,
-  raiseQuestionQuery,
   type CourseApprovalItem,
   type QuestionContext,
-} from '@/apiServices/userService'
+} from '@/app/lms/pages/usermanagement/api/userService'
 import { Textarea } from '@/components/ui/textarea'
 
 const poppins = Poppins({

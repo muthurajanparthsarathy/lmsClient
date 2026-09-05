@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { notificationsService, notificationKeys } from "@/apiServices/notifications";
+import { notificationsService, notificationKeys } from "@/app/lms/pages/notifications/api/notifications";
 
 // A small blinking red dot that surfaces the unread-notification count in the
 // sidebar. Same data source as the former NotificationBell (30 s refresh), so

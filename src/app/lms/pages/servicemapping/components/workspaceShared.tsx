@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { ChevronRight } from "lucide-react";
-import type { ServiceMapping, MappedClientRef } from "@/apiServices/serviceMappingService";
+import type { ServiceMapping, MappedClientRef } from "@/app/lms/pages/servicemapping/api/serviceMappingService";
 import type { StatusPillTone } from "../../../shared/ui";
 
 // Presentation-only helpers shared by the Service Mapping workspace (table view,
@@ -132,14 +132,41 @@ export function fmtDate(iso?: string): string {
 
 // ── Presentational pieces ────────────────────────────────────────────────────
 
-export function ClientAvatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
+export function ClientAvatar({
+  name,
+  size = "md",
+  logoUrl,
+}: {
+  name: string;
+  size?: "sm" | "md" | "lg";
+  // Optional uploaded logo URL (from client.clientLogo). When set and the
+  // image loads, the circle shows the image; on missing URL OR failure to
+  // load (broken link, server offline, deleted file) we fall back to the
+  // deterministic first-letter avatar. Same shape, same size — the two
+  // presentations are visually interchangeable so listings never jump.
+  logoUrl?: string;
+}) {
   const dim = size === "lg" ? "w-11 h-11 text-sm" : size === "sm" ? "w-6 h-6 text-2xs" : "w-9 h-9 text-xs";
+  const [broken, setBroken] = React.useState(false);
+  // Reset the broken flag when the URL itself changes, so a re-upload after
+  // a previous failure gets a fresh chance to load.
+  React.useEffect(() => { setBroken(false); }, [logoUrl]);
+  const showImage = Boolean(logoUrl) && !broken;
   return (
     <span
-      className={`${dim} rounded-full flex items-center justify-center font-semibold flex-shrink-0 ${avatarClass(name)}`}
+      className={`${dim} rounded-full flex items-center justify-center font-semibold flex-shrink-0 overflow-hidden ${showImage ? "bg-ink-100" : avatarClass(name)}`}
       aria-hidden="true"
     >
-      {name.charAt(0).toUpperCase() || "C"}
+      {showImage ? (
+        <img
+          src={logoUrl}
+          alt=""
+          className="w-full h-full object-cover"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        name.charAt(0).toUpperCase() || "C"
+      )}
     </span>
   );
 }

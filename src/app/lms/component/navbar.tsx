@@ -37,7 +37,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAccountMenu } from "./useAccountMenu";
-import { notificationsService } from "@/apiServices/notifications";
+import { notificationsService } from "@/app/lms/pages/notifications/api/notifications";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./layout";
 import { CommandPalette } from "../shared/ui/CommandPalette";

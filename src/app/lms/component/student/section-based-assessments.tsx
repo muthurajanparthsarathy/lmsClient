@@ -10,6 +10,11 @@ import {
   Search, Filter, ChevronDown, LayoutList,
 } from "lucide-react"
 import SectionBasedTestPage from "./YouDo/assessment/components/SectionBasedTestPage"
+// Shared 12-hour formatter so the section-based cards read the same as
+// the We_Do / You_Do list rows: "Sep 3, 2026, 6:09 PM" (no leading
+// zero on hour). Section-based cards previously showed date-only,
+// dropping the time the student needed to plan a window submission.
+import { formatDateTime12 } from "@/app/lms/shared/time12"
 
 // ─── Re-use the same interfaces as exercises.tsx ──────────────────────────────
 
@@ -298,13 +303,13 @@ function getExerciseAvailability(exercise: SectionBasedExercise): {
     ? new Date(exercise.availabilityPeriod.cutOffDate) : null
 
   if (startDate && now < startDate)
-    return { status: "upcoming",      message: `Starts ${startDate.toLocaleDateString()}`, canStart: false }
+    return { status: "upcoming",      message: `Starts ${formatDateTime12(startDate)}`, canStart: false }
   if (graceDate && endDate && now > endDate && now <= graceDate)
-    return { status: "grace-period",  message: `Grace until ${graceDate.toLocaleDateString()}`, canStart: true }
+    return { status: "grace-period",  message: `Grace until ${formatDateTime12(graceDate)}`, canStart: true }
   if (endDate && now <= endDate)
-    return { status: "available",     message: `Ends ${endDate.toLocaleDateString()}`, canStart: true }
+    return { status: "available",     message: `Ends ${formatDateTime12(endDate)}`, canStart: true }
   if (cutOffDate && endDate && now > endDate && now <= cutOffDate)
-    return { status: "late-attempt",  message: `Late until ${cutOffDate.toLocaleDateString()}`, canStart: true }
+    return { status: "late-attempt",  message: `Late until ${formatDateTime12(cutOffDate)}`, canStart: true }
   return { status: "expired", message: "Expired", canStart: false }
 }
 
@@ -452,10 +457,10 @@ export function SectionStartPopup({
               <SecLabel>Schedule</SecLabel>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <tbody>
-                  <Row label="Opens" value={<span style={{ fontSize: 11 }}>{exercise.availabilityPeriod?.startDate ? new Date(exercise.availabilityPeriod.startDate).toLocaleDateString() : "—"}</span>} />
-                  <Row label="Closes" value={<span style={{ fontSize: 11 }}>{exercise.availabilityPeriod?.endDate ? new Date(exercise.availabilityPeriod.endDate).toLocaleDateString() : "—"}</span>} />
+                  <Row label="Opens" value={<span style={{ fontSize: 11 }}>{exercise.availabilityPeriod?.startDate ? formatDateTime12(new Date(exercise.availabilityPeriod.startDate)) : "—"}</span>} />
+                  <Row label="Closes" value={<span style={{ fontSize: 11 }}>{exercise.availabilityPeriod?.endDate ? formatDateTime12(new Date(exercise.availabilityPeriod.endDate)) : "—"}</span>} />
                   {exercise.availabilityPeriod?.gracePeriodAllowed && exercise.availabilityPeriod.gracePeriodDate && (
-                    <Row label="Grace" value={<span style={{ fontSize: 11 }}>{new Date(exercise.availabilityPeriod.gracePeriodDate).toLocaleDateString()}</span>} />
+                    <Row label="Grace" value={<span style={{ fontSize: 11 }}>{formatDateTime12(new Date(exercise.availabilityPeriod.gracePeriodDate))}</span>} />
                   )}
                 </tbody>
               </table>
@@ -791,7 +796,7 @@ if (activeTest) {
                     <Calendar size={11} />
                     <span className="truncate">
                       {exercise.availabilityPeriod?.startDate
-                        ? new Date(exercise.availabilityPeriod.startDate).toLocaleDateString()
+                        ? formatDateTime12(new Date(exercise.availabilityPeriod.startDate))
                         : "N/A"}
                     </span>
                   </div>
@@ -801,7 +806,7 @@ if (activeTest) {
                     <Clock size={11} />
                     <span className="truncate">
                       {exercise.availabilityPeriod?.endDate
-                        ? new Date(exercise.availabilityPeriod.endDate).toLocaleDateString()
+                        ? formatDateTime12(new Date(exercise.availabilityPeriod.endDate))
                         : "N/A"}
                     </span>
                   </div>

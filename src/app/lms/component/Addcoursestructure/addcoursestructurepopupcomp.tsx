@@ -4,17 +4,17 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Check, X, CircleHelp, BookOpen, Pencil, Loader2, Eye } from "lucide-react";
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { useClients } from './utils/useClients';
+import { useClients } from '../../pages/coursestructure/utils/useClients';
 import { useCourseData } from './useCourseData';
 import { ConfirmationDialog } from './ConfirmationDialog';
 import { PreviewDialog } from './PreviewDialog';
 import { Step1BasicConfig } from './Step1BasicConfig';
 import { Step2CourseDetails } from './Step2CourseDetails';
-import { AddCourseSettingsPopupProps, Category, Service, ServiceModal } from './types';
-import { useCourseForm } from './utils/useCourseForm';
+import { AddCourseSettingsPopupProps, Category, Service, ServiceModal } from '../../pages/coursestructure/components/types';
+import { useCourseForm } from '../../pages/coursestructure/utils/useCourseForm';
 import { CourseCreationHelpDialog } from './CourseCreationHelpDialog';
-import { popupVariants, steps } from './utils/constants';
-import { generateCourseId, generateUniqueCourseId, generateNextCourseId } from './utils/helpers';
+import { popupVariants, steps } from '../../pages/coursestructure/utils/constants';
+import { generateCourseId, generateUniqueCourseId, generateNextCourseId } from '../../pages/coursestructure/utils/helpers';
 const AddCourseSettingsPopup: React.FC<AddCourseSettingsPopupProps> = ({ 
     isOpen, 
     courseId, 

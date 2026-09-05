@@ -20,7 +20,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import DashboardLayout from '@/app/lms/component/layout'
-import { useCourseBatchesQuery } from '@/queries/courseBatches'
+import { useCourseBatchesQuery } from '@/app/lms/pages/coursestructure/course-batches/queries/courseBatches'
 
 const poppins = Poppins({
   subsets: ['latin'],

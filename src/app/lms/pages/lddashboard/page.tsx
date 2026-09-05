@@ -16,7 +16,7 @@ import { Fragment, Suspense, createContext, useContext, useEffect, useMemo, useR
 import { createPortal } from "react-dom";
 import {
   Target, Users, CheckCircle2, AlertTriangle, Building2, BookOpen,
-  Activity, GraduationCap, ArrowUpRight, FileText, EyeOff,
+  Activity, GraduationCap, ArrowUpRight, FileText, Eye, EyeOff,
   ChevronRight, ChevronLeft, ChevronDown, Check, ClipboardList, CalendarCheck, Star, Clock, UserCheck,
   Search, Bell, Settings, SlidersHorizontal, ArrowLeft, X, Printer, Download, FileSpreadsheet,
   RefreshCw,
@@ -29,6 +29,14 @@ import ApprovalHierarchyModal from "../../component/ApprovalHierarchyModal";
 // Redesigned dashboard view. Owns its own data fetching and derivations
 // (src/features/ld-dashboard) — the legacy DashboardView below is superseded.
 import { LDDashboard } from "@/features/ld-dashboard";
+// Reports ▸ Overview — the L&D Overview. Owns its own data derivation
+// (src/features/ld-overview) and links OUT to the detailed reports below;
+// it deliberately replaces none of them.
+// Imported from their own modules, NOT the barrel: the barrel re-exports the
+// page component, so importing PERIODS through it would statically pull
+// recharts back into this bundle and undo the dynamic import below.
+import { LDO_CSS } from "@/features/ld-overview/styles";
+import { PERIODS, type Period as LDPeriod } from "@/features/ld-overview/types";
 import { DataTable, type Column } from "@/components/data-table";
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { api } from "@/lib/apiClient";
@@ -77,6 +85,13 @@ const AttendanceReportPage = dynamic(
    activity / sub-category / grade pickers, removable preview sections, and
    Excel / PDF exports. Dynamic so exceljs + jspdf never join the page
    bundle until a head actually opens the designer. */
+/* The L&D Overview view. Dynamic for the same reason as the designers below:
+   it ships recharts, and a head landing on any other report must not pay
+   for it. */
+const LDOverviewPage = dynamic(
+  () => import("@/features/ld-overview/LDOverviewPage").then((m) => m.LDOverviewPage),
+  { ssr: false, loading: () => <Loading /> },
+);
 const PerformanceReportDesignerModal = dynamic(
   () => import("./PerformanceReportDesignerModal"),
   { ssr: false },
@@ -90,7 +105,7 @@ const FeedbackReportDesignerModal = dynamic(
   { ssr: false },
 );
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
 const getToken = () =>
   typeof window === "undefined"
     ? ""
@@ -112,7 +127,7 @@ const VIEWS: LDView[] = [
   "dashboard", "appr-queue", "appr-rules", "clients", "courses", "content", "schedule",
   "trainers", "attendance", "perf-progress", "perf-results",
   "fb-summary", "reports", "profile",
-  "rep-performance", "rep-attendance", "rep-delivery", "rep-feedback", "rep-clients",
+  "rep-overview", "rep-performance", "rep-attendance", "rep-delivery", "rep-feedback", "rep-clients",
   "course-structure", "course-calendar", "course-enrollment",
 ];
 
@@ -141,7 +156,7 @@ const inScope = (f: ViewFilter, id: string) =>
   (f.courseIds === null || f.courseIds.has(id)) && (f.course === "all" || f.course === id);
 
 /** "Kanban Ltd · Java Basics" — what the current selection actually is. */
-const scopeLabel = (f: ViewFilter, courseName?: string) => {
+export const scopeLabel = (f: ViewFilter, courseName?: string) => {
   const bits: string[] = [];
   if (f.client !== "all") bits.push(f.client);
   if (f.course !== "all" && courseName) bits.push(courseName);
@@ -494,7 +509,7 @@ function usePendingApprovals(): Async<any[]> {
 /** The staff / L&D analytics roll-up. Cached as the RAW envelope because the
  *  four readers each want a different slice of it — the shaping stays at the
  *  call site, the 12-second request happens once. */
-function useStaffAnalytics<T>(map: (j: any) => T): Async<T> {
+export function useStaffAnalytics<T>(map: (j: any) => T): Async<T> {
   const userId = useUserId();
   return useShared(
     {
@@ -2631,7 +2646,8 @@ function ClientsView({ filter }: { filter: ViewFilter }) {
 
     const map = new Map<string, ClientRow>();
     // Registry first: company name + primary contact person + email — the
-    // basic client identity this list is about.
+    // basic client identity this list is about. Business model and phone come
+    // from the same registry doc so this listing mirrors Client Management.
     (clientDocs || []).forEach((d: any) => {
       const name = String(d.clientCompany || "").trim();
       if (!name) return;
@@ -2642,14 +2658,19 @@ function ClientsView({ filter }: { filter: ViewFilter }) {
       const primary = contacts.find((p: any) => p?.isPrimary) || contacts[0];
       map.set(name, {
         name,
+        businessModel: String(d.businessModel || "").trim(),
         contact: String(primary?.name || "").trim(),
         email: String(primary?.email || "").trim(),
+        phone: String(primary?.phoneNumber || "").trim(),
+        extraContacts: Math.max(0, contacts.length - 1),
         services: [],
       });
     });
     // Clients that only exist through courses (legacy/unregistered) still show.
     svcByClient.forEach((_, name) => {
-      if (!map.has(name)) map.set(name, { name, contact: "", email: "", services: [] });
+      if (!map.has(name)) map.set(name, {
+        name, businessModel: "", contact: "", email: "", phone: "", extraContacts: 0, services: [],
+      });
     });
     map.forEach((row, name) => {
       const svc = svcByClient.get(name);
@@ -2674,12 +2695,13 @@ function ClientsView({ filter }: { filter: ViewFilter }) {
     <>
       {/* The generic strapline is gone: it restated the <h1> in a sentence and
           cost a line before any data. `sub` now fires only when a filter is
-          active, where it is the ONLY thing telling you the list is narrowed. */}
+          active, where it is the ONLY thing telling you the list is narrowed.
+          No client picker on this view — the DataTable's own search is the
+          way to find one, matching the Client Management page's toolbar. */}
       <Head
         eyebrow="Clients"
         title="Clients"
         sub={narrowed ? `Showing ${narrowed}.` : undefined}
-        right={<ScopeFilters f={filter} course={false} />}
       />
       {loading && <Loading />}
       {!loading && error && <ErrBox m={error} />}
@@ -2693,8 +2715,8 @@ function ClientsView({ filter }: { filter: ViewFilter }) {
           data={rows}
           columns={listColumns}
           getRowKey={(r) => r.name}
-          searchText={(r) => `${r.name} ${r.contact} ${r.email}`}
-          searchPlaceholder="Search client, contact or email…"
+          searchText={(r) => `${r.name} ${businessModelFullName(r.businessModel)} ${r.contact} ${r.email} ${r.phone}`}
+          searchPlaceholder="Search client, model, contact, email or phone…"
           /* Opens the services overlay (services offered, year, courses) —
              the jump to Course Insight lives inside it as "View all courses". */
           onRowClick={(r) => setOpenClient(r.name)}
@@ -2702,6 +2724,9 @@ function ClientsView({ filter }: { filter: ViewFilter }) {
           emptyHint="Clients appear here once a course is created under one."
           pageSize={10}
           fillHeight
+          /* Flat list — no card chrome, and the pager only shows up when a
+             second page actually exists. Matches the Client Management page. */
+          borderless
           className="min-h-0 flex-1"
         />
       )}
@@ -2718,7 +2743,31 @@ function ClientsView({ filter }: { filter: ViewFilter }) {
   );
 }
 
-type ClientRow = { name: string; contact: string; email: string; services: [string, number][] };
+type ClientRow = {
+  name: string;
+  // Business model as stored on the registry doc (e.g. "B2B"). Empty when the
+  // client only exists through course docs (legacy/unregistered).
+  businessModel: string;
+  contact: string;
+  email: string;
+  phone: string;
+  // Contacts beyond the primary — surfaced as a `+N` badge next to the name,
+  // matching the Client Management listing.
+  extraContacts: number;
+  services: [string, number][];
+};
+
+// Mirrors clientmanagement/features/lib.tsx#businessModelFullName so the
+// column reads the same on both pages. The short code (B2B/B2I/B2C) alone
+// looks like a placeholder next to a real client name, and this file already
+// carries every other visual choice inline.
+const BUSINESS_MODEL_FULL: Record<string, string> = {
+  B2B: "Business to Business",
+  B2I: "Business to Institution",
+  B2C: "Business to Customer",
+};
+const businessModelFullName = (value: string): string =>
+  BUSINESS_MODEL_FULL[value] || value || "";
 
 /* Deterministic tone per service model, matching Course Setup's badge hues. */
 const serviceTone = (model: string): StatusTone => {
@@ -2730,8 +2779,11 @@ const serviceTone = (model: string): StatusTone => {
   return "neutral";
 };
 
-/* Column factory, not a static set: the row's "View services" action opens
-   the services overlay, which needs the view's open setter. */
+/* Column factory, not a static set: the row's "View" action opens the services
+   overlay, which needs the view's open setter. Columns mirror the Client
+   Management listing so both pages read the same — Client Name · Business Model
+   · Contact Name · Email · Contact Number · View. No Add/Edit/Delete kebab
+   here: this dashboard is read-only, one action per row. */
 const makeClientColumns = (openServices: (client: string) => void): Column<ClientRow>[] => [
   {
     /* max-w-sm is the whole spacing fix. Every numeric column is md:flex-none,
@@ -2739,7 +2791,7 @@ const makeClientColumns = (openServices: (client: string) => void): Column<Clien
        leftover width — on a 1920px screen roughly 800px of dead air opened up
        between a client's name and its own numbers. Capped, the numbers sit
        beside the name and the slack falls harmlessly off the end of the row. */
-    key: "name", header: "Client", className: "md:flex-[2.4] md:max-w-sm", hideLabelOnMobile: true,
+    key: "name", header: "Client Name", className: "md:flex-[2.2] md:max-w-sm", hideLabelOnMobile: true,
     /* size-7 monogram (28px) + gap-2.5 (10px) = 38px = pl-9.5, so the header
        sits over the client NAME instead of over the avatars. */
     headerClassName: "pl-9.5",
@@ -2747,15 +2799,40 @@ const makeClientColumns = (openServices: (client: string) => void): Column<Clien
     cell: (r) => (
       <span className="flex items-center gap-2.5">
         <Monogram name={r.name} />
-        <b className="block min-w-0 truncate text-sm font-medium text-heading">{r.name}</b>
+        <b className="block min-w-0 truncate text-sm font-medium text-heading" title={r.name}>{r.name}</b>
       </span>
     ),
   },
   {
-    key: "contact", header: "Contact", className: "md:flex-1 md:min-w-32",
+    /* Same source as Client Management (registry doc's `businessModel`), and
+       the same short → full mapping so a client reads as "Business to Business"
+       here too rather than the bare "B2B" code. */
+    key: "businessModel", header: "Business Model", className: "md:flex-[1.4] md:min-w-40",
+    sortValue: (r) => r.businessModel || "￿",
+    cell: (r) => r.businessModel
+      ? <span className="block min-w-0 truncate text-sm text-body" title={businessModelFullName(r.businessModel)}>{businessModelFullName(r.businessModel)}</span>
+      : <span className="text-2xs italic text-faint">Not set</span>,
+  },
+  {
+    /* Primary contact's NAME, with a `+N` chip when the client has secondary
+       contacts on file — same affordance Client Management surfaces. The chip
+       is silent (no click) here: the overlay is the way to see them. */
+    key: "contact", header: "Contact Name", className: "md:flex-1 md:min-w-32",
     sortValue: (r) => r.contact || "￿",
     cell: (r) => r.contact
-      ? <span className="block min-w-0 truncate text-sm text-body">{r.contact}</span>
+      ? (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="block min-w-0 truncate text-sm text-body" title={r.contact}>{r.contact}</span>
+          {r.extraContacts > 0 && (
+            <span
+              className={`inline-flex h-[18px] shrink-0 items-center rounded-chip px-1.5 text-2xs font-semibold tabular-nums ${TONE_CHIP.brand}`}
+              title={`${r.extraContacts} more contact${r.extraContacts === 1 ? "" : "s"}`}
+            >
+              +{r.extraContacts}
+            </span>
+          )}
+        </span>
+      )
       : <span className="text-2xs text-faint">—</span>,
   },
   {
@@ -2775,16 +2852,29 @@ const makeClientColumns = (openServices: (client: string) => void): Column<Clien
     ),
   },
   {
-    /* No badge clutter in the list — one action per row; the overlay carries
-       the services (with models, year and the model filter). */
-    key: "view", header: "", className: "md:w-32 md:flex-none", align: "right",
+    key: "phone", header: "Contact Number", className: "md:flex-1 md:min-w-36",
+    sortValue: (r) => r.phone || "￿",
+    cell: (r) => r.phone
+      ? <span className="block min-w-0 truncate text-sm text-body tabular-nums" title={r.phone}>{r.phone}</span>
+      : <span className="text-2xs text-faint">—</span>,
+  },
+  {
+    /* One action per row — a compact TEXT button ("View services") that opens
+       the same services overlay ("Service Offered") the row-click gesture
+       opens. Text over an icon here because the label is doing real work: an
+       eye alone reads as "view the client", but this button opens the
+       services list specifically. Widened the column so the label fits on
+       one line. */
+    key: "view", header: "Actions", className: "md:w-32 md:flex-none", align: "right",
     cell: (r) => (
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); openServices(r.name); }}
-        className="ldc-link whitespace-nowrap"
+        title="View services offered"
+        aria-label={`View services for ${r.name}`}
+        className="inline-flex h-7 items-center gap-1 rounded-chip border border-hairline-strong bg-surface px-2 text-2xs font-semibold text-body transition-colors duration-fast hover:border-line-hover hover:bg-row-hover hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30"
       >
-        View services →
+        View services
       </button>
     ),
   },
@@ -3455,14 +3545,15 @@ function AttPortfolio({ filter }: { filter: { course?: string; courseIds: Set<st
   const { loading, error, data } = useAttendanceOverview(today, (j) => {
     const d = j?.data ?? j ?? {}; return (Array.isArray(d.courses) ? d.courses : Array.isArray(d) ? d : Array.isArray(j?.data) ? j.data : []) as any[];
   });
-  // View → jump to the dedicated Attendance Management route
-  // (`/lms/pages/attendancemanagement?courseId=<id>`). That shell owns the
-  // Management / Report / Analytics tab strip, the day nav, the download
-  // modals — no need to re-mount any of it inside the LD Console anymore.
-  const router = useRouter();
-  // `from=ldc` tells AttendanceManagementLayout to render inside LDLayout
-  // (this console's sidebar) instead of the admin/trainer DashboardLayout.
-  const openCourse = (id: string) => router.push(`/lms/pages/attendancemanagement?courseId=${encodeURIComponent(id)}&from=ldc`);
+  // 2026-09-05: The L&D console owns Attendance at `#attendance` — clicking a
+  // course row USED to `router.push` to `/lms/pages/attendancemanagement?...`
+  // and yank the URL out from under the L&D sidebar. Per the redesign the
+  // portfolio stays inside the console at `#attendance` regardless of the
+  // row clicked; row activation now just narrows the console's scope filter
+  // to that course (URL stays put, sidebar highlight stays put). Users who
+  // need day-marking still reach `attendancemanagement` from their admin /
+  // trainer / POC shells; L&D Head reviews here.
+  const openCourse = (_id: string) => { /* stay at #attendance — no route change */ };
   const { courseIds, clientOf, course: courseF } = filter;
   const inClient = (id: string) => courseIds === null || courseIds.has(id);
   const inCourse = (id: string) => !courseF || courseF === "all" || String(courseF) === id;
@@ -3640,12 +3731,7 @@ function AttPortfolioTable({
                   return (
                     <tr
                       key={cid}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`Open attendance report for ${c.courseName || "course"}`}
-                      onClick={(e) => { if (!e.currentTarget.contains(e.target as Node)) return; onOpenCourse(cid); }}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenCourse(cid); } }}
-                      className="cursor-pointer border-b border-hairline transition-colors last:border-0 hover:bg-row-hover"
+                      className="border-b border-hairline transition-colors last:border-0 hover:bg-row-hover"
                     >
                       <td className="px-3 py-2 align-middle">
                         <span className="truncate text-sm text-body">{clientOf(cid) || c.clientName || <span className="text-xs text-faint">—</span>}</span>
@@ -4156,7 +4242,10 @@ const RPrintCtx = createContext(false);
    on iframes). The document embeds LDC_CSS with the LIGHT variable set, so
    charts/chips print in full colour regardless of the on-screen theme, and
    interactive chrome (filters, pagination, buttons) is stripped. */
-function printReportHtml(title: string, scope: string, inner: string) {
+/* `extraCss` lets a view that carries its own scoped stylesheet (the L&D
+   Overview's LDO_CSS) print with it. Existing callers pass three
+   arguments and are unaffected. */
+function printReportHtml(title: string, scope: string, inner: string, extraCss = "") {
   const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${esc(title)}</title>
 <style>
@@ -4169,6 +4258,7 @@ function printReportHtml(title: string, scope: string, inner: string) {
   h1{font-size:18px; margin:0 0 2px; letter-spacing:-0.02em;}
   .pmeta{font-size:11px; color:#555; margin:0 0 14px; padding-bottom:8px; border-bottom:1px solid #ddd;}
   ${LDC_CSS}
+  ${extraCss}
   .ldr-filters, .ldr-pgn, .ldr-search, .ldc-btn, .ldx-add, .ldr-x, .ldr-toolbar, .ldr-mp-panel{display:none !important;}
   .ldr-doc{border:none; box-shadow:none; padding:0;}
   .ldc-scroll{max-height:none; overflow:visible;}
@@ -5127,6 +5217,118 @@ function PerfDocView({ cfg, model, genAt, onRemove, onCustomize, onClose }: {
 
 const PERF_SUB = "";
 
+/* ═════════ 0 · L&D Overview (rep-overview) ═════════
+   The executive summary that opens Reports. It renders the feature module and
+   supplies the three things only the console can: the scope pickers (whose
+   state lives in LDConsole so it survives view switches), the Detailed Report
+   designer behind Customize, and the existing print/export pipeline behind
+   Export. It adds no report of its own — every card links to one that already
+   exists. */
+function LDOverview({ f, period, onPeriod }: { f: ViewFilter; period: LDPeriod; onPeriod: (v: string) => void }) {
+  const [designerOpen, setDesignerOpen] = useState(false);
+  // Same shared cache entry every other report on this page reads — opening
+  // the designer from here costs no extra request.
+  const { data } = useStaffAnalytics((j) => j?.data ?? null);
+  const base = useMemo(() => buildPerfBase(data, f), [data, f]);
+
+  const courseName = f.courseOpts.find((c) => c.id === f.course)?.name;
+  const scope = scopeLabel(f, courseName) || "All clients · all courses";
+
+  const overviewFilter = useMemo(
+    () => ({ client: f.client, course: f.course, courseIds: f.courseIds, clientOf: f.clientOf, period }),
+    [f.client, f.course, f.courseIds, f.clientOf, period],
+  );
+
+  const periodOptions = useMemo(() => PERIODS.map((o) => ({ value: o.value, label: o.label })), []);
+
+  return (
+    <>
+      <LDOverviewPage
+        filter={overviewFilter}
+        filterControls={
+          <>
+            {/* Client → Course → Time Period. The mental flow an L&D head
+                actually follows when opening a report: whose org am I looking
+                at, which course, over what period. Do not reorder. */}
+            <ScopeFilters f={f} reset={false} />
+            <FloatingPicker label="Time Period" minWidth="min-w-[160px]" value={period.value} options={periodOptions} onChange={onPeriod} />
+          </>
+        }
+        onCustomize={() => setDesignerOpen(true)}
+        onExport={(html) => printReportHtml("L&D Overview", `${scope} · ${period.label}`, html, LDO_CSS)}
+        onOpenCourse={(row) => { f.onCourse(row.id); window.location.hash = "#rep-delivery"; }}
+      />
+      {/* The SAME Detailed Report designer the Performance Report opens — one
+          implementation, reached from either surface. */}
+      {designerOpen ? (
+        <PerformanceReportDesignerModal
+          open={designerOpen}
+          onClose={() => setDesignerOpen(false)}
+          baseStudents={base.students}
+          baseCourseRows={base.courseRows}
+          scopeLabel={scope}
+          clientName={f.client}
+          courseName={courseName}
+          courseId={f.course && f.course !== "all" ? f.course : undefined}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/* Rows for the Performance Report and its Detailed Report designer.
+   Extracted from PerformanceReport unchanged so the L&D Overview can open the
+   SAME designer overlay from its Customize button without a second copy of
+   this mapping. Pure — the caller still owns the memo.
+
+   NOT exported: this is a Next.js `page.tsx`, whose generated route types
+   reject any export that is not a recognised page export. Both callers live in
+   this file, so module scope is all it needs. */
+export function buildPerfBase(data: any, f: ViewFilter) {
+  const courses = (data?.courses ?? []).filter((c: any) => inScope(f, String(c.course?._id ?? "")));
+  const courseRows = courses.map((c: any) => {
+    const id = String(c.course?._id ?? "");
+    return {
+      id,
+      name: c.course?.courseName || "Untitled",
+      client: f.clientOf(id) || "Unassigned",
+      students: n(c.stats?.totalStudents),
+      avg: n(c.stats?.averageProgress),
+      done: n(c.stats?.completedStudents),
+      prog: n(c.stats?.inProgressStudents),
+      not: n(c.stats?.notStartedStudents),
+    };
+  });
+  const students = courses.flatMap((c: any) => {
+    const id = String(c.course?._id ?? "");
+    const cname = c.course?.courseName || "Untitled";
+    return (c.students ?? []).map((s: any) => {
+      const p = s.progress ?? {};
+      const name = `${s.student?.firstName || ""} ${s.student?.lastName || ""}`.trim() || s.student?.email || "Student";
+      return {
+        pid: String(s.student?._id || "") || `${name}·${id}`,
+        name,
+        email: s.student?.email || "",
+        course: cname,
+        courseId: id,
+        client: f.clientOf(id) || "Unassigned",
+        overall: n(p.overall),
+        iDo: stageDone(p, "I_Do"),
+        weDo: stageDone(p, "We_Do"),
+        youDo: stageDone(p, "You_Do"),
+        score: scoreOf(p),
+        last: s.lastActivity ? fmtDay(s.lastActivity) : "—",
+        lastT: s.lastActivity ? (Date.parse(s.lastActivity) || 0) : 0,
+        // Raw progress kept for the Detailed Report designer — the sub-cat
+        // multipick and grade math walk this object to discover what the
+        // course actually allocated.
+        progress: p,
+      };
+    });
+  });
+  return { courseRows, students };
+}
+
 export function PerformanceReport({ f }: { f: ViewFilter }) {
   const { loading, error, data } = useStaffAnalytics((j) => j?.data ?? null);
   const [pick, setPick] = useState<Set<string> | null>(null);
@@ -5142,50 +5344,7 @@ export function PerformanceReport({ f }: { f: ViewFilter }) {
   // A student picked under one scope means nothing under another.
   useEffect(() => { setPick(null); }, [f.client, f.course]);
 
-  const base = useMemo(() => {
-    const courses = (data?.courses ?? []).filter((c: any) => inScope(f, String(c.course?._id ?? "")));
-    const courseRows = courses.map((c: any) => {
-      const id = String(c.course?._id ?? "");
-      return {
-        id,
-        name: c.course?.courseName || "Untitled",
-        client: f.clientOf(id) || "Unassigned",
-        students: n(c.stats?.totalStudents),
-        avg: n(c.stats?.averageProgress),
-        done: n(c.stats?.completedStudents),
-        prog: n(c.stats?.inProgressStudents),
-        not: n(c.stats?.notStartedStudents),
-      };
-    });
-    const students = courses.flatMap((c: any) => {
-      const id = String(c.course?._id ?? "");
-      const cname = c.course?.courseName || "Untitled";
-      return (c.students ?? []).map((s: any) => {
-        const p = s.progress ?? {};
-        const name = `${s.student?.firstName || ""} ${s.student?.lastName || ""}`.trim() || s.student?.email || "Student";
-        return {
-          pid: String(s.student?._id || "") || `${name}·${id}`,
-          name,
-          email: s.student?.email || "",
-          course: cname,
-          courseId: id,
-          client: f.clientOf(id) || "Unassigned",
-          overall: n(p.overall),
-          iDo: stageDone(p, "I_Do"),
-          weDo: stageDone(p, "We_Do"),
-          youDo: stageDone(p, "You_Do"),
-          score: scoreOf(p),
-          last: s.lastActivity ? fmtDay(s.lastActivity) : "—",
-          lastT: s.lastActivity ? (Date.parse(s.lastActivity) || 0) : 0,
-          // Raw progress kept for the Detailed Report designer — the sub-cat
-          // multipick and grade math walk this object to discover what the
-          // course actually allocated.
-          progress: p,
-        };
-      });
-    });
-    return { courseRows, students };
-  }, [data, f]);
+  const base = useMemo(() => buildPerfBase(data, f), [data, f]);
 
   // One entry per person (a learner on 3 courses is still one checkbox).
   const opts = useMemo(() => {
@@ -5753,66 +5912,62 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
   // Detailed Report designer — Canva-style overlay pooling responses across
   // every form in scope. Opened by the green Detailed report button.
   const [designerOpen, setDesignerOpen] = useState(false);
-  // Sub-line intentionally blank on this report — the page's action buttons
-  // and the row-level Open action already document the entry points; the
-  // longer paragraph just added noise between the title and the filter row.
-  const sub = "";
-  if (fb.loading || cs.loading) return <ReportShell title="Feedback Report" sub={sub} f={f}><Loading /></ReportShell>;
-  if (fb.error) return <ReportShell title="Feedback Report" sub={sub} f={f}><ErrBox m={fb.error} /></ReportShell>;
-  // The course list is what scopes foreign institutions out — without it the
-  // report can't be trusted, so its failure is a hard stop, not a fallback.
-  if (cs.error) return <ReportShell title="Feedback Report" sub={sub} f={f}><ErrBox m={cs.error} /></ReportShell>;
-
-  const courseById = new Map((cs.data || []).map((c: any) => [String(c._id), c]));
-  const isStudentU = (u: any) => { const rn = roleName(u?.user?.role).toLowerCase(); return !rn.includes("trainer") && !rn.includes("faculty"); };
-  // /getAll/feedback is not institution-scoped server-side — keep only forms
-  // whose course exists in THIS institution's own course list.
-  const docs = (fb.data || []).filter((d: any) => {
-    const cid = String(d.courseId || "");
-    return courseById.has(cid) && inScope(f, cid);
-  });
-
-  const norm5 = (v: number, maxR: number) => (maxR && maxR !== 5 ? (v / maxR) * 5 : v);
-  const forms = docs.map((d: any) => {
-    const cid = String(d.courseId || "");
-    const course: any = courseById.get(cid);
-    const maxR = n(d.ratingScale?.maxRating) || 5;
-    const resp = Array.isArray(d.studentResponses) ? d.studentResponses : [];
-    const ratings = resp.map((r: any) => (typeof r.overallRating === "number" ? r.overallRating : parseFloat(r.overallRating))).filter((v: number) => !isNaN(v));
-    const avg = ratings.length ? ratings.reduce((s: number, v: number) => s + v, 0) / ratings.length : null;
-    // Response-rate denominator: the matching batch roster (students only).
-    let denom: number | null = null;
-    if (course) {
-      const batch = (course.batchAndParticipants || []).find((b: any) => String(b._id) === String(d.batchId || "") || (d.batchName && b.batchName === d.batchName));
-      if (batch) denom = (batch.users || []).filter(isStudentU).length;
-    }
-    return {
-      id: String(d._id),
-      title: d.feedbackTitle || "Feedback",
-      courseId: cid,
-      course: course?.courseName || "—",
-      client: f.clientOf(cid) || course?.clientName || "Unassigned",
-      batch: d.batchName || "—",
-      trainer: d.trainerName || "Course-level",
-      trainerId: String(d.trainerId || ""),
-      responses: resp.length,
-      denom,
-      rate: denom ? Math.round((resp.length / denom) * 100) : null,
-      avg: avg === null ? null : Math.round(norm5(avg, maxR) * 10) / 10,
-      window: `${fmtDay(d.startDate)} → ${d.endDate ? fmtDay(d.endDate) : "open"}`,
-      startT: d.startDate ? (Date.parse(d.startDate) || 0) : 0,
-      active: !!d.isActive,
-      raw: d,
-    };
-  });
-
-  const scopeStr = scopeLabel(f, f.courseOpts.find((c) => c.id === f.course)?.name) || "All clients · all courses";
-
-  // Header-level filters (promoted out of the table's own filter bar so the
-  // user gets one consistent floating-label row for Client / Course / Status /
-  // Trainer instead of a mixed native-select strip below the table title).
+  // Header-level filters — declared HERE (before the loading / error early
+  // returns) so hook order stays stable when data flips from loading to
+  // loaded. Previously they lived below the early returns, so React saw a
+  // different hook count between the two render passes and threw
+  // "change in the order of Hooks" for this component.
   const [status, setStatus] = useState<"all" | "open" | "closed">("all");
   const [trainer, setTrainer] = useState<string>("all");
+
+  // Forms roll-up, memoised. Returns [] while data is loading or errored so
+  // the two useMemo hooks below can also run unconditionally without needing
+  // the data to be present.
+  const forms = useMemo(() => {
+    if (fb.loading || cs.loading || fb.error || cs.error) return [] as any[];
+    const courseById = new Map((cs.data || []).map((c: any) => [String(c._id), c]));
+    const isStudentU = (u: any) => { const rn = roleName(u?.user?.role).toLowerCase(); return !rn.includes("trainer") && !rn.includes("faculty"); };
+    // /getAll/feedback is not institution-scoped server-side — keep only forms
+    // whose course exists in THIS institution's own course list.
+    const docs = (fb.data || []).filter((d: any) => {
+      const cid = String(d.courseId || "");
+      return courseById.has(cid) && inScope(f, cid);
+    });
+    const norm5 = (v: number, maxR: number) => (maxR && maxR !== 5 ? (v / maxR) * 5 : v);
+    return docs.map((d: any) => {
+      const cid = String(d.courseId || "");
+      const course: any = courseById.get(cid);
+      const maxR = n(d.ratingScale?.maxRating) || 5;
+      const resp = Array.isArray(d.studentResponses) ? d.studentResponses : [];
+      const ratings = resp.map((r: any) => (typeof r.overallRating === "number" ? r.overallRating : parseFloat(r.overallRating))).filter((v: number) => !isNaN(v));
+      const avg = ratings.length ? ratings.reduce((s: number, v: number) => s + v, 0) / ratings.length : null;
+      // Response-rate denominator: the matching batch roster (students only).
+      let denom: number | null = null;
+      if (course) {
+        const batch = (course.batchAndParticipants || []).find((b: any) => String(b._id) === String(d.batchId || "") || (d.batchName && b.batchName === d.batchName));
+        if (batch) denom = (batch.users || []).filter(isStudentU).length;
+      }
+      return {
+        id: String(d._id),
+        title: d.feedbackTitle || "Feedback",
+        courseId: cid,
+        course: course?.courseName || "—",
+        client: f.clientOf(cid) || course?.clientName || "Unassigned",
+        batch: d.batchName || "—",
+        trainer: d.trainerName || "Course-level",
+        trainerId: String(d.trainerId || ""),
+        responses: resp.length,
+        denom,
+        rate: denom ? Math.round((resp.length / denom) * 100) : null,
+        avg: avg === null ? null : Math.round(norm5(avg, maxR) * 10) / 10,
+        window: `${fmtDay(d.startDate)} → ${d.endDate ? fmtDay(d.endDate) : "open"}`,
+        startT: d.startDate ? (Date.parse(d.startDate) || 0) : 0,
+        active: !!d.isActive,
+        raw: d,
+      };
+    });
+  }, [fb.data, fb.loading, fb.error, cs.data, cs.loading, cs.error, f]);
+
   const trainerOptions = useMemo(
     () => [
       { value: "all", label: "All trainers" },
@@ -5832,6 +5987,18 @@ function FeedbackReport({ f }: { f: ViewFilter }) {
       }),
     [forms, status, trainer],
   );
+
+  // Sub-line intentionally blank on this report — the page's action buttons
+  // and the row-level Open action already document the entry points; the
+  // longer paragraph just added noise between the title and the filter row.
+  const sub = "";
+  if (fb.loading || cs.loading) return <ReportShell title="Feedback Report" sub={sub} f={f}><Loading /></ReportShell>;
+  if (fb.error) return <ReportShell title="Feedback Report" sub={sub} f={f}><ErrBox m={fb.error} /></ReportShell>;
+  // The course list is what scopes foreign institutions out — without it the
+  // report can't be trusted, so its failure is a hard stop, not a fallback.
+  if (cs.error) return <ReportShell title="Feedback Report" sub={sub} f={f}><ErrBox m={cs.error} /></ReportShell>;
+
+  const scopeStr = scopeLabel(f, f.courseOpts.find((c) => c.id === f.course)?.name) || "All clients · all courses";
 
   const extraFilters = (
     <>
@@ -6208,6 +6375,10 @@ export default function LDConsole() {
   const view = useHashView();
   const [client, setClient] = useState("all");
   const [course, setCourse] = useState("all");
+  // Activity window for the L&D Overview. Owned here, beside client and
+  // course, so all three scope choices survive rail navigation together.
+  const [periodValue, setPeriodValue] = useState("30");
+  const period = useMemo(() => PERIODS.find((o) => o.value === periodValue) ?? PERIODS[1], [periodValue]);
   // Course picker options for the whole console. This reads THREE scalars per
   // course (_id / courseName / clientName), so it rides the shared
   // ['courseStructures','summary'] entry — 43 KB instead of the 348 KB roster
@@ -6287,8 +6458,10 @@ export default function LDConsole() {
     // Feedback rail item = the finished Feedback Report (same component as
     // Reports ▸ Feedback): client/course scope, filters, ratings, print.
     view === "fb-summary" ? <FeedbackReport f={viewFilter} /> :
-    // Legacy #reports bookmarks land on the first report page.
-    view === "reports" || view === "rep-performance" ? <PerformanceReport f={viewFilter} /> :
+    // Reports ▸ Overview — also where legacy #reports bookmarks land.
+    view === "reports" || view === "rep-overview"
+      ? <LDOverview f={viewFilter} period={period} onPeriod={setPeriodValue} /> :
+    view === "rep-performance" ? <PerformanceReport f={viewFilter} /> :
     view === "rep-attendance" ? <AttendanceReport f={viewFilter} /> :
     view === "rep-delivery" ? <DeliveryReport f={viewFilter} /> :
     view === "rep-feedback" ? <FeedbackReport f={viewFilter} /> :
@@ -6346,9 +6519,11 @@ export const LDC_CSS = `
 .ldc-s b{display:block; font-size:19px; font-weight:750; letter-spacing:-.02em; margin-top:4px; color:var(--ink); font-variant-numeric:tabular-nums;}
 .ldc-s b.bad{color:var(--bad);}
 .ldc-s i{display:block; font-size:10px; color:var(--muted); font-style:normal; margin-top:2px;}
-.ldc-list{background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:hidden; box-shadow:var(--sh); margin-bottom:14px;}
-.ldc-list-h{display:flex; align-items:center; gap:10px; padding:11px 15px; border-bottom:1px solid var(--grid);}
-.ldc-list-h h2{margin:0; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.02em; color:var(--ink2);}
+/* Flat, borderless list — matches Client Management / Service Mapping.
+   No outer card chrome; rows carry their own hairline separators. */
+.ldc-list{background:transparent; border:none; border-radius:0; overflow:visible; box-shadow:none; margin-bottom:10px;}
+.ldc-list-h{display:flex; align-items:center; gap:10px; padding:6px 0 8px; border-bottom:none;}
+.ldc-list-h h2{margin:0; font-size:12px; font-weight:600; text-transform:none; letter-spacing:0; color:var(--ink);}
 .ldc-list-h span{margin-left:auto; font-size:11px; font-weight:500; color:var(--muted);}
 .ldc-group-h{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:0 0 8px 2px;}
 .ldc-group-h span{font-weight:500; text-transform:none; letter-spacing:0; margin-left:6px;}
@@ -6357,10 +6532,14 @@ export const LDC_CSS = `
    page shell (header + filter row + list heading + pagination + margins), and
    min-height keeps a usable table even when the viewport is short. */
 .ldc-scroll{overflow-x:auto; overflow-y:auto; max-height:min(58vh, calc(100vh - 340px)); min-height:220px;}
-.ldc-list table{width:100%; border-collapse:collapse; font-size:12.5px;}
-.ldc-list th{text-align:left; font-size:9.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); padding:9px 15px; background:color-mix(in srgb,var(--muted) 6%,var(--surface)); border-bottom:1px solid var(--grid); position:sticky; top:0;}
+.ldc-list table{width:100%; border-collapse:collapse; font-size:12px;}
+/* Header: normal-case (not uppercase), no shaded fill — matches Client
+   Management's TABLE_HEAD_CELL rhythm (12px / semibold / subtle text). */
+.ldc-list th{text-align:left; font-size:11px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--muted); padding:6px 10px; background:transparent; border-bottom:1px solid var(--grid); position:sticky; top:0;}
 .ldc-list th.r{text-align:right;}
-.ldc-list td{padding:11px 15px; border-bottom:1px solid var(--grid); color:var(--ink2); vertical-align:middle;}
+/* Denser body rows — 6px vertical padding + 12px cell text ≈ 32px row height,
+   the minimal density the user asked for. */
+.ldc-list td{padding:6px 10px; border-bottom:1px solid var(--grid); color:var(--ink2); vertical-align:middle;}
 .ldc-list tbody tr:last-child td{border-bottom:none;}
 .ldc-list tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
 .ldc-list td b{color:var(--ink); display:block; font-weight:500;}
@@ -6803,9 +6982,11 @@ export const LDC_CSS = `
 .ldr-stat .sep{font-style:normal; color:var(--grid); margin:0 10px;}
 /* flat labeled filter row above a table */
 .ldr-filters{display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin:0 0 10px;}
-.ldr-searchwrap{display:inline-flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:0 4px 0 9px; color:var(--muted);}
+/* Wider search — grows to fill the filter row up to a comfortable max so
+   full titles / client names fit without truncation. */
+.ldr-searchwrap{display:inline-flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:0 4px 0 9px; color:var(--muted); flex:1 1 320px; min-width:280px; max-width:460px;}
 .ldr-searchwrap:focus-within{border-color:var(--accent);}
-.ldr-search{font:inherit; font-size:12px; color:var(--ink); background:transparent; border:none; padding:6px 6px 6px 0; width:180px; outline:none;}
+.ldr-search{font:inherit; font-size:12px; color:var(--ink); background:transparent; border:none; padding:6px 6px 6px 0; width:100%; outline:none;}
 .ldr-flab{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--muted); white-space:nowrap;}
 .ldr-sel{font:inherit; font-size:12px; font-weight:600; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:5px 8px; outline:none; cursor:pointer;}
 .ldr-sel:focus{border-color:var(--accent);}
@@ -6816,7 +6997,7 @@ export const LDC_CSS = `
 .ldr-viewlink{background:none; border:0; padding:0; margin:0; font-family:inherit; font-size:12.5px; font-weight:600; color:#2563eb; cursor:pointer; text-underline-offset:2px;}
 .ldr-viewlink:hover{color:#1d4ed8; text-decoration:underline;}
 .ldr-viewlink:focus-visible{outline:2px solid #93c5fd; outline-offset:2px; border-radius:2px;}
-.ldr-pgn{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; padding:10px 15px; border-top:1px solid var(--grid);}
+.ldr-pgn{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; padding:10px 0 4px; border-top:1px solid var(--grid);}
 .ldr-pgn-info{font-size:12px; color:var(--muted);}
 .ldr-pgn-ctl{display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px;}
 .ldr-pgn-pages{display:inline-flex; align-items:center; gap:3px;}

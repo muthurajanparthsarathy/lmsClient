@@ -1,5 +1,5 @@
 // Shared types, constants and date helpers for the institute Holiday Calendar.
-import type { HolidayType, HolidayDuration } from '@/apiServices/instituteHolidayCalendarApi'
+import type { HolidayType, HolidayDuration } from '@/app/lms/pages/calendar/api/instituteHolidayCalendarApi'
 
 export type Holiday = {
     id: string

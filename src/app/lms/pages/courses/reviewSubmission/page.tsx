@@ -104,7 +104,7 @@ const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
 const inter = Inter({ subsets: ['latin'] });
 
 // API CONFIG
-// Was hardcoded to https://lmsserver-yeve.onrender.com, which made grading (every
+// Was hardcoded to http://localhost:5533, which made grading (every
 // /users/update/submission-score POST) work only on a developer machine.
 const BACKEND_API_URL = API_BASE_URL;
 const PISTON_API_URL = process.env.NEXT_PUBLIC_PISTON_URL || "https://emkc.org/api/v2/piston/execute";

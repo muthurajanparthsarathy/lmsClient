@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import type { ServiceMapping } from "@/apiServices/serviceMappingService";
+import type { ServiceMapping } from "@/app/lms/pages/servicemapping/api/serviceMappingService";
 import type { StatusPillTone } from "../../../shared/ui";
 
 // Presentation-only helpers shared by the Course Setup list's table and card

@@ -1,104 +1,98 @@
 "use client";
 
 /**
- * Performance Report Designer — a Canva-style overlay for #rep-performance,
- * modeled on the Attendance Detailed Report modal.
+ * Performance Report Designer — the container.
  *
- * Left drawer  = designer surface (scope readout, students, activities,
- *                sub-categories, grade bands, views, columns).
- * Right canvas = live preview that reacts to every drawer edit.
- * Top-right    = download menu (Excel / PDF) that ships whatever the canvas
- *                is currently showing — nothing more, nothing less.
+ * ─── What this file OWNS ───────────────────────────────────────────────────
+ *   • Selection state (learners, activities, sub-categories, grades, views,
+ *     roster columns, hidden sections, exercise picks, detailed toggle,
+ *     summary + question columns, expanded rows).
+ *   • React Query subscription to `/getAll/courses-data/:id` — only when a
+ *     single course is in scope, gated by `enabled: !!courseId && open`.
+ *   • Every derivation: workingRows, gradeSlices, subcatBars, stats,
+ *     activitySplit, exerciseRosters, breakdowns.
+ *   • The Excel and PDF exports, plus the SVG-to-PNG helper the PDF uses.
+ *   • The "removed" set for canvas × (kept separate from `views`, so hiding
+ *     never unticks the drawer choice).
  *
- * Data source is `useStaffAnalytics`'s already-derived per-student payload
- * (the same one PerformanceReport reads on the page). Sub-category buckets
- * are discovered from `progress.I_Do / We_Do / You_Do` object keys, so the
- * picker only offers what the courses in scope actually allocate. Grade
- * bands default to DEFAULT_GRADE_BANDS (Poor / Average / Good / Excellent
- * at 0 / 40 / 60 / 80) on the student's overall percentage — the same
- * bucket the assignment Reports view uses when an exercise has no custom
- * gradeSettings.
+ * ─── What it RENDERS ──────────────────────────────────────────────────────
+ * Only three components: DesignerHeader, DesignerRail + ControlsDrawer, and
+ * ReportCanvas. Every card/pill/chart lives in `performance-designer/`; this
+ * file's job is orchestration.
  *
- * The existing Generate → Customize modal on PerformanceReport is left
- * intact — this is an additional, more powerful entry point.
+ * ─── What it DOES NOT change ──────────────────────────────────────────────
+ * Grade thresholds, sub-category discovery, catalogue walking, picked-%
+ * math, `computeStudentMarks` calls, cache keys, exported prop shape
+ * (`PerfStudentRow`, `PerfCourseRow`), the shared `Props` interface, or any
+ * export column semantics. All of that was lifted verbatim to
+ * `performance-designer/model.ts` so the presentational layer can read the
+ * same constants without duplicating them.
+ *
+ * Both entry points (Overview and #rep-performance) still import this file;
+ * the extraction is component-internal.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-    BarChart3,
-    ChevronDown,
-    ChevronRight,
-    ChevronsLeft,
-    ChevronsRight,
-    Download,
-    FileSpreadsheet,
-    FileText,
-    Layers,
-    Loader2,
-    PieChart as PieIcon,
-    Search,
-    Settings2,
-    SlidersHorizontal,
-    Table as TableIcon,
-    X,
-} from "lucide-react";
-import {
-    Bar,
-    BarChart,
-    CartesianGrid,
-    Cell,
-    Legend as RLegend,
-    Pie,
-    PieChart,
-    ResponsiveContainer,
-    Tooltip as RTooltip,
-    XAxis,
-    YAxis,
-} from "recharts";
 import { useQuery } from "@tanstack/react-query";
 import { courseDataApi } from "@/apiServices/coursesData";
 import {
     computeStudentMarks,
-    findExerciseInCourseData,
-    getDynamicExerciseTotal,
     getExerciseGradeBands,
     getStudentQuestionsBreakdown,
     scaleForPercent,
     type QuestionBreakdownRow,
 } from "@/app/lms/pages/courses/manageUsers/reports/utils/computeStudentMarks";
+import {
+    ACTIVITIES,
+    ACTIVITY_SPLIT,
+    buildActivityOptions,
+    buildSubcatOptions,
+    COLUMNS,
+    DEFAULT_COLS,
+    DEFAULT_Q_COLS,
+    DEFAULT_SUM_COLS,
+    DEFAULT_VIEWS,
+    fmtDateT,
+    fmtTime,
+    gradeLabel,
+    gradeOf,
+    GRADE_BANDS,
+    pickedPercent,
+    prettySubcat,
+    Q_COLS,
+    Q_STATUS_LABEL,
+    STAGE_ROLE,
+    stagePerformancePercent,
+    subcatPercent,
+    SUM_COLS,
+    VIEWS,
+    walkCatalogue,
+    type ActivityStat,
+    type PerformanceStat,
+    type ColKey,
+    type ExRoster,
+    type ExRosterRow,
+    type GradeKey,
+    type GradeSlice,
+    type PerfCourseRow,
+    type PerfStudentRow,
+    type QColKey,
+    type Stage,
+    type StatsStrip,
+    type SubcatBar,
+    type SumColKey,
+    type ViewKey,
+    type WorkingRow,
+} from "./performance-designer/model";
+import { DesignerHeader } from "./performance-designer/DesignerHeader";
+import { DesignerRail } from "./performance-designer/DesignerRail";
+import { ControlsDrawer } from "./performance-designer/ControlsDrawer";
+import { ReportCanvas } from "./performance-designer/canvas/ReportCanvas";
+import { sectionDomId, type DrawerSectionId } from "./performance-designer/controls/sections";
 
-// ─────────────────────────────────────────────────────────────────────────
-// Public props — parent hands us the scope + already-derived analytics
-// rows so we don't refetch the 12-second staff analytics call.
-// ─────────────────────────────────────────────────────────────────────────
-export type PerfStudentRow = {
-    pid: string;
-    name: string;
-    email: string;
-    course: string;
-    courseId: string;
-    client: string;
-    overall: number;
-    iDo: number | null;
-    weDo: number | null;
-    youDo: number | null;
-    score: number | null;
-    last: string;
-    lastT: number;
-    /** Raw progress object (needed for sub-category slicing). */
-    progress: any;
-};
-
-export type PerfCourseRow = {
-    id: string;
-    name: string;
-    client: string;
-    students: number;
-    avg: number;
-    done: number;
-    prog: number;
-    not: number;
-};
+// Re-export the parent-facing types so `page.tsx` and every other importer
+// keeps compiling without an import path change.
+export type { PerfStudentRow, PerfCourseRow } from "./performance-designer/model";
 
 type Props = {
     open: boolean;
@@ -106,523 +100,84 @@ type Props = {
     baseStudents: PerfStudentRow[];
     baseCourseRows: PerfCourseRow[];
     scopeLabel: string;
-    /** Selected client / course names for the drawer readout — shown as their
-     *  own labeled rows ("Course: X · Client: Y") instead of one vague
-     *  "Scope" string. Empty / "all" means no narrowing. */
+    /** Selected client / course names for the drawer readout. */
     clientName?: string;
     courseName?: string;
     /** Set only when the page filter is narrowed to ONE course — enables the
      *  per-assignment / per-question drilldown, which needs the heavy
      *  /getAll/courses-data payload (pedagogy + participant answers). */
     courseId?: string;
+    /**
+     * Presentation shell:
+     *   - "modal"  (default) — old overlay dialog behaviour: fixed inset,
+     *                          backdrop, click-outside closes.
+     *   - "inline"           — no overlay chrome. The designer renders
+     *                          straight into the parent container so a
+     *                          full-page host (the new Reports page) can
+     *                          embed it without the modal wallpaper. The
+     *                          host controls the sidebar rail / drawer
+     *                          visibility via `showRail` / `showDrawer`
+     *                          below.
+     * Same state, same derivations, same exports — only the outer chrome
+     * changes. No parallel report logic.
+     */
+    variant?: "modal" | "inline";
+    /** Inline hosts can hide the icon rail (they usually don't have room
+     *  for it or drive it their own way). Defaults to true. */
+    showRail?: boolean;
+    /** Inline hosts can also hide the always-visible drawer and drive
+     *  filters through their own popover. Defaults to true. */
+    showDrawer?: boolean;
+    /** Inline hosts pass a header slot to override the built-in modal
+     *  chrome (title + Close). When set, DesignerHeader is skipped.
+     *  The helpers object exposes the underlying filter state + setters
+     *  so the host can render its own compact Filters popover (or any
+     *  other filter UX) driven by the same source of truth the drawer
+     *  would use — no parallel state, no re-implementation of filter
+     *  logic. */
+    renderHeader?: (helpers: {
+        canDownload: boolean;
+        onExcel: () => void;
+        onPdf: () => void;
+        busy: "" | "xlsx" | "pdf";
+        filters: FilterHelpers;
+    }) => React.ReactNode;
 };
 
-// ─── Grade bands (mirrors DEFAULT_GRADE_BANDS in the assignment Reports flow) ─
-const GRADE_BANDS = [
-    { key: "excellent", label: "Excellent", from: 80, to: 101, color: "#0E9F6E", tone: "good" },
-    { key: "good", label: "Good", from: 60, to: 80, color: "#2E90C4", tone: "brand" },
-    { key: "average", label: "Average", from: 40, to: 60, color: "#C77700", tone: "warn" },
-    { key: "poor", label: "Poor", from: 1, to: 40, color: "#B42318", tone: "bad" },
-    { key: "not", label: "Not started", from: 0, to: 1, color: "#98A2B3", tone: "muted" },
-] as const;
-type GradeKey = typeof GRADE_BANDS[number]["key"];
+/** Filter state + setters exposed to inline hosts via renderHeader.
+ *  Same identity the drawer's ControlsDrawer receives — the popover
+ *  and the drawer stay two views of the exact same state. */
+export type FilterHelpers = {
+    // Learning Stages
+    activityHas: Set<Stage>;
+    activities: Set<Stage>;
+    onToggleActivity: (s: Stage) => void;
 
-const gradeOf = (pctVal: number | null | undefined): GradeKey => {
-    const v = typeof pctVal === "number" ? pctVal : 0;
-    if (v <= 0) return "not";
-    if (v < 40) return "poor";
-    if (v < 60) return "average";
-    if (v < 80) return "good";
-    return "excellent";
-};
-const gradeLabel = (k: GradeKey) => GRADE_BANDS.find((g) => g.key === k)?.label || "—";
-const gradeColor = (k: GradeKey) => GRADE_BANDS.find((g) => g.key === k)?.color || "#94A3B8";
+    // Activity Types + Names (derived from filteredSubcatOpts + catalogue)
+    activityTypeOpts: string[];               // e.g. ["Assignment","Assessment","Practical"]
+    selectedActivityTypes: Set<string>;       // subset of activityTypeOpts currently "on"
+    onToggleActivityType: (name: string) => void;
+    exercisesByType: Record<string, { id: string; name: string }[]>;
+    exSel: Set<string> | null;
+    setExSel: (v: Set<string> | null) => void;
 
-// Which pedagogy grouping the report should target.
-const ACTIVITIES: { key: "I_Do" | "We_Do" | "You_Do"; label: string; hint: string }[] = [
-    { key: "I_Do", label: "I Do", hint: "Instructor-led — concept videos / MCQs" },
-    { key: "We_Do", label: "We Do", hint: "Guided practice — assignments, practical" },
-    { key: "You_Do", label: "You Do", hint: "Independent — assessments, projects" },
-];
+    // Grade Bands
+    grades: Set<GradeKey> | null;
+    onGrades: (v: Set<GradeKey> | null) => void;
 
-// Pretty labels for the raw sub-category keys the analytics payload uses.
-// Anything not on the list falls back to a title-cased version of the key
-// so newly added sub-types don't disappear from the picker.
-const SUBCAT_LABELS: Record<string, string> = {
-    Video: "Video",
-    video: "Video",
-    Reading: "Reading",
-    reading: "Reading",
-    Notes: "Notes",
-    notes: "Notes",
-    MCQ: "MCQ",
-    mcq: "MCQ",
-    Quiz: "Quiz",
-    quiz: "Quiz",
-    Assessment: "Assessment",
-    assessment: "Assessment",
-    assessments: "Assessment",
-    assesment: "Assessment",
-    Assignment: "Assignment",
-    assignment: "Assignment",
-    assignments: "Assignment",
-    practical: "Practical",
-    Practical: "Practical",
-    project_development: "Project development",
-    projects: "Project",
-    project: "Project",
-};
-const prettySubcat = (raw: string): string => {
-    if (SUBCAT_LABELS[raw]) return SUBCAT_LABELS[raw];
-    return raw
-        .replace(/[_-]+/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+    // Include in Report
+    views: Set<ViewKey>;
+    onToggleView: (k: ViewKey) => void;
+    onAllViews: () => void;
+
+    // Roster Columns
+    cols: Set<ColKey>;
+    onToggleCol: (k: ColKey) => void;
+
+    // Reset everything to defaults
+    onReset: () => void;
 };
 
-// ─── Views the canvas can render (multi-select). ─────────────────────────
-type ViewKey = "stats" | "activities" | "gradePie" | "subcatBars" | "courses" | "roster" | "exerciseDetail";
-const VIEWS: { key: ViewKey; label: string; icon: React.FC<{ className?: string }> }[] = [
-    { key: "stats", label: "Summary stats", icon: SlidersHorizontal },
-    { key: "activities", label: "I Do · We Do · You Do", icon: PieIcon },
-    { key: "gradePie", label: "Grade distribution", icon: BarChart3 },
-    { key: "subcatBars", label: "Sub-category bars", icon: BarChart3 },
-    { key: "courses", label: "Courses table", icon: TableIcon },
-    { key: "roster", label: "Roster (with grade)", icon: TableIcon },
-    { key: "exerciseDetail", label: "Assignment / Assessment detail", icon: Layers },
-];
-
-// Fixed identity colors for the three pedagogy stages — used by the Activities
-// pie + bar so I Do / We Do / You Do read the same in preview and PDF.
-const ACTIVITY_SPLIT: { key: "iDo" | "weDo" | "youDo"; label: string; color: string; hint: string }[] = [
-    { key: "iDo", label: "I Do", color: "#2E90C4", hint: "instructor-led" },
-    { key: "weDo", label: "We Do", color: "#F97316", hint: "guided practice" },
-    { key: "youDo", label: "You Do", color: "#0E9F6E", hint: "independent work" },
-];
-
-// ─── Roster columns the user can toggle. ─────────────────────────────────
-type ColKey =
-    | "email"
-    | "course"
-    | "client"
-    | "overall"
-    | "iDo"
-    | "weDo"
-    | "youDo"
-    | "subcatPct"
-    | "score"
-    | "grade"
-    | "last";
-
-const COLUMNS: { key: ColKey; label: string; hint: string; r?: boolean }[] = [
-    { key: "email", label: "Email", hint: "Student email address" },
-    { key: "course", label: "Course", hint: "Enrolled course name" },
-    { key: "client", label: "Client", hint: "Client / institution" },
-    { key: "overall", label: "Overall %", hint: "Attempts vs exercises", r: true },
-    { key: "iDo", label: "I Do %", hint: "Instructor-led completion", r: true },
-    { key: "weDo", label: "We Do %", hint: "Guided practice completion", r: true },
-    { key: "youDo", label: "You Do %", hint: "Independent completion", r: true },
-    { key: "subcatPct", label: "Selected %", hint: "Avg % across chosen activities + sub-categories", r: true },
-    { key: "score", label: "Score %", hint: "Marks earned on We Do / You Do work", r: true },
-    { key: "grade", label: "Grade", hint: "Band based on the selected %", r: false },
-    { key: "last", label: "Last active", hint: "Most recent activity timestamp" },
-];
-
-const DEFAULT_COLS: ColKey[] = ["email", "course", "overall", "subcatPct", "grade", "last"];
-const DEFAULT_VIEWS: ViewKey[] = ["stats", "activities", "gradePie", "subcatBars", "roster"];
-
-// ─── Per-exercise drilldown (mirrors assignment Dashboard → Reports view) ─
-// Summary columns shown on the outer roster row (like SUMMARY_COLUMNS in
-// courses/manageUsers/reports/components/ReportExportModal). Student Name +
-// Email are always on — the picker toggles the rest.
-type SumColKey =
-    | "totalQ"
-    | "completed"
-    | "nonCompleted"
-    | "testStatus"
-    | "totalMarks"
-    | "scoredMarks"
-    | "percentage"
-    | "scale";
-
-const SUM_COLS: { key: SumColKey; label: string; hint: string; r?: boolean }[] = [
-    { key: "totalQ", label: "Total Questions", hint: "Questions on the exercise", r: true },
-    { key: "completed", label: "Completed", hint: "Answered questions", r: true },
-    { key: "nonCompleted", label: "Non Completed", hint: "Skipped / unanswered", r: true },
-    { key: "testStatus", label: "Test Status", hint: "Not Started / Started / Submitted" },
-    { key: "totalMarks", label: "Total Marks", hint: "Max marks for the exercise", r: true },
-    { key: "scoredMarks", label: "Scored Marks", hint: "Marks the student earned", r: true },
-    { key: "percentage", label: "Percentage", hint: "scored / total × 100", r: true },
-    { key: "scale", label: "Scale", hint: "Grade band (per-exercise gradeSettings, else default)" },
-];
-const DEFAULT_SUM_COLS: SumColKey[] = [
-    "totalQ",
-    "completed",
-    "nonCompleted",
-    "testStatus",
-    "totalMarks",
-    "scoredMarks",
-    "percentage",
-    "scale",
-];
-
-// Per-question detail columns (inner table when a student row is expanded).
-// Same catalogue as DETAIL_COLUMNS in ReportExportModal so the two flows
-// stay visually consistent.
-type QColKey =
-    | "qno"
-    | "title"
-    | "type"
-    | "status"
-    | "totalMark"
-    | "scoredMark"
-    | "submittedAt"
-    | "timeTaken";
-
-const Q_COLS: { key: QColKey; label: string; hint: string; r?: boolean }[] = [
-    { key: "qno", label: "Q. No.", hint: "Question number", r: true },
-    { key: "title", label: "Title", hint: "Question title" },
-    { key: "type", label: "Type", hint: "MCQ / Programming / etc." },
-    { key: "status", label: "Status", hint: "Evaluated / Submitted / Not Answered / Pending" },
-    { key: "totalMark", label: "Total Mark", hint: "Max mark for this question", r: true },
-    { key: "scoredMark", label: "Scored Mark", hint: "Mark this student earned", r: true },
-    { key: "submittedAt", label: "Submitted At", hint: "Timestamp of last submission" },
-    { key: "timeTaken", label: "Time Taken", hint: "Wall-clock time on this question" },
-];
-const DEFAULT_Q_COLS: QColKey[] = [
-    "qno",
-    "title",
-    "type",
-    "status",
-    "totalMark",
-    "scoredMark",
-    "submittedAt",
-    "timeTaken",
-];
-
-// One entry per assignment / assessment discovered in the course pedagogy.
-// Path = "Module → (Sub-module → )Topic → (Sub-topic → )Sub-category" so a
-// head glancing at the list knows which cell of the syllabus each exercise
-// lives under.
-type CatalogueEx = {
-    id: string;
-    name: string;
-    path: string;
-    stage: "We_Do" | "You_Do";
-    subCategory: string;
-    exercise: any;
-    totalMarks: number;
-    totalQuestions: number;
-};
-
-const SUBCAT_INCLUDE = new Set([
-    // We_Do
-    "assignments", "assignment", "practical", "project_development", "assessments", "assesments",
-    // You_Do
-    "assessment", "Assessment", "assesment",
-]);
-
-function walkCatalogue(courseData: any): CatalogueEx[] {
-    if (!courseData?.modules || !Array.isArray(courseData.modules)) return [];
-    const out: CatalogueEx[] = [];
-    const seen = new Set<string>();
-
-    const scan = (pedagogy: any, path: string) => {
-        if (!pedagogy) return;
-        (["We_Do", "You_Do"] as const).forEach((stage) => {
-            const tabData = pedagogy[stage];
-            if (!tabData || typeof tabData !== "object") return;
-            for (const [rawKey, list] of Object.entries(tabData)) {
-                if (!Array.isArray(list)) continue;
-                if (!SUBCAT_INCLUDE.has(rawKey)) continue;
-                for (const ex of list as any[]) {
-                    const id = String(ex?._id || ex?.exerciseInformation?.exerciseId || "");
-                    if (!id || seen.has(id)) continue;
-                    seen.add(id);
-                    const name =
-                        ex?.exerciseInformation?.exerciseName ||
-                        ex?.title ||
-                        ex?.name ||
-                        "Untitled exercise";
-                    const subCategory = prettySubcat(rawKey);
-                    const fullPath = `${path} · ${ACTIVITIES.find((a) => a.key === stage)?.label} · ${subCategory}`;
-                    out.push({
-                        id,
-                        name,
-                        path: fullPath,
-                        stage,
-                        subCategory,
-                        exercise: ex,
-                        totalMarks: getDynamicExerciseTotal(ex),
-                        totalQuestions: Array.isArray(ex?.questions) ? ex.questions.length : 0,
-                    });
-                }
-            }
-        });
-    };
-
-    for (const mod of courseData.modules) {
-        const mPath = mod?.title || "Module";
-        scan(mod?.pedagogy, mPath);
-
-        for (const topic of mod?.topics || []) {
-            const tPath = `${mPath} → ${topic?.title || "Topic"}`;
-            scan(topic?.pedagogy, tPath);
-            for (const st of topic?.subTopics || []) {
-                scan(st?.pedagogy, `${tPath} → ${st?.title || "Subtopic"}`);
-            }
-        }
-
-        for (const sub of mod?.subModules || []) {
-            const sPath = `${mPath} → ${sub?.title || "Sub-module"}`;
-            scan(sub?.pedagogy, sPath);
-            for (const topic of sub?.topics || []) {
-                const tPath = `${sPath} → ${topic?.title || "Topic"}`;
-                scan(topic?.pedagogy, tPath);
-                for (const st of topic?.subTopics || []) {
-                    scan(st?.pedagogy, `${tPath} → ${st?.title || "Subtopic"}`);
-                }
-            }
-        }
-    }
-
-    return out.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-// Time formatter (HH:MM:SS or MM:SS) matching ReportExportModal so the
-// detail rows line up with what the assignment Reports flow shows.
-const fmtTime = (secs: number | null | undefined): string => {
-    if (typeof secs !== "number" || !Number.isFinite(secs) || secs <= 0) return "—";
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = Math.floor(secs % 60);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-};
-const fmtDateT = (iso: string | null): string => {
-    if (!iso) return "—";
-    try {
-        return new Date(iso).toLocaleString("en-GB", {
-            day: "2-digit", month: "short", year: "numeric",
-            hour: "2-digit", minute: "2-digit",
-        });
-    } catch {
-        return iso;
-    }
-};
-
-const Q_STATUS_LABEL: Record<QuestionBreakdownRow["status"], string> = {
-    evaluated: "Evaluated",
-    submitted: "Submitted",
-    not_answered: "Not Answered",
-    pending: "Pending",
-};
-const Q_STATUS_TONE: Record<QuestionBreakdownRow["status"], string> = {
-    evaluated: "bg-success-500/15 text-success-500",
-    submitted: "bg-brand-500/15 text-brand-strong",
-    not_answered: "bg-danger-500/15 text-danger-500",
-    pending: "bg-subtle/15 text-subtle",
-};
-
-// ─── Helpers ─────────────────────────────────────────────────────────────
-// Read progress[stage][subcat] as { completed, total, percentage }. Used
-// for both the sub-category catalogue and the per-student calculation.
-type PSub = { completed: number; total: number; percentage?: number };
-const readSubcat = (progress: any, stage: string, subcat: string): PSub | null => {
-    const stg = progress?.[stage];
-    if (!stg || typeof stg !== "object") return null;
-    const s = stg[subcat];
-    if (!s || typeof s !== "object" || !("total" in s)) return null;
-    return {
-        completed: Number(s.completed) || 0,
-        total: Number(s.total) || 0,
-        percentage: typeof s.percentage === "number" ? s.percentage : undefined,
-    };
-};
-
-// Per-student % for one (stage, subcat). Prefers server-side `percentage`
-// (score-weighted for We_Do / You_Do), falls back to completed/total.
-const subcatPercent = (progress: any, stage: string, subcat: string): number | null => {
-    const s = readSubcat(progress, stage, subcat);
-    if (!s || s.total <= 0) return null;
-    if (typeof s.percentage === "number") return s.percentage;
-    return Math.round((s.completed / s.total) * 100);
-};
-
-// Per-student % across the picked (stage, subcat) selection. Same
-// completion/total math as `stageDone` — sum completed vs sum total across
-// the buckets that survive the filter. Returns null when nothing applies.
-const pickedPercent = (
-    progress: any,
-    activities: Set<"I_Do" | "We_Do" | "You_Do">,
-    subcats: Set<string>,
-): number | null => {
-    let comp = 0;
-    let tot = 0;
-    activities.forEach((stage) => {
-        const stg = progress?.[stage];
-        if (!stg || typeof stg !== "object") return;
-        Object.entries(stg).forEach(([key, sub]: [string, any]) => {
-            if (!subcats.has(`${stage}:${key}`)) return;
-            if (!sub || typeof sub !== "object" || !("total" in sub)) return;
-            comp += Number(sub.completed) || 0;
-            tot += Number(sub.total) || 0;
-        });
-    });
-    return tot > 0 ? Math.round((comp / tot) * 100) : null;
-};
-
-// Discover every (stage, subcat) pair that at least one student in scope
-// has any content for. Keys become the sub-category picker options.
-type SubcatOpt = { id: string; stage: "I_Do" | "We_Do" | "You_Do"; subcat: string; label: string };
-const buildSubcatOptions = (rows: PerfStudentRow[]): SubcatOpt[] => {
-    const seen = new Map<string, SubcatOpt>();
-    for (const r of rows) {
-        const prog = r.progress || {};
-        for (const stage of ACTIVITIES.map((a) => a.key)) {
-            const stg = prog[stage];
-            if (!stg || typeof stg !== "object") continue;
-            for (const [subcat, sub] of Object.entries(stg)) {
-                const s = sub as any;
-                if (!s || typeof s !== "object" || !("total" in s)) continue;
-                if ((Number(s.total) || 0) <= 0) continue;
-                const id = `${stage}:${subcat}`;
-                if (!seen.has(id)) {
-                    seen.set(id, {
-                        id,
-                        stage: stage as any,
-                        subcat,
-                        label: `${ACTIVITIES.find((a) => a.key === stage)?.label} · ${prettySubcat(subcat)}`,
-                    });
-                }
-            }
-        }
-    }
-    return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
-};
-
-// Discover activities with at least some content across the scope.
-const buildActivityOptions = (rows: PerfStudentRow[]): Set<"I_Do" | "We_Do" | "You_Do"> => {
-    const out = new Set<"I_Do" | "We_Do" | "You_Do">();
-    for (const r of rows) {
-        for (const stage of ACTIVITIES.map((a) => a.key)) {
-            if (out.has(stage)) continue;
-            const stg = r.progress?.[stage];
-            if (!stg || typeof stg !== "object") continue;
-            const hit = Object.values(stg).some((s: any) => s && typeof s === "object" && (Number(s.total) || 0) > 0);
-            if (hit) out.add(stage);
-        }
-    }
-    return out;
-};
-
-// ─── Small reusable checkbox multi-select. Owns its open/close state ────
-function MultiPickBox({
-    label,
-    options,
-    sel,
-    onChange,
-    empty,
-}: {
-    label: string;
-    options: { id: string; name: string; sub?: string }[];
-    sel: Set<string> | null; // null = "all"
-    onChange: (v: Set<string> | null) => void;
-    empty?: string;
-}) {
-    const [open, setOpen] = useState(false);
-    const [q, setQ] = useState("");
-    const boxRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (!open) return;
-        const h = (e: MouseEvent) => {
-            if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
-        };
-        document.addEventListener("mousedown", h);
-        return () => document.removeEventListener("mousedown", h);
-    }, [open]);
-    const t = q.trim().toLowerCase();
-    const shown = t
-        ? options.filter((o) => o.name.toLowerCase().includes(t) || (o.sub || "").toLowerCase().includes(t))
-        : options;
-    const toggle = (id: string) => {
-        const next = new Set(sel === null ? options.map((o) => o.id) : sel);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        onChange(next.size === options.length ? null : next);
-    };
-    const count = sel === null ? options.length : sel.size;
-    return (
-        <div className="relative" ref={boxRef}>
-            <button
-                type="button"
-                onClick={() => setOpen((v) => !v)}
-                className="flex h-8 w-full items-center justify-between rounded-md border border-hairline bg-surface px-2.5 text-[11px] font-medium text-heading hover:border-hairline-strong transition-colors"
-            >
-                <span className="truncate">
-                    {label}: {sel === null ? "All" : `${count} of ${options.length}`}
-                </span>
-                <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
-            </button>
-            {open ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-64 overflow-hidden rounded-md border border-hairline bg-surface p-1.5 shadow-lg">
-                    <div className="relative mb-1.5">
-                        <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-faint" />
-                        <input
-                            type="search"
-                            value={q}
-                            onChange={(e) => setQ(e.target.value)}
-                            placeholder={`Search ${label.toLowerCase()}…`}
-                            className="h-7 w-full rounded border border-hairline bg-surface pl-6 pr-2 text-[11px] text-body outline-none focus:border-brand-500"
-                        />
-                    </div>
-                    <div className="max-h-40 overflow-y-auto">
-                        {shown.length === 0 ? (
-                            <div className="px-2 py-2 text-[10px] text-subtle">{empty || "No matches"}</div>
-                        ) : (
-                            shown.map((o) => (
-                                <label
-                                    key={o.id}
-                                    className="flex cursor-pointer items-start gap-2 rounded px-2 py-1 hover:bg-row-hover"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={sel === null || sel.has(o.id)}
-                                        onChange={() => toggle(o.id)}
-                                        className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
-                                    />
-                                    <span className="flex-1 min-w-0">
-                                        <span className="block text-[11px] font-medium text-body">{o.name}</span>
-                                        {o.sub ? (
-                                            <span className="block truncate text-[10px] text-faint">{o.sub}</span>
-                                        ) : null}
-                                    </span>
-                                </label>
-                            ))
-                        )}
-                    </div>
-                    <div className="mt-1 flex gap-1.5 border-t border-hairline pt-1.5">
-                        <button
-                            type="button"
-                            onClick={() => onChange(null)}
-                            className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-brand-strong hover:bg-brand-wash"
-                        >
-                            All
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => onChange(new Set())}
-                            className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-subtle hover:bg-row-hover"
-                        >
-                            Clear
-                        </button>
-                    </div>
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
-// ─── Main modal ──────────────────────────────────────────────────────────
 export default function PerformanceReportDesignerModal({
     open,
     onClose,
@@ -632,17 +187,19 @@ export default function PerformanceReportDesignerModal({
     clientName,
     courseName,
     courseId,
+    variant = "modal",
+    showRail = true,
+    showDrawer = true,
+    renderHeader,
 }: Props) {
-    // Designer state
-    const [drawerCollapsed, setDrawerCollapsed] = useState(false);
+    // ── Selection state ────────────────────────────────────────────────────
+    const [collapsed, setCollapsed] = useState(false);
     const [downloadOpen, setDownloadOpen] = useState(false);
     const [busy, setBusy] = useState<"" | "xlsx" | "pdf">("");
     const [views, setViews] = useState<Set<ViewKey>>(new Set(DEFAULT_VIEWS));
     const [cols, setCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS));
     const [studentSel, setStudentSel] = useState<Set<string> | null>(null);
-    const [activities, setActivities] = useState<Set<"I_Do" | "We_Do" | "You_Do">>(
-        () => new Set(["I_Do", "We_Do", "You_Do"]),
-    );
+    const [activities, setActivities] = useState<Set<Stage>>(() => new Set<Stage>(["I_Do", "We_Do", "You_Do"]));
     const [subcats, setSubcats] = useState<Set<string> | null>(null); // null = all
     const [grades, setGrades] = useState<Set<GradeKey> | null>(null); // null = all
     // Sections removed on the canvas via ×. Kept independent of the drawer's
@@ -661,12 +218,17 @@ export default function PerformanceReportDesignerModal({
     // row); when on, each row can drill into the per-question inner table.
     const [detailed, setDetailed] = useState(true);
 
+    // Which drawer section is currently under the scroll head — the rail lights it.
+    const [activeSection, setActiveSection] = useState<DrawerSectionId>("scope");
+
     // Fetch full course data ONLY when a single course is in scope — the
     // pedagogy tree + participant answers are what powers per-question detail.
     // Uses the SAME cache key `["course", id, activeBatchId]` the review /
     // reports pages read, so no duplicate request when they've already loaded it.
     const courseDataQuery = useQuery({
-        ...(courseId ? courseDataApi.getById(courseId) : { queryKey: ["course-detail-skip"], queryFn: async () => null as any }),
+        ...(courseId
+            ? courseDataApi.getById(courseId)
+            : { queryKey: ["course-detail-skip"], queryFn: async () => null as any }),
         enabled: !!courseId && open,
     });
     const courseData = (courseDataQuery.data as any)?.data ?? null;
@@ -686,12 +248,15 @@ export default function PerformanceReportDesignerModal({
     }, [courseData]);
 
     const downloadRef = useRef<HTMLDivElement>(null);
+    const drawerBodyRef = useRef<HTMLDivElement | null>(null);
     // Live preview section nodes, keyed by ViewKey. The PDF export rasterises
-    // the recharts <svg> found inside chart sections (gradePie, subcatBars) so
-    // the downloaded file carries the SAME graphs the canvas shows — the
-    // tables alone used to stand in for them. Same pattern as the Attendance
-    // Detailed Report modal (AttendanceReportModal.svgToPng).
+    // the recharts <svg> found inside chart sections (gradePie, subcatBars,
+    // activities) so the downloaded file carries the SAME graphs the canvas
+    // shows.
     const chartRefs = useRef<Record<string, HTMLElement | null>>({});
+    const registerChartRef = (k: ViewKey, el: HTMLElement | null) => {
+        chartRefs.current[k] = el;
+    };
 
     // Close download menu on outside click.
     useEffect(() => {
@@ -738,20 +303,6 @@ export default function PerformanceReportDesignerModal({
         return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
     }, [baseStudents]);
 
-    const gradeOpts = useMemo(
-        () => GRADE_BANDS.map((g) => ({ id: g.key, name: g.label })),
-        [],
-    );
-    const activityOpts = useMemo(
-        () =>
-            ACTIVITIES.filter((a) => activityHas.has(a.key)).map((a) => ({
-                id: a.key,
-                name: a.label,
-                sub: a.hint,
-            })),
-        [activityHas],
-    );
-
     // Sub-cat multipick options are filtered by which activities are on so
     // deselecting "We Do" hides the assignment/practical buckets it owns.
     const filteredSubcatOpts = useMemo(
@@ -769,11 +320,11 @@ export default function PerformanceReportDesignerModal({
         return subcats;
     }, [subcats, filteredSubcatOpts]);
 
-    const workingRows = useMemo(() => {
+    const workingRows = useMemo<WorkingRow[]>(() => {
         const pickSet = studentSel;
         const rows = baseStudents
             .filter((s) => (pickSet === null ? true : pickSet.has(s.pid)))
-            .map((s) => {
+            .map((s): WorkingRow => {
                 const selectedPct = pickedPercent(s.progress, activities, selectedSubcatSet);
                 // "Grade %" — the metric we band into Excellent/Good/… — prefers
                 // the picked slice when we have one, otherwise falls back to the
@@ -788,13 +339,13 @@ export default function PerformanceReportDesignerModal({
 
     // Course-level rollup restricted to the current row set so the Courses
     // table on the canvas never shows a course with zero surviving students.
-    const courseRows = useMemo(() => {
+    const courseRows = useMemo<PerfCourseRow[]>(() => {
         const keep = new Set(workingRows.map((r) => r.courseId));
         return baseCourseRows.filter((c) => keep.has(c.id));
     }, [baseCourseRows, workingRows]);
 
     // Grade distribution across the surviving rows.
-    const gradeSlices = useMemo(() => {
+    const gradeSlices = useMemo<GradeSlice[]>(() => {
         const counts: Record<GradeKey, number> = { excellent: 0, good: 0, average: 0, poor: 0, not: 0 };
         for (const r of workingRows) counts[r.grade] += 1;
         return GRADE_BANDS.map((g) => ({
@@ -806,7 +357,7 @@ export default function PerformanceReportDesignerModal({
     }, [workingRows]);
 
     // Per (activity, sub-category) average across selected rows.
-    const subcatBars = useMemo(() => {
+    const subcatBars = useMemo<SubcatBar[]>(() => {
         return filteredSubcatOpts
             .filter((o) => selectedSubcatSet.has(o.id))
             .map((o) => {
@@ -822,7 +373,7 @@ export default function PerformanceReportDesignerModal({
     }, [filteredSubcatOpts, selectedSubcatSet, workingRows]);
 
     // Aggregate stats strip.
-    const stats = useMemo(() => {
+    const stats = useMemo<StatsStrip>(() => {
         const total = workingRows.length;
         const avgOverall = total
             ? Math.round(workingRows.reduce((s, r) => s + r.overall, 0) / total)
@@ -844,7 +395,7 @@ export default function PerformanceReportDesignerModal({
     // Per-activity (I Do / We Do / You Do) mean completion across the surviving
     // rows — the readable split the flat "Avg overall %" card never gave.
     // null = no student carries that stage (e.g. a course with no I Do work).
-    const activitySplit = useMemo(
+    const activitySplit = useMemo<ActivityStat[]>(
         () =>
             ACTIVITY_SPLIT.map((a) => {
                 const vals = workingRows
@@ -858,51 +409,40 @@ export default function PerformanceReportDesignerModal({
             }),
         [workingRows],
     );
-    const activityChartRows = activitySplit.filter((a) => a.avg !== null) as Array<
-        (typeof activitySplit)[number] & { avg: number }
-    >;
+    const activityChartRows = activitySplit.filter((a) => a.avg !== null) as Array<ActivityStat & { avg: number }>;
+
+    // Per-stage SCORE-WEIGHTED average — the Learning Performance section's
+    // data. Parallel to `activitySplit` above, but reads
+    // `progress[stage][subcat].percentage` (score-weighted for We_Do /
+    // You_Do) instead of the completion columns. Stages without any
+    // score-based bucket in scope come through with avg=null — the
+    // Performance card renders those as "N/A · No score-based evaluation"
+    // instead of a misleading 0%.
+    const performanceSplit = useMemo<PerformanceStat[]>(
+        () =>
+            ACTIVITY_SPLIT.map((a) => {
+                const vals: number[] = [];
+                for (const r of workingRows) {
+                    const v = stagePerformancePercent(r.progress, a.stage);
+                    if (v !== null) vals.push(v);
+                }
+                return {
+                    ...a,
+                    avg: vals.length ? Math.round(vals.reduce((x, y) => x + y, 0) / vals.length) : null,
+                    learners: vals.length,
+                };
+            }),
+        [workingRows],
+    );
 
     // ── Per-exercise drilldown data ──────────────────────────────────────
     // Which of the catalogue's exercises are actually selected. `null` = all,
     // empty Set = none (initial state — user hasn't picked yet).
     const activeExercises = useMemo(() => {
-        if (!catalogue.length) return [] as CatalogueEx[];
+        if (!catalogue.length) return [] as typeof catalogue;
         if (exSel === null) return catalogue;
         return catalogue.filter((e) => exSel.has(e.id));
     }, [catalogue, exSel]);
-
-    // For each selected exercise, compute one summary row per surviving
-    // student in scope (workingRows). Heavy: iterates rows × exercises and
-    // walks the answer tree for each — but only for what the head picked.
-    type ExRosterRow = {
-        pid: string;
-        name: string;
-        email: string;
-        totalMarks: number;
-        scoredMarks: number | null;
-        totalQuestions: number;
-        completed: number;
-        nonCompleted: number;
-        hasSubmitted: boolean;
-        parentSubmitted: boolean;
-        testStatus: "not-started" | "started" | "submitted";
-        percentage: number | null;
-        scale: string;
-    };
-    type ExRoster = {
-        ex: CatalogueEx;
-        gradeBands: ReturnType<typeof getExerciseGradeBands>;
-        rows: ExRosterRow[];
-        stats: {
-            students: number;
-            submitted: number;
-            started: number;
-            notStarted: number;
-            avgPct: number | null;
-            passCount: number;
-            failCount: number;
-        };
-    };
 
     const exerciseRosters = useMemo<ExRoster[]>(() => {
         if (!courseData || activeExercises.length === 0 || workingRows.length === 0) return [];
@@ -992,9 +532,7 @@ export default function PerformanceReportDesignerModal({
         return out;
     }, [courseData, activeExercises, workingRows, participants, courseId]);
 
-    // Per-question breakdown for expanded rows only. Recomputed lazily via
-    // memo keyed on the expanded set + participants, so re-renders that don't
-    // change expansion don't re-walk the answer tree.
+    // Per-question breakdown for expanded rows only.
     const breakdowns = useMemo(() => {
         const map = new Map<string, QuestionBreakdownRow[]>();
         if (!courseData || expanded.size === 0) return map;
@@ -1036,8 +574,6 @@ export default function PerformanceReportDesignerModal({
         });
     // If the drawer re-enables a section that had been removed, bring it back.
     useEffect(() => {
-        // Any removed key that is no longer in views can stay removed harmlessly.
-        // Any key that IS in views but was removed → drop from removed so it renders.
         setRemoved((prev) => {
             const next = new Set(prev);
             let changed = false;
@@ -1051,6 +587,32 @@ export default function PerformanceReportDesignerModal({
         });
     }, [views]);
 
+    // ── Toggle helpers ────────────────────────────────────────────────────
+    const toggleSet = <T,>(current: Set<T>, key: T): Set<T> => {
+        const next = new Set(current);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+    };
+    const onToggleView = (k: ViewKey) => setViews((s) => toggleSet(s, k));
+    const onAllViews = () => setViews(new Set(VIEWS.map((v) => v.key)));
+    const onToggleCol = (k: ColKey) => setCols((s) => toggleSet(s, k));
+    const onToggleActivity = (s: Stage) => setActivities((prev) => toggleSet(prev, s));
+    const onToggleSum = (k: SumColKey) => setSumCols((s) => toggleSet(s, k));
+    const onToggleQ = (k: QColKey) => setQCols((s) => toggleSet(s, k));
+
+    const jumpToSection = (id: DrawerSectionId) => {
+        if (collapsed) setCollapsed(false);
+        // Wait a frame if we just uncollapsed, then scroll.
+        requestAnimationFrame(() => {
+            const body = drawerBodyRef.current;
+            if (!body) return;
+            const node = body.querySelector<HTMLElement>(`#${sectionDomId(id)}`);
+            if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        setActiveSection(id);
+    };
+
     // ── Export helpers ────────────────────────────────────────────────────
     const activeCols = COLUMNS.filter((c) => cols.has(c.key));
     const activeSubcatOpts = filteredSubcatOpts.filter((o) => selectedSubcatSet.has(o.id));
@@ -1061,7 +623,7 @@ export default function PerformanceReportDesignerModal({
     const subcatLine = `Activities: ${activeActivityLabels || "—"} · Sub-cats: ${activeSubcatOpts.length ? activeSubcatOpts.length : "all"} of ${filteredSubcatOpts.length}`;
     const gradeLine = grades === null ? "All grades" : [...grades].map((g) => gradeLabel(g)).join(", ");
 
-    const cellText = (r: (typeof workingRows)[number], c: ColKey): string => {
+    const cellText = (r: WorkingRow, c: ColKey): string => {
         switch (c) {
             case "email":
                 return r.email || "";
@@ -1090,7 +652,7 @@ export default function PerformanceReportDesignerModal({
         }
     };
 
-    const cellNumber = (r: (typeof workingRows)[number], c: ColKey): number | string => {
+    const cellNumber = (r: WorkingRow, c: ColKey): number | string => {
         switch (c) {
             case "overall":
                 return r.overall;
@@ -1139,7 +701,7 @@ export default function PerformanceReportDesignerModal({
             // Summary sheet — always present so the file can never be empty.
             const ws = wb.addWorksheet("Summary");
             ws.columns = [{ width: 34 }, { width: 40 }];
-            ws.addRow(["Performance Report"]).getCell(1).style = { font: { bold: true, size: 13 } };
+            ws.addRow(["Learner Progress & Performance Report"]).getCell(1).style = { font: { bold: true, size: 13 } };
             ws.addRow(["Scope", scopeLabel || "All clients · all courses"]);
             ws.addRow(["Students", stats.total]);
             ws.addRow(["Activities", activeActivityLabels || "—"]);
@@ -1152,11 +714,11 @@ export default function PerformanceReportDesignerModal({
                 h.eachCell((c: any) => (c.style = header));
                 const st: [string, string | number][] = [
                     ["Total students", stats.total],
-                    // Per-activity averages instead of the blended "Avg overall %".
                     ...activitySplit.map((a): [string, string] => [
-                        `${a.label} avg % (${a.hint})`,
+                        `${a.label} avg % (${STAGE_ROLE[a.stage]})`,
                         a.avg === null ? "N/A" : `${a.avg}%`,
                     ]),
+                    ["Selected % (avg)", stats.avgSelected === null ? "N/A" : `${stats.avgSelected}%`],
                     ["Avg score %", stats.avgScore === null ? "—" : `${stats.avgScore}%`],
                     ["Excellent (≥80%)", stats.excellent],
                     ["At risk (<40%)", stats.atRisk],
@@ -1169,10 +731,22 @@ export default function PerformanceReportDesignerModal({
             }
             if (shouldShow("activities")) {
                 ws.addRow([]);
-                const h = ws.addRow(["Activity", "Avg %", "Learners"]);
+                ws.addRow(["Learning Journey — Completion"]).getCell(1).style = { font: { bold: true, size: 12 } };
+                const h = ws.addRow(["Stage", "Role", "Completion %", "Learners"]);
                 h.eachCell((c: any) => (c.style = header));
                 activitySplit.forEach((a) => {
-                    const row = ws.addRow([`${a.label} (${a.hint})`, a.avg === null ? "N/A" : `${a.avg}%`, a.learners]);
+                    const row = ws.addRow([a.label, STAGE_ROLE[a.stage], a.avg === null ? "N/A" : `${a.avg}%`, a.learners]);
+                    row.eachCell((c: any) => (c.style = bordered));
+                });
+            }
+            if (shouldShow("activitiesPerformance")) {
+                ws.addRow([]);
+                ws.addRow(["Learning Performance"]).getCell(1).style = { font: { bold: true, size: 12 } };
+                const h = ws.addRow(["Stage", "Descriptor", "Score %", "Learners"]);
+                h.eachCell((c: any) => (c.style = header));
+                performanceSplit.forEach((a) => {
+                    const roleP = a.stage === "I_Do" ? "Concept Performance" : a.stage === "We_Do" ? "Guided Performance" : "Independent Performance";
+                    const row = ws.addRow([a.label, roleP, a.avg === null ? "N/A" : `${a.avg}%`, a.learners]);
                     row.eachCell((c: any) => (c.style = bordered));
                 });
             }
@@ -1197,7 +771,7 @@ export default function PerformanceReportDesignerModal({
 
             if (shouldShow("courses")) {
                 const cs = wb.addWorksheet("Courses");
-                const cols = [
+                const csCols = [
                     { header: "Course", key: "name", width: 28 },
                     { header: "Client", key: "client", width: 18 },
                     { header: "Students", key: "students", width: 12 },
@@ -1206,7 +780,7 @@ export default function PerformanceReportDesignerModal({
                     { header: "In progress", key: "prog", width: 12 },
                     { header: "Not started", key: "not", width: 12 },
                 ];
-                cs.columns = cols;
+                cs.columns = csCols;
                 const hr = cs.getRow(1);
                 hr.height = 22;
                 hr.eachCell((c: any) => (c.style = header));
@@ -1214,7 +788,7 @@ export default function PerformanceReportDesignerModal({
                     const row = cs.addRow([c.name, c.client, c.students, `${c.avg}%`, c.done, c.prog, c.not]);
                     row.eachCell((cell: any) => (cell.style = bordered));
                 });
-                cs.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cols.length } };
+                cs.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: csCols.length } };
                 cs.views = [{ state: "frozen", ySplit: 1 }];
             }
 
@@ -1234,8 +808,6 @@ export default function PerformanceReportDesignerModal({
             }
 
             // Per-exercise sheets (one per selected assignment / assessment).
-            // Sheet name is truncated to Excel's 31-char cap; the header row
-            // carries the full exercise + path so nothing gets lost.
             if (shouldShow("exerciseDetail") && exerciseRosters.length > 0) {
                 const truncate = (s: string) => s.replace(/[\\\/\?\*\[\]:]/g, "").slice(0, 28);
                 const activeSum = SUM_COLS.filter((c) => sumCols.has(c.key));
@@ -1338,22 +910,19 @@ export default function PerformanceReportDesignerModal({
         }
     };
 
-    // Rasterise a rendered chart section into a PNG data URL: serialise the
-    // recharts <svg>, load it into an <img>, draw onto a 2× canvas for crisp
-    // print. No extra deps (html2canvas isn't installed). Ported verbatim from
-    // features/attendancemanagement/AttendanceReportModal.tsx.
+    // Rasterise a rendered chart section into a PNG data URL: serialise an
+    // <svg>, load it into an <img>, draw onto a 2× canvas for crisp print.
+    // Prefers an off-screen `svg[data-export-chart]` (used by the pathway),
+    // then the recharts surface, then the first svg.
     const svgToPng = async (container: HTMLElement | null): Promise<{ dataUrl: string; width: number; height: number } | null> => {
         if (!container) return null;
-        // MUST target the recharts surface: the section's × remove button is a
-        // lucide icon — also an <svg>, and FIRST in DOM order — so a bare
-        // querySelector("svg") captures a giant ✗ instead of the chart.
-        const svg = container.querySelector(".recharts-wrapper svg.recharts-surface")
-            || container.querySelector(".recharts-wrapper svg");
+        const svg =
+            container.querySelector("svg[data-export-chart]") ||
+            container.querySelector(".recharts-wrapper svg.recharts-surface") ||
+            container.querySelector(".recharts-wrapper svg");
         if (!svg) return null;
         const box = svg.getBoundingClientRect();
         const clone = svg.cloneNode(true) as SVGSVGElement;
-        // Recharts sizes via ResponsiveContainer at runtime, so the cloned
-        // SVG needs explicit dimensions or img.decode() falls over.
         clone.setAttribute("width", String(Math.max(1, Math.round(box.width))));
         clone.setAttribute("height", String(Math.max(1, Math.round(box.height))));
         clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -1390,67 +959,68 @@ export default function PerformanceReportDesignerModal({
             ]);
             const autoTable: any = (autoTableMod as any).default ?? autoTableMod;
 
+            // ── Orientation: only flip to landscape when the roster is on
+            //    AND it carries enough columns to actually need the width.
+            //    Anything else — summary-only, charts-only, drill-down —
+            //    reads better in portrait. Wide roster picks up landscape
+            //    automatically. ────────────────────────────────────────
+            const rosterOn = shouldShow("roster") && workingRows.length > 0;
+            const wideRoster = rosterOn && activeCols.length > 4;
             const doc = new jsPDF({
-                orientation: shouldShow("roster") ? "landscape" : "portrait",
+                orientation: wideRoster ? "landscape" : "portrait",
                 unit: "pt",
                 format: "a4",
             });
             const pageW = doc.internal.pageSize.getWidth();
-            const M = 36;
+            const pageH = doc.internal.pageSize.getHeight();
+            const M = 42;
+            const FOOTER_H = 26; // reserved band at the bottom for the page footer
             let y = M;
 
-            const rule = () => {
-                doc.setDrawColor(229, 231, 235);
-                doc.setLineWidth(0.5);
-                doc.line(M, y, pageW - M, y);
-                y += 12;
+            // ── Font scale — professional print sizes per the brief.
+            //    Do NOT copy the 8-pt dashboard density into the PDF: the
+            //    reader is holding paper (or a full-window PDF viewer),
+            //    not squinting at a 300-px web card.
+            const F = {
+                title: 20,       // Report title
+                section: 14,     // Section heading
+                metricValue: 16, // Summary metric value
+                metricLabel: 9,  // Summary metric label
+                body: 10.5,      // Body text
+                th: 10,          // Table header
+                td: 10,          // Table body
+                meta: 9,         // Secondary/meta
+                footer: 8.5,     // Page footer
             };
-            const h2 = (t: string) => {
-                if (y > doc.internal.pageSize.getHeight() - 60) {
+
+            const guardRoom = (need: number) => {
+                if (y + need > pageH - M - FOOTER_H) {
                     doc.addPage();
                     y = M;
                 }
+            };
+            const rule = (gap = 12) => {
+                y += 4;
+                doc.setDrawColor(229, 231, 235);
+                doc.setLineWidth(0.5);
+                doc.line(M, y, pageW - M, y);
+                y += gap;
+            };
+            // Section heading — bold title with a short orange underline.
+            // Guards against the classic "heading orphan at the bottom":
+            // if less than 90 pt remains, the heading moves to the next
+            // page rather than starting a new section against the footer.
+            const h2 = (t: string, minRoom = 90) => {
+                guardRoom(minRoom);
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(11);
+                doc.setFontSize(F.section);
                 doc.setTextColor(17, 24, 39);
                 doc.text(t, M, y);
-                y += 14;
-            };
-            // Embed the live chart exactly as the canvas shows it (the data
-            // table still follows as the numeric appendix). `legend` re-draws
-            // the on-screen legend with jsPDF primitives — recharts renders
-            // its legend as an HTML div OUTSIDE the svg, so the capture alone
-            // would ship an unlabeled pie.
-            const addChartImage = async (key: string, legend?: Array<{ label: string; color: string }>) => {
-                const shot = await svgToPng(chartRefs.current[key]);
-                if (!shot) return;
-                const pageH = doc.internal.pageSize.getHeight();
-                const ratio = shot.width / shot.height;
-                let w = pageW - M * 2;
-                let h = w / ratio;
-                if (h > pageH - M * 2) { h = pageH - M * 2; w = h * ratio; }
-                if (y + h > pageH - M) { doc.addPage(); y = M; }
-                doc.addImage(shot.dataUrl, "PNG", M, y, w, h);
-                y += h + 6;
-                if (legend && legend.length > 0) {
-                    if (y + 14 > pageH - M) { doc.addPage(); y = M; }
-                    doc.setFont("helvetica", "normal");
-                    doc.setFontSize(8.5);
-                    let x = M;
-                    for (const item of legend) {
-                        const label = item.label;
-                        const itemW = 10 + doc.getTextWidth(label) + 14;
-                        if (x + itemW > pageW - M) { x = M; y += 12; }
-                        const rgb = hexToRgb(item.color);
-                        doc.setFillColor(rgb[0], rgb[1], rgb[2]);
-                        doc.circle(x + 3, y - 3, 3, "F");
-                        doc.setTextColor(55, 65, 81);
-                        doc.text(label, x + 10, y);
-                        x += itemW;
-                    }
-                    y += 12;
-                }
-                y += 4;
+                y += 6;
+                doc.setDrawColor(249, 115, 22);
+                doc.setLineWidth(1.5);
+                doc.line(M, y, M + 28, y);
+                y += 16;
             };
             const hexToRgb = (hex: string): [number, number, number] => {
                 const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
@@ -1458,108 +1028,429 @@ export default function PerformanceReportDesignerModal({
                 const n = parseInt(m[1], 16);
                 return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
             };
+            // ── Native chart drawing primitives ───────────────────────
+            // Charts are drawn directly with jsPDF's rect/line/text
+            // primitives rather than captured from the DOM's off-screen
+            // export SVGs. The old capture path was flaky in the field:
+            // it depended on the section refs being attached AND on the
+            // browser being able to serialise the SVG and decode it as
+            // an <img> reliably. When any of those steps failed (React
+            // hadn't flushed the ref, the SVG referenced an external
+            // font, the image decode raced with PDF generation) the
+            // chart silently rendered as an empty rectangle in the PDF,
+            // producing the exact "heading + blank block" problem
+            // reported. Native drawing is deterministic — same data,
+            // same output every time, no DOM dependency.
+            //
+            // Chart primitives:
+            //   drawColumnChart   — clustered vertical columns, 0–100
+            //                        Y-axis, dashed grid at 25/50/75/100.
+            //                        Used for Learning Journey, Learning
+            //                        Performance and Activity Performance.
+            //   drawGradeBar      — Learner Results as a compact
+            //                        horizontal stacked bar plus legend
+            //                        (a pie/donut needs arc segments jsPDF
+            //                        does not support natively; the
+            //                        stacked bar shows the same
+            //                        distribution and prints reliably).
+            const ORANGE: [number, number, number] = [249, 115, 22];
+            const drawColumnChart = (
+                x0: number,
+                y0: number,
+                w: number,
+                h: number,
+                rows: Array<{ label: string; avg: number | null }>,
+            ) => {
+                const padL = 30;
+                const padR = 8;
+                const padT = 20;
+                const padB = 26;
+                const plotX = x0 + padL;
+                const plotY = y0 + padT;
+                const plotW = w - padL - padR;
+                const plotH = h - padT - padB;
+                // Dashed grid at 25 / 50 / 75 / 100, solid baseline at 0.
+                doc.setDrawColor(228, 231, 236);
+                doc.setLineWidth(0.5);
+                [100, 75, 50, 25].forEach((v) => {
+                    const yy = plotY + (plotH * (100 - v)) / 100;
+                    doc.setLineDashPattern([2, 3], 0);
+                    doc.line(plotX, yy, plotX + plotW, yy);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(8);
+                    doc.setTextColor(152, 162, 179);
+                    doc.text(String(v), plotX - 4, yy + 3, { align: "right" });
+                });
+                doc.setLineDashPattern([], 0);
+                doc.setDrawColor(208, 213, 221);
+                doc.setLineWidth(0.8);
+                doc.line(plotX, plotY + plotH, plotX + plotW, plotY + plotH);
+                doc.setFontSize(8);
+                doc.setTextColor(152, 162, 179);
+                doc.text("0", plotX - 4, plotY + plotH + 3, { align: "right" });
+                // Columns
+                const n = rows.length;
+                if (n > 0) {
+                    // Column width scales down when the chart has more
+                    // categories (Activity Performance can have 4–6+).
+                    const bandW = plotW / n;
+                    const barW = Math.min(38, Math.max(14, bandW * 0.55));
+                    rows.forEach((r, i) => {
+                        const cx = plotX + bandW * i + bandW / 2;
+                        const na = r.avg === null;
+                        const rawH = na ? 0 : (plotH * Math.max(0, Math.min(100, r.avg as number))) / 100;
+                        // MIN 6pt so a 1–2% value still renders as a
+                        // proper column, not a nothing-sliver. N/A gets
+                        // a fixed neutral height to signal "no data".
+                        const barH = na ? Math.max(18, plotH * 0.15) : Math.max(6, rawH);
+                        const bx = cx - barW / 2;
+                        const by = plotY + plotH - barH;
+                        if (na) {
+                            doc.setFillColor(242, 244, 247);
+                            doc.setDrawColor(208, 213, 221);
+                            doc.setLineWidth(0.7);
+                            doc.setLineDashPattern([2, 2], 0);
+                            doc.roundedRect(bx, by, barW, barH, 2, 2, "FD");
+                            doc.setLineDashPattern([], 0);
+                        } else {
+                            doc.setFillColor(ORANGE[0], ORANGE[1], ORANGE[2]);
+                            doc.setDrawColor(ORANGE[0], ORANGE[1], ORANGE[2]);
+                            doc.roundedRect(bx, by, barW, barH, 2, 2, "F");
+                        }
+                        // Value above the bar.
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(9);
+                        if (na) doc.setTextColor(152, 162, 179);
+                        else doc.setTextColor(ORANGE[0], ORANGE[1], ORANGE[2]);
+                        doc.text(na ? "N/A" : `${r.avg}%`, cx, by - 4, { align: "center" });
+                        // Category label under the axis.
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(9);
+                        doc.setTextColor(17, 24, 39);
+                        // Truncate very long activity names so they don't
+                        // overrun their column band.
+                        const maxChars = Math.max(6, Math.floor(bandW / 4.5));
+                        const label = r.label.length > maxChars
+                            ? r.label.slice(0, maxChars - 1) + "…"
+                            : r.label;
+                        doc.text(label, cx, plotY + plotH + 14, { align: "center" });
+                    });
+                }
+                // Card outline so the chart reads as its own block.
+                doc.setDrawColor(228, 231, 236);
+                doc.setLineWidth(0.5);
+                doc.roundedRect(x0, y0, w, h, 4, 4, "S");
+            };
 
-            // Header
+            const drawGradeBar = (
+                x0: number,
+                y0: number,
+                w: number,
+                h: number,
+                slices: Array<{ name: string; value: number; color: string }>,
+                total: number,
+            ) => {
+                // Card outline.
+                doc.setDrawColor(228, 231, 236);
+                doc.setLineWidth(0.5);
+                doc.roundedRect(x0, y0, w, h, 4, 4, "S");
+                // Stacked horizontal bar showing the grade distribution.
+                // A pie/donut needs arc primitives jsPDF doesn't ship;
+                // the stacked bar shows the same proportions and prints
+                // reliably at any size.
+                const barH = 22;
+                const barX = x0 + 14;
+                const barY = y0 + 18;
+                const barW = w - 28;
+                doc.setFillColor(242, 244, 247);
+                doc.roundedRect(barX, barY, barW, barH, 3, 3, "F");
+                if (total > 0) {
+                    let cursor = barX;
+                    slices.forEach((s) => {
+                        if (s.value <= 0) return;
+                        const seg = (s.value / total) * barW;
+                        const rgb = hexToRgb(s.color);
+                        doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+                        doc.rect(cursor, barY, seg, barH, "F");
+                        cursor += seg;
+                    });
+                }
+                // "N learners" caption above the bar.
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9);
+                doc.setTextColor(17, 24, 39);
+                doc.text(`${total} learner${total === 1 ? "" : "s"}`, barX, barY - 4);
+                // Legend rows under the bar — one line per band with
+                // colour swatch, name, count and share.
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9);
+                let ly = barY + barH + 14;
+                slices.forEach((s) => {
+                    if (ly + 12 > y0 + h) return;
+                    const rgb = hexToRgb(s.color);
+                    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+                    doc.circle(barX + 4, ly - 3, 3.2, "F");
+                    doc.setTextColor(55, 65, 81);
+                    doc.text(s.name, barX + 12, ly);
+                    const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
+                    doc.setTextColor(107, 114, 128);
+                    doc.text(`${s.value} · ${pct}%`, x0 + w - 14, ly, { align: "right" });
+                    ly += 13;
+                });
+            };
+
+            // Helper: reserve vertical space before drawing so a chart
+            // never crosses a page break. Adds a page if the block
+            // wouldn't fit; returns the y at which drawing may start.
+            const reserve = (blockH: number): number => {
+                if (y + blockH > pageH - M - FOOTER_H) {
+                    doc.addPage();
+                    y = M;
+                }
+                return y;
+            };
+
+            // ── Report header ────────────────────────────────────────
+            // Title (20 pt) followed by explicit labelled meta lines so
+            // the reader can see at a glance which course, how many
+            // learners, which assignments/assessments and which grade
+            // bands the report was generated for. Old export collapsed
+            // scope onto one middle-dot-separated line ("GRAD 2026 · 32
+            // students · Grade: All grades"), which hid the actual
+            // assignment/assessment names the user had picked in the
+            // filter drawer.
             doc.setFont("helvetica", "bold");
-            doc.setFontSize(16);
+            doc.setFontSize(F.title);
             doc.setTextColor(17, 24, 39);
-            doc.text("Performance Report", M, y);
-            y += 18;
+            doc.text("Learner Progress & Performance Report", M, y);
+            y += F.title + 4;
+
+            // Build labelled meta lines. Group catalogue exercises by
+            // sub-category (Assignment, Assessment, Practical, …); for
+            // each group, list the actual names when the user has
+            // narrowed the picker (exSel !== null), or "All" when they
+            // haven't. Groups whose intersection with exSel is empty are
+            // skipped so the header stays tight when the user narrowed
+            // to only one activity type.
+            const courseHeader = (courseName && courseName.trim())
+                || (scopeLabel && scopeLabel.trim())
+                || "All clients · all courses";
+            const bySubcat = new Map<string, string[]>();
+            for (const ex of catalogue) {
+                const key = ex.subCategory || "Other";
+                if (!bySubcat.has(key)) bySubcat.set(key, []);
+                if (exSel === null || exSel.has(ex.id)) {
+                    bySubcat.get(key)!.push(ex.name);
+                }
+            }
+            const metaLines: Array<{ label: string; value: string }> = [
+                { label: "Course name", value: courseHeader },
+                { label: "Number of students", value: String(workingRows.length) },
+            ];
+            for (const [subcat, names] of bySubcat) {
+                if (exSel === null) {
+                    metaLines.push({ label: `${subcat} name`, value: "All" });
+                } else if (names.length > 0) {
+                    metaLines.push({ label: `${subcat} name`, value: names.join(", ") });
+                }
+            }
+            metaLines.push({ label: "Grade", value: gradeLine });
+
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(9);
-            doc.setTextColor(107, 114, 128);
-            doc.text(scopeLine, M, y);
-            y += 12;
-            doc.text(subcatLine, M, y);
-            y += 12;
-            doc.text(`Grades: ${gradeLine}    ·    Generated ${new Date().toLocaleString("en-GB")}`, M, y);
-            y += 12;
-            rule();
+            doc.setFontSize(F.body);
+            metaLines.forEach(({ label, value }) => {
+                // Bold label + normal-weight value, wrapped so long
+                // assignment lists don't run off the page.
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(55, 65, 81);
+                const labelText = `${label}: `;
+                const labelW = doc.getTextWidth(labelText);
+                doc.text(labelText, M, y);
+                doc.setFont("helvetica", "normal");
+                doc.setTextColor(80, 90, 106);
+                const valueX = M + labelW;
+                const valueW = pageW - M - valueX;
+                const wrapped = doc.splitTextToSize(value, valueW);
+                wrapped.forEach((line: string, i: number) => {
+                    doc.text(line, i === 0 ? valueX : M, y);
+                    y += F.body + 4;
+                });
+            });
+            doc.setFontSize(F.meta);
+            doc.setTextColor(140, 149, 165);
+            doc.text(`Generated ${new Date().toLocaleString("en-GB")}`, M, y);
+            y += F.meta + 4;
+            rule(16);
 
+            // ── Summary — one compact horizontal strip ────────────────
+            // Renders the same five metrics the preview shows, drawn as a
+            // single bordered row with vertical dividers between each
+            // metric cell. Big value up, small uppercase label below.
+            // Deliberately NOT a two-column key/value autoTable — that's
+            // what the previous export used, and it read as a data dump.
             if (shouldShow("stats")) {
-                h2("Summary");
-                const rows: [string, string][] = [
-                    ["Total students", String(stats.total)],
-                    // Per-activity averages instead of the old blended
-                    // "Avg overall %" — mirrors the canvas tiles.
-                    ...activitySplit.map((a): [string, string] => [
-                        `${a.label} avg % (${a.hint})`,
-                        a.avg === null ? "N/A" : `${a.avg}%`,
-                    ]),
-                    ["Avg score %", stats.avgScore === null ? "—" : `${stats.avgScore}%`],
-                    ["Excellent (≥80%)", String(stats.excellent)],
-                    ["At risk (<40%)", String(stats.atRisk)],
-                    ["Not started", String(stats.notStarted)],
+                h2("Summary", 90);
+                const avgCompletion = stats.avgSelected ?? stats.avgOverall;
+                const metrics: Array<{ label: string; value: string; muted?: boolean; tone?: "danger" }> = [
+                    { label: "Learners", value: String(stats.total) },
+                    { label: "Average Completion", value: `${avgCompletion}%` },
+                    {
+                        label: "Average Score",
+                        value: stats.avgScore === null ? "N/A" : `${stats.avgScore}%`,
+                        muted: stats.avgScore === null,
+                    },
+                    { label: "At Risk", value: String(stats.atRisk), tone: "danger" },
+                    { label: "Not Started", value: String(stats.notStarted), muted: true },
                 ];
-                autoTable(doc, {
-                    startY: y,
-                    head: [["Metric", "Value"]],
-                    body: rows,
-                    styles: { fontSize: 9, cellPadding: 4 },
-                    headStyles: { fillColor: [235, 104, 52] },
-                    margin: { left: M, right: M },
+                const stripH = 62;
+                const stripW = pageW - M * 2;
+                const cellW = stripW / metrics.length;
+                doc.setDrawColor(229, 231, 235);
+                doc.setLineWidth(0.5);
+                doc.roundedRect(M, y, stripW, stripH, 6, 6, "S");
+                metrics.forEach((m, i) => {
+                    const cx = M + cellW * i + cellW / 2;
+                    if (i > 0) {
+                        doc.setDrawColor(229, 231, 235);
+                        doc.line(M + cellW * i, y + 10, M + cellW * i, y + stripH - 10);
+                    }
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(F.metricLabel);
+                    doc.setTextColor(107, 114, 128);
+                    doc.text(m.label.toUpperCase(), cx, y + 20, { align: "center" });
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(F.metricValue);
+                    if (m.tone === "danger") doc.setTextColor(180, 35, 24);
+                    else if (m.muted) doc.setTextColor(152, 162, 179);
+                    else doc.setTextColor(17, 24, 39);
+                    doc.text(m.value, cx, y + 46, { align: "center" });
                 });
-                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
-                rule();
+                y += stripH + 18;
             }
 
-            if (shouldShow("activities") && activityChartRows.length > 0) {
-                h2("Activities — I Do · We Do · You Do");
-                await addChartImage("activitiesPie", activityChartRows.map((a) => ({ label: `${a.label} (${a.avg}%)`, color: a.color })));
-                await addChartImage("activitiesBar");
-                autoTable(doc, {
-                    startY: y,
-                    head: [["Activity", "Avg %", "Learners"]],
-                    body: activitySplit.map((a) => [
-                        `${a.label} (${a.hint})`,
-                        a.avg === null ? "N/A" : `${a.avg}%`,
-                        String(a.learners),
-                    ]),
-                    styles: { fontSize: 9, cellPadding: 4 },
-                    headStyles: { fillColor: [46, 144, 196] },
-                    margin: { left: M, right: M },
-                });
-                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
-                rule();
+            // ── Learning Journey + Learning Performance ──────────────
+            // Side-by-side when both are on and the page is wide enough
+            // (portrait A4 ≈ 515 pt content width; the paired layout wants
+            // ≥ 460 pt so each chart clears ~215 pt); stacked otherwise.
+            // Charts are treated as indivisible blocks — reserve() moves
+            // the whole chart to the next page if it wouldn't fit whole.
+            // ── Learning Journey + Learning Performance ──────────────
+            // Paired side-by-side on any page that clears ~460 pt of
+            // content width; stacked otherwise. Each chart is drawn
+            // natively so there's no dependency on the off-screen SVG
+            // being captured — same data as the preview, always renders.
+            const wantsCompletion = shouldShow("activities") && activityChartRows.length > 0;
+            const wantsPerformance = shouldShow("activitiesPerformance") && performanceSplit.some((a) => a.avg !== null);
+            const canPairCharts = (pageW - M * 2) >= 460;
+            const CHART_H = 200; // fixed height for stage / activity charts
+            // Small helper: draw a section heading with the orange rule
+            // underline at (x, currentY). Advances y past the heading
+            // block so callers can place the chart at the returned y.
+            const sectionTitle = (title: string, x: number) => {
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(F.section);
+                doc.setTextColor(17, 24, 39);
+                doc.text(title, x, y);
+                y += 6;
+                doc.setDrawColor(249, 115, 22);
+                doc.setLineWidth(1.5);
+                doc.line(x, y, x + 28, y);
+                y += 14;
+            };
+            if (wantsCompletion && wantsPerformance && canPairCharts) {
+                const blockH = 14 /* title */ + 8 + CHART_H;
+                reserve(blockH + 12);
+                const halfW = (pageW - M * 2 - 16) / 2;
+                const leftX = M;
+                const rightX = M + halfW + 16;
+                // Draw both titles on the same row.
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(F.section);
+                doc.setTextColor(17, 24, 39);
+                doc.text("Learning Journey", leftX, y);
+                doc.text("Learning Performance", rightX, y);
+                y += 6;
+                doc.setDrawColor(249, 115, 22);
+                doc.setLineWidth(1.5);
+                doc.line(leftX, y, leftX + 28, y);
+                doc.line(rightX, y, rightX + 28, y);
+                y += 14;
+                // Then both charts at the same y, native rendering.
+                drawColumnChart(leftX, y, halfW, CHART_H, activitySplit.map((a) => ({ label: a.label, avg: a.avg })));
+                drawColumnChart(rightX, y, halfW, CHART_H, performanceSplit.map((a) => ({ label: a.label, avg: a.avg })));
+                y += CHART_H + 16;
+                rule(12);
+            } else {
+                if (wantsCompletion) {
+                    reserve(14 + 8 + CHART_H + 12);
+                    sectionTitle("Learning Journey", M);
+                    drawColumnChart(M, y, pageW - M * 2, CHART_H, activitySplit.map((a) => ({ label: a.label, avg: a.avg })));
+                    y += CHART_H + 16;
+                    rule(12);
+                }
+                if (wantsPerformance) {
+                    reserve(14 + 8 + CHART_H + 12);
+                    sectionTitle("Learning Performance", M);
+                    drawColumnChart(M, y, pageW - M * 2, CHART_H, performanceSplit.map((a) => ({ label: a.label, avg: a.avg })));
+                    y += CHART_H + 16;
+                    rule(12);
+                }
             }
 
-            if (shouldShow("gradePie") && gradeSlices.length > 0) {
-                // Table only — the canvas renders labeled count bars, not a
-                // chart, so there is nothing to rasterise here any more.
-                h2("Grade distribution");
-                autoTable(doc, {
-                    startY: y,
-                    head: [["Grade", "Students", "% of scope"]],
-                    body: gradeSlices.map((g) => [
-                        g.name,
-                        String(g.value),
-                        stats.total ? `${Math.round((g.value / stats.total) * 100)}%` : "0%",
-                    ]),
-                    styles: { fontSize: 9, cellPadding: 4 },
-                    headStyles: { fillColor: [42, 120, 214] },
-                    margin: { left: M, right: M },
-                });
-                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
-                rule();
+            // ── Learner Results + Activity Performance ────────────────
+            // Learner Results renders as a compact stacked bar plus
+            // legend — bounded by a fixed card height so it can never
+            // consume the whole page (the previous SVG-donut export
+            // would balloon to available width squared). Activity
+            // Performance uses the same native column chart primitive.
+            const wantsGrade = shouldShow("gradePie") && gradeSlices.length > 0;
+            const wantsSubcat = shouldShow("subcatBars") && subcatBars.length > 0;
+            const GRADE_H = 180;      // compact card height for the grade bar + legend
+            const ACTIVITY_H = 200;   // matches CHART_H
+            if (wantsGrade && wantsSubcat && canPairCharts) {
+                reserve(14 + 8 + Math.max(GRADE_H, ACTIVITY_H) + 12);
+                const halfW = (pageW - M * 2 - 16) / 2;
+                const leftX = M;
+                const rightX = M + halfW + 16;
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(F.section);
+                doc.setTextColor(17, 24, 39);
+                doc.text("Learner Results", leftX, y);
+                doc.text("Activity Performance", rightX, y);
+                y += 6;
+                doc.setDrawColor(249, 115, 22);
+                doc.setLineWidth(1.5);
+                doc.line(leftX, y, leftX + 28, y);
+                doc.line(rightX, y, rightX + 28, y);
+                y += 14;
+                drawGradeBar(leftX, y, halfW, GRADE_H, gradeSlices as any, stats.total);
+                drawColumnChart(rightX, y, halfW, ACTIVITY_H, subcatBars.map((b) => ({ label: b.label, avg: b.avg })));
+                y += Math.max(GRADE_H, ACTIVITY_H) + 16;
+                rule(12);
+            } else {
+                if (wantsGrade) {
+                    reserve(14 + 8 + GRADE_H + 12);
+                    sectionTitle("Learner Results", M);
+                    // When solo, don't stretch the card to full page
+                    // width — cap around 380 pt so the reader isn't
+                    // staring at a giant thin bar.
+                    const soloW = Math.min(pageW - M * 2, 380);
+                    drawGradeBar(M, y, soloW, GRADE_H, gradeSlices as any, stats.total);
+                    y += GRADE_H + 16;
+                    rule(12);
+                }
+                if (wantsSubcat) {
+                    reserve(14 + 8 + ACTIVITY_H + 12);
+                    sectionTitle("Activity Performance", M);
+                    drawColumnChart(M, y, pageW - M * 2, ACTIVITY_H, subcatBars.map((b) => ({ label: b.label, avg: b.avg })));
+                    y += ACTIVITY_H + 16;
+                    rule(12);
+                }
             }
 
-            if (shouldShow("subcatBars") && subcatBars.length > 0) {
-                h2("Sub-category performance");
-                await addChartImage("subcatBars");
-                autoTable(doc, {
-                    startY: y,
-                    head: [["Activity · sub-category", "Avg %", "Learners"]],
-                    body: subcatBars.map((b) => [b.label, `${b.avg}%`, String(b.learners)]),
-                    styles: { fontSize: 9, cellPadding: 4 },
-                    headStyles: { fillColor: [124, 92, 252] },
-                    margin: { left: M, right: M },
-                });
-                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
-                rule();
-            }
-
+            // ── Course Table (optional) ──────────────────────────────
             if (shouldShow("courses") && courseRows.length > 0) {
-                h2(`Courses (${courseRows.length})`);
+                h2(`Courses (${courseRows.length})`, 120);
                 autoTable(doc, {
                     startY: y,
                     head: [["Course", "Client", "Students", "Avg %", "Completed", "In progress", "Not started"]],
@@ -1572,62 +1463,78 @@ export default function PerformanceReportDesignerModal({
                         String(c.prog),
                         String(c.not),
                     ]),
-                    styles: { fontSize: 8.5, cellPadding: 4 },
-                    headStyles: { fillColor: [14, 159, 110] },
-                    margin: { left: M, right: M },
+                    styles: { fontSize: F.td, cellPadding: 5, valign: "middle" },
+                    headStyles: { fontSize: F.th, fontStyle: "bold", fillColor: [242, 244, 247], textColor: [55, 65, 81], halign: "left" },
+                    alternateRowStyles: { fillColor: [250, 251, 252] },
+                    margin: { left: M, right: M, top: M, bottom: M + FOOTER_H },
+                    columnStyles: {
+                        2: { halign: "right" }, 3: { halign: "right" },
+                        4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" },
+                    },
                 });
-                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
-                rule();
+                y = (doc as any).lastAutoTable?.finalY + 16 || y + 16;
+                rule(16);
             }
 
-            if (shouldShow("roster") && workingRows.length > 0) {
-                h2(`Students (${workingRows.length})`);
+            // ── Learners (roster) ────────────────────────────────────
+            // Uses EXACTLY the columns the user picked in the drawer's
+            // Roster Columns section — nothing added, nothing dropped.
+            // Every filtered learner is included; the browser preview may
+            // page/scroll, but the export ships the full working set.
+            // autoTable repeats the header on every page and never splits
+            // a row across pages.
+            if (rosterOn) {
+                h2(`Learners (${workingRows.length})`, 130);
                 autoTable(doc, {
                     startY: y,
-                    head: [["Student", ...activeCols.map((c) => c.label)]],
-                    body: workingRows.map((r) => [r.name, ...activeCols.map((c) => cellText(r, c.key))]),
-                    styles: { fontSize: 8, cellPadding: 3 },
-                    headStyles: { fillColor: [235, 104, 52] },
-                    margin: { left: M, right: M },
+                    head: [["#", "Student", ...activeCols.map((c) => c.label)]],
+                    body: workingRows.map((r, i) => [
+                        i + 1,
+                        r.name,
+                        ...activeCols.map((c) => cellText(r, c.key)),
+                    ]),
+                    styles: { fontSize: F.td, cellPadding: 5, valign: "middle", overflow: "linebreak" },
+                    headStyles: { fontSize: F.th, fontStyle: "bold", fillColor: [242, 244, 247], textColor: [55, 65, 81], halign: "left" },
+                    alternateRowStyles: { fillColor: [250, 251, 252] },
+                    margin: { left: M, right: M, top: M, bottom: M + FOOTER_H },
+                    // Percentage/numeric roster columns right-align.
+                    columnStyles: activeCols.reduce((acc: Record<number, any>, c, idx) => {
+                        // Index 0 = "#", 1 = Student; roster cols start at 2.
+                        if (c.r) acc[idx + 2] = { halign: "right" };
+                        return acc;
+                    }, { 0: { halign: "right", cellWidth: 26 } }),
                 });
-                y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
+                y = (doc as any).lastAutoTable?.finalY + 16 || y + 16;
             }
 
-            // Per-exercise detail — one section per selected exercise.
-            // Subsequent exercises start on a fresh page (so a head can print
-            // + hand out slices); the FIRST exercise reuses whatever room is
-            // still free on the current page — otherwise page 1 sits mostly
-            // blank whenever the header is the only thing above.
+            // ── Assignments & Assessments (drill-down) ────────────────
+            // Only rendered when the user ticked "Assignments &
+            // Assessments" in the drawer AND picked at least one
+            // exercise. Each exercise gets its own section header (name +
+            // one-line meta) plus a summary autoTable of the selected
+            // sumCols. When Detailed Mode is on and question columns are
+            // picked, each learner's per-question breakdown is nested
+            // underneath. Only the columns the user turned on ship.
             if (shouldShow("exerciseDetail") && exerciseRosters.length > 0) {
                 const activeSum = SUM_COLS.filter((c) => sumCols.has(c.key));
                 const activeQ = Q_COLS.filter((c) => qCols.has(c.key));
-                const pageH = doc.internal.pageSize.getHeight();
-                // Room needed to open an exercise inline: title + stats line
-                // + a few table rows. Below this, force a fresh page.
-                const MIN_INLINE_ROOM = 160;
+                h2("Assignments & Assessments", 140);
                 exerciseRosters.forEach((er, exIdx) => {
-                    if (exIdx > 0 || pageH - y < MIN_INLINE_ROOM) {
-                        doc.addPage();
-                        y = M;
-                    } else {
-                        // Small breather so the exercise heading doesn't butt
-                        // up against the section above (rule / previous table).
-                        y += 6;
-                    }
+                    if (exIdx > 0) guardRoom(180);
                     doc.setFont("helvetica", "bold");
-                    doc.setFontSize(13);
+                    doc.setFontSize(F.body + 1);
                     doc.setTextColor(17, 24, 39);
-                    doc.text(er.ex.name, M, y);
-                    y += 16;
+                    const wrappedName = doc.splitTextToSize(er.ex.name || "Exercise", pageW - M * 2);
+                    wrappedName.forEach((line: string) => { doc.text(line, M, y); y += F.body + 4; });
                     doc.setFont("helvetica", "normal");
-                    doc.setFontSize(9);
+                    doc.setFontSize(F.meta);
                     doc.setTextColor(107, 114, 128);
                     doc.text(
                         `${er.ex.totalQuestions} questions · ${er.ex.totalMarks} marks · Submitted ${er.stats.submitted} · Started ${er.stats.started} · Not started ${er.stats.notStarted} · Avg ${er.stats.avgPct === null ? "—" : er.stats.avgPct + "%"}`,
                         M,
                         y,
                     );
-                    y += 14;
+                    y += F.meta + 8;
 
                     autoTable(doc, {
                         startY: y,
@@ -1655,9 +1562,14 @@ export default function PerformanceReportDesignerModal({
                                 }
                             }),
                         ]),
-                        styles: { fontSize: 8, cellPadding: 3 },
-                        headStyles: { fillColor: [124, 92, 252] },
-                        margin: { left: M, right: M },
+                        styles: { fontSize: F.td, cellPadding: 5, valign: "middle", overflow: "linebreak" },
+                        headStyles: { fontSize: F.th, fontStyle: "bold", fillColor: [242, 244, 247], textColor: [55, 65, 81], halign: "left" },
+                        alternateRowStyles: { fillColor: [250, 251, 252] },
+                        margin: { left: M, right: M, top: M, bottom: M + FOOTER_H },
+                        columnStyles: activeSum.reduce((acc: Record<number, any>, c, idx) => {
+                            if (c.r) acc[idx + 3] = { halign: "right" };
+                            return acc;
+                        }, { 0: { halign: "right", cellWidth: 26 } }),
                     });
                     y = (doc as any).lastAutoTable?.finalY + 14 || y + 14;
 
@@ -1673,19 +1585,16 @@ export default function PerformanceReportDesignerModal({
                                 studentSubmitted: true,
                             });
                             if (!bd.length) continue;
-                            if (y > doc.internal.pageSize.getHeight() - 100) {
-                                doc.addPage();
-                                y = M;
-                            }
+                            guardRoom(120);
                             doc.setFont("helvetica", "bold");
-                            doc.setFontSize(10);
+                            doc.setFontSize(F.body);
                             doc.setTextColor(17, 24, 39);
                             doc.text(
                                 `${r.name}${r.email ? ` — ${r.email}` : ""}`,
                                 M,
                                 y,
                             );
-                            y += 12;
+                            y += F.body + 4;
                             autoTable(doc, {
                                 startY: y,
                                 head: [activeQ.map((c) => c.label)],
@@ -1705,27 +1614,36 @@ export default function PerformanceReportDesignerModal({
                                         default: return "";
                                     }
                                 })),
-                                styles: { fontSize: 7.5, cellPadding: 2.5 },
-                                headStyles: { fillColor: [45, 191, 175] },
-                                margin: { left: M, right: M },
+                                styles: { fontSize: F.td - 0.5, cellPadding: 4 },
+                                headStyles: { fontSize: F.th - 0.5, fontStyle: "bold", fillColor: [242, 244, 247], textColor: [55, 65, 81] },
+                                alternateRowStyles: { fillColor: [250, 251, 252] },
+                                margin: { left: M, right: M, top: M, bottom: M + FOOTER_H },
                             });
-                            y = (doc as any).lastAutoTable?.finalY + 8 || y + 8;
+                            y = (doc as any).lastAutoTable?.finalY + 10 || y + 10;
                         }
                     }
                 });
             }
 
-            // Page numbers
-            const pages = (doc as any).internal.pages.length - 1;
-            const pageH = doc.internal.pageSize.getHeight();
-            for (let p = 1; p <= pages; p++) {
+            // ── Page footer: SmartCliff · title (left) + Page X of Y
+            //    (right) + generated timestamp (center) on every page. Kept
+            //    subtle — 8.5 pt, muted gray — so it doesn't eat page room.
+            const totalPages = (doc as any).internal.pages.length - 1;
+            const generatedAt = new Date().toLocaleString("en-GB");
+            for (let p = 1; p <= totalPages; p++) {
                 doc.setPage(p);
-                doc.setFontSize(8);
-                doc.setTextColor(156, 163, 175);
-                doc.text(`Page ${p} / ${pages}`, pageW - M, pageH - 16, { align: "right" });
+                doc.setDrawColor(235, 238, 242);
+                doc.setLineWidth(0.5);
+                doc.line(M, pageH - 22, pageW - M, pageH - 22);
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(F.footer);
+                doc.setTextColor(140, 149, 165);
+                doc.text("SmartCliff · Learner Progress & Performance Report", M, pageH - 10);
+                doc.text(generatedAt, pageW / 2, pageH - 10, { align: "center" });
+                doc.text(`Page ${p} of ${totalPages}`, pageW - M, pageH - 10, { align: "right" });
             }
 
-            doc.save(`performance-report_${localDay()}.pdf`);
+            doc.save(`learner-progress-performance-report_${localDay()}.pdf`);
             setDownloadOpen(false);
         } catch (e) {
             console.error("Performance report PDF export failed", e);
@@ -1734,18 +1652,11 @@ export default function PerformanceReportDesignerModal({
         }
     };
 
-    const toggleSet = <T,>(current: Set<T>, key: T): Set<T> => {
-        const next = new Set(current);
-        if (next.has(key)) next.delete(key);
-        else next.add(key);
-        return next;
-    };
-
     // Reset back to defaults.
     const reset = () => {
         setViews(new Set(DEFAULT_VIEWS));
         setCols(new Set(DEFAULT_COLS));
-        setActivities(new Set(["I_Do", "We_Do", "You_Do"]));
+        setActivities(new Set<Stage>(["I_Do", "We_Do", "You_Do"]));
         setSubcats(null);
         setGrades(null);
         setStudentSel(null);
@@ -1759,1260 +1670,227 @@ export default function PerformanceReportDesignerModal({
 
     if (!open) return null;
 
-    // Small wrapper so preview sections can carry a top-right × like the
-    // Attendance Detailed Report modal.
-    const Sec: React.FC<{ id: ViewKey; children: React.ReactNode }> = ({ id, children }) => (
-        <section
-            className="relative rounded-tile border border-hairline bg-surface"
-            ref={(el) => { chartRefs.current[id] = el; }}
-        >
-            <button
-                type="button"
-                aria-label="Remove from preview"
-                title="Remove from preview"
-                onClick={() => removeSection(id)}
-                className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-hairline bg-surface text-subtle hover:border-danger-500/40 hover:text-danger-500 transition-colors"
-            >
-                <X className="h-3 w-3" />
-            </button>
-            {children}
-        </section>
-    );
-
-    const anySection =
-        shouldShow("stats") ||
-        shouldShow("gradePie") ||
-        shouldShow("subcatBars") ||
-        shouldShow("courses") ||
-        shouldShow("roster") ||
-        shouldShow("exerciseDetail");
-
-    return (
-        <div
-            className="fixed inset-0 z-modal flex items-center justify-center bg-ink-900/55 backdrop-blur-[2px] p-3 sm:p-5"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Detailed performance report designer"
-            onClick={onClose}
-        >
+    // ── Chrome selection ─────────────────────────────────────────────
+    // Inline mode: no fixed overlay, no backdrop, no click-outside close;
+    // the designer body renders straight into whatever the host page
+    // provides. Modal mode keeps the historical overlay behaviour so
+    // existing entry points (Detailed report button in the L&D console)
+    // continue to work unchanged.
+    const isInline = variant === "inline";
+    const OuterWrap: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+        isInline ? (
+            <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        ) : (
             <div
-                className="relative flex h-[94vh] w-[97vw] max-w-[1440px] overflow-hidden rounded-tile border border-hairline bg-surface shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
+                className="fixed inset-0 z-modal flex items-center justify-center bg-ink-900/55 p-2 backdrop-blur-[2px] sm:p-3"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Performance report designer"
+                onClick={onClose}
             >
-                {/* ─── LEFT DRAWER ───────────────────────────────────────── */}
-                <aside
-                    className={`flex shrink-0 flex-col border-r border-hairline bg-surface-sunken/40 transition-[width] duration-150 ${
-                        drawerCollapsed ? "w-[52px]" : "w-[340px]"
-                    }`}
+                <div
+                    className="relative flex h-[96vh] w-[97vw] max-w-[1760px] flex-col overflow-hidden rounded-[18px] border border-hairline bg-surface shadow-sm"
+                    onClick={(e) => e.stopPropagation()}
                 >
-                    <header
-                        className={`flex flex-shrink-0 items-center gap-2 border-b border-hairline py-3 ${
-                            drawerCollapsed ? "justify-center px-2" : "px-4"
-                        }`}
-                    >
-                        {!drawerCollapsed && (
-                            <>
-                                <Settings2 className="h-4 w-4 text-brand-strong shrink-0" />
-                                <div className="min-w-0 flex-1">
-                                    <h2 className="text-sm font-semibold text-heading">Report designer</h2>
-                                    <p className="mt-0.5 truncate text-[10px] text-subtle">
-                                        Pick what to show — preview updates as you edit.
-                                    </p>
-                                </div>
-                            </>
-                        )}
-                        <button
-                            type="button"
-                            onClick={() => setDrawerCollapsed((v) => !v)}
-                            aria-label={drawerCollapsed ? "Expand designer" : "Collapse designer"}
-                            title={drawerCollapsed ? "Expand designer" : "Collapse designer"}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-control text-subtle hover:bg-row-hover hover:text-heading transition-colors"
-                        >
-                            {drawerCollapsed ? (
-                                <ChevronsRight className="h-4 w-4" />
-                            ) : (
-                                <ChevronsLeft className="h-4 w-4" />
-                            )}
-                        </button>
-                    </header>
-
-                    {drawerCollapsed ? (
-                        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center gap-1 py-3">
-                            {VIEWS.map((v) => {
-                                const on = views.has(v.key);
-                                const Icon = v.icon;
-                                return (
-                                    <button
-                                        key={v.key}
-                                        type="button"
-                                        onClick={() => setViews(toggleSet(views, v.key))}
-                                        title={v.label}
-                                        aria-label={v.label}
-                                        aria-pressed={on}
-                                        className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors ${
-                                            on
-                                                ? "border-brand-500 bg-brand-100/40 text-brand-strong dark:bg-brand-500/15"
-                                                : "border-transparent text-subtle hover:bg-row-hover hover:text-body"
-                                        }`}
-                                    >
-                                        <Icon className="h-4 w-4" />
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-4">
-                            {/* Course / Client readout — named rows instead of one
-                                vague "Scope" string, so what the report covers is
-                                obvious at a glance. */}
-                            <section>
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Course
-                                </h3>
-                                <div className="rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-[11px] font-medium text-body">
-                                    {courseName || "All courses"}
-                                </div>
-                                <h3 className="mt-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Client
-                                </h3>
-                                <div className="rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-[11px] text-body">
-                                    {clientName && clientName !== "all" ? clientName : "All clients"}
-                                </div>
-                                <p className="mt-1 text-[10px] text-faint">
-                                    Change client / course from the page filters above.
-                                </p>
-                            </section>
-
-                            {/* Students */}
-                            <section>
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Students ({studentSel === null ? studentOpts.length : studentSel.size} of{" "}
-                                    {studentOpts.length})
-                                </h3>
-                                <MultiPickBox
-                                    label="Students"
-                                    options={studentOpts}
-                                    sel={studentSel}
-                                    onChange={setStudentSel}
-                                    empty="No students in scope"
-                                />
-                            </section>
-
-                            {/* Activities */}
-                            <section>
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Activities
-                                </h3>
-                                <div className="space-y-1">
-                                    {ACTIVITIES.map((a) => {
-                                        const has = activityHas.has(a.key);
-                                        const on = activities.has(a.key);
-                                        return (
-                                            <label
-                                                key={a.key}
-                                                className={`flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-row-hover ${
-                                                    has ? "" : "opacity-40 cursor-not-allowed"
-                                                }`}
-                                                title={has ? a.hint : `${a.label} has no content in this scope`}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={on}
-                                                    disabled={!has}
-                                                    onChange={() => setActivities(toggleSet(activities, a.key))}
-                                                    className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30 disabled:cursor-not-allowed"
-                                                />
-                                                <span className="flex-1 min-w-0">
-                                                    <span className="block text-[11px] font-medium text-body">
-                                                        {a.label}
-                                                    </span>
-                                                    <span className="block truncate text-[10px] text-faint">
-                                                        {a.hint}
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-
-                            {/* Sub-categories */}
-                            <section>
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Sub-categories (
-                                    {subcats === null ? filteredSubcatOpts.length : subcats.size} of{" "}
-                                    {filteredSubcatOpts.length})
-                                </h3>
-                                <MultiPickBox
-                                    label="Sub-categories"
-                                    options={filteredSubcatOpts.map((o) => ({
-                                        id: o.id,
-                                        name: prettySubcat(o.subcat),
-                                        sub: ACTIVITIES.find((a) => a.key === o.stage)?.label,
-                                    }))}
-                                    sel={subcats}
-                                    onChange={setSubcats}
-                                    empty="No sub-categories for the picked activities"
-                                />
-                                <p className="mt-1 text-[10px] text-faint">
-                                    Only what your courses have allocated.
-                                </p>
-                            </section>
-
-                            {/* Grades */}
-                            <section>
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Grade filter
-                                </h3>
-                                <MultiPickBox
-                                    label="Grades"
-                                    options={gradeOpts}
-                                    sel={grades as Set<string> | null}
-                                    onChange={(s) => setGrades(s as Set<GradeKey> | null)}
-                                />
-                                <p className="mt-1 text-[10px] text-faint">
-                                    Bands 0/40/60/80 on the picked % (falls back to overall).
-                                </p>
-                            </section>
-
-                            {/* Views */}
-                            <section>
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Views
-                                </h3>
-                                <div className="grid grid-cols-1 gap-1.5">
-                                    {VIEWS.map((v) => {
-                                        const on = views.has(v.key);
-                                        const Icon = v.icon;
-                                        return (
-                                            <button
-                                                key={v.key}
-                                                type="button"
-                                                onClick={() => setViews(toggleSet(views, v.key))}
-                                                className={`flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors ${
-                                                    on
-                                                        ? "border-brand-500 bg-brand-100/40 text-brand-strong dark:bg-brand-500/15"
-                                                        : "border-hairline bg-surface text-subtle hover:border-hairline-strong hover:text-body"
-                                                }`}
-                                            >
-                                                <Icon className="h-3.5 w-3.5" /> {v.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-
-                            {/* Roster columns */}
-                            <section
-                                aria-disabled={!views.has("roster")}
-                                className={views.has("roster") ? "" : "opacity-50 pointer-events-none"}
-                            >
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Roster columns
-                                </h3>
-                                <div className="space-y-1">
-                                    {COLUMNS.map((c) => {
-                                        const on = cols.has(c.key);
-                                        return (
-                                            <label
-                                                key={c.key}
-                                                className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-row-hover"
-                                                title={c.hint}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={on}
-                                                    onChange={() => setCols(toggleSet(cols, c.key))}
-                                                    className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
-                                                />
-                                                <span className="flex-1 min-w-0">
-                                                    <span className="block text-[11px] font-medium text-body">
-                                                        {c.label}
-                                                    </span>
-                                                    <span className="block truncate text-[10px] text-faint">
-                                                        {c.hint}
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-
-                            {/* Assignments / Assessments — per-course drilldown. Only
-                                works with a single-course scope; when multiple courses
-                                are in scope we tell the head to narrow first (matches
-                                assignment Dashboard → Reports, which is also per-course). */}
-                            <section
-                                aria-disabled={!views.has("exerciseDetail")}
-                                className={views.has("exerciseDetail") ? "" : "opacity-50 pointer-events-none"}
-                            >
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Assignments / Assessments
-                                </h3>
-                                {!courseId ? (
-                                    <p className="rounded-md border border-dashed border-hairline bg-surface px-2.5 py-2 text-[10px] text-subtle">
-                                        Narrow the page's Course filter to ONE course to enable per-exercise detail.
-                                    </p>
-                                ) : courseDataQuery.isLoading ? (
-                                    <div className="flex items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-2 text-[10px] text-subtle">
-                                        <Loader2 className="h-3 w-3 animate-spin" /> Loading exercises…
-                                    </div>
-                                ) : catalogue.length === 0 ? (
-                                    <p className="rounded-md border border-dashed border-hairline bg-surface px-2.5 py-2 text-[10px] text-subtle">
-                                        No assignments / assessments on this course.
-                                    </p>
-                                ) : (
-                                    <>
-                                        <MultiPickBox
-                                            label="Exercises"
-                                            options={catalogue.map((e) => ({
-                                                id: e.id,
-                                                name: e.name,
-                                                sub: `${e.subCategory} · ${e.totalQuestions} Q · ${e.totalMarks} m`,
-                                            }))}
-                                            sel={exSel}
-                                            onChange={(s) => setExSel(s)}
-                                            empty="No exercises match"
-                                        />
-                                        <p className="mt-1 text-[10px] text-faint">
-                                            Pick one or several — each renders as its own card with a student roster.
-                                        </p>
-                                        <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-row-hover">
-                                            <input
-                                                type="checkbox"
-                                                checked={detailed}
-                                                onChange={(e) => setDetailed(e.target.checked)}
-                                                className="size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
-                                            />
-                                            <span className="text-[11px] font-medium text-body">
-                                                Detailed report (per-question breakdown)
-                                            </span>
-                                        </label>
-                                    </>
-                                )}
-                            </section>
-
-                            {/* Detail — summary columns (outer roster row) */}
-                            <section
-                                aria-disabled={!views.has("exerciseDetail") || !courseId}
-                                className={views.has("exerciseDetail") && courseId ? "" : "opacity-50 pointer-events-none"}
-                            >
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Detail: summary columns
-                                </h3>
-                                <div className="space-y-1">
-                                    {SUM_COLS.map((c) => {
-                                        const on = sumCols.has(c.key);
-                                        return (
-                                            <label
-                                                key={c.key}
-                                                className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-row-hover"
-                                                title={c.hint}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={on}
-                                                    onChange={() => setSumCols(toggleSet(sumCols, c.key))}
-                                                    className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
-                                                />
-                                                <span className="flex-1 min-w-0">
-                                                    <span className="block text-[11px] font-medium text-body">
-                                                        {c.label}
-                                                    </span>
-                                                    <span className="block truncate text-[10px] text-faint">
-                                                        {c.hint}
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-
-                            {/* Detail — per-question columns (inner table when expanded) */}
-                            <section
-                                aria-disabled={!views.has("exerciseDetail") || !courseId || !detailed}
-                                className={views.has("exerciseDetail") && courseId && detailed ? "" : "opacity-50 pointer-events-none"}
-                            >
-                                <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Detail: per-question columns
-                                </h3>
-                                <div className="space-y-1">
-                                    {Q_COLS.map((c) => {
-                                        const on = qCols.has(c.key);
-                                        return (
-                                            <label
-                                                key={c.key}
-                                                className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1 hover:bg-row-hover"
-                                                title={c.hint}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={on}
-                                                    onChange={() => setQCols(toggleSet(qCols, c.key))}
-                                                    className="mt-0.5 size-3.5 cursor-pointer rounded border-hairline-strong text-brand-500 focus:ring-2 focus:ring-brand-500/30"
-                                                />
-                                                <span className="flex-1 min-w-0">
-                                                    <span className="block text-[11px] font-medium text-body">
-                                                        {c.label}
-                                                    </span>
-                                                    <span className="block truncate text-[10px] text-faint">
-                                                        {c.hint}
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-                        </div>
-                    )}
-
-                    {!drawerCollapsed && (
-                        <footer className="flex-shrink-0 border-t border-hairline px-4 py-2">
-                            <button
-                                type="button"
-                                onClick={reset}
-                                className="w-full rounded-md border border-hairline bg-surface px-2 py-1.5 text-[11px] font-medium text-body hover:bg-row-hover transition-colors"
-                            >
-                                Reset to defaults
-                            </button>
-                        </footer>
-                    )}
-                </aside>
-
-                {/* ─── RIGHT CANVAS ──────────────────────────────────────── */}
-                <div className="flex flex-1 min-w-0 flex-col">
-                    <header className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-hairline bg-surface px-5 py-2.5">
-                        <div className="min-w-0">
-                            <h2 className="truncate text-sm font-semibold text-heading">
-                                Performance Report
-                            </h2>
-                            <p className="mt-0.5 truncate text-[10px] text-subtle tabular-nums">
-                                {scopeLine} · {gradeLine}
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div ref={downloadRef} className="relative">
-                                <button
-                                    type="button"
-                                    onClick={() => setDownloadOpen((v) => !v)}
-                                    disabled={!!busy || workingRows.length === 0}
-                                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-brand-500 bg-brand-500 text-white text-xs font-semibold hover:bg-brand-strong disabled:opacity-50 transition-colors"
-                                >
-                                    {busy ? (
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                        <Download className="h-3.5 w-3.5" />
-                                    )}
-                                    Download report
-                                    <ChevronDown
-                                        className={`h-3 w-3 transition-transform ${downloadOpen ? "rotate-180" : ""}`}
-                                    />
-                                </button>
-                                {downloadOpen && (
-                                    <div className="absolute right-0 top-full mt-1 w-44 overflow-hidden rounded-md border border-hairline bg-surface shadow-lg z-10">
-                                        <button
-                                            type="button"
-                                            onClick={downloadExcel}
-                                            disabled={!!busy}
-                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-body hover:bg-row-hover transition-colors disabled:opacity-50"
-                                        >
-                                            <FileSpreadsheet className="h-3.5 w-3.5 text-success-500" /> Excel (.xlsx)
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={downloadPdf}
-                                            disabled={!!busy}
-                                            className="flex w-full items-center gap-2 border-t border-hairline px-3 py-2 text-left text-xs font-medium text-body hover:bg-row-hover transition-colors disabled:opacity-50"
-                                        >
-                                            <FileText className="h-3.5 w-3.5 text-danger-500" /> PDF (.pdf)
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                aria-label="Close"
-                                className="flex h-8 w-8 items-center justify-center rounded-control text-subtle hover:bg-row-hover hover:text-heading transition-colors"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        </div>
-                    </header>
-
-                    <div className="flex-1 min-h-0 overflow-y-auto bg-surface-sunken/20 px-5 py-4 space-y-4">
-                        {/* Restore-strip: any sections dropped with × can be brought back here. */}
-                        {removed.size > 0 ? (
-                            <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-hairline bg-surface/60 px-3 py-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-subtle">
-                                    Removed
-                                </span>
-                                {[...removed].map((k) => {
-                                    const meta = VIEWS.find((v) => v.key === k);
-                                    if (!meta) return null;
-                                    return (
-                                        <button
-                                            key={k}
-                                            type="button"
-                                            onClick={() => restoreSection(k)}
-                                            className="inline-flex items-center gap-1 rounded-full border border-hairline bg-surface px-2 py-0.5 text-[10px] font-medium text-body hover:border-brand-500 hover:text-brand-strong transition-colors"
-                                            title="Restore section"
-                                        >
-                                            + {meta.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        ) : null}
-
-                        {!anySection ? (
-                            <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                                <Settings2 className="h-8 w-8 text-faint" />
-                                <p className="text-sm font-medium text-body">Nothing on the canvas yet</p>
-                                <p className="text-xs text-subtle">Pick at least one view from the left panel.</p>
-                            </div>
-                        ) : workingRows.length === 0 ? (
-                            <div className="flex h-full items-center justify-center text-xs text-subtle">
-                                No students match this filter — loosen a grade / activity choice.
-                            </div>
-                        ) : (
-                            <>
-                                {shouldShow("stats") ? (
-                                    <Sec id="stats">
-                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
-                                            <h3 className="text-xs font-semibold text-heading">Summary</h3>
-                                            <span className="text-[10px] text-subtle tabular-nums">
-                                                {stats.total} students in scope
-                                            </span>
-                                        </header>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
-                                            {/* Per-activity averages replace the old flat "Avg overall %"
-                                                card — a single blended number nobody could interpret. */}
-                                            {activitySplit.map((a) => (
-                                                <Stat
-                                                    key={a.key}
-                                                    label={`${a.label} avg`}
-                                                    value={a.avg === null ? "N/A" : `${a.avg}%`}
-                                                    hint={`completion — ${a.hint}`}
-                                                />
-                                            ))}
-                                            <Stat
-                                                label="Avg score"
-                                                value={stats.avgScore === null ? "—" : `${stats.avgScore}%`}
-                                                hint="marks on We/You Do work"
-                                            />
-                                            <Stat
-                                                label="Excellent"
-                                                value={stats.excellent}
-                                                tone="good"
-                                                hint="picked ≥ 80%"
-                                            />
-                                            <Stat
-                                                label="At risk"
-                                                value={stats.atRisk}
-                                                tone={stats.atRisk > 0 ? "bad" : "good"}
-                                                hint="picked < 40%"
-                                            />
-                                            <Stat label="Not started" value={stats.notStarted} tone="muted" />
-                                            <Stat label="Students" value={stats.total} />
-                                        </div>
-                                    </Sec>
-                                ) : null}
-
-                                {shouldShow("activities") ? (
-                                    <Sec id="activities">
-                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
-                                            <h3 className="text-xs font-semibold text-heading">
-                                                Activities — I Do · We Do · You Do
-                                            </h3>
-                                            <span className="text-[10px] text-subtle">
-                                                avg completion per stage
-                                            </span>
-                                        </header>
-                                        {activityChartRows.length === 0 ? (
-                                            <div className="flex h-40 items-center justify-center text-xs text-subtle">
-                                                No activity progress in the current selection.
-                                            </div>
-                                        ) : (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3">
-                                                {/* Pie — how the three stages compare to each other. */}
-                                                <div
-                                                    className="h-60"
-                                                    ref={(el) => { chartRefs.current["activitiesPie"] = el; }}
-                                                >
-                                                    <ResponsiveContainer width="100%" height="100%">
-                                                        <PieChart>
-                                                            <Pie
-                                                                dataKey="avg"
-                                                                nameKey="label"
-                                                                data={activityChartRows}
-                                                                innerRadius={48}
-                                                                outerRadius={82}
-                                                                paddingAngle={2}
-                                                                label={((e: any) => `${e.label}: ${e.avg}%`) as any}
-                                                                labelLine={false}
-                                                            >
-                                                                {activityChartRows.map((a, i) => (
-                                                                    <Cell key={i} fill={a.color} />
-                                                                ))}
-                                                            </Pie>
-                                                            <RTooltip formatter={((v: number) => `${v}%`) as any} />
-                                                            <RLegend
-                                                                verticalAlign="bottom"
-                                                                height={26}
-                                                                iconType="circle"
-                                                                wrapperStyle={{ fontSize: 11 }}
-                                                            />
-                                                        </PieChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                                {/* Bar — each stage against the 0–100% scale. */}
-                                                <div
-                                                    className="h-60"
-                                                    ref={(el) => { chartRefs.current["activitiesBar"] = el; }}
-                                                >
-                                                    <ResponsiveContainer width="100%" height="100%">
-                                                        <BarChart
-                                                            data={activityChartRows.map((a) => ({ name: a.label, avg: a.avg }))}
-                                                            margin={{ top: 20, right: 16, left: 0, bottom: 6 }}
-                                                            barCategoryGap="28%"
-                                                        >
-                                                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
-                                                            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                                                            <YAxis
-                                                                tick={{ fontSize: 10 }}
-                                                                domain={[0, 100]}
-                                                                tickFormatter={(v) => `${v}%`}
-                                                            />
-                                                            <RTooltip formatter={((v: number) => `${v}%`) as any} />
-                                                            <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
-                                                                {activityChartRows.map((a, i) => (
-                                                                    <Cell key={i} fill={a.color} />
-                                                                ))}
-                                                            </Bar>
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </Sec>
-                                ) : null}
-
-                                {shouldShow("gradePie") ? (
-                                    <Sec id="gradePie">
-                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
-                                            <h3 className="text-xs font-semibold text-heading">
-                                                Grade distribution
-                                            </h3>
-                                            <span className="text-[10px] text-subtle">
-                                                bands on the picked %
-                                            </span>
-                                        </header>
-                                        {/* Plain labeled count bars — the donut this used to be was
-                                            redundant next to the Activities pie and harder to read. */}
-                                        {gradeSlices.length === 0 ? (
-                                            <div className="flex h-40 items-center justify-center text-xs text-subtle">
-                                                Nothing to grade in the current selection.
-                                            </div>
-                                        ) : (
-                                            <div className="flex flex-col gap-2 p-4">
-                                                {gradeSlices.map((s) => {
-                                                    const pctOfAll = stats.total
-                                                        ? Math.round((s.value / stats.total) * 100)
-                                                        : 0;
-                                                    return (
-                                                        <div key={s.key} className="flex items-center gap-3">
-                                                            <span className="w-24 flex-shrink-0 text-[11px] font-medium text-body">
-                                                                {s.name}
-                                                            </span>
-                                                            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-row-hover">
-                                                                <div
-                                                                    className="h-full rounded-full"
-                                                                    style={{ width: `${pctOfAll}%`, background: s.color }}
-                                                                />
-                                                            </div>
-                                                            <span className="w-20 flex-shrink-0 text-right text-[11px] tabular-nums text-subtle">
-                                                                <b className="text-body">{s.value}</b> · {pctOfAll}%
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </Sec>
-                                ) : null}
-
-                                {shouldShow("subcatBars") ? (
-                                    <Sec id="subcatBars">
-                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
-                                            <h3 className="text-xs font-semibold text-heading">
-                                                Sub-category performance
-                                            </h3>
-                                            <span className="text-[10px] text-subtle">
-                                                avg % per activity · sub-cat
-                                            </span>
-                                        </header>
-                                        <div className="h-72">
-                                            {subcatBars.length === 0 ? (
-                                                <div className="flex h-full items-center justify-center text-xs text-subtle">
-                                                    No sub-categories in the selection.
-                                                </div>
-                                            ) : (
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <BarChart
-                                                        data={subcatBars.map((b) => ({
-                                                            name: b.label,
-                                                            avg: b.avg,
-                                                        }))}
-                                                        margin={{ top: 8, right: 16, left: 0, bottom: 60 }}
-                                                    >
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                                                        <XAxis
-                                                            dataKey="name"
-                                                            tick={{ fontSize: 10 }}
-                                                            angle={-20}
-                                                            textAnchor="end"
-                                                            interval={0}
-                                                            height={70}
-                                                        />
-                                                        <YAxis
-                                                            tick={{ fontSize: 10 }}
-                                                            domain={[0, 100]}
-                                                            tickFormatter={(v) => `${v}%`}
-                                                        />
-                                                        <RTooltip formatter={((v: number) => `${v}%`) as any} />
-                                                        <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
-                                                            {subcatBars.map((b, i) => (
-                                                                <Cell
-                                                                    key={i}
-                                                                    fill={
-                                                                        b.avg >= 80
-                                                                            ? "#0E9F6E"
-                                                                            : b.avg >= 60
-                                                                                ? "#2E90C4"
-                                                                                : b.avg >= 40
-                                                                                    ? "#C77700"
-                                                                                    : "#B42318"
-                                                                    }
-                                                                />
-                                                            ))}
-                                                        </Bar>
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-                                            )}
-                                        </div>
-                                    </Sec>
-                                ) : null}
-
-                                {shouldShow("courses") ? (
-                                    <Sec id="courses">
-                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
-                                            <h3 className="text-xs font-semibold text-heading">Courses</h3>
-                                            <span className="text-[10px] text-subtle tabular-nums">
-                                                {courseRows.length} in scope
-                                            </span>
-                                        </header>
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full border-collapse text-xs">
-                                                <thead className="bg-surface-sunken/50">
-                                                    <tr>
-                                                        {["Course", "Client", "Students", "Avg %", "Completed", "In progress", "Not started"].map((h, i) => (
-                                                            <th
-                                                                key={h}
-                                                                className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline ${i > 1 ? "text-right" : "text-left"}`}
-                                                            >
-                                                                {h}
-                                                            </th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {courseRows.map((c) => (
-                                                        <tr
-                                                            key={c.id}
-                                                            className="border-b border-hairline last:border-0 hover:bg-row-hover transition-colors"
-                                                        >
-                                                            <td className="px-3 py-2 text-xs font-semibold text-heading">
-                                                                {c.name}
-                                                            </td>
-                                                            <td className="px-3 py-2 text-xs text-body">
-                                                                {c.client}
-                                                            </td>
-                                                            <td className="px-3 py-2 text-right text-xs tabular-nums text-body">
-                                                                {c.students}
-                                                            </td>
-                                                            <td className="px-3 py-2 text-right text-xs tabular-nums text-body">
-                                                                <span
-                                                                    className={`font-semibold ${
-                                                                        c.avg >= 80
-                                                                            ? "text-success-500"
-                                                                            : c.avg >= 40
-                                                                                ? "text-warn-500"
-                                                                                : "text-danger-500"
-                                                                    }`}
-                                                                >
-                                                                    {c.avg}%
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-3 py-2 text-right text-xs tabular-nums text-body">
-                                                                {c.done}
-                                                            </td>
-                                                            <td className="px-3 py-2 text-right text-xs tabular-nums text-body">
-                                                                {c.prog}
-                                                            </td>
-                                                            <td className="px-3 py-2 text-right text-xs tabular-nums text-body">
-                                                                {c.not}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </Sec>
-                                ) : null}
-
-                                {shouldShow("exerciseDetail") ? (
-                                    <Sec id="exerciseDetail">
-                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
-                                            <div className="min-w-0">
-                                                <h3 className="text-xs font-semibold text-heading">
-                                                    Assignment / Assessment detail
-                                                </h3>
-                                                <p className="mt-0.5 truncate text-[10px] text-subtle">
-                                                    {courseId
-                                                        ? exerciseRosters.length === 0
-                                                            ? "Pick one or more exercises from the drawer to drill down."
-                                                            : `${exerciseRosters.length} exercise${exerciseRosters.length === 1 ? "" : "s"} · ${detailed ? "detailed mode (expandable)" : "summary only"}`
-                                                        : "Narrow to a single course to enable drilldown."}
-                                                </p>
-                                            </div>
-                                            <span className="text-[10px] text-subtle tabular-nums">
-                                                {workingRows.length} students in scope
-                                            </span>
-                                        </header>
-                                        <div className="flex flex-col gap-3 p-4">
-                                            {!courseId ? (
-                                                <div className="rounded-md border border-dashed border-hairline bg-surface p-6 text-center text-xs text-subtle">
-                                                    Narrow the page's Course filter to ONE course to enable per-assignment drilldown.
-                                                </div>
-                                            ) : courseDataQuery.isLoading ? (
-                                                <div className="flex items-center justify-center gap-2 rounded-md border border-hairline bg-surface p-6 text-xs text-subtle">
-                                                    <Loader2 className="h-4 w-4 animate-spin" /> Loading course pedagogy…
-                                                </div>
-                                            ) : exerciseRosters.length === 0 ? (
-                                                <div className="rounded-md border border-dashed border-hairline bg-surface p-6 text-center text-xs text-subtle">
-                                                    {catalogue.length === 0
-                                                        ? "This course has no assignments or assessments."
-                                                        : "Pick one or more exercises from the drawer to see their detail."}
-                                                </div>
-                                            ) : (
-                                                exerciseRosters.map((er) => {
-                                                    const activeSum = SUM_COLS.filter((c) => sumCols.has(c.key));
-                                                    const activeQ = Q_COLS.filter((c) => qCols.has(c.key));
-                                                    return (
-                                                        <div
-                                                            key={er.ex.id}
-                                                            className="rounded-tile border border-hairline bg-surface"
-                                                        >
-                                                            <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 py-3">
-                                                                <div className="min-w-0 flex-1">
-                                                                    <h4 className="truncate text-xs font-semibold text-heading">
-                                                                        {er.ex.name}
-                                                                    </h4>
-                                                                    <p className="mt-0.5 truncate text-[10px] text-subtle">
-                                                                        {er.ex.path} · {er.ex.totalQuestions} question
-                                                                        {er.ex.totalQuestions === 1 ? "" : "s"} · {er.ex.totalMarks} marks
-                                                                    </p>
-                                                                </div>
-                                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] tabular-nums text-subtle">
-                                                                    <span>
-                                                                        Submitted:{" "}
-                                                                        <b className="text-success-500">
-                                                                            {er.stats.submitted}
-                                                                        </b>
-                                                                    </span>
-                                                                    <span>
-                                                                        Started:{" "}
-                                                                        <b className="text-warn-500">
-                                                                            {er.stats.started}
-                                                                        </b>
-                                                                    </span>
-                                                                    <span>
-                                                                        Not started:{" "}
-                                                                        <b className="text-subtle">
-                                                                            {er.stats.notStarted}
-                                                                        </b>
-                                                                    </span>
-                                                                    <span>
-                                                                        Avg %:{" "}
-                                                                        <b className="text-brand-strong">
-                                                                            {er.stats.avgPct === null
-                                                                                ? "—"
-                                                                                : `${er.stats.avgPct}%`}
-                                                                        </b>
-                                                                    </span>
-                                                                    <span>
-                                                                        Pass / Fail:{" "}
-                                                                        <b>
-                                                                            {er.stats.passCount} / {er.stats.failCount}
-                                                                        </b>
-                                                                    </span>
-                                                                </div>
-                                                            </header>
-                                                            <div className="overflow-x-auto">
-                                                                <table className="w-full border-collapse text-xs">
-                                                                    <thead className="bg-surface-sunken/50">
-                                                                        <tr>
-                                                                            {detailed ? (
-                                                                                <th className="w-8 px-2 py-2 border-b border-hairline" />
-                                                                            ) : null}
-                                                                            <th className="w-10 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
-                                                                                #
-                                                                            </th>
-                                                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
-                                                                                Student
-                                                                            </th>
-                                                                            {activeSum.map((c) => (
-                                                                                <th
-                                                                                    key={c.key}
-                                                                                    className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline ${c.r ? "text-right" : "text-left"}`}
-                                                                                >
-                                                                                    {c.label}
-                                                                                </th>
-                                                                            ))}
-                                                                        </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                        {er.rows.map((r, i) => {
-                                                                            const key = `${er.ex.id}:${r.pid}`;
-                                                                            const isOpen = expanded.has(key);
-                                                                            const rows: React.ReactNode[] = [
-                                                                                <tr
-                                                                                    key={`${key}-sum`}
-                                                                                    className="border-b border-hairline last:border-0 hover:bg-row-hover transition-colors"
-                                                                                >
-                                                                                    {detailed ? (
-                                                                                        <td className="w-8 px-2 py-2">
-                                                                                            <button
-                                                                                                type="button"
-                                                                                                onClick={() => toggleExpanded(er.ex.id, r.pid)}
-                                                                                                aria-label={isOpen ? "Collapse" : "Expand"}
-                                                                                                className="flex h-5 w-5 items-center justify-center rounded text-subtle hover:bg-row-hover hover:text-heading transition-colors"
-                                                                                            >
-                                                                                                {isOpen ? (
-                                                                                                    <ChevronDown className="h-3.5 w-3.5" />
-                                                                                                ) : (
-                                                                                                    <ChevronRight className="h-3.5 w-3.5" />
-                                                                                                )}
-                                                                                            </button>
-                                                                                        </td>
-                                                                                    ) : null}
-                                                                                    <td className="px-3 py-2 text-[10px] tabular-nums text-faint">
-                                                                                        {String(i + 1).padStart(2, "0")}
-                                                                                    </td>
-                                                                                    <td className="px-3 py-2">
-                                                                                        <div className="truncate text-xs font-semibold text-heading">
-                                                                                            {r.name}
-                                                                                        </div>
-                                                                                        {r.email && (
-                                                                                            <div className="truncate text-[10px] text-subtle">
-                                                                                                {r.email}
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </td>
-                                                                                    {activeSum.map((c) => (
-                                                                                        <td
-                                                                                            key={c.key}
-                                                                                            className={`px-3 py-2 text-xs text-body ${c.r ? "text-right tabular-nums" : ""}`}
-                                                                                        >
-                                                                                            {renderSumCell(r, c.key)}
-                                                                                        </td>
-                                                                                    ))}
-                                                                                </tr>,
-                                                                            ];
-                                                                            if (detailed && isOpen) {
-                                                                                const bd = breakdowns.get(key) || [];
-                                                                                rows.push(
-                                                                                    <tr key={`${key}-detail`} className="bg-surface-sunken/30">
-                                                                                        <td className="w-8 px-2" />
-                                                                                        <td
-                                                                                            colSpan={2 + activeSum.length}
-                                                                                            className="border-b border-hairline px-4 py-3"
-                                                                                        >
-                                                                                            {bd.length === 0 ? (
-                                                                                                <p className="text-[11px] text-subtle">
-                                                                                                    No questions recorded for this student.
-                                                                                                </p>
-                                                                                            ) : (
-                                                                                                <div className="overflow-x-auto rounded border border-hairline">
-                                                                                                    <table className="w-full text-[11.5px]">
-                                                                                                        <thead className="bg-surface">
-                                                                                                            <tr>
-                                                                                                                {activeQ.map((qc) => (
-                                                                                                                    <th
-                                                                                                                        key={qc.key}
-                                                                                                                        className={`px-3 py-1.5 text-[10px] font-semibold text-subtle border-b border-hairline ${qc.r ? "text-right" : "text-left"}`}
-                                                                                                                    >
-                                                                                                                        {qc.label}
-                                                                                                                    </th>
-                                                                                                                ))}
-                                                                                                            </tr>
-                                                                                                        </thead>
-                                                                                                        <tbody>
-                                                                                                            {bd.map((q) => (
-                                                                                                                <tr
-                                                                                                                    key={q.questionId}
-                                                                                                                    className="border-b border-hairline last:border-0"
-                                                                                                                >
-                                                                                                                    {activeQ.map((qc) => (
-                                                                                                                        <td
-                                                                                                                            key={qc.key}
-                                                                                                                            className={`px-3 py-1.5 text-body ${qc.r ? "text-right tabular-nums" : ""}`}
-                                                                                                                        >
-                                                                                                                            {renderQCell(q, qc.key)}
-                                                                                                                        </td>
-                                                                                                                    ))}
-                                                                                                                </tr>
-                                                                                                            ))}
-                                                                                                        </tbody>
-                                                                                                    </table>
-                                                                                                </div>
-                                                                                            )}
-                                                                                        </td>
-                                                                                    </tr>
-                                                                                );
-                                                                            }
-                                                                            return rows;
-                                                                        })}
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </Sec>
-                                ) : null}
-
-                                {shouldShow("roster") ? (
-                                    <Sec id="roster">
-                                        <header className="flex items-center justify-between border-b border-hairline px-4 py-2 pr-10">
-                                            <h3 className="text-xs font-semibold text-heading">Roster</h3>
-                                            <span className="text-[10px] text-subtle tabular-nums">
-                                                {workingRows.length} students · {activeCols.length + 1} columns
-                                            </span>
-                                        </header>
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full border-collapse text-xs">
-                                                <thead className="bg-surface-sunken/50">
-                                                    <tr>
-                                                        <th className="w-10 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
-                                                            #
-                                                        </th>
-                                                        <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline">
-                                                            Student
-                                                        </th>
-                                                        {activeCols.map((c) => (
-                                                            <th
-                                                                key={c.key}
-                                                                className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-subtle border-b border-hairline ${c.r ? "text-right" : "text-left"}`}
-                                                            >
-                                                                {c.label}
-                                                            </th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {workingRows.map((r, i) => (
-                                                        <tr
-                                                            key={`${r.pid}-${r.courseId}`}
-                                                            className="border-b border-hairline last:border-0 hover:bg-row-hover transition-colors"
-                                                        >
-                                                            <td className="px-3 py-2 text-[10px] tabular-nums text-faint">
-                                                                {String(i + 1).padStart(2, "0")}
-                                                            </td>
-                                                            <td className="px-3 py-2">
-                                                                <div className="truncate text-xs font-semibold text-heading">
-                                                                    {r.name}
-                                                                </div>
-                                                                {r.email && (
-                                                                    <div className="truncate text-[10px] text-subtle">
-                                                                        {r.email}
-                                                                    </div>
-                                                                )}
-                                                            </td>
-                                                            {activeCols.map((c) => (
-                                                                <td
-                                                                    key={c.key}
-                                                                    className={`px-3 py-2 text-xs text-body ${c.r ? "text-right tabular-nums" : ""}`}
-                                                                >
-                                                                    {c.key === "grade" ? (
-                                                                        <span
-                                                                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
-                                                                            style={{
-                                                                                background: `${gradeColor(r.grade)}17`,
-                                                                                color: gradeColor(r.grade),
-                                                                            }}
-                                                                        >
-                                                                            {gradeLabel(r.grade)}
-                                                                        </span>
-                                                                    ) : (
-                                                                        cellText(r, c.key)
-                                                                    )}
-                                                                </td>
-                                                            ))}
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </Sec>
-                                ) : null}
-                            </>
-                        )}
-                    </div>
+                    {children}
                 </div>
             </div>
-        </div>
-    );
-}
+        );
 
-// Small stat tile used by the summary section.
-function Stat({
-    label,
-    value,
-    hint,
-    tone,
-}: {
-    label: string;
-    value: string | number;
-    hint?: string;
-    tone?: "good" | "bad" | "muted" | "brand";
-}) {
-    const color =
-        tone === "good"
-            ? "text-success-500"
-            : tone === "bad"
-                ? "text-danger-500"
-                : tone === "muted"
-                    ? "text-subtle"
-                    : "text-heading";
-    return (
-        <div className="rounded-md border border-hairline bg-surface px-3 py-2">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-subtle">{label}</div>
-            <div className={`mt-0.5 text-lg font-semibold tabular-nums ${color}`}>{value}</div>
-            {hint ? <div className="mt-0.5 text-[10px] text-faint">{hint}</div> : null}
-        </div>
-    );
-}
-
-// Per-exercise summary-cell renderer. Types intentionally loose because the
-// caller passes rows from the private ExRosterRow type defined inside the
-// component.
-type SumRowLoose = {
-    totalQuestions: number;
-    completed: number;
-    nonCompleted: number;
-    testStatus: "not-started" | "started" | "submitted";
-    totalMarks: number;
-    scoredMarks: number | null;
-    percentage: number | null;
-    scale: string;
-};
-function renderSumCell(r: SumRowLoose, k: SumColKey): React.ReactNode {
-    switch (k) {
-        case "totalQ":
-            return r.totalQuestions;
-        case "completed":
-            return <span className="font-semibold text-success-500">{r.completed}</span>;
-        case "nonCompleted":
-            return <span className="font-semibold text-warn-500">{r.nonCompleted}</span>;
-        case "testStatus": {
-            const meta =
-                r.testStatus === "submitted"
-                    ? { label: "Submitted", cls: "bg-success-500/15 text-success-500" }
-                    : r.testStatus === "started"
-                        ? { label: "Started", cls: "bg-warn-500/15 text-warn-500" }
-                        : { label: "Not Started", cls: "bg-subtle/15 text-subtle" };
-            return (
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${meta.cls}`}>
-                    {meta.label}
-                </span>
-            );
+    // Header: inline hosts (the new Reports page) pass their own header
+    // via renderHeader so the toolbar sits in the page chrome. When
+    // absent, DesignerHeader still renders — the modal's title bar and
+    // download/close controls.
+    // Distinct activity type names discovered in the filtered sub-cat
+    // options (e.g. "Assignment", "Assessment", "Practical"). One entry
+    // per type — the popover uses this list to render its Activity Types
+    // checkbox group instead of the drawer's per-(stage · subcat) chip
+    // strip.
+    const activityTypeOpts = React.useMemo(() => {
+        const seen = new Set<string>();
+        for (const o of filteredSubcatOpts) {
+            const name = prettySubcat(o.subcat);
+            if (name && !seen.has(name)) seen.add(name);
         }
-        case "totalMarks":
-            return r.totalMarks > 0 ? r.totalMarks : "—";
-        case "scoredMarks":
-            return typeof r.scoredMarks === "number" ? (
-                <span className="font-semibold text-success-500">{r.scoredMarks}</span>
-            ) : (
-                <span className="text-faint">—</span>
-            );
-        case "percentage":
-            if (r.percentage === null) return <span className="text-faint">—</span>;
-            {
-                const pctv = r.percentage;
-                const cls =
-                    pctv >= 80
-                        ? "text-success-500"
-                        : pctv >= 50
-                            ? "text-warn-500"
-                            : "text-danger-500";
-                return <span className={`font-semibold ${cls}`}>{pctv}%</span>;
-            }
-        case "scale":
-            return r.scale ? (
-                <span className="inline-flex items-center rounded-full bg-brand-500/15 px-2 py-0.5 text-[10.5px] font-semibold text-brand-strong">
-                    {r.scale}
-                </span>
-            ) : (
-                <span className="text-faint">—</span>
-            );
-        default:
-            return "";
-    }
-}
+        return Array.from(seen).sort((a, b) => a.localeCompare(b));
+    }, [filteredSubcatOpts]);
 
-function renderQCell(q: QuestionBreakdownRow, k: QColKey): React.ReactNode {
-    switch (k) {
-        case "qno":
-            return q.questionNo;
-        case "title":
-            return (
-                <span className="text-body" title={q.title}>
-                    {q.title || "—"}
-                </span>
-            );
-        case "type":
-            return <span className="uppercase tracking-wide text-subtle">{q.type || "—"}</span>;
-        case "status":
-            return (
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${Q_STATUS_TONE[q.status]}`}>
-                    {Q_STATUS_LABEL[q.status]}
-                </span>
-            );
-        case "totalMark":
-            return q.totalMark;
-        case "scoredMark":
-            if (q.status === "pending" || q.status === "not_answered") return <span className="text-faint">—</span>;
-            {
-                const cls =
-                    q.scoredMark === q.totalMark
-                        ? "text-success-500"
-                        : q.scoredMark === 0
-                            ? "text-danger-500"
-                            : "text-warn-500";
-                return <span className={`font-semibold ${cls}`}>{q.scoredMark}</span>;
-            }
-        case "submittedAt":
-            return <span className="whitespace-nowrap">{fmtDateT(q.submittedAt)}</span>;
-        case "timeTaken":
-            return <span className="whitespace-nowrap">{fmtTime(q.timeTakenSeconds)}</span>;
-        default:
-            return "";
-    }
+    // Which activity type NAMES are currently selected. The drawer's
+    // subcats state is keyed by (stage:subcat) pairs; a type is "on"
+    // when every pair matching it is in the selected set — or, when
+    // subcats is null (meaning "all"), all types are "on".
+    const selectedActivityTypes = React.useMemo(() => {
+        const on = new Set<string>();
+        if (subcats === null) {
+            activityTypeOpts.forEach((t) => on.add(t));
+            return on;
+        }
+        for (const o of filteredSubcatOpts) {
+            if (subcats.has(o.id)) on.add(prettySubcat(o.subcat));
+        }
+        return on;
+    }, [subcats, filteredSubcatOpts, activityTypeOpts]);
+
+    // Toggle every (stage:subcat) pair matching a type name.
+    const onToggleActivityType = (name: string) => {
+        const matchingIds = filteredSubcatOpts
+            .filter((o) => prettySubcat(o.subcat) === name)
+            .map((o) => o.id);
+        if (matchingIds.length === 0) return;
+        // Normalise subcats → concrete Set (was null = "all"). Then flip
+        // the type's ids in/out.
+        const base = subcats === null
+            ? new Set(filteredSubcatOpts.map((o) => o.id))
+            : new Set(subcats);
+        const anyOn = matchingIds.some((id) => base.has(id));
+        if (anyOn) {
+            matchingIds.forEach((id) => base.delete(id));
+        } else {
+            matchingIds.forEach((id) => base.add(id));
+        }
+        setSubcats(base);
+    };
+
+    // Group catalogue exercises by activity type name — the Activity
+    // Names selector on the popover pulls its options from this map.
+    const exercisesByType = React.useMemo(() => {
+        const map: Record<string, { id: string; name: string }[]> = {};
+        for (const ex of catalogue) {
+            const name = ex.subCategory || "Other";
+            if (!map[name]) map[name] = [];
+            map[name].push({ id: ex.id, name: ex.name });
+        }
+        return map;
+    }, [catalogue]);
+
+    const filterHelpers: FilterHelpers = {
+        activityHas,
+        activities,
+        onToggleActivity,
+        activityTypeOpts,
+        selectedActivityTypes,
+        onToggleActivityType,
+        exercisesByType,
+        exSel,
+        setExSel,
+        grades,
+        onGrades: setGrades,
+        views,
+        onToggleView,
+        onAllViews,
+        cols,
+        onToggleCol,
+        onReset: reset,
+    };
+
+    const headerNode = renderHeader
+        ? renderHeader({
+            canDownload: workingRows.length > 0,
+            onExcel: downloadExcel,
+            onPdf: downloadPdf,
+            busy,
+            filters: filterHelpers,
+        })
+        : (
+            <DesignerHeader
+                busy={busy}
+                canDownload={workingRows.length > 0}
+                downloadOpen={downloadOpen}
+                onToggleDownload={() => setDownloadOpen((v) => !v)}
+                downloadRef={downloadRef}
+                onExcel={downloadExcel}
+                onPdf={downloadPdf}
+                onClose={onClose}
+            />
+        );
+
+    return (
+        <OuterWrap>
+            {headerNode}
+
+            <div className="flex min-h-0 flex-1">
+                {showRail ? (
+                    <DesignerRail
+                        active={activeSection}
+                        collapsed={collapsed}
+                        onJump={jumpToSection}
+                        onToggleCollapse={() => setCollapsed((v) => !v)}
+                    />
+                ) : null}
+                {showDrawer && !collapsed ? (
+                    <ControlsDrawer
+                            bodyRef={drawerBodyRef}
+                            onActiveChange={setActiveSection}
+                            onReset={reset}
+                            clientName={clientName}
+                            courseName={courseName}
+                            studentOpts={studentOpts}
+                            studentSel={studentSel}
+                            onStudentSel={setStudentSel}
+                            activityHas={activityHas}
+                            activities={activities}
+                            onToggleActivity={onToggleActivity}
+                            subcatOpts={filteredSubcatOpts}
+                            subcats={subcats}
+                            onSubcats={setSubcats}
+                            grades={grades}
+                            onGrades={setGrades}
+                            views={views}
+                            onToggleView={onToggleView}
+                            onAllViews={onAllViews}
+                            cols={cols}
+                            onToggleCol={onToggleCol}
+                            courseId={courseId}
+                            courseLoading={!!courseId && courseDataQuery.isLoading}
+                            catalogue={catalogue}
+                            exSel={exSel}
+                            onExSel={setExSel}
+                            detailed={detailed}
+                            onDetailed={setDetailed}
+                            sumCols={sumCols}
+                            onToggleSum={onToggleSum}
+                            qCols={qCols}
+                            onToggleQ={onToggleQ}
+                        />
+                    ) : null}
+
+                    <ReportCanvas
+                        // When the host provides its own header via
+                        // renderHeader, hide the canvas's internal title
+                        // block — otherwise "Learner Progress & Performance
+                        // Report" prints twice.
+                        showTitleBlock={!renderHeader}
+                        shouldShow={shouldShow}
+                        removed={removed}
+                        onRestore={restoreSection}
+                        onRemove={removeSection}
+                        registerRef={registerChartRef}
+                        courseName={courseName}
+                        scopeLine={scopeLine}
+                        gradeLine={gradeLine}
+                        workingRows={workingRows}
+                        stats={stats}
+                        activitySplit={activitySplit}
+                        performanceSplit={performanceSplit}
+                        gradeSlices={gradeSlices}
+                        subcatBars={subcatBars}
+                        courseRows={courseRows}
+                        activeCols={activeCols}
+                        cellText={cellText}
+                        courseId={courseId}
+                        courseLoading={!!courseId && courseDataQuery.isLoading}
+                        catalogue={catalogue}
+                        exerciseRosters={exerciseRosters}
+                        sumCols={sumCols}
+                        qCols={qCols}
+                        detailed={detailed}
+                        onDetailed={setDetailed}
+                        expanded={expanded}
+                        onToggleExpanded={toggleExpanded}
+                        breakdowns={breakdowns}
+                        onJumpToDrilldown={() => jumpToSection("drilldown")}
+                    />
+            </div>
+        </OuterWrap>
+    );
 }

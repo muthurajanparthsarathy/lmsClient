@@ -6,9 +6,9 @@
 // object (state and setters still live in the page).
 
 import type React from "react"
-import { subModuleApi } from "@/apiServices/pedagogyAndModuleAdd/addsubmodule"
-import { topicApi } from "@/apiServices/pedagogyAndModuleAdd/addtopic"
-import { subTopicApi } from "@/apiServices/pedagogyAndModuleAdd/addsubtopic"
+import { subModuleApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/addsubmodule"
+import { topicApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/addtopic"
+import { subTopicApi } from "@/app/lms/pages/coursestructure/pedagogy2/api/addsubtopic"
 import type { Modules, Topic, SubTopic, ActivityType, MergedCell, CourseHours } from "./types"
 import { isOwnPedagogyRow, type HierarchyType } from "./pedagogyRowIdentity"
 

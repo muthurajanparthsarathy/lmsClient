@@ -22,7 +22,7 @@ import { getCurrentUser } from "@/apiServices/tokenVerify";
 import type { YouDoProps } from "./TestYourSkills";
 import CreateAssessmentModal from "./CreateAssessmentModal";
 import { exerciseApi, EntityType } from "@/apiServices/exercise";
-import { resubmitExerciseForApproval } from "@/apiServices/userService";
+import { resubmitExerciseForApproval } from "@/app/lms/pages/usermanagement/api/userService";
 import { useYouDoExercises } from "@/apiServices/hooks/useYouDoExercises";
 // Unified with We_Do — see QuestionsTest.tsx for context.
 import AddQuestionForm from "@/app/lms/component/questionforms/AddQuestionForm";

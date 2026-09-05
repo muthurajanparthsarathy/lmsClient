@@ -10,7 +10,7 @@ import {
   Home, BookMarked, GitBranch, Layers, ChevronDown, ChevronRight,
   Calendar, Clock, UserPlus, GraduationCap, Building2, LayoutGrid, BookOpen
 } from "lucide-react"
-import ApprovalHierarchyModal from '@/app/lms/component/ApprovalHierarchyModal'
+import ApprovalHierarchyModal from '@/app/lms/pages/approvals/components/ApprovalHierarchyModal'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -43,7 +43,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import DashboardLayout from '@/app/lms/component/layout'
-import { useCourseBatchesQuery, useUpdateBatchMutation } from '@/queries/courseBatches'
+import { useCourseBatchesQuery, useUpdateBatchMutation } from '@/app/lms/pages/coursestructure/course-batches/queries/courseBatches'
 
 const poppins = Poppins({
   subsets: ['latin'],

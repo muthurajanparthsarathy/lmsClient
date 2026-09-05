@@ -1,4 +1,4 @@
-import type { ServiceMapping, MappedCourse } from '@/apiServices/serviceMappingService'
+import type { ServiceMapping, MappedCourse } from '@/app/lms/pages/servicemapping/api/serviceMappingService'
 
 // Course Setup reads the hierarchy the Map Service wizard built. The wizard
 // stores each course against a semester PATH — the names of its ancestors joined

@@ -27,7 +27,7 @@ import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
 import { LogOut, Loader2 } from "lucide-react";
 import { getToken, clearAllStorage } from "@/lib/session";
-import { postLogout } from "@/apiServices/activityLog";
+import { postLogout } from "@/app/lms/pages/logs/api/activityLog";
 import { logoutUser } from "@/apiServices/tokenVerify";
 
 import { useSidebarpro } from "./layout";

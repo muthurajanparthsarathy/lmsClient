@@ -138,7 +138,7 @@ const fetchCourses = async (
 
   // Shared client: base URL from NEXT_PUBLIC_API_URL, Authorization attached
   // by the interceptor, and errors carry `.status` for the retry predicate
-  // below. Was a hardcoded https://lmsserver-yeve.onrender.com fetch, dev-machine only.
+  // below. Was a hardcoded http://localhost:5533 fetch, dev-machine only.
   const data = await api.get<CoursesApiResponse>(
     "/courses-structure/getAll?summary=enrolled"
   );

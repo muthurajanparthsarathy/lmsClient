@@ -40,9 +40,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button"
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { courseStructureApi } from "@/apiServices/createCourseStucture";
+import { courseStructureApi } from "@/app/lms/pages/coursestructure/api/createCourseStucture";
 import { useRouter } from "next/navigation";
-import { courseDynamicsApi, CourseStructureResponse } from "@/apiServices/dynamicFields/courseDynamics";
+import { courseDynamicsApi, CourseStructureResponse } from "@/app/lms/pages/dynamicfieldsettings/api/courseDynamics";
 import DashboardLayout from "@/app/lms/component/layout";
 
 interface Course {

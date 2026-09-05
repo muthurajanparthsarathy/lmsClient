@@ -91,6 +91,14 @@ export interface DataTableProps<T> {
    * otherwise there is no height to fill and this does nothing.
    */
   fillHeight?: boolean;
+  /**
+   * Flat list mode — drops the outer card chrome (border, rounded corners,
+   * background, shadow) and the internal hairlines on the toolbar / pager,
+   * so the list reads as a plain list on the surrounding panel. The pager
+   * is also hidden entirely when a single page fits every row (no need to
+   * paginate 3 rows into 1 page of 20).
+   */
+  borderless?: boolean;
   onRowClick?: (row: T) => void;
   className?: string;
 }
@@ -175,6 +183,7 @@ export function DataTable<T>({
   pageSize = 20,
   pageSizeOptions = [10, 20, 50],
   fillHeight = false,
+  borderless = false,
   onRowClick,
   className,
 }: DataTableProps<T>) {
@@ -272,11 +281,18 @@ export function DataTable<T>({
       className={cn(
         "flex min-w-0 flex-col rounded-tile border border-hairline bg-surface shadow-xs",
         fillHeight && "h-full min-h-0",
+        borderless && "rounded-none border-0 bg-transparent shadow-none",
         className,
       )}
     >
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      <header className="flex shrink-0 flex-col gap-3 border-b border-hairline p-3 sm:p-4">
+      <header
+        className={cn(
+          "flex shrink-0 flex-col gap-3 p-3 sm:p-4",
+          !borderless && "border-b border-hairline",
+          borderless && "px-0 sm:px-0",
+        )}
+      >
         {(title || toolbar) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {title && (
@@ -604,8 +620,18 @@ export function DataTable<T>({
       </div>
 
       {/* ── Pager ───────────────────────────────────────────────────────── */}
-      {filtered.length > 0 && (
-        <footer className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-hairline px-3 py-2.5 sm:px-4">
+      {/* Borderless mode hides the footer entirely when everything fits on
+          one page — a "Showing 3 of 3" line + Rows selector below three rows
+          is just chrome saying nothing new. When a real pager is needed it
+          still renders, minus the top hairline so the flat list stays flat. */}
+      {filtered.length > 0 && !(borderless && totalPages <= 1) && (
+        <footer
+          className={cn(
+            "flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:px-4",
+            !borderless && "border-t border-hairline",
+            borderless && "px-0 sm:px-0",
+          )}
+        >
           <p className="text-2xs text-subtle">
             Showing{" "}
             <b className="font-semibold tabular-nums text-body">
