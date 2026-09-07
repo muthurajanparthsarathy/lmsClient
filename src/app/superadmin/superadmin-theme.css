@@ -1,0 +1,162 @@
+/*
+ * Super Admin console — design system v2. Its own brand identity, deliberately
+ * distinct from the LMS. Applied by toggling `sa-theme` on <html> only while a
+ * /superadmin route is mounted (see _components/ThemeScope.tsx), then removed
+ * on leave — so these overrides NEVER affect the existing LMS. Scoped as
+ * `html.sa-theme` so it wins over the LMS's `.dark` class and holds a fixed,
+ * branded look regardless of the LMS theme toggle.
+ *
+ * Brand: indigo/violet primary over a cool-slate canvas (Linear/Vercel-grade
+ * neutrals, not flat gray). Overrides the same shadcn token names so every
+ * reused primitive (Button, Dialog, Table, Badge, Select, Dropdown — including
+ * portaled content) re-skins automatically to the console brand, plus adds a
+ * semantic status set, elevation scale, and motion tokens used by module
+ * pages for polished, consistent micro-interactions.
+ */
+html.sa-theme {
+  /* ── Core surface & text — cool slate, not flat gray ───────────────────── */
+  --background: oklch(0.984 0.004 277);
+  --foreground: oklch(0.19 0.025 274);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.025 274);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.025 274);
+
+  /* ── Brand — indigo/violet ──────────────────────────────────────────────── */
+  --primary: oklch(0.522 0.232 277);
+  --primary-foreground: oklch(0.99 0 0);
+  --primary-hover: oklch(0.47 0.232 277);
+
+  --secondary: oklch(0.955 0.012 278);
+  --secondary-foreground: oklch(0.3 0.055 277);
+
+  --muted: oklch(0.964 0.008 278);
+  --muted-foreground: oklch(0.5 0.028 277);
+
+  --accent: oklch(0.943 0.024 278);
+  --accent-foreground: oklch(0.32 0.08 277);
+
+  --destructive: oklch(0.577 0.221 27.3);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  --border: oklch(0.9 0.012 278);
+  --input: oklch(0.9 0.012 278);
+  --ring: oklch(0.522 0.232 277);
+
+  /* ── Semantic status colors (badges, alerts, toggles) ──────────────────── */
+  --success: oklch(0.63 0.15 155);
+  --success-bg: oklch(0.95 0.05 155);
+  --success-fg: oklch(0.32 0.09 155);
+
+  --warning: oklch(0.75 0.15 75);
+  --warning-bg: oklch(0.95 0.06 85);
+  --warning-fg: oklch(0.42 0.1 70);
+
+  --info: oklch(0.6 0.17 245);
+  --info-bg: oklch(0.95 0.03 250);
+  --info-fg: oklch(0.4 0.12 260);
+
+  --danger-bg: oklch(0.95 0.045 27);
+  --danger-fg: oklch(0.5 0.19 27);
+
+  /* ── Light sidebar surface with violet active highlights ───────────────── */
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.32 0.025 274);
+  --sidebar-primary: oklch(0.522 0.232 277);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.951 0.022 278);
+  --sidebar-accent-foreground: oklch(0.38 0.13 277);
+  --sidebar-border: oklch(0.92 0.01 278);
+  --sidebar-ring: oklch(0.522 0.232 277);
+
+  --chart-1: oklch(0.522 0.232 277);
+  --chart-2: oklch(0.62 0.18 250);
+  --chart-3: oklch(0.68 0.16 190);
+  --chart-4: oklch(0.7 0.17 155);
+  --chart-5: oklch(0.72 0.19 60);
+
+  /* ── Elevation — a real depth scale instead of one flat shadow ─────────── */
+  --sa-shadow-xs: 0 1px 2px 0 oklch(0.19 0.025 274 / 0.04);
+  --sa-shadow-sm: 0 1px 3px 0 oklch(0.19 0.025 274 / 0.06), 0 1px 2px -1px oklch(0.19 0.025 274 / 0.06);
+  --sa-shadow-md: 0 4px 12px -2px oklch(0.19 0.025 274 / 0.08), 0 2px 6px -3px oklch(0.19 0.025 274 / 0.06);
+  --sa-shadow-lg: 0 12px 32px -6px oklch(0.19 0.025 274 / 0.14), 0 4px 12px -4px oklch(0.19 0.025 274 / 0.08);
+  --sa-shadow-primary: 0 8px 20px -6px oklch(0.522 0.232 277 / 0.35);
+
+  /* ── Motion — consistent easing/duration across every interaction ──────── */
+  --sa-ease: cubic-bezier(0.2, 0, 0, 1);
+  --sa-duration-fast: 120ms;
+  --sa-duration-base: 180ms;
+  --sa-duration-slow: 260ms;
+
+  color-scheme: light;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Custom scrollbar — subtle, on-brand, WebKit + Firefox ─────────────────── */
+html.sa-theme ::-webkit-scrollbar { width: 10px; height: 10px; }
+html.sa-theme ::-webkit-scrollbar-track { background: transparent; }
+html.sa-theme ::-webkit-scrollbar-thumb {
+  background: oklch(0.9 0.012 278);
+  border-radius: 999px;
+  border: 2px solid oklch(0.984 0.004 277);
+}
+html.sa-theme ::-webkit-scrollbar-thumb:hover { background: oklch(0.8 0.02 278); }
+html.sa-theme { scrollbar-width: thin; scrollbar-color: oklch(0.9 0.012 278) transparent; }
+
+html.sa-theme ::selection {
+  background: oklch(0.522 0.232 277 / 0.22);
+  color: oklch(0.19 0.025 274);
+}
+
+/* ── Crisper, consistent keyboard focus ring on every focusable element ───── */
+html.sa-theme :focus-visible {
+  outline: 2px solid oklch(0.522 0.232 277 / 0.55);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Reusable elevation + motion utility classes for module pages ─────────── */
+.sa-elevate-1 { box-shadow: var(--sa-shadow-xs); }
+.sa-elevate-2 { box-shadow: var(--sa-shadow-sm); }
+.sa-elevate-3 { box-shadow: var(--sa-shadow-md); }
+.sa-elevate-4 { box-shadow: var(--sa-shadow-lg); }
+
+.sa-transition { transition: background-color var(--sa-duration-base) var(--sa-ease), border-color var(--sa-duration-base) var(--sa-ease), box-shadow var(--sa-duration-base) var(--sa-ease), transform var(--sa-duration-base) var(--sa-ease), color var(--sa-duration-base) var(--sa-ease); }
+.sa-hover-lift { transition: transform var(--sa-duration-base) var(--sa-ease), box-shadow var(--sa-duration-base) var(--sa-ease); }
+.sa-hover-lift:hover { transform: translateY(-1px); box-shadow: var(--sa-shadow-md); }
+
+@keyframes sa-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.sa-fade-in { animation: sa-fade-in var(--sa-duration-slow) var(--sa-ease) both; }
+
+@keyframes sa-scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+.sa-scale-in { animation: sa-scale-in var(--sa-duration-base) var(--sa-ease) both; }
+
+/* Modal close (X) — branded red "box" for the Super Admin console only.
+ * Scoped to html.sa-theme so it also reaches portaled Dialog content and never
+ * touches the LMS. Targets the shadcn Dialog close button (data-slot). */
+html.sa-theme [data-slot="dialog-close"] {
+  opacity: 1;
+  color: var(--danger-fg);
+  background-color: var(--danger-bg);
+  border-radius: 8px;
+  padding: 3px;
+  transition: background-color 0.15s var(--sa-ease), color 0.15s var(--sa-ease);
+}
+html.sa-theme [data-slot="dialog-close"]:hover {
+  background-color: var(--destructive);
+  color: var(--destructive-foreground);
+}
+html.sa-theme [data-slot="dialog-close"] svg {
+  width: 16px;
+  height: 16px;
+}
