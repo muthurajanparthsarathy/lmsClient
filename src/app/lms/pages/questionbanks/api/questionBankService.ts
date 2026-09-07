@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Question, QuestionBankResponse, ApiResponse } from '../../../../../apiServices/type/question';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
 
 const questionBankApi = axios.create({
   baseURL: API_BASE_URL,

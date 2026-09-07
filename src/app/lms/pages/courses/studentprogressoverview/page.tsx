@@ -3,7 +3,7 @@ import { getToken } from "@/lib/session";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
-const API_BASE = "http://localhost:5533";
+const API_BASE = "https://lmsserver-yeve.onrender.com";
 
 /* ─── Google Font injection ─────────────────────────────────────── */
 const FONT_URL =

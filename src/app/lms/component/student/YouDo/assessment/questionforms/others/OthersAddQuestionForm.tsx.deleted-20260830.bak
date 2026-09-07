@@ -1117,7 +1117,7 @@ const OthersImageUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch('http://localhost:5533/upload/question-image', {
+      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-image', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -1233,7 +1233,7 @@ const OthersFileUploadModal: React.FC<{
       const token = getToken();
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch('http://localhost:5533/upload/question-file', {
+      const res = await fetch('https://lmsserver-yeve.onrender.com/upload/question-file', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,

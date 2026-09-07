@@ -16,7 +16,7 @@ import axios from "axios";
 // identical on all six figures.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
 const TWO_MIN = 2 * 60 * 1000;
 
 export interface ProfileUserStats {

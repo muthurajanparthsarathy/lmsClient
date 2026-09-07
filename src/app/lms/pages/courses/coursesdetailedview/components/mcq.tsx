@@ -774,7 +774,7 @@ const MCQ = ({ exercise:propExercise, courseId='', courseName='Course', nodeId='
       fd.append('language', 'text');
       fd.append('isTestSubmission', 'true');
 
-      await fetch('http://localhost:5533/courses/answers/submit', {
+      await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: fd,
@@ -791,7 +791,7 @@ const MCQ = ({ exercise:propExercise, courseId='', courseName='Course', nodeId='
         const finalId=urlExerciseId||propExercise?._id;
         if(!finalId){ toast.error('Exercise ID is required'); setLoading(false); return; }
         const token=getToken()||localStorage.getItem('token')||'';
-        const res=await fetch(`http://localhost:5533/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
+        const res=await fetch(`https://lmsserver-yeve.onrender.com/exercise/${finalId}`,{ method:'GET',headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'} });
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const data=await res.json();
         if(data.message?.[0]?.key==='success'&&data.data?.exercise){
@@ -873,7 +873,7 @@ const MCQ = ({ exercise:propExercise, courseId='', courseName='Course', nodeId='
       const fCId=urlCourseId||courseId; const fCat=urlCategory||category; const fSub=urlSubcategory||subcategory;
       if(!fCId||!exerciseData._id) return;
       const marks=exerciseData.questionConfiguration?.mcqQuestionConfiguration?.marksPerQuestion||q.mcqQuestionScore||10;
-      const sub=async(fd:FormData)=>{ await fetch('http://localhost:5533/courses/answers/submit',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); };
+      const sub=async(fd:FormData)=>{ await fetch('https://lmsserver-yeve.onrender.com/courses/answers/submit',{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); };
       const base=(nt:string,lang:string)=>{ const fd=new FormData(); fd.append('courseId',fCId); fd.append('exerciseId',exerciseData._id); fd.append('questionId',q._id); fd.append('category',fCat); fd.append('subcategory',fSub); fd.append('nodeId',nodeId||''); fd.append('nodeName',exerciseData.exerciseInformation?.exerciseName||'MCQ Assessment'); fd.append('nodeType',nt); fd.append('language',lang); return fd; };
       switch(q.mcqQuestionType){
         case 'multiple_choice': if(selectedRadioOption){ const opt=q.mcqQuestionOptions.find(o=>o._id===selectedRadioOption); if(opt){ const ic=opt.isCorrect===true; const fd=base('mcq','text'); fd.append('code',opt.text); fd.append('score',(ic?marks:0).toString()); fd.append('status',ic?'solved':'attempted'); await sub(fd); } } break;

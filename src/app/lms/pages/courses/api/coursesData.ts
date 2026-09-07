@@ -59,7 +59,7 @@ const modelMap = {
   subtopic: { path: "subtopics" },
 };
 
-const BASE_URL = "http://localhost:5533";
+const BASE_URL = "https://lmsserver-yeve.onrender.com";
 
 // Helper function to get token
 const getToken = (): string | null => {

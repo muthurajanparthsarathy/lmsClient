@@ -381,7 +381,7 @@ export default function DetailedGradePage() {
     try {
       const token = getToken() || localStorage.getItem('token') || ''
       const response = await fetch(
-        `http://localhost:5533/course/${courseId}/exercises-with-scores`,
+        `https://lmsserver-yeve.onrender.com/course/${courseId}/exercises-with-scores`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       )
 

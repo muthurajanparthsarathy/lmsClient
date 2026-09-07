@@ -1,6 +1,6 @@
 // External Assessment API client.
 //
-// Uses `lib/apiClient` rather than the hard-coded `http://localhost:5533` +
+// Uses `lib/apiClient` rather than the hard-coded `https://lmsserver-yeve.onrender.com` +
 // raw axios pattern the You_Do assessment services use: apiClient reads
 // NEXT_PUBLIC_API_URL, attaches the bearer token, and normalises every failure
 // into an ApiError with a real `.message` — so a 409 "already a participant"

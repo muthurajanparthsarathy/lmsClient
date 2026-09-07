@@ -190,7 +190,7 @@ export default function ExerciseGradeDashboard() {
       if (subcategory) params.append('subcategory', subcategory || '')
       
       const response = await fetch(
-        `http://localhost:5533/analytics/exercise/${exerciseId}?${params.toString()}`,
+        `https://lmsserver-yeve.onrender.com/analytics/exercise/${exerciseId}?${params.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,

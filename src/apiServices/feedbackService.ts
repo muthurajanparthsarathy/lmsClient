@@ -9,7 +9,7 @@ import {
   FeedbackStatistics
 } from '../app/lms/pages/coursestructure/feedback/types/feedback';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com';
 
 // Helper to get token
 const getToken = (): string | null => {

@@ -204,7 +204,7 @@ const SmartCliffLogin = () => {
       // 30–60 s cold-start), and any server-side change under test would
       // never be observable to a browser signed in this way. Falls back to
       // the deployed URL so production behaviour is unchanged.
-      const LOGIN_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5533";
+      const LOGIN_BASE = process.env.NEXT_PUBLIC_API_URL || "https://lmsserver-yeve.onrender.com";
       const response = await fetch(`${LOGIN_BASE}/user/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -261,7 +261,7 @@ const SmartCliffLogin = () => {
           localStorage.setItem("smartcliff_roleId", "");
           localStorage.setItem("smartcliff_originalRole", "User");
         }
-        const verifyResponse = await fetch("http://localhost:5533/user/verify-token", {
+        const verifyResponse = await fetch("https://lmsserver-yeve.onrender.com/user/verify-token", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         });

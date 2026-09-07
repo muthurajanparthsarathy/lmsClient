@@ -472,7 +472,7 @@ export default function SectionBasedTestPage({
       fd.append("submitType",       _secAuto ? "AUTO" : "USER")
       fd.append("autoSubmitReason", _secAuto || "")
 
-      const res = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5533')}/courses/answers/submit`, {
+      const res = await fetch(`${(process.env.NEXT_PUBLIC_API_URL || 'https://lmsserver-yeve.onrender.com')}/courses/answers/submit`, {
         method:  "POST",
         headers: { "Authorization": `Bearer ${token}` },
         body:    fd,

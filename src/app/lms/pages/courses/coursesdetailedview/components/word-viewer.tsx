@@ -255,7 +255,7 @@ export default function WordViewer({
 
     ;(async () => {
       try {
-        const res = await fetch('http://localhost:5533/api/ppt/convert', {
+        const res = await fetch('https://lmsserver-yeve.onrender.com/api/ppt/convert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pptUrl: fileUrl }),

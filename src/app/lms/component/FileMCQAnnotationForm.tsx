@@ -171,7 +171,7 @@ const ImageUploadModal: React.FC<{ onUpload: (url: string) => void; onClose: () 
     try {
       const token = typeof window !== "undefined" ? getToken() : null
       const fd = new FormData(); fd.append("image", file)
-      const res = await fetch("http://localhost:5533/upload/question-image", { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+      const res = await fetch("https://lmsserver-yeve.onrender.com/upload/question-image", { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.message || "Upload failed")
       onUpload(json.url)
