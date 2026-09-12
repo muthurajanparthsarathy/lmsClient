@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 120" width="220" height="120" role="img" aria-label="Assessment">
+  <!-- Generic assessment artwork for the Live Dashboard report header. Shown in
+       the header's visual slot when the course carries no `courseImage` of its
+       own. Drawn in the LMS indigo/amber palette so it reads as part of the app.
+       To use different artwork, replace this file (same path, same 220x120
+       viewBox) — nothing else needs to change. -->
+  <defs>
+    <clipPath id="ai-panel"><rect width="220" height="120" rx="10"/></clipPath>
+    <!-- Puzzle piece: knob on top, knob on the right. Drawn once at the origin
+         so it can be placed with a single translate/rotate. -->
+    <path id="ai-puzzle"
+          d="M6 2h1a3 3 0 0 1 6 0h3a2 2 0 0 1 2 2v3a3 3 0 0 1 0 6v3a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h2z"/>
+  </defs>
+
+  <g clip-path="url(#ai-panel)">
+    <rect width="220" height="120" fill="#f5f3ff"/>
+
+    <!-- soft ground shadow under the sheet -->
+    <ellipse cx="86" cy="106" rx="46" ry="6" fill="#ddd6fe" opacity="0.7"/>
+
+    <!-- back sheet, offset for depth -->
+    <rect x="56" y="12" width="72" height="88" rx="7" fill="#ede9fe"/>
+
+    <!-- answer sheet -->
+    <rect x="48" y="16" width="72" height="88" rx="7" fill="#ffffff" stroke="#e9e3ff" stroke-width="1.5"/>
+
+    <!-- title scribble -->
+    <rect x="58" y="27" width="40" height="6" rx="3" fill="#7c3aed"/>
+    <rect x="58" y="37" width="24" height="3.5" rx="1.75" fill="#ddd6fe"/>
+
+    <!-- three checked rows -->
+    <g>
+      <rect x="58" y="50" width="11" height="11" rx="3" fill="#7c3aed"/>
+      <path d="M60.8 55.6l2.2 2.2 4.2-4.4" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="74" y="53" width="34" height="4" rx="2" fill="#f9a8d4"/>
+    </g>
+    <g>
+      <rect x="58" y="68" width="11" height="11" rx="3" fill="#7c3aed"/>
+      <path d="M60.8 73.6l2.2 2.2 4.2-4.4" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="74" y="71" width="28" height="4" rx="2" fill="#f9a8d4"/>
+    </g>
+    <g>
+      <rect x="58" y="86" width="11" height="11" rx="3" fill="#7c3aed"/>
+      <path d="M60.8 91.6l2.2 2.2 4.2-4.4" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="74" y="89" width="34" height="4" rx="2" fill="#f9a8d4"/>
+    </g>
+
+    <!-- lightbulb -->
+    <g>
+      <path d="M180 12V6M191 17l4.5-4.5M169 17l-4.5-4.5" stroke="#fbbf24" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="180" cy="29" r="11" fill="#fbbf24"/>
+      <path d="M176.5 25.5v3a3.5 3.5 0 0 0 7 0v-3" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"/>
+      <rect x="176" y="41" width="8" height="4" rx="2" fill="#f59e0b"/>
+    </g>
+
+    <!-- "Aa" tile -->
+    <g>
+      <rect x="140" y="48" width="36" height="34" rx="8" fill="#7c3aed"/>
+      <text x="158" y="71" text-anchor="middle" fill="#ffffff"
+            font-family="Poppins, Montserrat, system-ui, -apple-system, Segoe UI, sans-serif"
+            font-size="16" font-weight="700">Aa</text>
+    </g>
+
+    <!-- puzzle piece, tucked between the sheet and the right-hand note -->
+    <use href="#ai-puzzle" transform="translate(128 84) rotate(-12) scale(0.85)" fill="#a78bfa"/>
+
+    <!-- sticky note, left -->
+    <g transform="rotate(-8 32 74)">
+      <rect x="14" y="60" width="36" height="28" rx="5" fill="#fde68a"/>
+      <rect x="19" y="67" width="24" height="3" rx="1.5" fill="#f9a8d4"/>
+      <rect x="19" y="74" width="17" height="3" rx="1.5" fill="#f9a8d4"/>
+    </g>
+
+    <!-- sticky note, right -->
+    <g transform="rotate(6 191 88)">
+      <rect x="174" y="76" width="34" height="26" rx="5" fill="#fde68a"/>
+      <rect x="179" y="82" width="22" height="3" rx="1.5" fill="#f9a8d4"/>
+      <rect x="179" y="89" width="15" height="3" rx="1.5" fill="#f9a8d4"/>
+    </g>
+  </g>
+</svg>
