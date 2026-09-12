@@ -887,7 +887,7 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
                         icon={Building2}
                         className="w-full sm:w-[195px]"
                     />
-                    <ClientDateRangeFilter value={createdDateRange} onChange={setCreatedDateRange} earliestCreatedAt={clientPage?.facets?.earliestCreatedAt} />
+                    <ClientDateRangeFilter value={createdDateRange} onChange={setCreatedDateRange} earliestCreatedAt={clientPage?.facets?.earliestCreatedAt} className="w-full sm:w-[140px]" />
                     <div className="w-full min-w-0 sm:w-[190px]">
                         <ClientPickerFilter options={availableClients} value={clientFilter} onChange={setClientFilter} />
                     </div>

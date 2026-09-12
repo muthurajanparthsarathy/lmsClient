@@ -1,15 +1,17 @@
 "use client"
 
-import { useState } from 'react'
-import * as Popover from '@radix-ui/react-popover'
-import { CalendarDays, ChevronDown } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import * as Select from '@radix-ui/react-select'
+import { CalendarDays, Check, ChevronDown, ChevronUp } from 'lucide-react'
 
-/** A span of whole YEARS — `from` and `to` are 'YYYY', either side optional.
+/** A whole calendar YEAR, kept in the range shape callers expect. `from` and
+ *  `to` are both 'YYYY' (the same year) when a year is picked, or both '' for
+ *  "any year" — the same call sites keep working, and `clientDateBounds` still
+ *  produces the year's own start/end without special-casing.
  *
  *  Years rather than calendar dates: nobody filters a client list by the day a
- *  record was created, and a full date picker asked for two facts (month, day)
- *  that were then almost always set to the start and end of a year anyway. */
+ *  record was created, and the earlier from/to range picker asked two
+ *  questions ("start year", "end year") that were almost always answered with
+ *  the same year. */
 export type ClientDateRange = { from: string; to: string }
 
 const isYear = (value: string) => /^[1-9]\d{3}$/.test(value)
@@ -32,72 +34,77 @@ const yearsBack = (earliest?: string) => {
     return Array.from({ length: now - from + 1 }, (_, i) => String(now - i))
 }
 
-export default function ClientDateRangeFilter({ value, onChange, earliestCreatedAt }: {
+const ALL = '__all__'
+
+/** A single-year picker rendered as a plain dropdown, matching the other
+ *  toolbar filters beside it (Business Model, Client). One year picks the
+ *  whole of that calendar year; "All years" clears the filter. */
+export default function ClientDateRangeFilter({ value, onChange, earliestCreatedAt, className = '' }: {
     value: ClientDateRange
     onChange: (range: ClientDateRange) => void
     /** The oldest client on file, so the list offers no year that cannot match. */
     earliestCreatedAt?: string
+    className?: string
 }) {
-    const [open, setOpen] = useState(false)
-    const [draft, setDraft] = useState(value)
     const years = yearsBack(earliestCreatedAt)
-    const invalid = Boolean(draft.from && draft.to && draft.from > draft.to)
-    const active = Boolean(value.from || value.to)
+    // The stored range may still carry a span (from a previous version of this
+    // filter); show it as a range in the trigger and treat the single-year
+    // dropdown as replacing it on the next pick.
+    const selected = value.from && value.from === value.to ? value.from : ''
     const caption = value.from && value.to
         ? (value.from === value.to ? value.from : `${value.from} – ${value.to}`)
         : value.from ? `From ${value.from}`
         : value.to ? `Until ${value.to}`
-        : 'Created year'
+        : 'All years'
+    const active = Boolean(value.from || value.to)
 
-    const select = (key: 'from' | 'to') => (
-        <label className="min-w-0 text-xs text-subtle">
-            {key === 'from' ? 'From' : 'To'}
-            <select
-                value={draft[key]}
-                onChange={(event) => setDraft({ ...draft, [key]: event.target.value })}
-                className="mt-1.5 h-9 w-full min-w-0 rounded-control border border-hairline-strong bg-surface px-2 text-xs text-body focus:outline-none focus:ring-2 focus:ring-brand/20"
-            >
-                <option value="">Any year</option>
-                {years.map((year) => (
-                    // The other end of the span disables the years that would
-                    // invert it, so the error message below is only a backstop.
-                    <option
-                        key={year}
-                        value={year}
-                        disabled={key === 'from' ? Boolean(draft.to && year > draft.to) : Boolean(draft.from && year < draft.from)}
-                    >
-                        {year}
-                    </option>
-                ))}
-            </select>
-        </label>
-    )
+    const handleChange = (next: string) => {
+        if (next === ALL) onChange({ from: '', to: '' })
+        else onChange({ from: next, to: next })
+    }
 
     return (
-        <Popover.Root open={open} onOpenChange={(next) => { if (next) setDraft(value); setOpen(next) }}>
-            <Popover.Trigger asChild>
-                <button type="button" aria-label={`Created year range: ${caption}`} title={caption} className={`group inline-flex h-8 min-w-0 items-center gap-2 rounded-control border px-2.5 text-xs shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-brand/20 ${active ? 'border-brand-500/30 bg-brand-wash text-brand-strong' : 'border-hairline-strong bg-surface text-body hover:bg-row-hover'}`}>
-                    <CalendarDays className="size-3.5 shrink-0 text-subtle" /><span className="min-w-0 flex-1 truncate text-left font-medium">{caption}</span><ChevronDown className="size-3.5 shrink-0 text-subtle transition-transform group-data-[state=open]:rotate-180" />
-                </button>
-            </Popover.Trigger>
-            <Popover.Portal>
-                <Popover.Content align="start" sideOffset={6} collisionPadding={12} className="z-popover w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-hairline bg-surface p-4 text-body shadow-lg outline-none">
-                    <form onSubmit={(event) => { event.preventDefault(); if (!invalid) { onChange(draft); setOpen(false) } }}>
-                        <h2 className="mb-3 text-sm font-semibold text-heading">Created year</h2>
-                        <div className="grid grid-cols-2 gap-3">
-                            {select('from')}
-                            {select('to')}
-                        </div>
-                        {invalid
-                            ? <p role="alert" className="mt-2 text-xs text-red-600">The end year must be the same as or after the start year.</p>
-                            : <p className="mt-2 text-xs text-subtle">Both years are included. Leave either on “Any year” for no limit.</p>}
-                        <div className="mt-4 flex items-center justify-between">
-                            <Button type="button" variant="ghost" size="sm" onClick={() => { onChange({ from: '', to: '' }); setOpen(false) }}>Clear years</Button>
-                            <Button type="submit" size="sm" disabled={invalid}>Apply</Button>
-                        </div>
-                    </form>
-                </Popover.Content>
-            </Popover.Portal>
-        </Popover.Root>
+        <Select.Root value={selected || ALL} onValueChange={handleChange}>
+            <Select.Trigger
+                aria-label={`Created year: ${caption}`}
+                title={`Created year: ${caption}`}
+                className={`group inline-flex h-8 min-w-0 items-center gap-2 rounded-control border px-2.5 text-xs shadow-xs outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-brand/20 data-[state=open]:border-brand ${active ? 'border-brand-500/30 bg-brand-wash text-brand-strong' : 'border-hairline-strong bg-surface text-body hover:border-line-hover hover:bg-row-hover'} ${className}`}
+            >
+                <CalendarDays aria-hidden="true" className={`size-3.5 shrink-0 ${active ? 'text-brand-strong' : 'text-subtle'}`} strokeWidth={1.75} />
+                <span className="min-w-0 flex-1 truncate text-left font-medium">
+                    <Select.Value>{caption}</Select.Value>
+                </span>
+                <Select.Icon asChild>
+                    <ChevronDown className="size-3.5 shrink-0 text-subtle transition-transform duration-150 group-data-[state=open]:rotate-180" />
+                </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+                <Select.Content
+                    position="popper"
+                    align="start"
+                    sideOffset={6}
+                    collisionPadding={12}
+                    className="z-popover max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl border border-hairline bg-surface p-1 text-body shadow-lg"
+                >
+                    <Select.ScrollUpButton className="flex h-6 items-center justify-center text-subtle"><ChevronUp className="size-3.5" /></Select.ScrollUpButton>
+                    <Select.Viewport className="max-h-64">
+                        <Select.Group>
+                            <Select.Label className="px-2.5 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-wider text-subtle">Created year</Select.Label>
+                            {[{ value: ALL, label: 'All years' }, ...years.map((year) => ({ value: year, label: year }))].map((option) => (
+                                <Select.Item
+                                    key={option.value}
+                                    value={option.value}
+                                    className="relative flex min-h-9 cursor-pointer select-none items-center rounded-lg py-2 pl-2.5 pr-9 text-xs outline-none transition-colors data-[highlighted]:bg-row-hover data-[highlighted]:text-heading data-[state=checked]:bg-brand-wash data-[state=checked]:font-medium data-[state=checked]:text-brand-strong"
+                                >
+                                    <Select.ItemText>{option.label}</Select.ItemText>
+                                    <Select.ItemIndicator className="absolute right-2.5"><Check className="size-3.5 text-brand-strong" strokeWidth={2} /></Select.ItemIndicator>
+                                </Select.Item>
+                            ))}
+                        </Select.Group>
+                    </Select.Viewport>
+                    <Select.ScrollDownButton className="flex h-6 items-center justify-center text-subtle"><ChevronDown className="size-3.5" /></Select.ScrollDownButton>
+                </Select.Content>
+            </Select.Portal>
+        </Select.Root>
     )
 }
