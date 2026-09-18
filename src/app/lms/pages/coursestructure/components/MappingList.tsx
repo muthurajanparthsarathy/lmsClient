@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-    Search, SlidersHorizontal, X, BookOpen, SearchX, Loader2, BarChart3,
+    Search, SlidersHorizontal, X, BookOpen, SearchX, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,6 @@ import { MappingCardGrid } from './MappingCard'
 import CourseSearchResults, { buildClientCourseMatches } from './CourseSearchResults'
 import { MappingMultiFilter, MappingSingleFilter, MappingYearRange, serviceLabel } from '@/app/lms/pages/servicemapping/components/MappingReportFilters'
 import { pruneToScope, scopeByClients } from '@/app/lms/pages/servicemapping/components/filterScope'
-import CourseSetupReportDialog from './CourseSetupReportDialog'
 import CourseSetupOverview from './CourseSetupOverview'
 
 /* Course Setup's filters, in the same shape Service Mapping uses: multi-select
@@ -129,7 +128,6 @@ export default function MappingList({
     const [debouncedSearch, setDebouncedSearch] = useState('')
     const [filters, setFilters] = useState<MappingFilters>(EMPTY_FILTERS)
     const [showFilters, setShowFilters] = useState(false)
-    const [reportOpen, setReportOpen] = useState(false)
     const [viewMode, setViewMode] = useState<'table' | 'card'>('table')
     const [sortKey, setSortKey] = useState<string | null>(null)
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -953,10 +951,11 @@ export default function MappingList({
                     across both this page and Service Mapping. Outline for the
                     supporting actions, solid brand for the two that lead
                     somewhere: Reports and the Service Mapping shortcut. */}
-                {/* Two actions, same as Service Mapping. CSV / PDF / Print used
-                    to sit here behind a client-picker popup; they live inside
-                    the Reports dialog now, which already knows what is on
-                    screen, so the toolbar does not repeat them. */}
+                {/* Only the Filters toggle here now — the Reports button
+                    is gone because the Report tab in the top strip already
+                    owns that flow, and running the same dialog off two
+                    places would leave the reader with two competing
+                    reports UIs. */}
                 <div className="ml-auto flex items-center gap-1.5 flex-wrap">
                     <Button
                         type="button"
@@ -970,10 +969,6 @@ export default function MappingList({
                         <SlidersHorizontal className="size-3.5" />
                         {showFilters ? 'Hide filters' : 'Show filters'}
                         {activeFilterCount > 0 && <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-wash px-1 text-[10px] font-semibold tabular-nums text-brand-strong">{activeFilterCount}</span>}
-                    </Button>
-
-                    <Button type="button" size="sm" className="text-xs" onClick={() => setReportOpen(true)}>
-                        <BarChart3 className="size-3.5" />Reports
                     </Button>
                 </div>
             </div>
@@ -990,7 +985,9 @@ export default function MappingList({
                 {hasActiveFilters && <button type="button" onClick={clearFilters} className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-subtle hover:text-heading"><X className="size-3" />Clear all</button>}
             </div>}
 
-            {reportOpen && <CourseSetupReportDialog filters={serverFilters} options={options} facets={facets} onClose={() => setReportOpen(false)} />}
+            {/* The old Course Setup Report dialog mount lived here.
+                Removed alongside the Reports button — the Report tab
+                in the top strip is now the single reports entry point. */}
 
             {/* ── Active filter chips ── */}
             {filterChips.length > 0 && (
