@@ -1472,20 +1472,13 @@ function MapServiceWizard({
                 : undefined)
     }, [categoryOptions, serviceModels, isPlacement])
 
-    // Editing: decide whether the saved course name is a standard one for its
-    // category or a custom name (drives the "Others" input in Step 2).
-    useEffect(() => {
-        if (!open || !editingMapping || !courseName || !categoryOptions.length) return
-        const names = courseNamesFor(category)
-        setCourseAt(0, { custom: !names.includes(courseName) })
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, editingMapping, categoryOptions.length])
-
-    // The tree store used to get the same derivation, so a free-typed course
-    // name would reload into the picker as "Others" rather than as a <select>
-    // matching no option and rendering blank. The tree's rows are typed names
-    // now — there is no picker to fall out of and nothing reads `custom` on
-    // them — so deriving it was pure churn on every edit-open.
+    // A saved custom course name needs no derivation on edit-open: Step 2's
+    // name picker (SimpleCourseForm) offers any name outside the category's
+    // list as an option of its own, so it reopens selected in the picker.
+    // `custom` is only the transient "typing under Others" state. The effect
+    // that used to derive it here read `courseName` from the render BEFORE the
+    // saved courses landed, bailed on the empty value, and never re-ran —
+    // which is why a saved custom name reopened as a blank field.
 
     // Course image picker — same limits as the Course Management popup
 

@@ -712,7 +712,8 @@ export const ExerciseDetailsStep = forwardRef<ExerciseDetailsStepRef, ExerciseDe
             <span className="text-xs font-bold" style={{ color: D.orange }}>*</span>
             <InfoTooltip content="Select the type of test - Practice, Mock, or Final. This affects grading rules and test conditions." />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          {/* Compact choice chips — one row, same selection behaviour. */}
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Test type">
             {testTypeOptions.map((option) => {
               const sel = formData.testType === option.value;
               const Icon = option.value === 'final' ? ClipboardList : Monitor;
@@ -720,27 +721,25 @@ export const ExerciseDetailsStep = forwardRef<ExerciseDetailsStepRef, ExerciseDe
                 <button
                   key={option.value}
                   type="button"
+                  role="radio"
+                  aria-checked={sel}
+                  title={option.description}
                   onClick={() => setFormData((prev) => ({ ...prev, testType: option.value as "practice" | "mock" | "final" }))}
-                  className="flex items-center gap-3 p-3.5 rounded-xl border-2 text-left transition-all"
-                  style={{ borderColor: sel ? D.orange : D.border, background: sel ? D.orangeLight : D.bg }}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-left transition-all"
+                  style={{ borderColor: sel ? D.orange : D.border, background: sel ? D.orangeLight : D.bg, minWidth: 200 }}
                 >
-                  <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: sel ? D.orangeLight : D.surface, color: sel ? D.orange : D.textMuted }}>
-                    <Icon size={18} />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-bold" style={{ color: sel ? '#1a1a2e' : D.textSub }}>{option.label}</span>
-                    <span className="block text-[11px] mt-0.5" style={{ color: D.textMuted }}>{option.description}</span>
+                  <Icon size={14} style={{ color: sel ? D.orange : D.textMuted }} className="flex-shrink-0" />
+                  <span className="flex-1 min-w-0 leading-tight">
+                    <span className="block text-[12.5px] font-semibold" style={{ color: sel ? '#1a1a2e' : D.textSub }}>{option.label}</span>
+                    <span className="block text-[10.5px]" style={{ color: D.textMuted }}>{option.description}</span>
                   </span>
                   {sel
-                    ? <CheckCircle2 size={20} style={{ color: D.orange }} className="flex-shrink-0" />
-                    : <Circle size={20} style={{ color: '#d1d5db' }} className="flex-shrink-0" />}
+                    ? <CheckCircle2 size={15} style={{ color: D.orange }} className="flex-shrink-0" />
+                    : <Circle size={15} style={{ color: '#d1d5db' }} className="flex-shrink-0" />}
                 </button>
               );
             })}
           </div>
-          <p className="text-[11px] mt-2" style={{ color: D.textMuted }}>
-            Current selection: <span style={{ color: D.orange, fontWeight: 600 }}>{getSelectedTestTypeLabel()}</span>
-          </p>
  {/* Section-Based Toggle */}
         <div className="flex items-center gap-3 mt-4 pt-4" style={{ borderTop: `1px solid ${D.border}` }}>
           <div className="flex items-center gap-1">

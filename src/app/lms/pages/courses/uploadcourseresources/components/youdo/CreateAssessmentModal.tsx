@@ -1,14 +1,17 @@
 // CreateAssessmentModal.tsx
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { X, ArrowLeft, ArrowRight, FileText, Loader2, Check, Lock, Shield, Layers, ClipboardList, FolderOpen } from 'lucide-react';
+import { X, ArrowLeft, ArrowRight, FileText, Loader2, Check, Lock, Shield, Layers, ClipboardList, FolderOpen, Home, ChevronRight } from 'lucide-react';
+// Same page shell as the We Do "New assignment" form (ExerciseSettings.tsx):
+// its CSS module, compact-row context and live preview panel.
+import assignmentStyles from '@/app/lms/component/ExerciseSettings/AssignmentSettings.module.css';
+import { CompactSettingsContext } from '@/app/lms/component/ExerciseSettings/SettingsHelp';
+import { SettingsPreview } from '@/app/lms/component/ExerciseSettings/SettingsPreview';
 import { toast } from 'react-hot-toast';
 import { exerciseApi } from '@/app/lms/pages/courses/api/exercise';
 import TipTapEditor from '@/app/lms/component/tiptopEditor';
 import { D, FONT, injectFonts, getEntityType, isApproximatelyEqual, formatDecimal, moduleLanguages, mcqScoringOptions, generateCalendarDays } from './assessments/constants';
 import { ExerciseSettingsProps, HierarchyData, Step, ValidationErrors, FormDataType } from './assessments/types';
 import { MCQConfiguration } from './assessments/QuestionConfigurationSteps';
-import { ScheduleStep } from './assessments/ScheduleStep';
-import { NotificationsStep } from './assessments/NotificationsStep';
 import { GradeSettingsStep } from './assessments/GradeSettingsStep';
 import { InfoTooltip, OInput, ONumberInput, OToggle, ODropdown, GradeRow, DateRowPicker, SectionLabel } from './assessments/UIComponents';
 import { ExerciseDetailsStep, SectionItem, ExerciseDetailsStepRef } from './assessments/ExerciseDetailsStep';
@@ -20,7 +23,7 @@ import { OthersConfiguration } from './assessments/OthersConfiguration';
 import { SectionConfigurationStep, SectionConfigurationStepRef } from './assessments/SectionConfiguration';
 import SelectAssessmentContentStep from './assessments/SelectAssessmentContentStep';
 import {
-  QuestionSourceStep, emptyCustomDist,
+  QuestionSourceStep, emptyCustomDist, sourceTarget, distributionIssue,
   QuestionSource, CustomSubSource, CustomDistribution, CustomCell,
   CustomDistributionBySection,
 } from './assessments/QuestionSourceStep';
@@ -30,6 +33,21 @@ import {
   DEFAULT_EVALUATION_METHOD,
   normalizeEvaluationMethod,
 } from '@/app/lms/pages/courses/coursesdetailedview/components/EvaluationMethodConfig';
+// Availability + Notifications sections are the We Do assignment's own steps,
+// so both forms share one date picker and one "Notify via" channel picker.
+import { ScheduleStep as AssignmentScheduleStep } from '@/app/lms/component/ExerciseSettings/steps/ScheduleStep';
+import { NotificationsStep as AssignmentNotificationsStep } from '@/app/lms/component/ExerciseSettings/steps/NotificationsStep';
+import { levelAllocationIssue } from './assessments/MarksMeter';
+
+// Dashboard / Gmail / WhatsApp flags for one notification toggle. A missing
+// object (older saves) resolves to dashboard = `dashboardDefault`, rest off.
+function readChannels(raw: any, dashboardDefault = false) {
+  return {
+    dashboard: typeof raw?.dashboard === 'boolean' ? raw.dashboard : (raw ? false : dashboardDefault),
+    gmail: !!raw?.gmail,
+    whatsapp: !!raw?.whatsapp,
+  };
+}
 
 // Derive which steps already have saved data from the raw exercise object.
 // Determine which steps are "saved" for an exercise being edited.
@@ -100,6 +118,10 @@ const CreateAssessmentModal: React.FC<ExerciseSettingsProps> = ({
   injectFonts();
 
   const [currentStep, setCurrentStep] = useState(1);
+  // Which section cards are open — the page shows every section at once
+  // (We Do assignment layout), not one wizard step at a time. `currentStep`
+  // now means "the section being edited", set when one is opened or touched.
+  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(() => new Set([1, 2, 3]));
   const [isLoading, setIsLoading] = useState(false);
   // Distinct from isLoading (which is also used by the Finish button save
   // path). Tracks ONLY the initial-edit fetch → populate sequence so we can
@@ -263,6 +285,10 @@ const CreateAssessmentModal: React.FC<ExerciseSettingsProps> = ({
       notifyGradersSubmissions: false,
       notifyGradersLateSubmissions: false,
       notifyStudent: true,
+      // Same defaults as the We Do assignment: students hear on the dashboard.
+      notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
+      notifyGradersSubmissionsChannels: { dashboard: false, gmail: false, whatsapp: false },
+      notifyGradersLateSubmissionsChannels: { dashboard: false, gmail: false, whatsapp: false },
     },
     grades: {
       mcqGrade: null, mcqGradeToPass: null,
@@ -376,86 +402,82 @@ const CreateAssessmentModal: React.FC<ExerciseSettingsProps> = ({
     return m;
   }, [formData.othersConfig]);
 
+  // Live allocation check for level-based / selection-level scoring: flags a
+  // level with questions but no marks, then any gap or overshoot against the
+  // total. Recomputed on every keystroke (the inputs use liveUpdate).
   const programmingLevelMismatch = useMemo((): string | null => {
     const et = formData.exerciseType;
     if (et !== 'Programming' && et !== 'Combined') return null;
-    const ct = formData.programmingConfig.questionConfigType;
-    if (ct === 'general') return null;
+    if (formData.isGraded === false) return null;
     const total = et === 'Combined' ? formData.totalMarksProgramming : formData.totalMarks;
-    if (total <= 0) return null;
-    const ls = formData.programmingConfig.scoreSettings?.levelScoringConfiguration;
-    if (!ls) return null;
-    
-    const getSum = (counts: any) => {
-      let s = 0;
-      (['easy', 'medium', 'hard'] as const).forEach(l => {
-        const c = counts?.[l] ?? 0;
-        if (!c) return;
-        const sc = ls?.[l];
-        if (!sc) return;
-        s += sc.type === 'level_specific' ? (sc.marksPerQuestion ?? 0) * c : sc.totalMarks ?? 0;
-      });
-      return s;
-    };
-    
-    if (ct === 'levelBased') {
-      const counts = formData.programmingConfig.levelBasedCounts;
-      if (counts.easy <= 0 || counts.medium <= 0 || counts.hard <= 0) return null;
-      const sum = getSum(counts);
-      if (sum <= 0) return null;
-      return isApproximatelyEqual(sum, total) ? null : `Level totals sum to ${sum} but total is ${total}.`;
-    }
-    
-    if (ct === 'selectionLevel') {
-      const counts = formData.programmingConfig.selectionLevelCounts;
-      const active = (['easy', 'medium', 'hard'] as const).filter(l => counts?.[l] > 0);
-      if (!active.length) return null;
-      const sum = getSum(counts);
-      if (sum <= 0) return null;
-      return isApproximatelyEqual(sum, total) ? null : `Selected totals sum to ${sum} but total is ${total}.`;
-    }
-    return null;
-  }, [formData.exerciseType, formData.totalMarks, formData.totalMarksProgramming, formData.programmingConfig]);
+    return levelAllocationIssue(formData.programmingConfig, total);
+  }, [formData.exerciseType, formData.isGraded, formData.totalMarks, formData.totalMarksProgramming, formData.programmingConfig]);
 
   const othersLevelMismatch = useMemo((): string | null => {
-    if (formData.exerciseType !== 'Other') return null;
-    const ct = formData.othersConfig.questionConfigType;
-    if (ct === 'general') return null;
-    const total = formData.totalMarks ?? 0;
-    if (total <= 0) return null;
-    const ls = formData.othersConfig.scoreSettings?.levelScoringConfiguration;
-    if (!ls) return null;
-    
-    const getSum = (counts: any) => {
-      let s = 0;
-      (['easy', 'medium', 'hard'] as const).forEach(l => {
-        const c = counts?.[l] ?? 0;
-        if (!c) return;
-        const sc = ls?.[l];
-        if (!sc) return;
-        s += sc.type === 'level_specific' ? (sc.marksPerQuestion ?? 0) * c : sc.totalMarks ?? 0;
-      });
-      return s;
-    };
-    
-    if (ct === 'levelBased') {
-      const counts = formData.othersConfig.levelBasedCounts;
-      if (counts.easy <= 0 || counts.medium <= 0 || counts.hard <= 0) return null;
-      const sum = getSum(counts);
-      if (sum <= 0) return null;
-      return isApproximatelyEqual(sum, total) ? null : `Level totals sum to ${sum} but total is ${total}.`;
+    if (formData.exerciseType !== 'Other' || formData.isGraded === false) return null;
+    return levelAllocationIssue(formData.othersConfig, formData.totalMarks);
+  }, [formData.exerciseType, formData.isGraded, formData.totalMarks, formData.othersConfig]);
+
+  // Marks + Custom-split problems that must be fixed before the final Save.
+  // Shown live in the preview's "Unfinished setup" list as the trainer types.
+  // Section-based papers validate per section in their own step instead.
+  const allocationIssues = useMemo((): Array<{ text: string; section: string }> => {
+    if (isSectionBased) return [];
+    const out: Array<{ text: string; section: string }> = [];
+    const et = formData.exerciseType;
+    const marksIssue = et === 'Other' ? othersLevelMismatch
+      : (et === 'Programming' || et === 'Combined') ? programmingLevelMismatch : null;
+    if (marksIssue) out.push({ text: marksIssue, section: 'Question Configuration' });
+    if (questionSource === 'custom') {
+      const cols = (['scratch', 'ai', 'thirdParty'] as const).filter(c => customSources.includes(c));
+      const split = distributionIssue(customDistribution, cols, sourceTarget(formData, false));
+      if (split) out.push({ text: split, section: 'Question Source' });
     }
-    
-    if (ct === 'selectionLevel') {
-      const counts = formData.othersConfig.selectionLevelCounts;
-      const active = (['easy', 'medium', 'hard'] as const).filter(l => counts?.[l] > 0);
-      if (!active.length) return null;
-      const sum = getSum(counts);
-      if (sum <= 0) return null;
-      return isApproximatelyEqual(sum, total) ? null : `Selected totals sum to ${sum} but total is ${total}.`;
+    if (et === 'Combined' && questionSourceMcq === 'custom' && customSourcesMcq.length >= 2) {
+      const mcqTotal = Number(formData.mcqConfig.generalQuestionCount) || 0;
+      const mcqSum = customDistributionMcq.scratch + customDistributionMcq.ai + customDistributionMcq.thirdParty;
+      if (mcqTotal > 0 && mcqSum !== mcqTotal) {
+        out.push({ text: `Split the MCQ questions across sources — ${mcqSum} of ${mcqTotal} placed`, section: 'Question Source' });
+      }
     }
-    return null;
-  }, [formData.exerciseType, formData.totalMarks, formData.othersConfig]);
+    return out;
+  }, [isSectionBased, formData, othersLevelMismatch, programmingLevelMismatch, questionSource, customSources, customDistribution, questionSourceMcq, customSourcesMcq, customDistributionMcq]);
+
+  // Equal-split marks follow the total. The per-question share was only
+  // recomputed when the question count changed, so editing the total in
+  // General afterwards (100 → 50) left Used at the old total. Recompute it
+  // whenever either side changes; untouched when a count or total is empty.
+  useEffect(() => {
+    setFormData(prev => {
+      const combined = prev.exerciseType === 'Combined';
+      const share = (count: number, total: number, current: number) =>
+        count > 0 && total > 0 ? total / count : current;
+      const mcqS = prev.mcqConfig.scoreSettings;
+      const progS = prev.programmingConfig.scoreSettings;
+      const othS = prev.othersConfig.scoreSettings;
+      const mcqEq = mcqS.scoreType === 'equalDistribution'
+        ? share(prev.mcqConfig.generalQuestionCount, combined ? prev.totalMarksMCQ : prev.totalMarks, mcqS.equalDistribution)
+        : mcqS.equalDistribution;
+      const progEq = prev.programmingConfig.questionConfigType === 'general'
+        ? share(prev.programmingConfig.generalQuestionCount, combined ? prev.totalMarksProgramming : prev.totalMarks, progS.equalDistribution)
+        : progS.equalDistribution;
+      const othEq = prev.othersConfig.questionConfigType === 'general'
+        ? share(prev.othersConfig.generalQuestionCount, prev.totalMarks, othS.equalDistribution)
+        : othS.equalDistribution;
+      if (mcqEq === mcqS.equalDistribution && progEq === progS.equalDistribution && othEq === othS.equalDistribution) return prev;
+      return {
+        ...prev,
+        mcqConfig: { ...prev.mcqConfig, scoreSettings: { ...mcqS, equalDistribution: mcqEq } },
+        programmingConfig: { ...prev.programmingConfig, scoreSettings: { ...progS, equalDistribution: progEq } },
+        othersConfig: { ...prev.othersConfig, scoreSettings: { ...othS, equalDistribution: othEq } },
+      };
+    });
+  }, [
+    formData.exerciseType, formData.totalMarks, formData.totalMarksMCQ, formData.totalMarksProgramming,
+    formData.mcqConfig.generalQuestionCount, formData.mcqConfig.scoreSettings.scoreType,
+    formData.programmingConfig.generalQuestionCount, formData.programmingConfig.questionConfigType,
+    formData.othersConfig.generalQuestionCount, formData.othersConfig.questionConfigType,
+  ]);
 
   const shouldShowScoringSection = useMemo(() => {
     const ct = formData.programmingConfig.questionConfigType;
@@ -995,6 +1017,11 @@ const CreateAssessmentModal: React.FC<ExerciseSettingsProps> = ({
           notifications.notifyStudent !== undefined
             ? notifications.notifyStudent
             : true,
+        // Assessments saved before channels existed fall back to dashboard-only
+        // for students, the We Do default.
+        notifyStudentChannels: readChannels(notifications.notifyStudentChannels, true),
+        notifyGradersSubmissionsChannels: readChannels(notifications.notifyGradersSubmissionsChannels),
+        notifyGradersLateSubmissionsChannels: readChannels(notifications.notifyGradersLateSubmissionsChannels),
       },
 
       // ── Grades / Grade Settings ─────────────────────────────────────
@@ -1415,6 +1442,9 @@ const buildFullPayload = useCallback((overrideSectionConfigs?: Record<string, an
       // Was sent as a raw {day,month,…} object the server couldn't parse — now a
       // proper ISO instant like the others.
       cutOffDate: (formData.schedule as any).cutOffEnabled ? dvToIso((formData.schedule as any).cutOffDate) : null,
+      // "Grade by date" row of the Availability section.
+      remindGradeByEnabled: !!(formData.schedule as any).remindGradeByEnabled,
+      remindGradeBy: (formData.schedule as any).remindGradeByEnabled ? dvToIso((formData.schedule as any).remindGradeBy) : null,
       gracePeriodEnabled: formData.schedule.gracePeriodEnabled,
       gracePeriodAllowed: formData.schedule.gracePeriodEnabled,
       gracePeriodDate: formData.schedule.gracePeriodEnabled ? dvToIso((formData.schedule as any).gracePeriodDate) : null,
@@ -1430,8 +1460,11 @@ const buildFullPayload = useCallback((overrideSectionConfigs?: Record<string, an
       notifyWhatsApp: formData.notifyWhatsApp || false, 
       gradeSheet: formData.gradeSheet !== undefined ? formData.gradeSheet : true, 
       notifyGradersSubmissions: formData.notifications.notifyGradersSubmissions, 
-      notifyGradersLateSubmissions: formData.notifications.notifyGradersLateSubmissions, 
-      notifyStudent: formData.notifications.notifyStudent 
+      notifyGradersLateSubmissions: formData.notifications.notifyGradersLateSubmissions,
+      notifyStudent: formData.notifications.notifyStudent,
+      notifyStudentChannels: readChannels(formData.notifications.notifyStudentChannels),
+      notifyGradersSubmissionsChannels: readChannels(formData.notifications.notifyGradersSubmissionsChannels),
+      notifyGradersLateSubmissionsChannels: readChannels(formData.notifications.notifyGradersLateSubmissionsChannels),
     },
     gradeSettings: {
       // Master toggle. When false, downstream consumers should treat the
@@ -1761,6 +1794,21 @@ const handleComplete = useCallback(async () => {
       return;
     }
 
+    // Marks must add up to the total, and a Custom source split must place
+    // every question — open the section that needs fixing instead of saving.
+    // (Marks checks are already off for a non-graded assessment.)
+    if (allocationIssues.length > 0) {
+      const first = allocationIssues[0];
+      const step = steps.find(s => s.title === first.section);
+      if (step) {
+        setExpandedSteps(prev => new Set(prev).add(step.id));
+        setCurrentStep(step.id);
+        setTimeout(() => document.getElementById(`assessment-section-${step.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+      }
+      toast.error(first.text, { position: 'top-right', duration: 4000, id: 'allocation-issue' });
+      return;
+    }
+
     // Validate section-based exercises
     if (isSectionBased && exerciseDetailsStepRef.current) {
       const sectionValidation = exerciseDetailsStepRef.current.validateSectionBased();
@@ -1821,7 +1869,7 @@ const handleComplete = useCallback(async () => {
       toast.error(error?.response?.data?.message || error?.message || 'Failed to save exercise');
       setIsLoading(false);
     }
-  }, [validateExerciseDetails, validateGradeSettings, validateSections, isEditing, exercise_Id, getEntityType, nodeType, nodeId, onSave, onClose, buildFullPayload, localExerciseId, steps, isLoading, isSectionBased]);
+  }, [validateExerciseDetails, validateGradeSettings, validateSections, isEditing, exercise_Id, getEntityType, nodeType, nodeId, onSave, onClose, buildFullPayload, localExerciseId, steps, isLoading, isSectionBased, allocationIssues]);
 
   const handleStepClick = useCallback((targetStepId: number) => {
     if (targetStepId === currentStep) return;
@@ -1847,8 +1895,10 @@ const handleComplete = useCallback(async () => {
   // Assignment / Exercise Settings modal — 11px near-black label + orange *,
   // sitting flush with the 34px control row.
 
-  const renderCurrentStep = useCallback(() => {
-    const step = steps.find(s => s.id === currentStep);
+  // Renders one section's body — `stepId` for a given card (every card on the
+  // page), or the current step when omitted.
+  const renderCurrentStep = useCallback((stepId?: number) => {
+    const step = steps.find(s => s.id === (stepId ?? currentStep));
     if (!step) return null;
 
     // Note: course configuration loads in the background (used by later steps
@@ -1977,17 +2027,17 @@ if (formData.exerciseType === 'MCQ') {
         );
 
       case 'Schedule':
-        return <ScheduleStep
+        // We Do assignment Availability: Day / Month / Year / HH / MM / AM-PM
+        // selects + calendar, Enable checkboxes for Cut-off and Grade-by, and
+        // the collapsible Approval settings.
+        return <AssignmentScheduleStep
           formData={formData}
           setFormData={setFormData}
           setValidationErrors={setValidationErrors}
-          validationErrors={validationErrors} 
-          touchedFields={touchedFields} 
-          isEditing={isEditing} 
-          activePicker={activePicker}
-          setActivePicker={setActivePicker}
-          DateRowPicker={DateRowPicker} 
-          isDateDisabled={isDateDisabled} 
+          validationErrors={validationErrors}
+          touchedFields={touchedFields}
+          isEditing={isEditing}
+          courseId={courseId || (hierarchyData as any)?.courseId || (hierarchyData as any)?.course?._id || undefined}
         />;
         
       case 'Security Settings':
@@ -2000,7 +2050,8 @@ if (formData.exerciseType === 'MCQ') {
         );
         
       case 'Notifications':
-        return <NotificationsStep formData={formData} setFormData={setFormData} D={D} />;
+        // Each On toggle reveals "Notify via: Dashboard / Gmail / WhatsApp".
+        return <AssignmentNotificationsStep formData={formData} setFormData={setFormData} compact />;
         
       case 'Grade Settings':
         return <GradeSettingsStep formData={formData} setFormData={setFormData} validationErrors={validationErrors} touchedFields={touchedFields} markTouched={markTouched} D={D} GradeRow={GradeRow} isSectionBased={isSectionBased} exerciseSections={exerciseSections} />;
@@ -2035,116 +2086,152 @@ if (formData.exerciseType === 'MCQ') {
   }, [hierarchyData]);
 
   const breadcrumbs = useMemo(() => getBreadcrumbs(), [getBreadcrumbs]);
-  const step1Id = steps.find(s => s.title === 'Exercise Details')?.id ?? 1;
-  // When editing an existing exercise all steps are already saved — unlock entire sidebar
-  const step1Unlocked = isEditing || savedSteps.has('Exercise Details');
-  const isLastStep = currentStep === steps[steps.length - 1]?.id;
-  const isOnStep1 = currentStep === step1Id;
   const busy = isLoading || isSavingStep;
 
-  // Header meta per step — mirrors the STEP_META map in ExerciseSettings.tsx.
-  // The right-pane header displays these; the sidebar uses the raw step titles.
-  // Every existing Create Assessment step title is enumerated verbatim so the
-  // wizard's step layout is unchanged — this is a lookup, not a rename.
-  const STEP_HEADER: Record<string, { pageHeader: string; pageSubtitle: string }> = {
-    'Exercise Details':            { pageHeader: 'Exercise Details',            pageSubtitle: 'Basic info, timing and grading defaults for this assessment.' },
-    'Section Details':             { pageHeader: 'Section Details',             pageSubtitle: 'Configure each section — marks, duration and exercise type.' },
-    'Question Configuration':      { pageHeader: 'Question Configuration',      pageSubtitle: 'Choose the configuration strategy and set question counts.' },
-    'Question Source':             { pageHeader: 'Question Source',             pageSubtitle: 'Pick where the questions come from — bank, manual, AI or a custom mix.' },
-    'Schedule':                    { pageHeader: 'Schedule',                    pageSubtitle: 'Control access, timing, deadlines and grading reminders.' },
-    'Security Settings':           { pageHeader: 'Security Settings',           pageSubtitle: 'Proctoring, browser lockdown and other test-integrity controls.' },
-    'Notifications':               { pageHeader: 'Notifications',               pageSubtitle: 'Choose who is notified and when reminders are sent.' },
-    'Grade Settings':              { pageHeader: 'Grade Settings',              pageSubtitle: 'Set the pass mark, section-based split and grade bands.' },
-    'Select Assessment Content':   { pageHeader: 'Select Assessment Content',   pageSubtitle: 'Pick the covered topics and add student-facing instructions.' },
+  // ── Page layout: the We Do "New assignment" form ─────────────────────────────
+  // The assessment used to be an 8-step wizard modal (step sidebar, Back /
+  // Next). It now uses the SAME page as the We Do assignment form — every
+  // section on one scrolling page as a collapsible card (Expand all / Collapse
+  // all), the live preview on the right and one Save in the footer — built from
+  // that form's own CSS module and preview panel so the two read as one
+  // product. Every step component, validation and save path below is the
+  // assessment's own and is unchanged; only the shell around them moved.
+  // Assessment-only sections (Security, Assessment content, Section details
+  // for a section-based paper) simply appear as additional cards.
+  const SECTION_TITLE: Record<string, string> = {
+    'Exercise Details': 'General',
+    'Section Details': 'Section details',
+    'Question Configuration': 'Question Configuration',
+    'Question Source': 'Question sources',
+    'Schedule': 'Availability',
+    'Security Settings': 'Security',
+    'Notifications': 'Notifications',
+    'Grade Settings': 'Grade',
+    'Select Assessment Content': 'Assessment content',
   };
+
+  // Open / close a section card; the card opened becomes the one being edited.
+  const toggleSection = (id: number) => {
+    setExpandedSteps(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setCurrentStep(id);
+  };
+
+  // ── Live preview inputs (the We Do assignment preview panel) ─────────────────
+  const levelTotal = (cfg: any): number => {
+    if (!cfg) return 0;
+    if (cfg.questionConfigType === 'general') return Number(cfg.generalQuestionCount) || 0;
+    const c = cfg.questionConfigType === 'selectionLevel' ? cfg.selectionLevelCounts : cfg.levelBasedCounts;
+    return (Number(c?.easy) || 0) + (Number(c?.medium) || 0) + (Number(c?.hard) || 0);
+  };
+  const mcqCount = Number(formData.mcqConfig.generalQuestionCount) || 0;
+  const previewQuestionCount =
+    formData.exerciseType === 'MCQ' ? mcqCount
+      : formData.exerciseType === 'Programming' ? getProgrammingTotalQuestions()
+      : formData.exerciseType === 'Combined' ? mcqCount + getProgrammingTotalQuestions()
+      : formData.exerciseType === 'Other' ? levelTotal(formData.othersConfig)
+      : 0;
+  // MCQ marks are split equally across its questions, so a configured count
+  // allocates the whole MCQ total.
+  const previewAllocatedMarks =
+    formData.exerciseType === 'MCQ' ? (mcqCount > 0 ? Number(formData.totalMarks) || 0 : 0)
+      : formData.exerciseType === 'Programming' ? programmingAllocatedMarks
+      : formData.exerciseType === 'Combined' ? (mcqCount > 0 ? Number(formData.totalMarksMCQ) || 0 : 0) + programmingAllocatedMarks
+      : formData.exerciseType === 'Other' ? othersAllocatedMarks
+      : 0;
+  const dateSet = (v: any) => !!(v?.day && v?.month && v?.year);
+  // What is still missing — each item points at the section that fixes it.
+  const previewIssueList: Array<{ text: string; section: string }> = [];
+  if (!formData.exerciseName?.trim()) previewIssueList.push({ text: 'Add an assessment name', section: 'Exercise Details' });
+  if (!(Number(formData.totalDuration) > 0)) previewIssueList.push({ text: 'Set the duration', section: 'Exercise Details' });
+  if (formData.isGraded !== false) {
+    const total = formData.exerciseType === 'Combined'
+      ? (Number(formData.totalMarksMCQ) || 0) + (Number(formData.totalMarksProgramming) || 0)
+      : Number(formData.totalMarks) || 0;
+    if (total <= 0) previewIssueList.push({ text: 'Set the total marks', section: 'Exercise Details' });
+  }
+  if (!isSectionBased && previewQuestionCount <= 0) previewIssueList.push({ text: 'Set how many questions', section: 'Question Configuration' });
+  previewIssueList.push(...allocationIssues);
+  if (!questionSource) previewIssueList.push({ text: 'Choose a question source', section: 'Question Source' });
+  if (!dateSet(formData.schedule.startDate)) previewIssueList.push({ text: 'Set the start date & time', section: 'Schedule' });
+  if (!dateSet(formData.schedule.endDate)) previewIssueList.push({ text: 'Set the end date & time', section: 'Schedule' });
+  const jumpToIssue = (text: string) => {
+    const section = previewIssueList.find(i => i.text === text)?.section;
+    const step = steps.find(s => s.title === section);
+    if (!step) return;
+    setExpandedSteps(prev => new Set(prev).add(step.id));
+    setCurrentStep(step.id);
+    setTimeout(() => document.getElementById(`assessment-section-${step.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  };
+
+  // "Save progress" — save and keep working. The wizard saved one step at a
+  // time; with every section on one page it saves the WHOLE form. Only General
+  // must be valid (it is what creates the assessment); the rest may still be
+  // unfinished — the main Save checks everything before completing.
+  const handleSaveProgress = async () => {
+    if (isLocked || busy) return;
+    const detailsErrors = validateExerciseDetails();
+    if (Object.keys(detailsErrors).length > 0) {
+      setValidationErrors(prev => ({ ...prev, ...detailsErrors }));
+      markAllTouched(['exerciseName', 'totalDuration', 'totalMarks', 'exerciseType']);
+      const generalId = steps.find(s => s.title === 'Exercise Details')?.id ?? 1;
+      setExpandedSteps(prev => new Set(prev).add(generalId));
+      toast.error('Complete General first — name, duration and marks.', { position: 'top-right', duration: 3000 });
+      return;
+    }
+    setIsSavingStep(true);
+    try {
+      const merged = new Set(savedSteps);
+      merged.add('Exercise Details');
+      const payload = buildFullPayload();
+      payload.stepsSaved = [...merged];
+      const currentId = localExerciseId || (isEditing ? exercise_Id : null);
+      if (currentId) {
+        await exerciseApi.updateYouDoExercise(getEntityType(nodeType), nodeId, currentId, payload);
+      } else {
+        const response: any = await exerciseApi.youDoAddExercise(getEntityType(nodeType), nodeId, payload);
+        const newId = response?.data?.exercise?._id || response?.data?._id || response?._id;
+        if (newId) setLocalExerciseId(newId);
+      }
+      setSavedSteps(merged);
+      toast.success('Progress saved', { position: 'top-right', duration: 1800 });
+    } catch (err: any) {
+      toast.error(`Save failed: ${err?.response?.data?.message || err?.message || 'Failed to save'}`, { position: 'top-right', duration: 4000 });
+    } finally {
+      setIsSavingStep(false);
+    }
+  };
+
   const currentTitle = steps.find(s => s.id === currentStep)?.title || '';
-  const currentMeta = STEP_HEADER[currentTitle] || { pageHeader: currentTitle, pageSubtitle: '' };
 
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'rgba(30,41,59,0.55)', backdropFilter: 'blur(6px)', fontFamily: FONT }}>
-
-      {/* ── ExerciseSettings-parity CSS: shared font stack, thin scrollbar,
-          compact step density and responsive shell behaviour so the assessment
-          wizard reads as the same product as the Assignment / Exercise Settings
-          modal. Kept scoped to `.es-main` so nothing outside the modal is
-          affected. */}
+    <div className="fixed inset-0 flex items-stretch justify-stretch z-50" style={{ background: '#FFFFFF', fontFamily: FONT }}>
       <style>{`
-        .es-main, .es-main * { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,'Helvetica Neue',Arial,sans-serif; }
-        .es-main ::-webkit-scrollbar { width: 4px; height: 4px; }
-        .es-main ::-webkit-scrollbar-track { background: transparent; }
-        .es-main ::-webkit-scrollbar-thumb { background: #d4d8df; border-radius: 4px; }
-        .es-main ::-webkit-scrollbar-thumb:hover { background: #b9becb; }
-        .ca-dark-scroll { scrollbar-color: #d4d8df transparent; scrollbar-width: thin; }
-        .ca-dark-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
-        .ca-dark-scroll::-webkit-scrollbar-track { background: transparent; }
-        .ca-dark-scroll::-webkit-scrollbar-thumb { background: #d4d8df; border-radius: 4px; }
-        .ca-dark-scroll::-webkit-scrollbar-thumb:hover { background: #b9becb; }
-        .es-side .es-side-step:hover:not([disabled]) { background: rgba(238,106,34,0.06); }
-        .es-close:hover { background: #DC2626 !important; }
-        @media (max-width: 1024px) {
-          .es-side { width: 220px !important; padding: 24px 16px !important; }
-          .es-right-head { padding: 18px 20px 14px !important; }
-          .es-body { padding: 0 20px !important; }
-          .es-foot { padding: 14px 20px !important; }
-        }
-        @media (max-width: 720px) {
-          .es-main { flex-direction: column !important; }
-          .es-side {
-            width: 100% !important; height: auto !important;
-            flex-direction: row !important; align-items: center;
-            border-right: none !important; border-bottom: 1px solid #E4E7EC !important;
-            padding: 12px 16px !important; overflow-x: auto; overflow-y: hidden;
-            gap: 8px;
-          }
-          .es-side-count { display: none !important; }
-          .es-side ol {
-            flex-direction: row !important; gap: 6px !important;
-            margin-top: 0 !important; align-items: center;
-          }
-          .es-side ol > span[aria-hidden] { display: none !important; }
-          .es-side .es-side-step { padding: 6px 10px !important; box-shadow: none !important; white-space: nowrap; }
-          .es-side .es-side-step > span:last-child { display: none !important; }
-          .es-right-head { padding: 16px 16px 12px !important; }
-          .es-body { padding: 0 12px !important; }
-          .es-foot { padding: 12px 16px !important; gap: 8px !important; flex-wrap: wrap; }
-        }
-        @media (max-width: 620px) {
-          .es-main {
-            width: 100vw !important; height: 100dvh !important;
-            max-width: none !important; border-radius: 0 !important; border: none !important;
-          }
-        }
+        .ca-page ::-webkit-scrollbar { width: 4px; height: 4px; }
+        .ca-page ::-webkit-scrollbar-track { background: transparent; }
+        .ca-page ::-webkit-scrollbar-thumb { background: #d4d8df; border-radius: 4px; }
+        .ca-page ::-webkit-scrollbar-thumb:hover { background: #b9becb; }
         @keyframes es-slidein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         .animate-in { animation: es-slidein 0.18s ease both; }
-        @media (prefers-reduced-motion: reduce) {
-          .es-main .animate-in { animation: none; }
-          .es-main * { transition-duration: 0.01ms !important; }
-        }
+        @media (prefers-reduced-motion: reduce) { .ca-page .animate-in { animation: none; } }
       `}</style>
 
-      {/* ── MODAL CARD — matches the Assignment / Exercise Settings shell.
-          96vw × 92vh (max 1900px), 18px radius, white surface, subtle border.
-          The sidebar owns its own cream wash; the right pane owns its own
-          header, scroll body and sticky footer. ── */}
-      <div
-        className="es-main flex overflow-hidden relative"
-        style={{
-          width: '96vw', height: '92vh', maxWidth: 1900, minHeight: 560,
-          borderRadius: 18, background: '#FFFFFF',
-          border: '1px solid #E4E7EC',
-          boxShadow: '0 24px 60px rgba(15,23,42,.14)',
-        }}>
+      <CompactSettingsContext.Provider value={true}>
+      <div className={`es-main es-acc-main ca-page ${assignmentStyles.reference} ${assignmentStyles.compact}`}
+        role="dialog" aria-modal="true" aria-labelledby="assessment-settings-title"
+        style={{ width: '100%', height: '100%', minHeight: 0, background: '#fff', position: 'relative' }}>
 
         {/* ── Initial-edit hydration overlay ──
-            When the trainer clicks Edit, the modal mounts with empty form state
+            When the trainer clicks Edit, the page mounts with empty form state
             and immediately fires getExerciseById → populateFormFromExercise.
             Until that fetch lands, the fields render as blanks — this overlay
-            covers the whole card so the wait is legible. */}
+            covers the page so the wait is legible. */}
         {isEditing && isHydratingEdit && (
           <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center"
-            style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(2px)', borderRadius: 18 }}>
+            style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(2px)' }}>
             <div className="w-10 h-10 border-[3px] rounded-full animate-spin mb-3"
               style={{ borderColor: D.orange, borderTopColor: 'transparent' }} />
             <p className="text-[13px] font-semibold" style={{ color: D.textMain }}>Loading assessment…</p>
@@ -2152,264 +2239,93 @@ if (formData.exerciseType === 'MCQ') {
           </div>
         )}
 
-        {/* ── LEFT SIDEBAR — fixed 280px vertical stepper. Renders every
-            dynamic step from `steps` (Section Details slots in only when
-            section-based is on; Question Configuration slots out then).
-            Sidebar layout mirrors ExerciseSettings: brand chip at the top,
-            "Step X of Y" count below, then the step list. The existing gate
-            (savedSteps.has('Exercise Details')) still blocks navigation past
-            Step 1 until it is saved. ── */}
-        <aside
-          className="es-side flex flex-col flex-shrink-0"
-          style={{
-            width: 280, background: '#F8FAFC',
-            borderRight: '1px solid #E4E7EC',
-            padding: '28px 24px',
+        <header className={assignmentStyles.header}>
+          <button type="button" onClick={onClose} aria-label="Back to assessments" className={assignmentStyles.backButton}>
+            <ArrowLeft size={16} strokeWidth={2.25} />
+            <span>Back</span>
+          </button>
+          <nav className={assignmentStyles.breadcrumbs} aria-label="Assessment location">
+            <Home size={13} aria-hidden="true" />
+            {breadcrumbs.map((crumb, index) => <React.Fragment key={`${crumb.type}-${index}`}>
+              {index > 0 && <ChevronRight size={12} aria-hidden="true" />}
+              <span title={crumb.name}>{crumb.name}</span>
+            </React.Fragment>)}
+            <ChevronRight size={12} aria-hidden="true" />
+            <span aria-current="page">{isEditing ? 'Edit assessment' : 'New assessment'}</span>
+          </nav>
+          <h1 id="assessment-settings-title" style={{
+            position: 'absolute', width: 1, height: 1, padding: 0, margin: -1,
+            overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0,
           }}>
+            {isEditing ? 'Edit' : 'New'} Assessment
+          </h1>
+        </header>
 
-          {/* Sidebar brand chip removed 2026-09-01 (follow-up): edit mode adds
-              two extra steps (Section Details when section-based, plus the
-              always-on Select Assessment Content), and the brand row was
-              eating a full 44px of vertical space that the list needs so
-              every step is visible without scrolling on 92vh cards. The
-              modal's Create/Edit Assessment identity is still discoverable
-              from the right-pane header + step title; the reference
-              sidebar carries no brand either. */}
-          <p className="es-side-count" style={{
-            fontSize: 12.5, fontWeight: 600, color: '#667085',
-            margin: 0, letterSpacing: '.01em',
-          }}>
-            Step {Math.max(0, steps.findIndex(s => s.id === currentStep)) + 1} of {steps.length}
-          </p>
-
-          {/* Step list — single-line rows (no subtitle in the sidebar). Fixed
-              44px row height + 14px gap keeps the list visually balanced.
-              A vertical connector runs down the center of the badge column. */}
-          <ol style={{
-            marginTop: 20, marginBottom: 0, padding: 0, listStyle: 'none',
-            display: 'flex', flexDirection: 'column', gap: 14,
-            position: 'relative',
-          }}>
-            <span aria-hidden style={{
-              position: 'absolute', left: 25, top: 22, bottom: 22, width: 1,
-              background: '#E4E7EC', zIndex: 0,
-            }} />
-            {steps.map((step, i) => {
-              const isActive = step.id === currentStep;
-              const done = savedSteps.has(step.title);
-              const isStep1 = step.title === 'Exercise Details';
-              const stepLocked = !isStep1 && !step1Unlocked;
-              const stepHasError = isStep1 && !!(validationErrors.exerciseName || validationErrors.totalDuration || validationErrors.totalMarks);
+        <div className={assignmentStyles.workspace}>
+          <main className={`es-acc-scroll ${assignmentStyles.editorPane}`} aria-label="Assessment settings">
+            <div className={assignmentStyles.accordionToolbar}>
+              <span>Assessment settings</span>
+              <div>
+                <button type="button" onClick={() => setExpandedSteps(new Set(steps.map(step => step.id)))} disabled={steps.every(step => expandedSteps.has(step.id))}>Expand all</button>
+                <span aria-hidden="true">·</span>
+                <button type="button" onClick={() => setExpandedSteps(new Set())} disabled={expandedSteps.size === 0}>Collapse all</button>
+              </div>
+            </div>
+            {isLocked && <p className={assignmentStyles.lockedNote}>This assessment has been submitted and is now read-only.</p>}
+            {steps.map(step => {
+              const isOpen = expandedSteps.has(step.id);
+              const hasError = step.title === 'Exercise Details'
+                && !!(validationErrors.exerciseName || validationErrors.totalDuration || validationErrors.totalMarks);
+              const activate = () => { if (!isLocked) setCurrentStep(step.id); };
               return (
-                <li key={step.id} style={{ position: 'relative', zIndex: 1 }}>
-                  <button
-                    type="button"
-                    onClick={() => handleStepClick(step.id)}
-                    disabled={stepLocked}
-                    title={stepLocked ? 'Complete Exercise Details first' : step.title}
-                    className="es-side-step focus:outline-none"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      width: '100%', height: 44,
-                      padding: '0 14px 0 11px',
-                      borderRadius: 10,
-                      background: isActive ? '#FFF3EC' : 'transparent',
-                      boxShadow: isActive ? `inset 3px 0 0 ${D.orange}` : 'none',
-                      border: 'none',
-                      cursor: stepLocked ? 'not-allowed' : 'pointer',
-                      opacity: stepLocked ? 0.55 : 1,
-                      textAlign: 'left',
-                      transition: 'background 180ms ease, box-shadow 180ms ease',
-                    }}>
-                    <span aria-hidden style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      width: 28, height: 28, flexShrink: 0, borderRadius: '50%',
-                      background: isActive ? D.orange : '#FFFFFF',
-                      color: isActive ? '#FFFFFF' : done ? D.orange : '#94A3B8',
-                      border: `1.5px solid ${isActive ? D.orange : done ? D.orange : '#CBD5E1'}`,
-                      fontSize: 12.5, fontWeight: 700,
-                    }}>
-                      {stepLocked
-                        ? <Lock size={12} />
-                        : (done && !isActive)
-                          ? <Check size={13} strokeWidth={3} />
-                          : (i + 1)}
-                    </span>
-                    <span style={{
-                      minWidth: 0, flex: 1,
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontSize: 13.5, fontWeight: 600,
-                      color: isActive ? '#101828' : stepLocked ? D.textHint : '#344054',
-                      lineHeight: 1.2, letterSpacing: '-.005em',
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-                        {step.title}
+                <section key={step.id} className="es-acc-card" data-open={isOpen} data-error={hasError || undefined}>
+                  <h2 style={{ margin: 0 }}>
+                    <button id={`assessment-section-${step.id}`} type="button" className="es-acc-head"
+                      onClick={() => toggleSection(step.id)} aria-expanded={isOpen}
+                      aria-controls={`assessment-panel-${step.id}`}>
+                      <span className="es-acc-badge" aria-hidden="true">
+                        <ChevronRight size={26} strokeWidth={2} className="es-acc-badge-chev" />
                       </span>
-                      {stepHasError && !stepLocked && (
-                        <span
-                          className="inline-flex items-center justify-center flex-shrink-0"
-                          title="Required fields missing"
-                          style={{
-                            width: 14, height: 14, borderRadius: '50%',
-                            background: D.red, color: '#fff',
-                            fontSize: 8, fontWeight: 900, lineHeight: 1,
-                          }}>!</span>
-                      )}
-                    </span>
-                  </button>
-                </li>
+                      <span className="es-acc-title-text">{SECTION_TITLE[step.title] || step.title}</span>
+                    </button>
+                  </h2>
+                  <div className={assignmentStyles.accordionMotion} data-expanded={isOpen} inert={!isOpen}>
+                    <div className={assignmentStyles.accordionClip}>
+                      <div id={`assessment-panel-${step.id}`} role="region"
+                        aria-labelledby={`assessment-section-${step.id}`} className="es-acc-body"
+                        onFocusCapture={activate} onPointerDownCapture={activate}>
+                        <fieldset disabled={isLocked} className={assignmentStyles.sectionFields}>
+                          <div className="es-acc-body-content">{renderCurrentStep(step.id)}</div>
+                        </fieldset>
+                      </div>
+                    </div>
+                  </div>
+                </section>
               );
             })}
-          </ol>
-        </aside>
+          </main>
+          <SettingsPreview noun="assessment"
+            issues={previewIssueList.map(i => i.text)} onIssueClick={jumpToIssue}
+            allocatedMarks={previewAllocatedMarks} formData={formData}
+            questionSource={questionSource} customSources={customSources}
+            questionCount={previewQuestionCount}
+            location={hierarchyData.topicName || hierarchyData.moduleName || hierarchyData.courseName || nodeName} />
+        </div>
 
-        {/* ── RIGHT PANE — header + scroll body + sticky footer. ── */}
-        <section className="es-right flex-1 flex flex-col min-w-0" style={{ background: '#FFFFFF' }}>
-
-          {/* Header — step title on the left, saved chip + red circular close
-              on the right; hairline divider below. */}
-          <div
-            className="es-right-head"
-            style={{
-              padding: '20px 24px 16px',
-              borderBottom: '1px solid #E4E7EC',
-              display: 'flex', alignItems: 'center', gap: 24, flexShrink: 0,
-            }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1 style={{
-                fontSize: 18, fontWeight: 700, color: '#101828',
-                letterSpacing: '-.01em', margin: 0, lineHeight: 1.25,
-              }}>
-                {currentMeta.pageHeader}
-              </h1>
-            </div>
-
-            <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
-              {savedSteps.has(currentTitle) && (
-                <span
-                  className="flex items-center gap-1"
-                  style={{
-                    fontSize: 10.5, fontWeight: 700,
-                    padding: '3px 9px', borderRadius: 999,
-                    background: D.emerald + '12', color: D.emerald,
-                    border: `1px solid ${D.emerald}25`,
-                  }}>
-                  <Check size={10} strokeWidth={3} />Saved
-                </span>
-              )}
-              <button
-                onClick={onClose}
-                aria-label="Close"
-                className="es-close"
-                style={{
-                  width: 32, height: 32, border: 'none',
-                  background: '#EF4444', borderRadius: '50%',
-                  color: '#FFFFFF', cursor: 'pointer',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 1px 2px rgba(239,68,68,.25)',
-                  transition: 'background 150ms ease',
-                }}>
-                <X size={16} strokeWidth={2.5} />
-              </button>
-            </div>
-          </div>
-
-          {/* Body — the ONLY scrolling area in the modal. */}
-          <div className="es-body flex-1 overflow-y-auto ca-dark-scroll" style={{ padding: '0 24px' }}>
-            {isLocked && (
-              <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-xl"
-                style={{ background: D.emerald + '12', border: `1px solid ${D.emerald}35` }}>
-                <Lock size={12} style={{ color: D.emerald }} />
-                <span className="text-xs font-semibold" style={{ color: D.emerald }}>
-                  This assessment has been submitted and is now read-only.
-                </span>
-              </div>
-            )}
-            <div style={isLocked ? { pointerEvents: 'none', userSelect: 'none', opacity: 0.82 } : {}}>
-              {renderCurrentStep()}
-            </div>
-          </div>
-
-          {/* Sticky footer — Back on the left, Save + Next/Finish on the right.
-              Sits outside the scroll container so the primary action is always
-              reachable on a long step. */}
-          <div
-            className="es-foot flex items-center flex-shrink-0"
-            style={{
-              padding: '16px 32px', gap: 12,
-              borderTop: '1px solid #E4E7EC', background: '#FFFFFF',
-            }}>
-            <button
-              onClick={handleBack}
-              disabled={busy || currentStep === (steps[0]?.id ?? 1)}
-              className="flex items-center gap-1.5 rounded-lg text-[13px] font-semibold transition-all border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
-              style={{
-                height: 36, padding: '0 16px',
-                borderColor: '#D0D5DD', color: '#344054', background: '#FFFFFF',
-              }}>
-              <ArrowLeft size={14} /> Back
-            </button>
-
-            <span style={{ flex: 1 }} />
-
-            {!isLocked && (
-              <button
-                onClick={handleSave}
-                disabled={busy}
-                className="flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-bold transition-all border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-50"
-                style={{
-                  height: 36, padding: '0 18px', minWidth: 110,
-                  borderColor: '#12B76A', color: '#12B76A', background: '#FFFFFF',
-                }}>
-                {isSavingStep ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><FileText size={13} />Save</>}
-              </button>
-            )}
-
-            {!isLastStep && (
-              <button
-                onClick={handleNext}
-                disabled={busy || (isOnStep1 && !step1Unlocked)}
-                title={isOnStep1 && !step1Unlocked ? 'Save Exercise Details first to continue' : undefined}
-                className="flex items-center justify-center gap-2 rounded-lg text-[13px] font-bold text-white transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{
-                  height: 36, padding: '0 22px', minWidth: 120,
-                  background: '#101828',
-                }}>
-                Next <ArrowRight size={14} />
-              </button>
-            )}
-
-            {isLastStep && !isLocked && (
-              <button
-                onClick={handleComplete}
-                disabled={busy}
-                className="flex items-center justify-center gap-2 rounded-lg text-[13px] font-bold text-white transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{
-                  height: 36, padding: '0 22px', minWidth: 130,
-                  background: `linear-gradient(135deg, ${D.orange}, ${D.orangeDark})`,
-                  boxShadow: `0 8px 20px ${D.orangeGlow}`,
-                }}>
-                {isLoading
-                  ? <><Loader2 size={14} className="animate-spin" />Finishing…</>
-                  : <><Check size={14} strokeWidth={3} />Finish</>}
-              </button>
-            )}
-
-            {isLocked && (
-              <span
-                className="flex items-center gap-1.5 rounded-lg text-[13px] font-bold"
-                style={{
-                  height: 36, padding: '0 16px',
-                  background: D.emerald + '15', color: D.emerald,
-                  border: `1px solid ${D.emerald}40`,
-                }}>
-                <Check size={13} strokeWidth={3} />Submitted
-              </span>
-            )}
-          </div>
-        </section>
-      </div>{/* /card */}
+        <footer className={assignmentStyles.footer}>
+          <span className={assignmentStyles.draftHint}>Only General is needed to save progress.</span>
+          <span className={assignmentStyles.saveLabel}>
+            {isLocked ? 'Submitted' : `Editing: ${SECTION_TITLE[currentTitle] || currentTitle}`}
+          </span>
+          {!isLocked && <button type="button" onClick={handleSaveProgress} disabled={busy}>
+            {isSavingStep ? 'Saving…' : 'Save progress'}
+          </button>}
+          {!isLocked && <button type="button" className={assignmentStyles.primary} onClick={handleComplete} disabled={busy}>
+            {isLoading ? 'Saving…' : isEditing ? 'Save changes' : 'Save'}
+          </button>}
+        </footer>
+      </div>
+      </CompactSettingsContext.Provider>
     </div>
   );
 };

@@ -271,6 +271,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
   const showModalToast = useCallback((msg: string, ok: boolean) => {
@@ -370,9 +371,12 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
   }, [isOpen]);
 
-  /* Auto-fill name */
+  /* Auto-fill name — from the first file, for one file or several. Picking two
+     files one at a time already kept the first one's name as the group name,
+     while picking both at once left it blank and Upload refused; the same
+     files now get the same (editable) name however they were added. */
   useEffect(() => {
-    if (assignedFiles.length === 1 && !hasFolders && !fileName) {
+    if (assignedFiles.length >= 1 && !hasFolders && !fileName) {
       const n = assignedFiles[0].file.name;
       setFileName(n.includes(".") ? n.slice(0, n.lastIndexOf(".")) : n);
     } else if (assignedFiles.length === 0 && !hasFolders && !editMode) {
@@ -501,7 +505,19 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
     if (!editMode && !assignedFiles.length && !hasFolders) return;
     if (!fileName.trim()) {
-      setNameError(editMode ? "Name is required." : (hasFolders || assignedFiles.length > 1 ? "Group name required." : "File name required."));
+      const msg = editMode ? "Name is required." : (hasFolders || assignedFiles.length > 1 ? "Group name required." : "File name required.");
+      setNameError(msg);
+      // The name field sits at the TOP of the scrolling body, so with a few
+      // files queued it is scrolled out of view and the click looked dead —
+      // bring it back, put the cursor in it, and say why in the footer toast.
+      nameInputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+      nameInputRef.current?.focus({ preventScroll: true });
+      showModalToast(
+        hasFolders || assignedFiles.length > 1
+          ? "Enter a group name for these files to upload them"
+          : msg,
+        false
+      );
       return;
     }
 
@@ -1107,6 +1123,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                   {isGroup ? "Group Name" : "File Name"} <span style={{ color: T.red }}>*</span>
                 </label>
                 <input
+                  ref={nameInputRef}
                   className="fum-input"
                   type="text" value={fileName}
                   onChange={e => { setFileName(e.target.value); if (nameError) setNameError(""); }}

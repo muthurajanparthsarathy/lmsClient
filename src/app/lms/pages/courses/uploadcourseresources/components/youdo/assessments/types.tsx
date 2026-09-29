@@ -117,6 +117,8 @@ export interface ValidationErrors {
   [key: string]: any;
 }
 
+export type NotifyChannels = { dashboard: boolean; gmail: boolean; whatsapp: boolean };
+
 export interface FormDataType {
   // Supports every exercise type the form can hold ('' = unset, used while
   // section-based hides the type selector). Previously typed as only "" | "MCQ",
@@ -154,6 +156,10 @@ export interface FormDataType {
     notifyGradersSubmissions: boolean;
     notifyGradersLateSubmissions: boolean;
     notifyStudent: boolean;
+    // Delivery channels per toggle — shown as "Notify via" when it is on.
+    notifyStudentChannels?: NotifyChannels;
+    notifyGradersSubmissionsChannels?: NotifyChannels;
+    notifyGradersLateSubmissionsChannels?: NotifyChannels;
   };
   grades: {
     mcqGrade: number | null;

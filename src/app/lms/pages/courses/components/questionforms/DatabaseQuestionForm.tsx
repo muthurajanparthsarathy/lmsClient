@@ -14,6 +14,7 @@ import { DOC_ACCEPT, DOC_ACCEPT_LABEL } from '@/app/lms/pages/courses/components
 import { toast } from 'react-toastify';
 import QuestionBankSelector from './mcq/QuestionBankSelector';
 import GenerateProgFamilyAI from './GenerateProgFamilyAI';
+import { buildQuestionHints } from './questionHints';
 import { CodeSetupSection, isStringSolutionEmpty } from './CodeSetupSection';
 import { API_ORIGIN } from '@/lib/apiBase'
 
@@ -1270,7 +1271,6 @@ const PreviewModal: React.FC<{
                                   <div key={hi} style={{ padding: '8px 12px', background: 'var(--lms-warning-bg)', border: '1.5px solid var(--lms-warning-bdr)', borderRadius: 8 }}>
                                     <span style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-warning)', fontWeight: 700 }}>Hint {hi + 1}: </span>
                                     <span style={{ fontFamily: 'var(--lms-font)', fontSize: 12, color: 'var(--lms-text-main)' }}>{h.hintText}</span>
-                                    {h.pointsDeduction > 0 && <span style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-muted)', marginLeft: 8 }}>(-{h.pointsDeduction} pts)</span>}
                                   </div>
                                 ))}
                               </div>
@@ -2222,7 +2222,9 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
   }, [dbQuestions, currentIndex, onDeleteQuestion, currentDiff, isGeneral, generalMPQ, isScoreEditable, getFixedScore, loadQuestionIntoForm]);
 
   const executeSave = useCallback(async (localId: string, payload: any, isSaveAndNext: boolean): Promise<string | undefined> => {
-    const result = await onSave({ ...payload, __saveAndNext: isSaveAndNext, __isUpdate: !!payload._id, __questionId: payload._id, __editLocalId: localId });
+    // Save only the hints that have text (the snapshot keeps empty rows so
+    // they survive moving between questions).
+    const result = await onSave({ ...payload, ...(Array.isArray(payload.hints) ? { hints: buildQuestionHints('', payload.hints) } : {}), __saveAndNext: isSaveAndNext, __isUpdate: !!payload._id, __questionId: payload._id, __editLocalId: localId });
     const savedId = result?._id || result?.data?._id || result?.questionId || result?.data?.questionId;
     if (savedId) registerSavedId(localId, savedId);
     const updatedFlow = dbQuestionsRef.current.map(q =>
@@ -2997,7 +2999,7 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
                       </div>
                       <textarea className="lms-textarea" rows={2} value={h.hintText} onChange={e => setExtraHints(p => p.map((x, idx) => idx === i ? { ...x, hintText: e.target.value } : x))} placeholder="Hint text..." />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-sec)' }}>Deduction: <input type="number" min="0" value={h.pointsDeduction} onChange={e => setExtraHints(p => p.map((x, idx) => idx === i ? { ...x, pointsDeduction: parseInt(e.target.value) || 0 } : x))} style={{ width: 40, padding: '2px 6px', borderRadius: 5, border: '1.5px solid var(--lms-border)', fontSize: 12, fontFamily: 'var(--lms-font)', outline: 'none' }} /> pts</div>
+                        {/* Hints no longer cost points — the Deduction input is gone. */}
                         <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-sec)', cursor: 'pointer', userSelect: 'none' }}><input type="checkbox" checked={h.isPublic} onChange={e => setExtraHints(p => p.map((x, idx) => idx === i ? { ...x, isPublic: e.target.checked } : x))} style={{ width: 12, height: 12, accentColor: 'var(--lms-orange)' }} /> Public</label>
                       </div>
                     </div>
@@ -3436,6 +3438,9 @@ const remainingMarksIncludingUnsaved = useMemo((): number => {
             existingQuestionIds={(exerciseData?.fullExerciseData?.questions || []).map((q: any) => q._id)}
             existingQuestions={exerciseData?.fullExerciseData?.questions || []}
             filterByType="database"
+            // Filling one difficulty's slot → list that difficulty only.
+            initialDifficultyFilter={isGeneral ? undefined : currentDiff}
+            lockDifficulty={!isGeneral}
           />
         </div>
       )}

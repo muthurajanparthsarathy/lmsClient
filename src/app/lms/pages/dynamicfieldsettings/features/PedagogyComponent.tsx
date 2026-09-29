@@ -334,12 +334,14 @@ export default function PedagogyManagementComponent() {
 
     const ITEMS_PER_PAGE = 5;
 
-    // Transform database structure to component format
+    // Transform database structure to component format.
+    // The three activities (I_Do / We_Do / You_Do) are fixed and always
+    // shown; only their elements come from the database. With no structure
+    // saved yet each activity simply has zero elements — the first "Add
+    // element" creates the structure server-side.
     const transformStructureToActivities = (dbStructures: any[]): PedagogyActivity[] => {
-        if (!dbStructures || dbStructures.length === 0) return [];
-
         // Get the first structure (assuming one structure per institution)
-        const structure = dbStructures[0];
+        const structure = dbStructures?.[0] ?? {};
 
         return [
             {
@@ -570,24 +572,16 @@ export default function PedagogyManagementComponent() {
                 />
 
                 {filteredActivities.length === 0 ? (
-                    searchTerm ? (
-                        <EmptyState
-                            icon={Search}
-                            title={`No matches for “${searchTerm}”`}
-                            message="Try a different activity name."
-                            secondaryAction={
-                                <Button variant="outline" onClick={() => setSearchTerm("")}>
-                                    Clear search
-                                </Button>
-                            }
-                        />
-                    ) : (
-                        <EmptyState
-                            icon={BookOpen}
-                            title="No pedagogy structure yet"
-                            message="Pedagogy activities will appear here once a structure exists for your institution."
-                        />
-                    )
+                    <EmptyState
+                        icon={Search}
+                        title={`No matches for “${searchTerm}”`}
+                        message="Try a different activity name."
+                        secondaryAction={
+                            <Button variant="outline" onClick={() => setSearchTerm("")}>
+                                Clear search
+                            </Button>
+                        }
+                    />
                 ) : (
                     <div className="overflow-x-auto">
                         <UserTable

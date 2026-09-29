@@ -3,6 +3,7 @@ import React from 'react';
 import { List, AlertCircle, Calculator, Lock } from 'lucide-react';
 import { D, formatDecimal, isApproximatelyEqual, mcqScoringOptions } from './constants';
 import { FormDataType, ValidationErrors } from './types';
+import { MarksMeter } from './MarksMeter';
 
 interface BaseConfigProps {
   formData: FormDataType;
@@ -30,14 +31,11 @@ export const MCQConfiguration: React.FC<BaseConfigProps> = ({
   
   return (
     <div className="px-10 pt-4 pb-6">
-      {isEqual && (
+      {/* Live Total / Used / Remaining — equal distribution fills the total
+          as soon as a question count is typed. */}
+      {isEqual && formData.isGraded !== false && (
         <div className="flex justify-end mb-3">
-          <div className="text-right">
-            <div className="text-[10px] font-semibold" style={{ color: isMatch ? D.emerald : D.amber }}>Allocated</div>
-            <div className="text-sm font-bold" style={{ color: isMatch ? D.emerald : D.amber, fontFamily: 'Poppins, sans-serif' }}>
-              {formatDecimal(allocated)}<span className="text-xs font-normal" style={{ color: D.textMuted }}>/{totalToUse}</span>
-            </div>
-          </div>
+          <MarksMeter total={totalToUse || 0} used={allocated || 0} />
         </div>
       )}
 
@@ -104,6 +102,7 @@ export const MCQConfiguration: React.FC<BaseConfigProps> = ({
       }
     }} 
     min={0} 
+    liveUpdate
     placeholder="e.g. 10" 
     error={validationErrors.mcqGeneralQuestionCount} 
     touched={touchedFields.has('mcqGeneralQuestionCount')} 

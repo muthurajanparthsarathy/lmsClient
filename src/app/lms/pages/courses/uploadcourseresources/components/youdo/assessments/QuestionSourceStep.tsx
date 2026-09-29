@@ -1,10 +1,11 @@
 
 import React, { useEffect, useMemo } from 'react';
-import { Layers, Minus, Plus } from 'lucide-react';
+import { Minus, Plus } from 'lucide-react';
 import { D } from './constants';
 import { FormDataType } from './types';
 import { QuestionSourcePicker } from '@/app/lms/pages/courses/uploadcourseresources/components/youdo/assessments/questionsource/QuestionSourcePicker';
-import { SectionHeading, StepShell, ONumberInput } from './UIComponents';
+import { SectionHeading, StepShell } from './UIComponents';
+import { DistributionMatrix } from './questionsource/DistributionMatrix';
 
 export type QuestionSource = '' | 'scratch' | 'ai' | 'thirdParty' | 'custom';
 export type CustomSubSource = 'scratch' | 'ai' | 'thirdParty';
@@ -34,36 +35,40 @@ const SUB_OPTIONS: Array<{ value: CustomSubSource; label: string }> = [
   { value: 'thirdParty', label: 'Other Platform' },
 ];
 
-const DIFFS = ['easy', 'medium', 'hard'] as const;
-const DIFF_COLORS: Record<(typeof DIFFS)[number], string> = {
-  easy: D.emerald, medium: D.amber, hard: D.red,
-};
+type SourceTarget = { total: number; easy: number; medium: number; hard: number };
 
-// ─── Table token styles ──────────────────────────────────────────────────────
-// Shared across every table this step renders (per-section panels and the
-// non-section aggregate matrix) so all distribution tables read as one system.
-const tableWrap: React.CSSProperties = {
-  border: `1px solid ${D.border2}`,
-  borderRadius: 10,
-  background: '#fff',
-  overflow: 'hidden',
-};
-const headerCell: React.CSSProperties = {
-  background: D.surface,
-  color: D.textSub,
-  fontSize: 11,
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '.03em',
-  padding: '10px 12px',
-  borderBottom: `1px solid ${D.border}`,
-  textAlign: 'left',
-};
-const bodyCellBase: React.CSSProperties = {
-  padding: '10px 12px',
-  fontSize: 12.5,
-  color: D.textMain,
-};
+/** Question counts a Custom split must add up to (0s for section-based). */
+export function sourceTarget(formData: FormDataType, isSectionBased: boolean): SourceTarget {
+  const none = { total: 0, easy: 0, medium: 0, hard: 0 };
+  if (isSectionBased) return none;
+  const et = formData.exerciseType;
+  if (et === 'MCQ') return { ...none, total: formData.mcqConfig?.generalQuestionCount || 0 };
+  const cfg: any = et === 'Other' ? formData.othersConfig : formData.programmingConfig;
+  if (!cfg) return none;
+  if (cfg.questionConfigType === 'general') return { ...none, total: cfg.generalQuestionCount || 0 };
+  const counts = (cfg.questionConfigType === 'selectionLevel' ? cfg.selectionLevelCounts : cfg.levelBasedCounts) || {};
+  const easy = counts.easy || 0, medium = counts.medium || 0, hard = counts.hard || 0;
+  return { total: easy + medium + hard, easy, medium, hard };
+}
+
+/**
+ * Why the Custom split does not add up yet, or null when it does (or there
+ * is no split to check). Same rule as the matrix's green state: every row
+ * must equal its target.
+ */
+export function distributionIssue(
+  dist: CustomDistribution, cols: CustomSubSource[], target: SourceTarget,
+): string | null {
+  if (cols.length < 2 || target.total <= 0) return null;
+  const hasLevels = (target.easy + target.medium + target.hard) > 0;
+  const rowTarget = hasLevels ? target : { easy: 0, medium: target.total, hard: 0 };
+  const rowSum = (r: 'easy' | 'medium' | 'hard') => cols.reduce((s, c) => s + (dist?.[r]?.[c] || 0), 0);
+  const sum = rowSum('easy') + rowSum('medium') + rowSum('hard');
+  const bad = (['easy', 'medium', 'hard'] as const).filter(r => rowSum(r) !== rowTarget[r]);
+  if (!bad.length) return null;
+  if (!hasLevels) return `Split the questions across sources — ${sum} of ${target.total} placed`;
+  return `Split ${bad.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', ')} across sources — ${sum} of ${target.total} placed`;
+}
 
 interface QuestionSourceStepProps {
   questionSource: QuestionSource;
@@ -106,23 +111,7 @@ export const QuestionSourceStep: React.FC<QuestionSourceStepProps> = ({
   // configure counts per section, so there is no exercise-level pattern and
   // the matrix stays hidden (same net effect as ExerciseSettings' render
   // condition of E/M/H total > 0).
-  const target = useMemo(() => {
-    if (isSectionBased) return { total: 0, easy: 0, medium: 0, hard: 0 };
-    const et = formData.exerciseType;
-    if (et === 'MCQ') {
-      return { total: formData.mcqConfig?.generalQuestionCount || 0, easy: 0, medium: 0, hard: 0 };
-    }
-    const cfg: any = et === 'Other' ? formData.othersConfig : formData.programmingConfig;
-    if (!cfg) return { total: 0, easy: 0, medium: 0, hard: 0 };
-    if (cfg.questionConfigType === 'general') {
-      return { total: cfg.generalQuestionCount || 0, easy: 0, medium: 0, hard: 0 };
-    }
-    const counts = (cfg.questionConfigType === 'selectionLevel'
-      ? cfg.selectionLevelCounts
-      : cfg.levelBasedCounts) || {};
-    const easy = counts.easy || 0, medium = counts.medium || 0, hard = counts.hard || 0;
-    return { total: easy + medium + hard, easy, medium, hard };
-  }, [formData, isSectionBased]);
+  const target = useMemo(() => sourceTarget(formData, isSectionBased), [formData, isSectionBased]);
 
   // Pure-MCQ assessments have no Other Platform import path — the MCQ
   // question form only offers Manual / Bank / AI — so don't offer a source
@@ -151,16 +140,6 @@ export const QuestionSourceStep: React.FC<QuestionSourceStepProps> = ({
     }
   }, [hideThirdParty, questionSource, customSources, setQuestionSource, setCustomSources, setCustomDistribution]);
 
-  // Level-based patterns split per difficulty. MCQ and General-count configs
-  // have no levels — they get a single "Questions" row whose split lives in
-  // the neutral 'medium' bucket (the same bucket difficulty-less questions
-  // are normalized into when quota slices are counted).
-  const hasLevels = (target.easy + target.medium + target.hard) > 0;
-  const rowTargets: Record<(typeof DIFFS)[number], number> = hasLevels
-    ? { easy: target.easy, medium: target.medium, hard: target.hard }
-    : { easy: 0, medium: target.total, hard: 0 };
-  const rowCaption = (d: (typeof DIFFS)[number]) => (hasLevels ? d : d === 'medium' ? 'Questions' : d);
-
   // Section-based assessments carry their configs on the sections themselves,
   // not on `formData`, so `target.total` is 0 here even though the trainer has
   // definitely configured question counts. Force the matrix visible so they
@@ -172,50 +151,6 @@ export const QuestionSourceStep: React.FC<QuestionSourceStepProps> = ({
     (target.total > 0 || isSectionBased);
 
   const activeCols = subOptions.filter(o => customSources.includes(o.value));
-
-  const rowSum = (diff: (typeof DIFFS)[number]) =>
-    activeCols.reduce((s, c) => s + (customDistribution[diff]?.[c.value] || 0), 0);
-  const grandSum = DIFFS.reduce((s, d) => s + rowSum(d), 0);
-  // Green only when EVERY row matches its target (mirrors ExerciseSettings'
-  // grandBalanced) — a grand-total-only check can read green while one row is
-  // over and another under. For section-based we have no aggregate target,
-  // so treat any non-empty entry as valid (the sections themselves already
-  // enforce their own counts at save time).
-  const allRowsBalanced = isSectionBased
-    ? grandSum > 0
-    : DIFFS.every(d => rowSum(d) === rowTargets[d]);
-  // Keep a row on screen while it still holds counts, even after its
-  // configured target dropped to 0 — hiding it would trap stale counts the
-  // user can no longer see or decrement. For section-based show all three
-  // difficulty rows unconditionally so the trainer has full latitude.
-  const visibleRows = isSectionBased
-    ? DIFFS
-    : DIFFS.filter(d => rowTargets[d] > 0 || rowSum(d) > 0);
-
-  // Full-value setter used by ONumberInput onChange in the aggregate matrix.
-  const setCellValue = (diff: (typeof DIFFS)[number], src: CustomSubSource, val: number) => {
-    setCustomDistribution(prev => ({
-      ...prev,
-      [diff]: { ...prev[diff], [src]: Math.max(0, val || 0) },
-    }));
-  };
-
-  const splitEvenly = () => {
-    setCustomDistribution(() => {
-      const next = emptyCustomDist();
-      DIFFS.forEach(diff => {
-        const rowTarget = rowTargets[diff];
-        if (rowTarget <= 0 || activeCols.length === 0) return;
-        const base = Math.floor(rowTarget / activeCols.length);
-        let remainder = rowTarget - base * activeCols.length;
-        activeCols.forEach(c => {
-          next[diff][c.value] = base + (remainder > 0 ? 1 : 0);
-          if (remainder > 0) remainder--;
-        });
-      });
-      return next;
-    });
-  };
 
   return (
     <StepShell>
@@ -316,12 +251,10 @@ export const QuestionSourceStep: React.FC<QuestionSourceStepProps> = ({
         );
       })()}
 
-      {/* ── Distribution: section-based per-section panels ── */}
-      {/* Each part (Part A / Part B / …) gets its own matrix targeted to that */}
-      {/* section's configured counts. Trainer allocates that section's total */}
-      {/* across Manual / AI / Other Platform, per difficulty. Downstream */}
-      {/* (QuestionsTest routing) reads `customDistributionBySection[sectionId]` */}
-      {/* to decide what's still addable for that specific slot. */}
+      {/* ── Distribution: section-based — one We Do matrix per part ── */}
+      {/* Each part (Part A / Part B / …) splits its own configured count across */}
+      {/* the ticked sources. Downstream (QuestionsTest routing) reads */}
+      {/* `customDistributionBySection[sectionId]` for that slot. */}
       {isSectionBased && questionSource === 'custom' && customSources.length >= 2 && (() => {
         const sectionConfigs: Record<string, any> = (formData as any)?.sectionConfigs || {};
         const sectionKeys = Object.keys(sectionConfigs).sort((a, b) => {
@@ -339,9 +272,9 @@ export const QuestionSourceStep: React.FC<QuestionSourceStepProps> = ({
             </div>
           );
         }
-        // Derive per-section targets from that section's config. MCQ →
-        // generalQuestionCount as the medium bucket; Programming → per-diff or
-        // general depending on questionConfigType; Combined → sum of both parts.
+        // Per-section targets from that section's config. MCQ / General →
+        // one "Questions" row; level-based Programming → per difficulty;
+        // Combined → MCQ count joins the medium row.
         const sectionTarget = (cfg: any): { total: number; easy: number; medium: number; hard: number } => {
           const et = cfg?.exerciseType;
           const mcqCount = cfg?.mcqConfig?.generalQuestionCount || cfg?.mcqConfig?.totalMcqQuestions || 0;
@@ -355,254 +288,69 @@ export const QuestionSourceStep: React.FC<QuestionSourceStepProps> = ({
             progEasy = c.easy || 0; progMedium = c.medium || 0; progHard = c.hard || 0;
             progTotal = progEasy + progMedium + progHard;
           }
-          if (et === 'MCQ') return { total: mcqCount, easy: 0, medium: mcqCount, hard: 0 };
+          const flat = (total: number) => ({ total, easy: 0, medium: 0, hard: 0 });
+          if (et === 'MCQ') return flat(mcqCount);
           if (et === 'Programming') {
-            if (pcType === 'general') return { total: progTotal, easy: 0, medium: progTotal, hard: 0 };
-            return { total: progTotal, easy: progEasy, medium: progMedium, hard: progHard };
+            return pcType === 'general' ? flat(progTotal) : { total: progTotal, easy: progEasy, medium: progMedium, hard: progHard };
           }
           if (et === 'Combined') {
-            if (pcType === 'general') return { total: mcqCount + progTotal, easy: 0, medium: mcqCount + progTotal, hard: 0 };
-            return { total: mcqCount + progTotal, easy: progEasy, medium: mcqCount + progMedium, hard: progHard };
+            return pcType === 'general'
+              ? flat(mcqCount + progTotal)
+              : { total: mcqCount + progTotal, easy: progEasy, medium: mcqCount + progMedium, hard: progHard };
           }
-          return { total: 0, easy: 0, medium: 0, hard: 0 };
+          return flat(0);
         };
-        // Deep-clone helpers avoid any accidental reference-sharing between
-        // section entries in `customDistributionBySection` — a single shared
-        // sub-object could silently mask updates in React's shallow re-render
-        // check. Every mutation writes a fresh nested structure.
+        // Fresh nested objects on every write so no two sections ever share
+        // a sub-object (a shared one could mask updates in React's check).
         const cloneDist = (d: CustomDistribution): CustomDistribution => ({
-          easy:   { scratch: d.easy.scratch,   ai: d.easy.ai,   thirdParty: d.easy.thirdParty },
-          medium: { scratch: d.medium.scratch, ai: d.medium.ai, thirdParty: d.medium.thirdParty },
-          hard:   { scratch: d.hard.scratch,   ai: d.hard.ai,   thirdParty: d.hard.thirdParty },
+          easy:   { ...d.easy },
+          medium: { ...d.medium },
+          hard:   { ...d.hard },
         });
-        const setSectionValue = (sid: string, diff: 'easy'|'medium'|'hard', src: CustomSubSource, val: number) => {
-          setCustomDistributionBySection(prev => {
-            const cur = prev[sid] ? cloneDist(prev[sid]) : emptyCustomDist();
-            cur[diff][src] = Math.max(0, val || 0);
-            return { ...prev, [sid]: cur };
-          });
-        };
-        const resetSection = (sid: string) => {
-          setCustomDistributionBySection(prev => ({ ...prev, [sid]: emptyCustomDist() }));
-        };
-        const splitSectionEvenly = (sid: string, tgt: { easy: number; medium: number; hard: number }) => {
-          const cols = subOptions.filter(o => customSources.includes(o.value));
-          setCustomDistributionBySection(prev => {
-            const next = emptyCustomDist();
-            DIFFS.forEach(diff => {
-              const rowTarget = tgt[diff];
-              if (rowTarget <= 0 || cols.length === 0) return;
-              const base = Math.floor(rowTarget / cols.length);
-              let remainder = rowTarget - base * cols.length;
-              cols.forEach(c => {
-                next[diff][c.value] = base + (remainder > 0 ? 1 : 0);
-                if (remainder > 0) remainder--;
-              });
-            });
-            return { ...prev, [sid]: next };
-          });
-        };
         return (
           <div style={{ marginTop: 20 }}>
             <SectionHeading>Distribution</SectionHeading>
-            {sectionKeys.map((sid, idx) => {
-              const cfg = sectionConfigs[sid];
-              const name = cfg?.name || `Part ${String.fromCharCode(65 + idx)}`;
-              const tgt = sectionTarget(cfg);
-              const hasSecLevels = (tgt.easy + tgt.hard) > 0;
-              const rowTargetsSec: Record<'easy'|'medium'|'hard', number> = hasSecLevels
-                ? { easy: tgt.easy, medium: tgt.medium, hard: tgt.hard }
-                : { easy: 0, medium: tgt.total, hard: 0 };
-              const dist = customDistributionBySection[sid] || emptyCustomDist();
-              const rowSumSec = (d: 'easy'|'medium'|'hard') => activeCols.reduce((s, c) => s + (dist[d]?.[c.value] || 0), 0);
-              const grandSumSec = DIFFS.reduce((s, d) => s + rowSumSec(d), 0);
-              const balancedSec = DIFFS.every(d => rowSumSec(d) === rowTargetsSec[d]);
-              const visibleSecRows = DIFFS.filter(d => rowTargetsSec[d] > 0 || rowSumSec(d) > 0);
-              return (
-                <div key={sid} style={{ marginTop: idx > 0 ? 20 : 8 }}>
-                  <div className="flex items-center justify-between flex-wrap" style={{ gap: 8, marginBottom: 10 }}>
-                    <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
-                      <Layers size={14} style={{ color: D.textSub }} />
-                      <span className="text-[12px] font-bold" style={{ color: D.textMain }}>{name}</span>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: D.orangeLight, color: D.orange, border: `1px solid ${D.orange}30` }}>
-                        {cfg?.exerciseType || '—'}
-                      </span>
-                      <span className="text-[10.5px]" style={{ color: D.textMuted }}>Target: {tgt.total} questions</span>
+            <div className="space-y-4">
+              {sectionKeys.map((sid, idx) => {
+                const cfg = sectionConfigs[sid];
+                const name = cfg?.name || `Part ${String.fromCharCode(65 + idx)}`;
+                const tgt = sectionTarget(cfg);
+                if (tgt.total === 0) {
+                  return (
+                    <div key={sid} className="text-[11px]" style={{ color: D.textMuted }}>
+                      <strong style={{ color: D.textMain }}>{name}</strong> — no questions configured yet. Set counts in the Section Configuration step.
                     </div>
-                    <div className="flex items-center" style={{ gap: 8 }}>
-                      <span className="text-[11px] font-bold" style={{ color: balancedSec ? D.emerald : D.red }}>
-                        {grandSumSec} / {tgt.total}
-                      </span>
-                      <button type="button" onClick={() => splitSectionEvenly(sid, rowTargetsSec)}
-                        className="text-[10.5px] font-semibold px-2.5 py-1 rounded-lg"
-                        style={{ border: `1px solid ${D.border2}`, color: D.textSub, background: '#fff' }}>
-                        Split evenly
-                      </button>
-                      <button type="button" onClick={() => resetSection(sid)}
-                        className="text-[10.5px] font-semibold px-2.5 py-1 rounded-lg"
-                        style={{ border: `1px solid ${D.border2}`, color: D.textSub, background: '#fff' }}>
-                        Reset
-                      </button>
-                    </div>
-                  </div>
-                  {tgt.total === 0 ? (
-                    <div className="text-[11px]" style={{ color: D.textMuted }}>
-                      No questions configured for this section yet — set counts in the Section Configuration step.
-                    </div>
-                  ) : (
-                    <div style={tableWrap}>
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr>
-                              <th style={headerCell}>Difficulty</th>
-                              {activeCols.map(c => (
-                                <th key={c.value} style={{ ...headerCell, textAlign: 'center' }}>{c.label}</th>
-                              ))}
-                              <th style={{ ...headerCell, textAlign: 'right' }}>Row total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {visibleSecRows.map((diff, i) => {
-                              const rSum = rowSumSec(diff);
-                              const rTarget = rowTargetsSec[diff];
-                              const isLast = i === visibleSecRows.length - 1;
-                              const cellBase: React.CSSProperties = { ...bodyCellBase, borderBottom: isLast ? 'none' : `1px solid ${D.border}` };
-                              return (
-                                <tr key={diff}>
-                                  <td style={{ ...cellBase, fontWeight: 600 }}>
-                                    <span className="inline-flex items-center capitalize" style={{ gap: 8, color: D.textMain }}>
-                                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: hasSecLevels ? DIFF_COLORS[diff] : D.textHint, flexShrink: 0 }} />
-                                      {hasSecLevels ? diff : diff === 'medium' ? 'Questions' : diff}
-                                    </span>
-                                  </td>
-                                  {activeCols.map(c => {
-                                    const val = dist[diff]?.[c.value] || 0;
-                                    return (
-                                      <td key={c.value} style={{ ...cellBase, textAlign: 'center' }}>
-                                        <div style={{ display: 'inline-block', width: 96 }}>
-                                          <ONumberInput
-                                            value={val}
-                                            onChange={(nv: number) => setSectionValue(sid, diff, c.value, nv)}
-                                            placeholder="0"
-                                            min={0}
-                                            max={rTarget > 0 ? rTarget : undefined}
-                                          />
-                                        </div>
-                                      </td>
-                                    );
-                                  })}
-                                  <td style={{ ...cellBase, textAlign: 'right' }}>
-                                    <span className="text-[11px] font-bold"
-                                      style={{ color: rSum === rTarget ? D.emerald : D.red }}>
-                                      {rSum} / {rTarget}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                }
+                return (
+                  <DistributionMatrix key={sid}
+                    cols={activeCols.map(c => c.value)}
+                    value={customDistributionBySection[sid] || emptyCustomDist()}
+                    update={fn => setCustomDistributionBySection(prev => ({
+                      ...prev,
+                      [sid]: fn(prev[sid] ? cloneDist(prev[sid]) : emptyCustomDist()),
+                    }))}
+                    target={tgt}
+                    title={`${name} · ${cfg?.exerciseType || '—'}`}
+                    D={D}
+                  />
+                );
+              })}
+            </div>
           </div>
         );
       })()}
 
-      {/* ── Distribution: non-section aggregate matrix ── */}
+      {/* ── Distribution: whole assessment — the We Do matrix ── */}
       {!isSectionBased && showMatrix && (
         <div style={{ marginTop: 20 }}>
-          <SectionHeading
-            right={
-              <div className="flex items-center" style={{ gap: 8 }}>
-                <span className="text-[11px] font-bold"
-                  style={{ color: allRowsBalanced ? D.emerald : D.red }}>
-                  {/* Section-based has no aggregate target here (sections carry */}
-                  {/* their own counts), so show a bare total instead of "N / 0". */}
-                  {isSectionBased ? `${grandSum} total` : `${grandSum} / ${target.total}`}
-                </span>
-                <button type="button" onClick={splitEvenly}
-                  className="text-[10.5px] font-semibold px-2.5 py-1 rounded-lg transition-all"
-                  style={{ border: `1px solid ${D.border2}`, color: D.textSub, background: '#fff' }}>
-                  Split evenly
-                </button>
-                <button type="button" onClick={() => setCustomDistribution(emptyCustomDist())}
-                  className="text-[10.5px] font-semibold px-2.5 py-1 rounded-lg transition-all"
-                  style={{ border: `1px solid ${D.border2}`, color: D.textSub, background: '#fff' }}>
-                  Reset
-                </button>
-              </div>
-            }
-          >
-            <span className="inline-flex items-center gap-1">
-              Distribution
-              <InfoTooltip content="Split each difficulty's configured question count across the sources you ticked. Every row must add up to its configured count." />
-            </span>
-          </SectionHeading>
-
-          <div style={tableWrap}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={headerCell}>Difficulty</th>
-                    {activeCols.map(c => (
-                      <th key={c.value} style={{ ...headerCell, textAlign: 'center' }}>{c.label}</th>
-                    ))}
-                    <th style={{ ...headerCell, textAlign: 'right' }}>Row total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((diff, i) => {
-                    const rSum = rowSum(diff);
-                    const rTarget = rowTargets[diff];
-                    const isLast = i === visibleRows.length - 1;
-                    const cellBase: React.CSSProperties = { ...bodyCellBase, borderBottom: isLast ? 'none' : `1px solid ${D.border}` };
-                    return (
-                      <tr key={diff}>
-                        <td style={{ ...cellBase, fontWeight: 600 }}>
-                          <span className="inline-flex items-center capitalize" style={{ gap: 8, color: D.textMain }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: hasLevels ? DIFF_COLORS[diff] : D.textHint, flexShrink: 0 }} />
-                            {rowCaption(diff)}
-                          </span>
-                        </td>
-                        {activeCols.map(c => {
-                          const val = customDistribution[diff]?.[c.value] || 0;
-                          // Section-based has no per-difficulty target — allow
-                          // the trainer to enter freely; validation happens
-                          // per-section elsewhere. Non-section keeps the target
-                          // cap so a row can't overflow its configured count.
-                          return (
-                            <td key={c.value} style={{ ...cellBase, textAlign: 'center' }}>
-                              <div style={{ display: 'inline-block', width: 96 }}>
-                                <ONumberInput
-                                  value={val}
-                                  onChange={(nv: number) => setCellValue(diff, c.value, nv)}
-                                  placeholder="0"
-                                  min={0}
-                                  max={!isSectionBased && rTarget > 0 ? rTarget : undefined}
-                                />
-                              </div>
-                            </td>
-                          );
-                        })}
-                        <td style={{ ...cellBase, textAlign: 'right' }}>
-                          <span className="text-[11px] font-bold"
-                            style={{ color: isSectionBased ? D.textMain : (rSum === rTarget ? D.emerald : D.red) }}>
-                            {isSectionBased ? rSum : `${rSum} / ${rTarget}`}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <DistributionMatrix
+            cols={activeCols.map(c => c.value)}
+            value={customDistribution}
+            update={fn => setCustomDistribution(prev => fn(prev))}
+            target={target}
+            D={D}
+          />
         </div>
       )}
     </StepShell>

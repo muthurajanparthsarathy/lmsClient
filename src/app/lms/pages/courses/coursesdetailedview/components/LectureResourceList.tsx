@@ -16,13 +16,15 @@
 // from the parent page. Uses Tailwind + inline `#F97316` orange to match the
 // rest of the LMS course-detail shell.
 
-import React, { useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Search, X, ArrowUpDown, ChevronDown, Filter as FilterIcon,
-  FileText, FileVideo, Folder as FolderIco,
-  BookOpen, Presentation,
+  FileText, FileVideo, Folder as FolderIco, ChevronRight,
+  BookOpen, Presentation, Link2, FileArchive, FileType, Bookmark,
+  Image as ImageIcon,
 } from "lucide-react"
 import type { Resource, ResourceType } from "./types/types"
+import { groupResources, type GroupRow } from "./types/utils"
 // Reuse the SAME table + footer primitives the We Do Assignment list uses
 // so both screens share row density, hover, empty-state chrome, sticky
 // header, pager styling and column-percent widths. Anything a student
@@ -114,25 +116,90 @@ const ICON_TONE: Record<UiType, { bg: string; fg: string; Icon: any }> = {
   folder:  { bg: "#EFF8FF", fg: "#175CD3", Icon: FolderIco },
 }
 
-// Type-badge tone — restrained, no shouting.
-const BADGE_TONE: Record<UiType, { bg: string; fg: string; ring: string }> = {
-  section: { bg: "#FFF4EC", fg: "#C2410C", ring: "rgba(249,115,22,0.20)" },
-  reading: { bg: "#ECFDF3", fg: "#027A48", ring: "rgba(18,183,106,0.20)" },
-  pdf:     { bg: "#FEF3F2", fg: "#B42318", ring: "rgba(240,68,56,0.20)" },
-  video:   { bg: "#F4EBFF", fg: "#6941C6", ring: "rgba(158,119,237,0.20)" },
-  slides:  { bg: "#FEF7C3", fg: "#A15C07", ring: "rgba(247,144,9,0.22)" },
-  folder:  { bg: "#EFF8FF", fg: "#175CD3", ring: "rgba(46,144,250,0.22)" },
+// ── Staff-list look ─────────────────────────────────────────────────────────
+// Rows are drawn the way the staff upload list draws them (uploadcourseresources
+// → Coursecontent.tsx: getFileMeta, renderFileRow, the group header) — same
+// file artwork, icon sizes, outlined type chip and type scale — so a trainer
+// and a student looking at the same activity see the same list. A local copy:
+// the staff tokens live inside that component and are not exported.
+const S = {
+  orange: "#E8640C",
+  orangeLight: "rgba(232,100,12,0.08)",
+  textMain: "#0F172A",
+  textSub: "#334155",
+  textMuted: "#475569",
+  textHint: "#64748B",
+  border: "#eef0f4",
 }
 
+const extOf = (r: Resource): string => {
+  const url = typeof r.fileUrl === "string" ? r.fileUrl : r.fileUrl?.base
+  for (const src of [r.fileName, r.title, url]) {
+    const m = (src || "").split("?")[0].match(/\.([a-z0-9]+)$/i)
+    if (m) return m[1].toLowerCase()
+  }
+  return ""
+}
+
+/** File artwork + type-chip label — the staff list's getFileMeta, by Resource.type. */
+const fileVisual = (r: Resource): { img?: string; Icon: any; color: string; label: string } => {
+  const ext = extOf(r)
+  if (r.isFolder || (r.type as string) === "folder") return { img: "/icons/folder.png", Icon: FolderIco, color: S.orange, label: "Folder" }
+  switch (r.type) {
+    case "page":      return { img: "/icons/page.png",  Icon: BookOpen,     color: "#6366f1", label: "Page" }
+    case "link":      return { img: "/icons/link.png",  Icon: Link2,        color: "#0ea5e9", label: "Link" }
+    case "reference": return {                          Icon: Bookmark,     color: "#8b5cf6", label: "Ref" }
+    case "pdf":       return { img: "/icons/pdf.png",   Icon: FileText,     color: "#dc2626", label: "PDF" }
+    case "ppt":       return { img: "/icons/ppt.png",   Icon: Presentation, color: "#ea580c", label: ext || "ppt" }
+    case "video":     return { img: "/icons/video.png", Icon: FileVideo,    color: "#8b5cf6", label: ext || "video" }
+    case "zip":       return { img: "/icons/zip.png",   Icon: FileArchive,  color: "#d97706", label: ext || "zip" }
+    case "word":      return {                          Icon: FileType,     color: "#2563eb", label: ext || "doc" }
+    case "image":     return {                          Icon: ImageIcon,    color: "#14b8a6", label: ext || "img" }
+    default:          return {                          Icon: FileText,     color: "#64748b", label: ext || "file" }
+  }
+}
+
+/** 20px artwork in a 22px box at the top level; 18px in 20px inside a group — as staff. */
+const FileGlyph: React.FC<{ r: Resource; nested?: boolean }> = ({ r, nested }) => {
+  const v = fileVisual(r)
+  const box = nested ? 20 : 22
+  if (v.img) {
+    return (
+      <span className="flex-shrink-0 flex items-center justify-center" style={{ width: box, height: box }}>
+        <img src={v.img} alt={v.label} style={{ width: box - 2, height: box - 2, objectFit: "contain", display: "block" }} />
+      </span>
+    )
+  }
+  return (
+    <span
+      className="flex-shrink-0 flex items-center justify-center"
+      style={{
+        width: box, height: box, borderRadius: nested ? 5 : 6, color: v.color,
+        background: `${v.color}16`, border: `1px solid ${v.color}28`,
+      }}
+    >
+      <v.Icon size={nested ? 11 : 12} strokeWidth={1.9} />
+    </span>
+  )
+}
+
+/** The staff list's outlined, upper-case type chip. */
+const TypeChip: React.FC<{ label: string }> = ({ label }) => (
+  <span
+    style={{
+      fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
+      textTransform: "uppercase", letterSpacing: "0.05em",
+      background: "transparent", color: S.textHint, border: `1px solid ${S.border}`,
+      whiteSpace: "nowrap",
+    }}
+  >
+    {label}
+  </span>
+)
+
 // ── Size derivation ─────────────────────────────────────────────────────────
-// The "Size" column shows the raw file size for uploaded assets (PDF, PPT,
-// video, doc, image, archive) and a plain "-" for anything that has no
-// meaningful byte count — folders, reading resources, external links, and
-// author-composed sections. Zero/undefined/null are treated as "no size"
-// so the column NEVER reads "0 KB". Format:
-//   < 1 MB → "127.2 KB" (one decimal)
-//   ≥ 1 MB → "1.4 MB"   (one decimal)
-//   0 <  n < 1 KB → "<1 KB" (avoids "0 KB" while still marking presence)
+// A resource's size arrives as bytes ("128737") or already formatted
+// ("125.7 KB"); both are read back to bytes so a group can total them.
 const parseBytes = (raw: unknown): number => {
   if (raw == null) return 0
   if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : 0
@@ -156,31 +223,40 @@ const parseBytes = (raw: unknown): number => {
   return n
 }
 
-const formatBytes = (bytes: number): string => {
-  if (!bytes || bytes <= 0) return '-'
-  if (bytes < 1024) return '<1 KB'
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+// Staff list formats: a file's size ("43.6 KB", "—" when there is none) and a
+// group's total ("92 KB", never blank).
+const fmtSize = (b: number): string => {
+  if (!b) return "—"
+  const k = 1024, s = ["B", "KB", "MB", "GB"], i = Math.floor(Math.log(b) / Math.log(k))
+  return `${parseFloat((b / Math.pow(k, i)).toFixed(1))} ${s[i]}`
+}
+const fmtFolderSize = (b: number): string => {
+  if (!b || b <= 0) return "0 KB"
+  const kb = b / 1024
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+  const gb = mb / 1024
+  return `${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB`
 }
 
-// Rows without a meaningful byte count always render "-": folders, reading
-// resources, links, pages/sections. Uploaded assets that legitimately
-// carry a fileSize render the formatted size.
-const sizeFor = (r: Resource): string => {
-  const ui = bucketFor(r)
-  if (ui === 'folder' || ui === 'reading' || ui === 'section') return '-'
+// Folders, pages and links have no byte count of their own; every uploaded
+// file does — zip, image and Word included, as on the staff list.
+const bytesFor = (r: Resource): number => {
+  if (r.isFolder || (r.type as string) === 'folder') return 0
+  if (r.type === 'page' || r.type === 'link' || r.type === 'reference') return 0
   const anyR = r as any
-  if (r.type === 'link' || r.type === 'reference') return '-'
-  const bytes = parseBytes(r.fileSize ?? anyR.size ?? anyR.bytes)
-  return formatBytes(bytes)
+  return parseBytes(r.fileSize ?? anyR.size ?? anyR.bytes)
 }
 
 // ── Date helpers ────────────────────────────────────────────────────────────
-const monthShort = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-const formatAddedOn = (iso?: string): string => {
-  if (!iso) return "—"
-  const d = new Date(iso); if (Number.isNaN(d.getTime())) return "—"
-  return `${d.getDate()} ${monthShort[d.getMonth()]} ${d.getFullYear()}`
+// Staff list format: "2026-09-28 12:04".
+const formatDateTime = (input?: string | number | null): string => {
+  if (!input) return "—"
+  const d = new Date(input)
+  if (Number.isNaN(d.getTime())) return "—"
+  const pad = (n: number) => n.toString().padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 const timestampOf = (r: Resource): number => {
   const iso = r.uploadedAt as string | undefined
@@ -188,6 +264,43 @@ const timestampOf = (r: Resource): number => {
   const t = new Date(iso).getTime()
   return Number.isNaN(t) ? 0 : t
 }
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+// Staff upload several files at once as a GROUP ("foundation" → two decks),
+// and the upload screen shows it as one expandable row with the files nested
+// under it. Students see the same shape here, rather than the group's files
+// scattered through the list as unrelated rows.
+type GroupStats = { count: number; bytes: number; latest: number }
+
+const groupStats = (g: GroupRow): GroupStats => {
+  let count = 0, bytes = 0, latest = 0
+  const walk = (x: GroupRow) => {
+    for (const r of x.items) {
+      count++
+      bytes += bytesFor(r)
+      latest = Math.max(latest, timestampOf(r))
+    }
+    x.subGroups.forEach(walk)
+  }
+  walk(g)
+  return { count, bytes, latest }
+}
+
+type GroupDisplayRow = {
+  kind: "group"; key: string; group: GroupRow; stats: GroupStats
+  depth: number; num?: number; expanded: boolean
+  /** A repeat of the header at the top of a page that opens mid-group. */
+  continued?: boolean
+  ancestors: GroupDisplayRow[]
+}
+type ItemDisplayRow = {
+  kind: "item"; key: string; resource: Resource
+  depth: number; num?: number
+  /** Last child of its group — draws "└" instead of "├". */
+  last?: boolean
+  ancestors: GroupDisplayRow[]
+}
+type DisplayRow = GroupDisplayRow | ItemDisplayRow
 
 // ── Component ───────────────────────────────────────────────────────────────
 
@@ -265,6 +378,7 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
         const ui = bucketFor(r)
         return (
           r.title?.toLowerCase().includes(q) ||
+          r.groupName?.toLowerCase().includes(q) ||
           UI_LABEL[ui].toLowerCase().includes(q) ||
           SUBTITLE[ui].toLowerCase().includes(q)
         )
@@ -292,42 +406,116 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
     return arr
   }, [filtered, sort])
 
-  const totalCount = merged.length
-  const showingCount = sorted.length
+  // ── Group → display rows ──────────────────────────────────────────────────
+  // groupResources keeps the sorted order: a group sits where its first
+  // (best-ranked) file would, and its files keep the chosen sort inside it.
+  // Groups open by default, like the staff upload list. While searching or
+  // filtering every group is forced open — a match tucked inside a collapsed
+  // group would read as "no results".
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleGroup = (id: string) => setCollapsed(prev => {
+    const n = new Set(prev)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+  const forceOpen = query.trim().length > 0 || typeFilters.size > 0 || addedOn !== "any"
 
-  // ── Pagination — dynamic rows/page matching the Assignment list ────────
-  // A ResizeObserver on the table container computes how many rows fit
-  // (viewport height minus header + footer, divided by row height), so
-  // the last row of each page always sits flush with the pager and no
-  // scrollbar ever appears — identical to the We Do Assignment table.
-  // Search, sort or filter change snaps back to page 1 so the current
-  // view is always showing the newest slice.
-  const HEAD_H  = 40   // DataTable's h-10 header
-  const FOOT_H  = 44   // TableFooter row
-  const ROW_H   = 48   // DataTable body cell h-12
-  const SAFETY  = Math.round(ROW_H / 2)   // never clip the last row
-  const [pageSize, setPageSize] = useState(5)
+  const displayRows: DisplayRow[] = useMemo(() => {
+    const out: DisplayRow[] = []
+    const addGroup = (g: GroupRow, depth: number, ancestors: GroupDisplayRow[], num?: number) => {
+      const expanded = forceOpen || !collapsed.has(g.groupId)
+      const head: GroupDisplayRow = {
+        kind: "group", key: `g:${g.groupId}`, group: g, stats: groupStats(g),
+        depth, num, expanded, ancestors,
+      }
+      out.push(head)
+      if (!expanded) return
+      const chain = [...ancestors, head]
+      const childCount = g.items.length + g.subGroups.length
+      g.items.forEach((r, i) => out.push({
+        kind: "item", key: `i:${r.id}`, resource: r,
+        depth: depth + 1, last: i === childCount - 1, ancestors: chain,
+      }))
+      g.subGroups.forEach(sg => addGroup(sg, depth + 1, chain))
+    }
+    let num = 0
+    for (const row of groupResources(sorted)) {
+      num++
+      if (row.kind === "group") addGroup(row, 0, [], num)
+      else out.push({ kind: "item", key: `i:${row.resource.id}`, resource: row.resource, depth: 0, num, ancestors: [] })
+    }
+    return out
+  }, [sorted, collapsed, forceOpen])
+
+  const totalCount = merged.length
+  const showingCount = displayRows.length
+
+  // ── Pagination — rows per page = what this screen can show ──────────────
+  // How many rows fit is MEASURED on screen, not assumed: the table area's
+  // height, less the header and the pager as they actually render, divided by
+  // a real row's height. A laptop with room for 7 shows 7, a monitor with room
+  // for 10 shows 10, and resizing the window re-fits. (The old fixed numbers
+  // assumed 48px rows and held back half a row "to be safe" — the rows are
+  // 40px, so a screen with room for 8 got 6 and a band of empty space.)
+  // Every number is read in the same CSS pixels, so the app's html zoom
+  // cancels out. Search, sort or filter change snaps back to page 1.
+  const FALLBACK_ROW_H = 41   // h-10 body row + hairline, until a real row exists
+  const [pageSize, setPageSize] = useState(8)
   const [currentPage, setCurrentPage] = useState(1)
   const tableAreaRef = useRef<HTMLDivElement | null>(null)
+  const fitRows = useCallback(() => {
+    const el = tableAreaRef.current
+    if (!el) return
+    const head = el.querySelector("thead") as HTMLElement | null
+    // Clickable rows only: the empty-state row and loading skeletons are
+    // different heights and would skew the count.
+    const row = el.querySelector('tbody tr[role="button"]') as HTMLElement | null
+    const footer = el.lastElementChild as HTMLElement | null
+    const available = el.clientHeight - (head?.offsetHeight ?? 40) - (footer?.offsetHeight ?? 44)
+    const rowH = row?.offsetHeight || FALLBACK_ROW_H
+    // 1px of slack for sub-pixel rounding, so the last row is never clipped
+    // into a scrollbar.
+    setPageSize(Math.max(3, Math.min(50, Math.floor((available - 1) / rowH))))
+  }, [])
   useEffect(() => {
     const el = tableAreaRef.current
     if (!el) return
-    const compute = () => {
-      const budget = Math.max(0, el.clientHeight - HEAD_H - FOOT_H - SAFETY)
-      setPageSize(Math.max(3, Math.min(50, Math.floor(budget / ROW_H))))
-    }
-    compute()
-    const ro = new ResizeObserver(compute)
+    fitRows()
+    const ro = new ResizeObserver(fitRows)
     ro.observe(el)
+    // The footer grows when the pager appears (more than one page), which
+    // takes room from the rows — watch it too.
+    if (el.lastElementChild) ro.observe(el.lastElementChild)
     return () => ro.disconnect()
-  }, [])
-  const totalPages = Math.max(1, Math.ceil(showingCount / pageSize))
+  }, [fitRows])
+  // First real rows → re-measure with an actual row height.
+  const hasRows = displayRows.length > 0
+  useEffect(() => { if (hasRows) fitRows() }, [hasRows, fitRows])
+  // Pages are cut from the display rows, so an open group's files count toward
+  // the page like any row. A page that opens mid-group repeats that group's
+  // header (and its parents') first, so the files at the top still say which
+  // group they belong to; the repeat takes a row of the budget, so the page
+  // never grows past what fits.
+  const pageSlices = useMemo(() => {
+    const out: { rows: DisplayRow[]; from: number; to: number }[] = []
+    let cur: DisplayRow[] = []
+    let from = 0
+    displayRows.forEach((row, idx) => {
+      if (cur.length >= pageSize) { out.push({ rows: cur, from, to: idx }); cur = [] }
+      if (cur.length === 0) {
+        from = idx + 1
+        for (const a of row.ancestors) {
+          cur.push({ ...a, key: `${a.key}:cont`, num: undefined, continued: true })
+        }
+      }
+      cur.push(row)
+    })
+    if (cur.length) out.push({ rows: cur, from, to: displayRows.length })
+    return out
+  }, [displayRows, pageSize])
+  const totalPages = Math.max(1, pageSlices.length)
   const safePage = Math.min(currentPage, totalPages)
-  const startIdx = (safePage - 1) * pageSize
-  const pagedResources = useMemo(
-    () => sorted.slice(startIdx, startIdx + pageSize),
-    [sorted, startIdx, pageSize],
-  )
+  const page = pageSlices[safePage - 1] ?? { rows: [] as DisplayRow[], from: 0, to: 0 }
   useEffect(() => { setCurrentPage(1) }, [query, sort, typeFilters, addedOn, customFrom, customTo])
 
   // Dynamic Resource-Type filter set — only show checkboxes for types that
@@ -363,15 +551,16 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
   // Open action (wired via DataTable's onRowClick below). Widths sum to
   // 100% and give the filename the most room. Size sits at the right
   // because it's the shortest cell and reads best as a trailing metric.
-  const columns: DTColumn<Resource>[] = [
+  const columns: DTColumn<DisplayRow>[] = [
     {
       key: 'num',
       label: '#',
       // Same shape as the We Do Assignment list's row-number column so
-      // both tables read identically at a glance.
+      // both tables read identically at a glance. Numbers count top-level
+      // entries — a group is one entry; the files inside it are not numbered.
       className: 'w-[4%] pl-4 pr-2 text-left text-[13px] text-faint tabular-nums align-middle whitespace-nowrap',
       skeletonWidth: '20px',
-      render: (_r, i) => startIdx + i + 1,
+      render: (row) => row.num ?? '',
     },
     {
       key: 'name',
@@ -379,21 +568,64 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
       sortKey: 'name',
       className: 'w-[55%] px-3 text-left align-middle text-[13.5px]',
       skeletonWidth: '80%',
-      render: (r) => {
-        const ui = bucketFor(r)
-        const tone = ICON_TONE[ui]
+      render: (row) => {
+        // Group header, as on the staff list: a small orange folder tile, then
+        // the chevron and the name — both orange while the group is open.
+        if (row.kind === 'group') {
+          const { groupName } = row.group
+          const open = row.expanded
+          return (
+            <div className="flex items-center gap-2.5 min-w-0" style={{ paddingLeft: row.depth * 28 }}>
+              <span
+                className="flex-shrink-0 flex items-center justify-center"
+                style={{ width: 22, height: 22, borderRadius: 6, background: S.orangeLight, border: `1px solid ${S.orange}30` }}
+              >
+                <FolderIco size={12} strokeWidth={1.8} style={{ color: S.orange }} />
+              </span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <ChevronRight
+                  size={14}
+                  strokeWidth={2.2}
+                  className="flex-shrink-0"
+                  style={{
+                    color: open ? S.orange : S.textHint,
+                    transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s cubic-bezier(0.4,0,0.2,1)',
+                  }}
+                />
+                <span
+                  className="truncate"
+                  title={groupName}
+                  style={{ fontSize: 12.5, fontWeight: 600, color: open ? S.orange : S.textMain, letterSpacing: '-0.005em', lineHeight: 1.3 }}
+                >
+                  {groupName}
+                </span>
+                {row.continued && (
+                  <span className="flex-shrink-0" style={{ fontSize: 10.5, fontWeight: 500, color: S.textHint }}>
+                    (continued)
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        }
+        const r = row.resource
         const title = r.title || 'Untitled'
+        const nested = row.depth > 0
         return (
-          <div className="flex items-center gap-2.5 min-w-0">
+          // Inside a group: indented with the staff list's tree connector and
+          // its slightly smaller (18px) artwork.
+          <div className="flex items-center gap-2.5 min-w-0" style={{ paddingLeft: nested ? row.depth * 28 + 4 : 0 }}>
+            {nested && (
+              <span aria-hidden style={{ fontSize: 9, color: S.textHint, flexShrink: 0, marginRight: -4 }}>
+                {row.last ? '└' : '├'}
+              </span>
+            )}
+            <FileGlyph r={r} nested={nested} />
             <span
-              className="flex-shrink-0 inline-flex items-center justify-center rounded-lg"
-              style={{ width: 32, height: 32, background: tone.bg, color: tone.fg }}
-            >
-              <tone.Icon size={16} />
-            </span>
-            <span
-              className="min-w-0 flex-1 truncate text-[14px] font-medium text-heading"
+              className="min-w-0 flex-1 truncate"
               title={title}
+              style={{ fontSize: 12.5, fontWeight: 600, color: S.textMain, letterSpacing: '-0.005em', lineHeight: 1.3 }}
             >
               {title}
             </span>
@@ -404,43 +636,32 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
     {
       key: 'type',
       label: 'Type',
-      className: 'w-[13%] px-3 text-left align-middle text-[13px] text-body',
-      render: (r) => {
-        const ui = bucketFor(r)
-        const b = BADGE_TONE[ui]
-        return (
-          <span
-            className="inline-flex items-center rounded-full text-[12px] font-semibold whitespace-nowrap"
-            style={{
-              background: b.bg,
-              color: b.fg,
-              boxShadow: `inset 0 0 0 1px ${b.ring}`,
-              height: 24,
-              padding: '0 10px',
-            }}
-          >
-            {UI_LABEL[ui]}
-          </span>
-        )
-      },
+      className: 'w-[13%] px-3 text-left align-middle',
+      render: (row) => <TypeChip label={row.kind === 'group' ? 'Group' : fileVisual(row.resource).label} />,
     },
     {
       key: 'date',
       label: 'Added On',
       sortKey: 'date',
-      className: 'w-[18%] px-3 text-left align-middle text-[13px] text-body whitespace-nowrap',
-      render: (r) => (
-        <span className="text-[13px] text-body">
-          {formatAddedOn(r.uploadedAt as any)}
+      className: 'w-[18%] px-3 text-left align-middle whitespace-nowrap',
+      // A group shows when it last changed: its newest file's date.
+      render: (row) => (
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: S.textMuted, letterSpacing: '-0.004em' }}>
+          {formatDateTime(row.kind === 'group' ? row.stats.latest : row.resource.uploadedAt)}
         </span>
       ),
     },
     {
       key: 'size',
       label: 'Size',
-      className: 'w-[10%] px-3 pr-4 text-left align-middle text-[13px] text-body whitespace-nowrap tabular-nums',
-      render: (r) => (
-        <span className="text-[13px] text-body">{sizeFor(r)}</span>
+      className: 'w-[10%] px-3 pr-4 text-left align-middle whitespace-nowrap tabular-nums',
+      // A group's size is the total of the files in it.
+      render: (row) => row.kind === 'group' ? (
+        <span style={{ fontSize: 12, fontWeight: 600, color: S.textMuted }}>{fmtFolderSize(row.stats.bytes)}</span>
+      ) : (
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: S.textSub, letterSpacing: '-0.006em' }}>
+          {fmtSize(bytesFor(row.resource))}
+        </span>
       ),
     },
   ]
@@ -732,10 +953,10 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
           and hairline row separators; wrapper just gives the ResizeObserver
           a real height to measure so pageSize adapts to the viewport. */}
       <div ref={tableAreaRef} className="bg-white flex flex-1 min-h-0 flex-col">
-        <DataTable<Resource>
-          rows={pagedResources}
+        <DataTable<DisplayRow>
+          rows={page.rows}
           columns={columns}
-          rowKey={(r) => r.id}
+          rowKey={(row) => row.key}
           sortKey={sort === 'az' ? 'name' : sort === 'recent' || sort === 'oldest' ? 'date' : null}
           sortDir={sort === 'oldest' || sort === 'az' ? 'asc' : 'desc'}
           onSort={(key) => {
@@ -751,7 +972,8 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
           // Open button were removed. Reuses the SAME onOpen handler the
           // parent already provides (handleResourceClick), so folder /
           // file / reading / link routing stays identical to before.
-          onRowClick={(r) => onOpen(r)}
+          // A group row opens/closes the group; a file row opens the file.
+          onRowClick={(row) => (row.kind === 'group' ? toggleGroup(row.group.groupId) : onOpen(row.resource))}
           emptyTitle={merged.length === 0 ? 'No resources yet' : 'No matching resources'}
           emptyHint={merged.length === 0
             ? 'This activity has no content yet.'
@@ -763,8 +985,8 @@ export const LectureResourceList: React.FC<LectureResourceListProps> = ({
           currentPage={safePage}
           totalPages={totalPages}
           onPage={setCurrentPage}
-          from={showingCount === 0 ? 0 : startIdx + 1}
-          to={Math.min(startIdx + pageSize, showingCount)}
+          from={page.from}
+          to={page.to}
           total={showingCount}
           pageSize={pageSize}
           onPageSize={() => { /* fixed — no size selector; pageSize adapts to viewport */ }}

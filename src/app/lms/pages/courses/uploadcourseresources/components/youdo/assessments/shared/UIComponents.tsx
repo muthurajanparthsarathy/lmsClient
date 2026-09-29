@@ -5,6 +5,7 @@ import {
   Clock, Lock, Square,
 } from 'lucide-react';
 import { D, FONT } from './tokens';
+import { pageZoom } from '@/lib/pageZoom';
 
 // ─── InfoTooltip ─────────────────────────────────────────────────────────────
 export const InfoTooltip: React.FC<{
@@ -29,7 +30,9 @@ export const InfoTooltip: React.FC<{
       if (left < 10) left = 10;
       if (top + t.height > window.innerHeight - 10) top = window.innerHeight - t.height - 10;
       if (top < 10) top = 10;
-      setPos({ left, top });
+      // Placed in on-screen pixels above; convert for the zoomed page.
+      const z = pageZoom();
+      setPos({ left: left / z, top: top / z });
     }
   }, [show, side]);
 
@@ -236,7 +239,14 @@ export const PortalDropdown: React.FC<{
   useEffect(() => {
     if (isOpen && triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect();
-      setCoords({ top: r.bottom + window.scrollY + 4, left: r.left + window.scrollX, width: r.width });
+      // Measured on-screen pixels; the page zoom scales the style again, so
+      // convert or the menu opens ~5% left of, and narrower than, its trigger.
+      const z = pageZoom();
+      setCoords({
+        top: (r.bottom + window.scrollY) / z + 4,
+        left: (r.left + window.scrollX) / z,
+        width: r.width / z,
+      });
     }
   }, [isOpen, triggerRef]);
 
@@ -728,13 +738,14 @@ export const DateRowPicker: React.FC<{
           style={{
             background: '#fff', borderColor: D.border2,
             boxShadow: '0 10px 30px rgba(15,23,42,0.12)', width: 270,
+            // Placed in on-screen pixels, then converted for the zoomed page.
             top: calBtnRef.current
               ? (pickerPos === 'bottom'
                 ? calBtnRef.current.getBoundingClientRect().bottom + window.scrollY + 6
-                : calBtnRef.current.getBoundingClientRect().top + window.scrollY - 326)
+                : calBtnRef.current.getBoundingClientRect().top + window.scrollY - 326) / pageZoom()
               : 'auto',
             left: calBtnRef.current
-              ? Math.min(Math.max(calBtnRef.current.getBoundingClientRect().left + window.scrollX - 220, 10), window.innerWidth - 280)
+              ? Math.min(Math.max(calBtnRef.current.getBoundingClientRect().left + window.scrollX - 220, 10), window.innerWidth - 280) / pageZoom()
               : 'auto',
           }}>
           <div className="flex items-center justify-between mb-2">

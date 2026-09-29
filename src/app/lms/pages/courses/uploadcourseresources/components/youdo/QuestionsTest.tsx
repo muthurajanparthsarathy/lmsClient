@@ -13,6 +13,8 @@ import QuestionBankSelector from '@/app/lms/pages/courses/components/questionfor
 import GenerateMCQAIQuestion from '@/app/lms/pages/courses/components/questionforms/mcq/GenerateMCQAIQuestion';
 import AddQuestionViaDocument from '@/app/lms/pages/courses/components/AddQuestionViaDocument';
 import DocQuestionPicker from '@/app/lms/pages/courses/components/questionforms/DocQuestionPicker';
+import QuestionAllocationChooser from '@/app/lms/pages/courses/components/questionforms/QuestionAllocationChooser';
+import { questionAllocation } from '@/app/lms/pages/courses/components/questionforms/questionAllocation';
 import { parseProgrammingFile } from '@/app/lms/pages/courses/components/questionforms/parseQuestionsTxt';
 import { DOC_ACCEPT, DOC_ACCEPT_LABEL } from '@/app/lms/pages/courses/components/questionforms/docTextExtract';
 // Shared "Add a question" chooser chrome — the same modal We_Do renders from
@@ -2131,6 +2133,39 @@ const QuestionsTest: React.FC<QuestionsTestProps> = ({
         const _sectionNeedsAllocation = _isSectionCustom
           && _bySectionMap !== null
           && (!dist || distTotal <= 0);
+        // ── We_Do chooser (Choose difficulty → Choose source) ──────────────
+        // Same component and allocation maths as the We_Do QuestionsView:
+        // Configured / Added / Remaining, per-level cards with marks, and a
+        // source card per allowed source with its own remaining slots.
+        // `fullExerciseData` is already section-scoped (config, questions and
+        // the section's own Custom split). The list below is kept only for
+        // what that chooser can't express: a section still missing its
+        // allocation, or a paper with no configured count (question-specific
+        // MCQ), where it would show every source as full.
+        if ((isMCQ || isProg) && !_sectionNeedsAllocation && exDataForQuota?.fullExerciseData) {
+          const chooserEx: any = exDataForQuota.fullExerciseData;
+          const chooserPart: 'mcq' | 'programming' = isMCQ ? 'mcq' : 'programming';
+          const chooserQs: any[] = chooserEx.questions || [];
+          const configured = questionAllocation(chooserEx, chooserQs, chooserPart).rows.some(r => r.total > 0);
+          if (configured) {
+            return (
+              <QuestionAllocationChooser
+                exercise={chooserEx}
+                questions={chooserQs}
+                part={chooserPart}
+                initialLevel={addQ.difficulty || null}
+                allowDocument={canDoc}
+                onClose={closeAddQ}
+                onChoose={(source, level) => {
+                  // The level rides along so bank / doc / form all fill it.
+                  setAddQ(prev => ({ ...prev, difficulty: level || undefined }));
+                  applySourceChoice(source === 'document' ? 'doc' : source);
+                }}
+              />
+            );
+          }
+        }
+
         const remainingFor = (k: 'scratch' | 'ai' | 'thirdParty') => {
           if (_sectionNeedsAllocation) return 0;
           if (isMCQ) {

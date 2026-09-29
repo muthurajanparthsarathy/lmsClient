@@ -131,9 +131,8 @@ const CheckBox: React.FC<{
 // "on", and the pill beside it was the same fact twice.)
 
 // ─── Inline option (AI Chat / AI Summary / Notes) ────────────────────────────
-// Sits ON the resource's own row, to the right of it, and only while that
-// resource is ticked: "PDF — yes, 10 MB, with AI Chat" is one sentence and now
-// reads as one line, instead of a panel that had to be expanded to answer.
+// Sits in the resource's own row, on a single line beneath its name, and only
+// while that resource is ticked — no panel that has to be expanded to answer.
 
 const InlineOption: React.FC<{
   label: string;
@@ -194,11 +193,10 @@ const FileResourceRow: React.FC<{
    * the size cap and the AI options — instead of an expand/collapse panel
    * underneath. That panel meant a chevron, an auto-open effect, a remembered
    * expanded flag, and two clicks to see whether a ticked resource had AI on.
-   * Everything is on the line now, so the row can be READ rather than opened.
+   * Everything is in the row now, so it can be READ rather than opened.
    *
-   * The extras wrap onto a second line on a narrow pane rather than being
-   * squeezed: `flexWrap` on the row, and the controls keep their natural
-   * width. */
+   * The extras take one line of their own under the name; on a pane too
+   * narrow for that line they wrap rather than being squeezed. */
   return (
     <label
       style={{
@@ -231,12 +229,15 @@ const FileResourceRow: React.FC<{
       </div>
 
       {/* Everything past here belongs to a TICKED resource: an untouched row
-          shows the question, not its settings. */}
+          shows the question, not its settings. It sits on its own line UNDER
+          the name — `flexBasis: 100%` forces the break in the wrapping row —
+          indented to start where the label text does (checkbox 16 + gap 10 +
+          icon 28 + gap 10), so the settings read as belonging to it. */}
       {enabled && (
         <div
           style={{
-            display: 'flex', alignItems: 'center', gap: 14,
-            flexWrap: 'wrap', marginLeft: 'auto',
+            display: 'flex', alignItems: 'center', gap: 16,
+            flexWrap: 'wrap', flexBasis: '100%', paddingLeft: 64,
           }}
           // The row is a <label>, so a click anywhere in it toggles the
           // resource. These controls are their own answers — stop the click

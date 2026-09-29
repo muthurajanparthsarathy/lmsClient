@@ -35,7 +35,7 @@
 import { callGeminiJSON, GeminiError } from '@/app/lms/pages/courses/components/questionforms/geminiClient';
 import type { AiCriterion } from '@/app/lms/pages/courses/coursesdetailedview/components/EvaluationMethodConfig';
 
-const GEMINI_MODEL_LABEL = 'gemini-3.5-flash (fallback: gemini-2.5-flash)';
+const GEMINI_MODEL_LABEL = 'gemini-3.8-flash (fallbacks: gemini-3.5-flash, gemini-flash-latest)';
 
 const CRITERION_LABEL: Record<AiCriterion, string> = {
   correctness: 'Correctness — does the code solve the problem for typical & stated inputs?',

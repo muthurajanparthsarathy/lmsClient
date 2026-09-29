@@ -73,7 +73,11 @@ export default function ServiceManagementComponent() {
   const canDelete = canAdd;
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  // Only the id is held in state; the service itself is looked up from the
+  // live `services` query below. Holding a copy of the object froze the
+  // models popup at whatever it showed when opened — a model added, edited
+  // or deleted inside it only appeared after closing and reopening.
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [showServiceModalsPopup, setShowServiceModalsPopup] = useState(false);
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [showModelForm, setShowModelForm] = useState(false);
@@ -106,6 +110,9 @@ export default function ServiceManagementComponent() {
     isFetching: isFetchingServices,
   } = useServices(institutionId, token || '');
 
+  const selectedService: Service | null =
+    services.find((service: Service) => service.id === selectedServiceId) ?? null;
+
   const createServiceMutation = useCreateService();
   const updateServiceMutation = useUpdateService();
   const deleteServiceMutation = useDeleteService();
@@ -137,7 +144,7 @@ export default function ServiceManagementComponent() {
   }, [searchTerm, pageSize]);
 
   const handleViewServiceModals = (service: Service) => {
-    setSelectedService(service);
+    setSelectedServiceId(service.id);
     setShowServiceModalsPopup(true);
     setModelCurrentPage(1);
   };
@@ -194,6 +201,9 @@ export default function ServiceManagementComponent() {
       });
       toast.success('Model deleted successfully');
       setShowModelDeleteConfirm(false);
+      if (paginatedModels.length === 1 && modelCurrentPage > 1) {
+        setModelCurrentPage(modelCurrentPage - 1);
+      }
     } catch (error: any) {
       console.error('Error deleting model:', error);
       toast.error(error.message || 'Error deleting model');
@@ -277,6 +287,8 @@ export default function ServiceManagementComponent() {
         if (!token) throw new Error("Authentication token not found.");
         await createServiceModalMutation.mutateAsync({ modalData, token });
         toast.success('Model added successfully');
+        // New models are appended, so land on the last page where it shows up.
+        setModelCurrentPage(Math.ceil((selectedService.serviceModals.length + 1) / ITEMS_PER_PAGE));
       }
       setShowModelForm(false);
     } catch (error: any) {

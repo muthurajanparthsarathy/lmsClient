@@ -124,6 +124,11 @@ export default function SimpleCourseForm({
     const category = course?.category || ''
     const courseName = course?.courseName || ''
     const names = courseNamesFor(category)
+    // A name outside this category's list — typed under "Others", or saved
+    // before it left the master list. It is offered as an option of its own,
+    // so a saved mapping reopens with the name showing in the picker rather
+    // than a blank field holding a value nobody can see.
+    const customName = courseName && !names.includes(courseName) ? courseName : ''
     const categoryError = fieldErrors['courseCategory-0']
     const nameError = fieldErrors['courseName-0']
 
@@ -194,19 +199,20 @@ export default function SimpleCourseForm({
                                                             >
                                 {!course?.custom ? (
                                     <ListSelect
-                                        // Guarded against a stale name: a value that
-                                        // matches no option would render blank, and a
-                                        // custom name left over from "Others" must not
-                                        // select a phantom option.
-                                        value={names.includes(courseName) ? courseName : ''}
+                                        value={courseName}
                                         options={[
+                                            ...(customName
+                                                ? [{ value: customName, label: customName, description: 'Custom name' }]
+                                                : []),
                                             ...names.map((n) => ({ value: n, label: n })),
                                             { value: CUSTOM_NAME, label: 'Others (custom name)' },
                                         ]}
                                         onChange={(next) => {
                                             clearFieldError('courseName-0')
                                             if (next === CUSTOM_NAME) {
-                                                onCourseChange({ custom: true, courseName: '' })
+                                                // Re-choosing "Others" edits the custom
+                                                // name already there instead of wiping it.
+                                                onCourseChange({ custom: true, courseName: customName })
                                             } else {
                                                 onCourseChange({ courseName: next })
                                             }
@@ -220,17 +226,17 @@ export default function SimpleCourseForm({
                                         className="w-full"
                                     />
                                 ) : (
-                                    // Clearing the box is the way back to the picker,
-                                    // in place of the "Back to list" link that used to
-                                    // sit beside it. Leaving on an empty field means
-                                    // the user typed nothing, and an empty free-text
-                                    // course is not an answer worth keeping — so the
-                                    // field returns to offering the list rather than
-                                    // stranding them in a mode with no way out.
+                                    // Leaving the box always returns to the picker. A
+                                    // typed name comes back as the picker's selected
+                                    // option (see `customName`), so what was entered
+                                    // is what the field shows; an empty box simply
+                                    // goes back to offering the list rather than
+                                    // stranding the user in a mode with no way out.
                                     <Input
+                                        autoFocus
                                         value={courseName}
                                         onChange={(e) => { clearFieldError('courseName-0'); onCourseChange({ courseName: e.target.value }) }}
-                                        onBlur={() => { if (!courseName.trim()) onCourseChange({ custom: false, courseName: '' }) }}
+                                        onBlur={() => onCourseChange({ custom: false, courseName: courseName.trim() })}
                                         placeholder="Enter course name"
                                         className={`${inputCls} bg-white ${nameError ? errorFieldCls : ''}`}
                                         aria-label="Course name"

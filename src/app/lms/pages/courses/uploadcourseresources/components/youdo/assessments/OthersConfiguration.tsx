@@ -3,6 +3,7 @@ import React from 'react';
 import { FolderOpen, AlertCircle, Check, Shuffle, Calculator } from 'lucide-react';
 import { D, formatDecimal, isApproximatelyEqual } from './constants';
 import { BaseConfigProps } from './types';
+import { MarksMeter, MarksIssue } from './MarksMeter';
 
 export const OthersConfiguration: React.FC<BaseConfigProps> = ({
   formData, setFormData, setValidationErrors, validationErrors, touchedFields, markTouched,
@@ -12,6 +13,7 @@ export const OthersConfiguration: React.FC<BaseConfigProps> = ({
 }) => {
   const totalToUse = formData.totalMarks;
   const isMatch = isApproximatelyEqual(othersAllocatedMarks || 0, totalToUse);
+  const graded = formData.isGraded !== false;
 
   const scoringCounts = formData.othersConfig.questionConfigType === 'selectionLevel'
     ? formData.othersConfig.selectionLevelCounts
@@ -32,20 +34,14 @@ export const OthersConfiguration: React.FC<BaseConfigProps> = ({
             <p className="text-xs mt-0.5" style={{ color: designTokens.textMuted }}>Configure other-type question marks and distribution.</p>
           </div>
         </div>
-        {isMatch && othersAllocatedMarks > 0 && (
-          <div className="text-right">
-            <div className="text-[10px] font-semibold" style={{ color: designTokens.emerald }}>Allocated</div>
-            <div className="text-sm font-bold" style={{ color: designTokens.emerald }}>
-              {formatDecimal(othersAllocatedMarks)}<span className="text-xs font-normal" style={{ color: designTokens.textMuted }}>/{totalToUse}</span>
-            </div>
-          </div>
-        )}
+        {/* Live Total / Used / Remaining — re-validates on every keystroke. */}
+        {graded && <MarksMeter total={totalToUse || 0} used={othersAllocatedMarks || 0} />}
       </div>
 
-      {othersLevelMismatch && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: designTokens.red + '10', border: `1px solid ${designTokens.red}40` }}>
-          <AlertCircle size={13} style={{ color: designTokens.red }} />
-          <p className="text-xs font-semibold flex-1" style={{ color: designTokens.red }}>{othersLevelMismatch}</p>
+      {graded && (
+        <div className="mb-3">
+          <MarksIssue issue={othersLevelMismatch ?? null}
+            ok={isMatch && othersAllocatedMarks > 0 && totalToUse > 0} />
         </div>
       )}
 
@@ -96,6 +92,7 @@ export const OthersConfiguration: React.FC<BaseConfigProps> = ({
                   }));
                 }}
                 onBlur={() => markTouched('othersGeneralQuestionCount')}
+                liveUpdate
                 min={0}
                 placeholder="e.g. 5"
                 error={validationErrors.othersGeneralQuestionCount}
@@ -196,6 +193,7 @@ export const OthersConfiguration: React.FC<BaseConfigProps> = ({
                             value={val}
                             onChange={handleChange}
                             onBlur={isSelLevel ? undefined : () => markTouched('othersLevelCounts')}
+                            liveUpdate
                             disabled={isSelLevel && !checked}
                             min={0}
                             placeholder={isSelLevel && !checked ? '—' : 'Count'}
@@ -246,6 +244,9 @@ export const OthersConfiguration: React.FC<BaseConfigProps> = ({
                           <ONumberInput
                             value={isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0)}
                             onChange={v => updateOthersLevelScoringConfig?.(level, isQSpec ? { totalMarks: v } : { marksPerQuestion: v })}
+                            liveUpdate
+                            error={graded && count > 0 && !((isQSpec ? scoring?.totalMarks : scoring?.marksPerQuestion) > 0) ? 'Enter marks' : undefined}
+                            touched
                           />
                           {hasError && <span className="text-[10px]" style={{ color: designTokens.red }}>{scoringErrors[level]}</span>}
                         </div>

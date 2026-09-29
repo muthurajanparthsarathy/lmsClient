@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Lock, Check } from 'lucide-react'
 import { selectCls } from './shared/primitives'
+import { pageZoom } from '@/lib/pageZoom'
 
 // A single-select dropdown for the degree flow's semesters. Unlike a native
 // <select> it can show a lock icon on blocked options and a hover tooltip
@@ -43,7 +44,9 @@ export default function SemesterSelect({
         const below = r.bottom + 4
         const height = panelRef.current?.getBoundingClientRect().height || 300
         const top = below + height > window.innerHeight && r.top - height - 4 > 0 ? r.top - height - 4 : below
-        setPos({ top, left, width })
+        // Measured in on-screen pixels; the page zoom scales the style again.
+        const z = pageZoom()
+        setPos({ top: top / z, left: left / z, width: width / z })
     }, [open])
 
     useEffect(() => {

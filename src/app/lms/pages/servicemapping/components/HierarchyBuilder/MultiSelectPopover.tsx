@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, X } from 'lucide-react'
 import { selectCls } from '../shared/primitives'
+import { pageZoom } from '@/lib/pageZoom'
 
 // A trigger + checkbox panel for picking many values at once. A plain multi-select
 // is unusable here — the lists (departments, sections) are long and the user needs
@@ -63,7 +64,9 @@ export default function MultiSelectPopover({
         const top = below + height > window.innerHeight && r.top - height - 4 > 0
             ? r.top - height - 4
             : below
-        setPos({ top, left, width })
+        // Measured in on-screen pixels; the page zoom scales the style again.
+        const z = pageZoom()
+        setPos({ top: top / z, left: left / z, width: width / z })
     }, [open, value.length, query])
 
     // Only listen while the panel is open — a permanent document listener on

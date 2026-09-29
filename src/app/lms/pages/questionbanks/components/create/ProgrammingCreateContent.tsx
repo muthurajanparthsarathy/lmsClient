@@ -16,6 +16,7 @@ import {
   inputCls, controlCls, textareaCls, plainTextOf,
   type DiffValue,
 } from './createShared';
+import { buildQuestionHints } from '@/app/lms/pages/courses/components/questionforms/questionHints';
 
 export interface CreateContentHandle {
   // files: optional image uploads keyed for the bank's multipart create
@@ -73,8 +74,8 @@ const ProgrammingCreateContent = forwardRef<CreateContentHandle, { defaultSubTyp
     const [difficulty, setDifficulty] = useState<DiffValue>('easy');
     const [topics, setTopics] = useState<string[]>([]);
     const [tags, setTags] = useState<string[]>([]);
-    const [timeComplexity, setTimeComplexity] = useState('');
-    const [spaceComplexity, setSpaceComplexity] = useState('');
+    // Hints travel with the question into any exercise it is imported into.
+    const [hints, setHints] = useState<string[]>(['']);
     const [marks, setMarks] = useState('');
     const [errs, setErrs] = useState<Record<string, string>>({});
 
@@ -120,9 +121,10 @@ const ProgrammingCreateContent = forwardRef<CreateContentHandle, { defaultSubTyp
           problemType: problemType || undefined,
           topics,
           tags,
-          timeComplexity: timeComplexity.trim() || undefined,
-          spaceComplexity: spaceComplexity.trim() || undefined,
         };
+        // Only filled-in hints are saved — same rule as the exercise forms.
+        const savedHints = buildQuestionHints('', hints.map(hintText => ({ hintText })));
+        if (savedHints.length > 0) payload.hints = savedHints;
         if (marks.trim() !== '') payload.score = Number(marks);
 
         if (subType === 'database') {
@@ -156,7 +158,7 @@ const ProgrammingCreateContent = forwardRef<CreateContentHandle, { defaultSubTyp
       },
     }), [subType, title, descHtml, sampleQuery, expectedResult, constraintsText,
          starterLang, starterCode, outputCode, testCases, problemType, difficulty,
-         topics, tags, timeComplexity, spaceComplexity, marks]);
+         topics, tags, hints, marks]);
 
     return (
       <div className="flex min-h-0 flex-1">
@@ -176,6 +178,82 @@ const ProgrammingCreateContent = forwardRef<CreateContentHandle, { defaultSubTyp
             <CharCount value={plainTextOf(descHtml)} max={DESC_MAX} />
             <FieldError msg={errs.description} />
           </SectionCard>
+
+          <SectionCard title="Constraints" optional>
+            <textarea className={textareaCls} rows={3} value={constraintsText}
+              placeholder="Enter constraints for the question..."
+              onChange={e => setConstraintsText(e.target.value)} />
+            <CharCount value={constraintsText} max={CONSTRAINTS_MAX} />
+            <HelperText>One constraint per line</HelperText>
+            <FieldError msg={errs.constraints} />
+          </SectionCard>
+
+          <SectionCard title="Hints" optional
+            action={
+              <button type="button" onClick={() => setHints(p => [...p, ''])}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-brand/30 bg-brand-wash px-2.5 text-[12px] font-semibold text-brand-strong transition-colors hover:bg-brand-wash-hover">
+                <Plus size={13} /> Add Hint
+              </button>
+            }>
+            <div className="space-y-2.5">
+              {hints.map((h, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="mt-2.5 w-14 shrink-0 text-[11.5px] font-semibold text-subtle">Hint {i + 1}</span>
+                  <textarea className={textareaCls} rows={2} value={h}
+                    placeholder="Give students a helpful nudge…"
+                    onChange={e => setHints(p => p.map((x, idx) => (idx === i ? e.target.value : x)))} />
+                  {hints.length > 1 && (
+                    <button type="button" onClick={() => setHints(p => p.filter((_, idx) => idx !== i))}
+                      className="mt-2 rounded-md p-1 text-faint transition-colors hover:bg-rose-50 hover:text-rose-500" aria-label={`Remove hint ${i + 1}`}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <HelperText>Empty hints are ignored</HelperText>
+          </SectionCard>
+
+          {subType !== 'database' && (
+            <SectionCard title="Starter Code" optional
+              action={
+                <select
+                  className="h-8 rounded-[10px] border border-[#E5E7EB] bg-white px-2.5 text-[12px] text-body focus:outline-none focus:border-brand"
+                  value={starterLang} onChange={e => setStarterLang(e.target.value)}>
+                  {LANGS[subType].map(l => <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>)}
+                </select>
+              }>
+              <div className="flex overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15 transition-colors">
+                <div className="select-none border-r border-[#EEF0F5] bg-white px-2.5 py-2.5 text-right font-mono text-[11px] leading-[19px] text-faint">
+                  {Array.from({ length: Math.max(6, starterCode.split('\n').length) }, (_, i) => (
+                    <div key={i}>{i + 1}</div>
+                  ))}
+                </div>
+                <textarea
+                  className="min-h-[120px] w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[12.5px] leading-[19px] text-body placeholder:text-faint focus:outline-none"
+                  spellCheck={false} value={starterCode}
+                  placeholder={'# Write starter code here (optional)...'}
+                  onChange={e => setStarterCode(e.target.value)} />
+              </div>
+            </SectionCard>
+          )}
+
+          {subType !== 'database' && (
+            <SectionCard title="Output Code" optional>
+              <div className="flex overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15 transition-colors">
+                <div className="select-none border-r border-[#EEF0F5] bg-white px-2.5 py-2.5 text-right font-mono text-[11px] leading-[19px] text-faint">
+                  {Array.from({ length: Math.max(6, outputCode.split('\n').length) }, (_, i) => (
+                    <div key={i}>{i + 1}</div>
+                  ))}
+                </div>
+                <textarea
+                  className="min-h-[120px] w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[12.5px] leading-[19px] text-body placeholder:text-faint focus:outline-none"
+                  spellCheck={false} value={outputCode}
+                  placeholder={'# Model solution / answer code (optional)...'}
+                  onChange={e => setOutputCode(e.target.value)} />
+              </div>
+            </SectionCard>
+          )}
 
           {subType !== 'database' && (
             <section>
@@ -258,56 +336,6 @@ const ProgrammingCreateContent = forwardRef<CreateContentHandle, { defaultSubTyp
             </SectionCard>
           )}
 
-          <SectionCard title="Constraints" optional>
-            <textarea className={textareaCls} rows={3} value={constraintsText}
-              placeholder="Enter constraints for the question..."
-              onChange={e => setConstraintsText(e.target.value)} />
-            <CharCount value={constraintsText} max={CONSTRAINTS_MAX} />
-            <HelperText>One constraint per line</HelperText>
-            <FieldError msg={errs.constraints} />
-          </SectionCard>
-
-          {subType !== 'database' && (
-            <SectionCard title="Starter Code" optional
-              action={
-                <select
-                  className="h-8 rounded-[10px] border border-[#E5E7EB] bg-white px-2.5 text-[12px] text-body focus:outline-none focus:border-brand"
-                  value={starterLang} onChange={e => setStarterLang(e.target.value)}>
-                  {LANGS[subType].map(l => <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>)}
-                </select>
-              }>
-              <div className="flex overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15 transition-colors">
-                <div className="select-none border-r border-[#EEF0F5] bg-white px-2.5 py-2.5 text-right font-mono text-[11px] leading-[19px] text-faint">
-                  {Array.from({ length: Math.max(6, starterCode.split('\n').length) }, (_, i) => (
-                    <div key={i}>{i + 1}</div>
-                  ))}
-                </div>
-                <textarea
-                  className="min-h-[120px] w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[12.5px] leading-[19px] text-body placeholder:text-faint focus:outline-none"
-                  spellCheck={false} value={starterCode}
-                  placeholder={'# Write starter code here (optional)...'}
-                  onChange={e => setStarterCode(e.target.value)} />
-              </div>
-            </SectionCard>
-          )}
-
-          {subType !== 'database' && (
-            <SectionCard title="Output Code" optional>
-              <div className="flex overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15 transition-colors">
-                <div className="select-none border-r border-[#EEF0F5] bg-white px-2.5 py-2.5 text-right font-mono text-[11px] leading-[19px] text-faint">
-                  {Array.from({ length: Math.max(6, outputCode.split('\n').length) }, (_, i) => (
-                    <div key={i}>{i + 1}</div>
-                  ))}
-                </div>
-                <textarea
-                  className="min-h-[120px] w-full resize-y bg-transparent px-3 py-2.5 font-mono text-[12.5px] leading-[19px] text-body placeholder:text-faint focus:outline-none"
-                  spellCheck={false} value={outputCode}
-                  placeholder={'# Model solution / answer code (optional)...'}
-                  onChange={e => setOutputCode(e.target.value)} />
-              </div>
-            </SectionCard>
-          )}
-
         </div>
 
         {/* ── Configuration rail (~32%) — own scroll ── */}
@@ -342,19 +370,6 @@ const ProgrammingCreateContent = forwardRef<CreateContentHandle, { defaultSubTyp
             <h4 className="mb-2.5 text-[13px] font-semibold text-heading">Tags <span className="text-[11px] font-normal text-subtle">(Optional)</span></h4>
             <ChipInput values={tags} onChange={setTags} placeholder="Add tags and press Enter" />
             <HelperText>Press Enter to add multiple tags</HelperText>
-          </div>
-
-          <div className="mb-5 grid grid-cols-2 gap-3">
-            <div>
-              <h4 className="mb-2.5 text-[13px] font-semibold leading-tight text-heading">Time Complexity <span className="block text-[11px] font-normal text-subtle">(Optional)</span></h4>
-              <input className={controlCls} value={timeComplexity} placeholder="e.g., O(n log n)"
-                onChange={e => setTimeComplexity(e.target.value)} />
-            </div>
-            <div>
-              <h4 className="mb-2.5 text-[13px] font-semibold leading-tight text-heading">Space Complexity <span className="block text-[11px] font-normal text-subtle">(Optional)</span></h4>
-              <input className={controlCls} value={spaceComplexity} placeholder="e.g., O(1), O(n)"
-                onChange={e => setSpaceComplexity(e.target.value)} />
-            </div>
           </div>
 
           <div>

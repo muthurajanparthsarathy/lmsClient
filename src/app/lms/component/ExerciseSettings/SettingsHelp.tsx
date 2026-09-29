@@ -1,6 +1,7 @@
 import React, { createContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './AssignmentSettings.module.css';
+import { pageZoom } from '@/lib/pageZoom';
 
 export const CompactSettingsContext = createContext(false);
 
@@ -14,10 +15,13 @@ export function SettingsHelp({ content }: { content: string }) {
     if (!open || !buttonRef.current || !tipRef.current) return;
     const anchor = buttonRef.current.getBoundingClientRect();
     const tip = tipRef.current.getBoundingClientRect();
+    // Placed in on-screen pixels, then converted: the page zoom scales the
+    // style again, which left the tip short of its "?" button.
+    const z = pageZoom();
     setPosition({
-      left: Math.max(8, Math.min(anchor.left, window.innerWidth - tip.width - 8)),
-      top: anchor.bottom + tip.height + 12 < window.innerHeight
-        ? anchor.bottom + 8 : Math.max(8, anchor.top - tip.height - 8),
+      left: Math.max(8, Math.min(anchor.left, window.innerWidth - tip.width - 8)) / z,
+      top: (anchor.bottom + tip.height + 12 < window.innerHeight
+        ? anchor.bottom + 8 : Math.max(8, anchor.top - tip.height - 8)) / z,
     });
   }, [open]);
   useEffect(() => {

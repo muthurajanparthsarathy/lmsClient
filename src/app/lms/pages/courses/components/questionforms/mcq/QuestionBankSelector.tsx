@@ -46,6 +46,11 @@ interface QuestionBankSelectorProps {
   // on the difficulty being filled; the rail buttons still let the teacher
   // pick other cells (and Clear All still resets to 'all').
   initialDifficultyFilter?: 'easy' | 'medium' | 'hard';
+  // With initialDifficultyFilter: KEEP the list on that difficulty. Set when
+  // the picker is filling one difficulty's slot (a Hard slot can only take
+  // Hard questions), so the other levels — which could only ever read
+  // "quota full" — are not offered at all.
+  lockDifficulty?: boolean;
   // Which bank to read: the institution's own bank (default) or the SEPARATE
   // Other Platform bank collection. Same UI, different data source.
   bankSource?: 'bank' | 'otherPlatform';
@@ -102,8 +107,10 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
   filterByType = 'all', // ✅ Default to 'all' to show all question types
   selectionQuota,
   initialDifficultyFilter,
+  lockDifficulty = false,
   bankSource = 'bank',
 }) => {
+  const lockedDifficulty = lockDifficulty && initialDifficultyFilter ? initialDifficultyFilter : null;
   // Both banks are cached (queries/questionBank.ts) instead of re-fetched on
   // every open. That matters most for the other-platform bank: one shared
   // 9.19 MB document that this picker pulled again from each of its ~10 call
@@ -691,12 +698,13 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
   const clearAllFilters = () => {
     setSearchTerm('');
     setSelectedProblemTypes(new Set());
-    setDifficultyFilter('all');
+    setDifficultyFilter(lockedDifficulty ?? 'all');
     setTopicFilter('all');
     setTagFilter('all');
     if (filterByType === 'all') setFilterType('all');
   };
-  const anyFilterActive = searchTerm !== '' || selectedProblemTypes.size > 0 || difficultyFilter !== 'all'
+  // A locked difficulty is the slot's, not a filter the teacher applied.
+  const anyFilterActive = searchTerm !== '' || selectedProblemTypes.size > 0 || (!lockedDifficulty && difficultyFilter !== 'all')
     || topicFilter !== 'all' || tagFilter !== 'all' || (filterByType === 'all' && filterType !== 'all');
   const DIFF_ACCENT: Record<'easy' | 'medium' | 'hard', { on: string; off: string }> = {
     easy:   { on: 'border-emerald-300 bg-emerald-50 text-emerald-700', off: 'border-[#D7DCE5] bg-white text-emerald-600 hover:bg-emerald-50/60' },
@@ -918,13 +926,18 @@ const QuestionBankSelector: React.FC<QuestionBankSelectorProps> = ({
             <div className="mb-4">
               <div className="mb-1.5 text-[12px] font-semibold text-heading">Difficulty Level</div>
               <div className="grid grid-cols-3 gap-1.5">
-                {(['easy', 'medium', 'hard'] as const).map(d => (
-                  <button key={d} type="button"
-                    onClick={() => setDifficultyFilter(prev => prev === d ? 'all' : d)}
-                    className={`h-8 rounded-[8px] border text-[11px] font-semibold capitalize transition-colors ${difficultyFilter === d ? DIFF_ACCENT[d].on : DIFF_ACCENT[d].off}`}>
-                    {d} {difficultyCounts[d]}
-                  </button>
-                ))}
+                {(['easy', 'medium', 'hard'] as const).map(d => {
+                  const blocked = !!lockedDifficulty && d !== lockedDifficulty;
+                  return (
+                    <button key={d} type="button"
+                      disabled={blocked}
+                      title={blocked ? `This slot takes ${lockedDifficulty} questions only` : undefined}
+                      onClick={() => { if (!lockedDifficulty) setDifficultyFilter(prev => prev === d ? 'all' : d); }}
+                      className={`h-8 rounded-[8px] border text-[11px] font-semibold capitalize transition-colors ${difficultyFilter === d ? DIFF_ACCENT[d].on : DIFF_ACCENT[d].off} ${blocked ? 'opacity-40 cursor-not-allowed' : ''} ${lockedDifficulty && !blocked ? 'cursor-default' : ''}`}>
+                      {d} {difficultyCounts[d]}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

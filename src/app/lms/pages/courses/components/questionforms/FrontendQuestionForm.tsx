@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import QuestionBankSelector from './mcq/QuestionBankSelector';
 import GenerateProgFamilyAI from './GenerateProgFamilyAI';
+import { buildQuestionHints } from './questionHints';
 import { parseProgrammingFile } from '@/app/lms/pages/courses/components/questionforms/parseQuestionsTxt';
 import { DOC_ACCEPT, DOC_ACCEPT_LABEL } from '@/app/lms/pages/courses/components/questionforms/docTextExtract';
 import { FrontendCodeSetupSection, FrontendCode, EMPTY_FRONTEND, normalizeFrontendCode, isFrontendSolutionEmpty } from './CodeSetupSection';
@@ -3496,7 +3497,10 @@ const isAIAvailable = () => allowedSources.ai;
       questionType: 'programming', title: safeTitle,
       description: descBlocks,
       difficulty: q.difficulty,
-      score: q.score, points: q.score, constraints: q.constraints, hints: q.hints,
+      score: q.score, points: q.score,
+      // Only filled-in constraints and hints are saved.
+      constraints: (q.constraints || []).filter((c: string) => c?.trim()),
+      hints: buildQuestionHints('', q.hints || []),
       testCases: [], solutions: { startedCode: '', functionName: 'main', language: 'python' },
       timeLimit: q.timeLimit, memoryLimit: q.memoryLimit, isActive: true,
       // Code Setup — split HTML/CSS/JS bundles. Server strips solutionCode
@@ -3990,7 +3994,8 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
   const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean): Promise<string | undefined> => {
     const flow = flowQuestionsRef.current; const currentQ = flow.find(q => q.__localId === localId);
     const serverId = serverIdMap.current.get(localId) || currentQ?._id || (isEditing && initialData?._id ? initialData._id : undefined);
-    const result = await onSave({ ...payload, __saveAndNext: isSaveAndNext, __isUpdate: !!serverId, __questionId: serverId, __editLocalId: localId });
+    // Every save funnels through here: send only hints that have text.
+    const result = await onSave({ ...payload, ...(Array.isArray(payload.hints) ? { hints: buildQuestionHints('', payload.hints) } : {}), __saveAndNext: isSaveAndNext, __isUpdate: !!serverId, __questionId: serverId, __editLocalId: localId });
     const savedId = result?._id || result?.data?._id || result?.questionId || result?.data?.questionId || serverId;
     if (savedId) registerSavedId(localId, savedId);
     // Update flow question with saved data so navigating back (Previous) shows updated content
@@ -4959,12 +4964,8 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
                       style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)', background: 'none', border: 'none', cursor: isFormDisabled ? 'not-allowed' : 'pointer', opacity: isFormDisabled ? 0.4 : 1 }}>Remove</button>
                   </div>
                   <TA value={h.hintText} onChange={v => setExtraH(p => p.map((x, idx) => idx === i ? { ...x, hintText: v } : x))} placeholder="Hint text…" rows={2} disabled={isFormDisabled} />
+                  {/* Hints no longer cost points — the Deduction input is gone. */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-sec)' }}>
-                      Deduction:
-                      <NI value={h.pointsDeduction} onChange={v => setExtraH(p => p.map((x, idx) => idx === i ? { ...x, pointsDeduction: v } : x))}
-                        min={0} max={10} disabled={isFormDisabled} cls="w-16" />
-                    </div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-sec)', cursor: 'pointer', userSelect: 'none' }}>
                       <input type="checkbox" checked={h.isPublic} onChange={e => setExtraH(p => p.map((x, idx) => idx === i ? { ...x, isPublic: e.target.checked } : x))} disabled={isFormDisabled} style={{ width: 12, height: 12, accentColor: 'var(--lms-orange)' }} />
                       Public
@@ -5931,6 +5932,9 @@ const handleBankSelectedQuestions = useCallback((selected: any[]) => {
             existingQuestions={exerciseData?.fullExerciseData?.questions || []}
             // Frontend module → show only Frontend questions from the bank
             filterByType="frontend"
+            // Filling one difficulty's slot → list that difficulty only.
+            initialDifficultyFilter={isGeneral ? undefined : currentDiff}
+            lockDifficulty={!isGeneral}
           />
         </div>
       )}

@@ -12,6 +12,9 @@ type PreviewProps = {
   issues: string[];
   allocatedMarks: number;
   onIssueClick?: (issue: string) => void;
+  /** What is being set up — drives every label. Defaults to 'assignment'
+   *  (We Do); the You Do assessment form passes 'assessment'. */
+  noun?: 'assignment' | 'assessment';
 };
 
 const sourceNames: Record<string, string> = { scratch: 'Manual', ai: 'AI automation', thirdParty: 'Other platform', custom: 'Combined sources' };
@@ -38,7 +41,8 @@ function RichText({ value, placeholder }: { value?: string; placeholder: string 
   return <div className={styles.previewRichText} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(value) }} />;
 }
 
-export function SettingsPreview({ formData: data, questionSource, customSources, questionCount, location, issues, allocatedMarks, onIssueClick }: PreviewProps) {
+export function SettingsPreview({ formData: data, questionSource, customSources, questionCount, location, issues, allocatedMarks, onIssueClick, noun = 'assignment' }: PreviewProps) {
+  const Noun = noun.charAt(0).toUpperCase() + noun.slice(1);
   const graded = data.isGraded !== false;
   const combined = data.exerciseType === 'Combined';
   const config = data.exerciseType === 'MCQ' ? data.mcqConfig : data.exerciseType === 'Other' ? data.othersConfig : data.programmingConfig;
@@ -58,11 +62,11 @@ export function SettingsPreview({ formData: data, questionSource, customSources,
     ? (config.questionConfigType === 'selectionLevel' ? config.selectionLevelCounts : config.levelBasedCounts)
     : null;
   const levelScoring = config?.scoreSettings?.levelScoringConfiguration;
-  return <aside className={styles.previewPane} aria-label="Live assignment preview">
-    <div className={styles.previewHeading}><div><strong>Assignment preview</strong><span>Updates as you edit</span></div><span className={styles.liveBadge}><Radio size={12} /> Live</span></div>
+  return <aside className={styles.previewPane} aria-label={`Live ${noun} preview`}>
+    <div className={styles.previewHeading}><div><strong>{Noun} preview</strong><span>Updates as you edit</span></div><span className={styles.liveBadge}><Radio size={12} /> Live</span></div>
     <article className={styles.previewCard}>
-      <div className={styles.previewEyebrow}>ASSIGNMENT {data.exerciseId && <span>· {data.exerciseId}</span>}</div>
-      <h2>{data.exerciseName || <Missing>Untitled assignment</Missing>}</h2>
+      <div className={styles.previewEyebrow}>{noun.toUpperCase()} {data.exerciseId && <span>· {data.exerciseId}</span>}</div>
+      <h2>{data.exerciseName || <Missing>Untitled {noun}</Missing>}</h2>
       {location && <p className={styles.previewLocation}>{location}</p>}
       {(data.exerciseType || data.exerciseLevel) && (
         <div className={styles.previewTags}>
@@ -89,12 +93,12 @@ export function SettingsPreview({ formData: data, questionSource, customSources,
         })}
         {graded && <>
           <div><span>Allocated marks</span><strong>{number(allocatedMarks)}</strong></div>
-          <div><span>Assignment total</span><strong>{number(Number(marks || 0))}</strong></div>
+          <div><span>{Noun} total</span><strong>{number(Number(marks || 0))}</strong></div>
           <p className={difference === 0 && Number(marks) > 0 ? styles.calculationValid : styles.calculationWarning}>
-            {difference === 0 && Number(marks) > 0 ? <><CircleCheck size={14} /> Marks match the assignment total.</> : <><CircleAlert size={14} />{Number(marks) > 0 ? `${number(Math.abs(difference))} marks ${difference > 0 ? 'still to allocate' : 'over the assignment total'}. Adjust the question counts or marks.` : 'Set a total and allocate marks to your questions.'}</>}
+            {difference === 0 && Number(marks) > 0 ? <><CircleCheck size={14} /> Marks match the {noun} total.</> : <><CircleAlert size={14} />{Number(marks) > 0 ? `${number(Math.abs(difference))} marks ${difference > 0 ? 'still to allocate' : `over the ${noun} total`}. Adjust the question counts or marks.` : 'Set a total and allocate marks to your questions.'}</>}
           </p>
         </>}
-        {!graded && <p className={styles.previewPlaceholder}>Marks are not required for this assignment.</p>}
+        {!graded && <p className={styles.previewPlaceholder}>Marks are not required for this {noun}.</p>}
       </section>
       <section className={styles.readiness} data-state={issues.length ? 'incomplete' : 'ready'} aria-label="Setup readiness" aria-live="polite">
         <h3>{issues.length ? <CircleAlert size={15} /> : <CircleCheck size={15} />}{issues.length ? 'Unfinished setup' : 'Ready to complete setup'}</h3>
@@ -112,7 +116,7 @@ export function SettingsPreview({ formData: data, questionSource, customSources,
         ))}</ul></details>}
       </section>
       {data.description && data.description.replace(/<[^>]*>/g, '').trim() &&
-        <section className={styles.previewSection}><h3>Description</h3><RichText value={data.description} placeholder="Your assignment description will appear here." /></section>}
+        <section className={styles.previewSection}><h3>Description</h3><RichText value={data.description} placeholder={`Your ${noun} description will appear here.`} /></section>}
       {data.instructions && data.instructions.replace(/<[^>]*>/g, '').trim() &&
         <section className={styles.previewSection}><h3>Instructions</h3><RichText value={data.instructions} placeholder="No instructions added." /></section>}
       {(hasDate(data.schedule.startDate) || hasDate(data.schedule.endDate)
@@ -154,6 +158,6 @@ export function SettingsPreview({ formData: data, questionSource, customSources,
         );
       })()}
     </article>
-    <p className={styles.previewFootnote}>Preview only. Save changes to update the assignment.</p>
+    <p className={styles.previewFootnote}>Preview only. Save changes to update the {noun}.</p>
   </aside>;
 }

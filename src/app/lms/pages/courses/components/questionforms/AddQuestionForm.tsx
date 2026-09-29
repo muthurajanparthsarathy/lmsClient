@@ -699,8 +699,10 @@ const getDiffOptions = useCallback(() => {
     setSaveProgress(90);
 
     // ✅ CRITICAL FIX: Refresh exercise data after successful save
-    // This ensures fullEx?.questions has the latest data for difficulty slot calculations
-    await refreshExerciseData();
+    // This ensures fullEx?.questions has the latest data for difficulty slot calculations.
+    // No remount: Save keeps the saved question on screen; Save & Continue
+    // moves on inside the form itself.
+    await refreshExerciseData({ remount: false });
     
     // ✅ Force difficulty popup to recalculate remaining slots
     setDiffRefreshTrigger(prev => prev + 1);
@@ -768,7 +770,13 @@ const getDiffOptions = useCallback(() => {
     }
   }
 };
-const refreshExerciseData = useCallback(async () => {
+// `remount: false` refreshes the data WITHOUT rebuilding the question form.
+// A question save passes it: the form already holds the saved question, and a
+// remount throws its flow away and lands on the next open slot — so a plain
+// Save used to replace the question you just saved with a blank one, instead
+// of keeping it on screen to preview or close.
+const refreshExerciseData = useCallback(async ({ remount = true }: { remount?: boolean } = {}) => {
+  const shouldRemount = remount && !isInSaveAndContinueFlow.current;
   try {
     const exerciseId = exerciseData.exerciseId || exerciseData._id;
     const freshResponse = await exerciseApi.getExerciseById(exerciseId);
@@ -783,13 +791,13 @@ const refreshExerciseData = useCallback(async () => {
       };
       localExerciseDataRef.current = updatedExerciseData;
       setLocalExerciseData(updatedExerciseData);
-      // Don't remount ProgrammingQuestionForm during Save & Continue — it loses all flow state
-      if (!isInSaveAndContinueFlow.current) setRefreshKey(k => k + 1);
+      // Don't remount ProgrammingQuestionForm during a save — it loses all flow state
+      if (shouldRemount) setRefreshKey(k => k + 1);
       setDiffRefreshTrigger(prev => prev + 1); // ✅ Trigger diff options refresh
     }
   } catch (err) {
     console.warn('Refetch failed:', err);
-    if (!isInSaveAndContinueFlow.current) setRefreshKey(k => k + 1);
+    if (shouldRemount) setRefreshKey(k => k + 1);
     setDiffRefreshTrigger(prev => prev + 1);
   }
 }, [exerciseData]);

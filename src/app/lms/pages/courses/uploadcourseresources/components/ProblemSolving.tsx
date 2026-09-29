@@ -498,6 +498,15 @@ const isExerciseComplete = (ex: Exercise): boolean => {
 
   return requiredSteps.every(step => saved.includes(step));
 };
+
+// True once the exercise's start date & time has arrived — before that it is
+// not open to students, so there is nothing yet to review.
+const hasExerciseStarted = (ex: Exercise): boolean => {
+  const start = ex.availabilityPeriod?.startDate;
+  if (!start) return false;
+  const t = new Date(start as any).getTime();
+  return !Number.isNaN(t) && t <= Date.now();
+};
 interface LevelDetail {
   available: boolean; current: number; max: number;
   currentMarks: number; maxMarks: number;
@@ -4742,10 +4751,20 @@ const ProblemSolving: React.FC<ProblemSolvingProps> = (props) => {
                             the We_Do branch shows the button as long as the
                             exercise is fully configured. `isExerciseComplete`
                             is still required in both branches so a half-built
-                            exercise's Review column stays a dash. */}
+                            exercise's Review column stays a dash.
+                            Two more gates, per the trainer's rule — there is
+                            nothing to review until BOTH hold:
+                              • the row's Status reads Completed — the SAME
+                                check as the Status badge (settings saved AND
+                                every configured question added), so a row
+                                showing "Incomplete" never offers Review;
+                              • the start date & time has passed, i.e. the
+                                assignment is open to students. */}
                         <td className="h-11 px-3 align-middle text-[12px]">
                           <div className="flex items-center justify-center">
-                            {isExerciseComplete(ex) && (activeTab === 'We_Do' || submissionStatusMap[ex._id]) ? (
+                            {getExerciseStatus(ex) === 'Completed'
+                              && hasExerciseStarted(ex)
+                              && (activeTab === 'We_Do' || submissionStatusMap[ex._id]) ? (
                               <button
                                 type="button"
                                 onClick={() => handleAction('review', ex)}

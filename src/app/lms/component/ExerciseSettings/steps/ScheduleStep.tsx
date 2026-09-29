@@ -1,5 +1,6 @@
 import { SettingsHelp } from '../SettingsHelp';
 import { getToken } from "@/lib/session";
+import { pageZoom } from "@/lib/pageZoom";
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import {
@@ -224,10 +225,14 @@ const CalendarPopup: React.FC<{
     // computed against a stale number.
     const pw = popRef.current.offsetWidth || layout.width;
     const ph = popRef.current.offsetHeight || 360;
+    // The anchor rect and the viewport are on-screen pixels; the popup's own
+    // offsetWidth/Height and the style we set are the zoomed page's CSS
+    // pixels. Put everything in the latter, or the picker lands off its field.
+    const z = pageZoom();
     const { top, left } = clampPickerPosition({
-      anchor: { top: r.top, left: r.left, right: r.right, bottom: r.bottom },
+      anchor: { top: r.top / z, left: r.left / z, right: r.right / z, bottom: r.bottom / z },
       popWidth: pw, popHeight: ph,
-      viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
+      viewportWidth: window.innerWidth / z, viewportHeight: window.innerHeight / z,
     });
     setPos({ position: 'fixed', top, left, zIndex: 9999, visibility: 'visible' });
   }, [anchorEl, layout.width, layout.stacked]);

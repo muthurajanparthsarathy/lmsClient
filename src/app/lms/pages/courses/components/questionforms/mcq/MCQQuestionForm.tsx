@@ -4058,7 +4058,15 @@ const buildBlockFromDbQuestion = (q: any): QuestionBlock => {
       const s = (b.source ?? '').toString();
       return src === 'ai' ? s === 'ai' : s.startsWith('scratch');
     };
-    const committed = (b: QuestionBlock) => savedQuestionIds.has(b.id) || (b.origin === 'db' && !b.isDirty);
+    // The REF, not just state: it is updated the moment a save lands, while
+    // `savedQuestionIds` / the block's origin only catch up on the next render.
+    // Right after saving the last Manual question, state still read it as
+    // unsaved while sliceLeftAfterSave (which checks the ref) treated it as
+    // already counted — so it was billed by neither, the slice read "1 left",
+    // Save & Next opened a 4th blank Manual slot instead of Generate AI, and
+    // saving that slot then failed "Quota full".
+    const committed = (b: QuestionBlock) =>
+      savedQuestionIds.has(b.id) || savedQuestionIdsRef.current.has(b.id) || (b.origin === 'db' && !b.isDirty);
     const hasContent = (b: QuestionBlock) => {
       const txt = b.questionContent
         ? b.questionContent.filter(cb => cb.type === 'text').map(cb => String(cb.value ?? '')).join(' ')

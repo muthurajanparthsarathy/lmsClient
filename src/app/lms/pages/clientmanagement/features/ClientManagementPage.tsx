@@ -775,13 +775,10 @@ export function ClientManagementView({ embedded = false }: { embedded?: boolean 
             else if (ccode === '+91' ? local.length !== 10 : local.length < 6 || local.length > 14) {
                 e.phoneNumber = ccode === '+91' ? 'Enter the 10-digit mobile number' : 'Invalid mobile number'
             }
+            // A secondary equal to the contact's own Email is allowed — that
+            // is exactly what "Same as primary" fills in.
             const sec2 = (cp.secondaryEmail || '').trim()
-            if (sec2) {
-                if (!emailRegex.test(sec2)) e.secondaryEmail = 'Invalid email'
-                else if (sec2.toLowerCase() === (cp.email || '').trim().toLowerCase()) {
-                    e.secondaryEmail = 'Must differ from Email'
-                }
-            }
+            if (sec2 && !emailRegex.test(sec2)) e.secondaryEmail = 'Invalid email'
             const secPhone = (cp.secondaryPhoneNumber || '').trim()
             if (secPhone) {
                 const { code: sc, local: sl } = splitPhone(secPhone)

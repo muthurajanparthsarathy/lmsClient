@@ -4,6 +4,7 @@ import { Terminal, AlertCircle, Check, Shuffle, Calculator } from 'lucide-react'
 import { D, formatDecimal, isApproximatelyEqual, configOptions, questionFlowOptions } from './constants';
 import { BaseConfigProps } from './types';
 import { SectionLabel, ODropdown, ONumberInput, OToggle } from './UIComponents';
+import { MarksMeter, MarksIssue } from './MarksMeter';
 import {
   EvaluationMethodConfig,
   DEFAULT_EVALUATION_METHOD,
@@ -28,6 +29,7 @@ export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
   const isCombined = formData.exerciseType === 'Combined';
   const totalToUse = isCombined ? formData.totalMarksProgramming : formData.totalMarks;
   const isMatch = isApproximatelyEqual(programmingAllocatedMarks || 0, totalToUse);
+  const graded = formData.isGraded !== false;
 
   // Update marks when general question count changes
   const updateGeneralMarks = (questionCount: number) => {
@@ -71,20 +73,14 @@ export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
             )}
           </div>
         </div>
-        {isMatch && programmingAllocatedMarks > 0 && totalToUse > 0 && (
-          <div className="text-right">
-            <div className="text-[10px] font-semibold" style={{ color: designTokens.emerald }}>Allocated</div>
-            <div className="text-sm font-bold" style={{ color: designTokens.emerald }}>
-              {formatDecimal(programmingAllocatedMarks)}<span className="text-xs font-normal" style={{ color: designTokens.textMuted }}>/{totalToUse}</span>
-            </div>
-          </div>
-        )}
+        {/* Live Total / Used / Remaining — re-validates on every keystroke. */}
+        {graded && <MarksMeter total={totalToUse || 0} used={programmingAllocatedMarks || 0} />}
       </div>
 
-      {programmingLevelMismatch && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: designTokens.red + '10', border: `1px solid ${designTokens.red}40` }}>
-          <AlertCircle size={13} style={{ color: designTokens.red }} />
-          <p className="text-xs font-semibold flex-1" style={{ color: designTokens.red }}>{programmingLevelMismatch}</p>
+      {graded && (
+        <div className="mb-3">
+          <MarksIssue issue={programmingLevelMismatch ?? null}
+            ok={isMatch && programmingAllocatedMarks > 0 && totalToUse > 0} />
         </div>
       )}
 
@@ -127,6 +123,7 @@ export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
                   }
                 }}
                 onBlur={() => markTouched('programmingGeneralQuestionCount')}
+                liveUpdate
                 min={1}
                 placeholder="e.g. 5"
                 error={validationErrors.programmingGeneralQuestionCount}
@@ -231,6 +228,7 @@ export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
                             value={val}
                             onChange={handleChange}
                             onBlur={isSelLevel ? undefined : () => markTouched('programmingLevelCounts')}
+                            liveUpdate
                             disabled={isSelLevel && !checked}
                             min={0}
                             placeholder={isSelLevel && !checked ? '—' : 'Count'}
@@ -277,6 +275,9 @@ export const ProgrammingConfiguration: React.FC<BaseConfigProps> = ({
                           <ONumberInput
                             value={isQSpec ? (scoring?.totalMarks || 0) : (scoring?.marksPerQuestion || 0)}
                             onChange={v => updateLevelScoringConfig?.(level, isQSpec ? { totalMarks: v } : { marksPerQuestion: v })}
+                            liveUpdate
+                            error={graded && count > 0 && !((isQSpec ? scoring?.totalMarks : scoring?.marksPerQuestion) > 0) ? 'Enter marks' : undefined}
+                            touched
                           />
                           {hasError && <span className="text-[10px]" style={{ color: designTokens.red }}>{scoringErrors[level]}</span>}
                         </div>

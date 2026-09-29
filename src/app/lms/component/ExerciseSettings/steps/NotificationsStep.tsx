@@ -11,28 +11,31 @@ import styles from '../AssignmentSettings.module.css';
 interface NotificationsStepProps {
   formData: any;
   setFormData: React.Dispatch<React.SetStateAction<any>>;
+  /** Smaller type, tighter rows and a slimmer "Notify via" strip (You Do). */
+  compact?: boolean;
 }
 
 // ── FormRow ──────────────────────────────────────────────────────────────────
 // Same 306px-label + control shape as ExerciseDetailsStep. Keeps every step
 // visually consistent (label on the left, teal ? tooltip, control on the
 // right, helper text under the control).
-function FormRow({ label, help, required, children, note }: {
+function FormRow({ label, help, required, children, note, compact }: {
   label: string;
   help?: string;
   required?: boolean;
   children: React.ReactNode;
   note?: string;
+  compact?: boolean;
 }) {
   return (
-    <div className={styles.fieldRow}>
+    <div className={styles.fieldRow} style={compact ? { paddingTop: 6, paddingBottom: 6 } : undefined}>
       <div className={styles.fieldLabel}>
-        <label>{label}{required && <span className={styles.required} aria-label="required">*</span>}</label>
+        <label style={compact ? { fontSize: 13 } : undefined}>{label}{required && <span className={styles.required} aria-label="required">*</span>}</label>
         {help && <SettingsHelp content={help} />}
       </div>
       <div className={styles.fieldControl}>
         {children}
-        {note && <p className={styles.fieldNote}>{note}</p>}
+        {note && <p className={styles.fieldNote} style={compact ? { fontSize: 11.5, marginTop: 4 } : undefined}>{note}</p>}
       </div>
     </div>
   );
@@ -86,7 +89,12 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 export const NotificationsStep: React.FC<NotificationsStepProps> = ({
   formData,
   setFormData,
+  compact = false,
 }) => {
+  // Type / spacing scale — compact is the You Do assessment's denser layout.
+  const sz = compact
+    ? { state: 12.5, via: 12.5, ch: 12.5, check: 14, pad: '6px 12px', mt: 8, gap: 14, row: 26 }
+    : { state: 15, via: 14, ch: 14, check: 16, pad: '10px 14px', mt: 12, gap: 18, row: 32 };
   const channelOptions = [
     { key: 'dashboard', label: 'Dashboard', icon: <Home size={12} /> },
     { key: 'gmail',     label: 'Gmail',     icon: <Mail size={12} /> },
@@ -181,11 +189,12 @@ export const NotificationsStep: React.FC<NotificationsStepProps> = ({
       label={row.label}
       help={row.help}
       note={row.value ? row.onDesc : row.offDesc}
+      compact={compact}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 32 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 12, height: sz.row }}>
         <SpecSwitch on={!!row.value} onClick={() => row.onChange(!row.value)} />
         <span style={{
-          fontSize: 15, fontWeight: 700,
+          fontSize: sz.state, fontWeight: 700,
           color: row.value ? D.emerald : D.textHint,
           fontFamily: FONT,
         }}>
@@ -196,27 +205,27 @@ export const NotificationsStep: React.FC<NotificationsStepProps> = ({
       {/* Channel picker — indented block that appears only when the row is On. */}
       {row.value && (
         <div style={{
-          marginTop: 12, padding: '10px 14px',
+          marginTop: sz.mt, padding: sz.pad,
           borderRadius: 8, background: D.surface,
           border: `1px solid ${D.border}`,
-          display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 18,
+          display: compact ? 'inline-flex' : 'flex', alignItems: 'center', flexWrap: 'wrap', gap: sz.gap,
         }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
+          <span style={{ fontSize: sz.via, fontWeight: 600, color: '#101828', fontFamily: FONT }}>
             Notify via:
           </span>
           {channelOptions.map(ch => (
             <label key={ch.key}
               className="flex items-center cursor-pointer select-none"
-              style={{ gap: 8 }}>
+              style={{ gap: compact ? 6 : 8 }}>
               <input
                 type="checkbox"
                 checked={row.channels[ch.key]}
                 onChange={(e) => row.onChannelChange(ch.key, e.target.checked)}
-                style={{ width: 16, height: 16, accentColor: D.orange, cursor: 'pointer' }}
+                style={{ width: sz.check, height: sz.check, accentColor: D.orange, cursor: 'pointer' }}
               />
               <span className="flex items-center" style={{ gap: 6 }}>
                 <span style={{ color: D.textMuted }}>{ch.icon}</span>
-                <span style={{ fontSize: 14, color: D.textSub, fontFamily: FONT }}>
+                <span style={{ fontSize: sz.ch, color: D.textSub, fontFamily: FONT }}>
                   {ch.label}
                 </span>
               </span>

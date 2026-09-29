@@ -272,7 +272,10 @@ export const TopBar: React.FC<TopBarProps> = ({ items, onAIClick, onSummaryClick
                           }}>
                             {n.title}
                           </p>
-                          <p style={{ fontSize: '11.5px', color: T.textMuted, lineHeight: 1.4 }}>
+                          {/* pre-line: multi-line messages (an assignment's
+                              Course / Batch / Start / End / Marks lines) keep
+                              their breaks instead of running together. */}
+                          <p style={{ fontSize: '11.5px', color: T.textMuted, lineHeight: 1.4, whiteSpace: 'pre-line' }}>
                             {n.message}
                           </p>
                         </div>

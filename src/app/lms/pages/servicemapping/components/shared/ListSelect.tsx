@@ -32,6 +32,7 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, ChevronDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { pageZoom } from '@/lib/pageZoom'
 
 // Local copy of the wizard's own walk (page.tsx) rather than an import: this
 // component sits UNDER page.tsx in the tree, and reaching back up for a helper
@@ -172,7 +173,10 @@ export function ListSelect({
         // roomier — a field sitting at the very bottom of the pane.
         const MIN_USABLE = 150
         const up = spaceBelow < MIN_USABLE && spaceAbove > spaceBelow + 60
-        const room = (up ? spaceAbove : spaceBelow) - (searchable ? 76 : 24)
+        // Everything measured above is on-screen pixels; everything set below
+        // is a style, which the page zoom scales again. Convert once, here.
+        const z = pageZoom()
+        const room = (up ? spaceAbove : spaceBelow) / z - (searchable ? 76 : 24)
         setDropUp(up)
         // Two limits: the caller's cap and the room actually available. 120 is a
         // floor under the second one only — a cramped field still gets a usable
@@ -185,8 +189,8 @@ export function ListSelect({
         const width = rect.width
         const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
         setPos(up
-            ? { left, width, bottom: window.innerHeight - rect.top + GAP }
-            : { left, width, top: rect.bottom + GAP })
+            ? { left: left / z, width: width / z, bottom: (window.innerHeight - rect.top) / z + GAP }
+            : { left: left / z, width: width / z, top: rect.bottom / z + GAP })
     }, [searchable, listMaxHeight])
 
     const openMenu = () => {

@@ -863,8 +863,11 @@ notifyStudentChannels: { dashboard: true, gmail: false, whatsapp: false },
           whatsapp: notif.notifyGradersLateSubmissionsChannels?.whatsapp ?? false,
         },
         notifyStudent: notif.notifyStudent ?? true,
+        // Dashboard defaults ON, as for a new assignment and the other load
+        // path — an assignment saved before channels were stored reopens
+        // with the same box ticked it was created with.
         notifyStudentChannels: {
-          dashboard: notif.notifyStudentChannels?.dashboard ?? false,
+          dashboard: notif.notifyStudentChannels?.dashboard ?? true,
           gmail: notif.notifyStudentChannels?.gmail ?? false,
           whatsapp: notif.notifyStudentChannels?.whatsapp ?? false,
         },

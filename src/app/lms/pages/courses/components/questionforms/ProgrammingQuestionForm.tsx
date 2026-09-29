@@ -16,6 +16,7 @@ import {
   Library
 } from 'lucide-react';
 import QuestionBankSelector from './mcq/QuestionBankSelector';
+import { buildQuestionHints } from './questionHints';
 import GenerateProgFamilyAI from './GenerateProgFamilyAI';
 import DocQuestionPicker from './DocQuestionPicker';
 import { parseProgrammingFile } from '@/app/lms/pages/courses/components/questionforms/parseQuestionsTxt';
@@ -693,6 +694,24 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
     formScrollRef.current?.scrollTo({ top: 0 });
   }, [formSectionTab]);
 
+  // A DIFFERENT question always opens on "Question details" — it is where a
+  // question starts. Save & Continue, the difficulty handover, jump-to and
+  // delete all move the editor to another question, and before this they kept
+  // whatever tab the previous one was saved from (e.g. Test cases). Keyed on
+  // the question itself, so re-loading the SAME question (Cancel edit, a
+  // validation jump) leaves the tab alone.
+  const editingQuestionKey = flowQuestions[currentIndex]?.__localId ?? `slot-${currentIndex}`;
+  const prevEditingRef = useRef<{ index: number; key: string } | null>(null);
+  useEffect(() => {
+    const prev = prevEditingRef.current;
+    prevEditingRef.current = { index: currentIndex, key: editingQuestionKey };
+    if (!prev) return; // first render already starts on 'question'
+    // A virtual blank slot getting its flow entry on first save is the SAME
+    // question at the same position — not a move to another one.
+    if (prev.index === currentIndex && prev.key.startsWith('slot-')) return;
+    if (prev.key !== editingQuestionKey) setFormSectionTab('question');
+  }, [editingQuestionKey, currentIndex]);
+
   const scrollToFirstError = (errors: Record<string, string>) => {
     const targetTab = errors.title || errors.description || errors.constraints ? 'question'
       : errors.solutionCode || errors.starterCode || errors.functionName ? 'execution'
@@ -1048,19 +1067,20 @@ const getQuotaForDiff = useCallback((d: Diff): number => {
 
   const mkPayload = () => {
     const safeTitle = getTitleText(titleBlocks) || '';
-    const allHints = hint.trim()
-      ? [{ hintText: hint.trim(), pointsDeduction: 0, isPublic: true, sequence: 0 },
-      ...extraHints.map((h, i) => ({ ...h, sequence: i + 1 }))]
-      : extraHints.map((h, i) => ({ ...h, sequence: i }));
+    const allHints = buildQuestionHints(hint, extraHints);
     const finalScore = isGeneral
       ? generalMPQ
       : isScoreEditable(currentDiff) ? score : getFixedScore(currentDiff);
 
-    // Source tag: prefer the FlowQuestion's own source (set when it was
-    // imported from bank / AI / doc), else fall back to the last-clicked
-    // source in the + dropdown (manual by default).
+    // Source tag: the FlowQuestion's own source (stamped when it was imported
+    // from bank / AI / Other Platform / doc). A question with no tag was typed
+    // into the editor, so it is Manual. It used to fall back to the last
+    // opened picker (pendingSourceRef), which stamped a hand-typed question
+    // 'ai' after an AI generation — billing the AI slice, so the server
+    // rejected it ("the hard AI quota is full") while the form's own Manual
+    // gate had let it through.
     const currentQ = flowQuestionsRef.current[currentIndexRef.current];
-    const questionSourceTag = (currentQ as any)?.source || pendingSourceRef.current || 'scratch-manual';
+    const questionSourceTag = (currentQ as any)?.source || 'scratch-manual';
 
     return {
       questionType: 'programming',
@@ -1597,7 +1617,12 @@ const handleBankSelectedQuestions = useCallback((selected: any[], sourceTag?: st
       _id: undefined,
       title: base.title || '',
       description: base.description || [mkProgTextBlock()],
-      difficulty: base.difficulty || (typeof currentDiff === 'string' ? currentDiff as Diff : 'medium'),
+      // An AI question fills the slot it was generated for — the slot's
+      // difficulty wins over any label on the question, so it bills that
+      // difficulty's AI allowance (never another level's).
+      difficulty: tag === 'ai' && !isGeneral && currentDiff
+        ? currentDiff as Diff
+        : base.difficulty || (typeof currentDiff === 'string' ? currentDiff as Diff : 'medium'),
       score: questionScore,
       testCases: base.testCases || [mkTC(0)],
       constraints: base.constraints || [],
@@ -1711,7 +1736,8 @@ const handleBankSelectedQuestions = useCallback((selected: any[], sourceTag?: st
 const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean): Promise<string | undefined> => {
     const flow = flowQuestionsRef.current; const currentQ = flow.find(q => q.__localId === localId);
     const serverId = serverIdMap.current.get(localId) || currentQ?._id || (isEditing && initialData?._id ? initialData._id : undefined);
-    const result = await onSave({ ...payload, __saveAndNext: isSaveAndNext, __isUpdate: !!serverId, __questionId: serverId, __editLocalId: localId });
+    // Every save funnels through here: send only hints that have text.
+    const result = await onSave({ ...payload, ...(Array.isArray(payload.hints) ? { hints: buildQuestionHints('', payload.hints) } : {}), __saveAndNext: isSaveAndNext, __isUpdate: !!serverId, __questionId: serverId, __editLocalId: localId });
     const savedId = result?._id || result?.data?._id || result?.questionId || result?.data?.questionId || serverId;
     if (savedId) registerSavedId(localId, savedId);
     // Update flow question with saved data so navigating back (Previous) shows updated content
@@ -1740,27 +1766,46 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
     return newQ.__localId;
   };
 
+  // ⚡ Save-time source-slice gate for a NEW question — the same three checks
+  // the server's validateQuestionQuota runs, answered here first so the
+  // trainer gets a clear next step instead of a raw 400:
+  //   • Manual (typed / bank / document) — slot's Manual slice must have room;
+  //     if not, the source picker reopens for this slot.
+  //   • AI / Other Platform (staged import) — that source's slice at the
+  //     difficulty being SENT (currentDiff, as mkPayload sends) must have
+  //     room; if not, say which slice is full and how to fix it.
+  // `localId` is excluded from the staged tally so a question never blocks
+  // itself. Returns true when the save must not go ahead.
+  const sourceSliceBlocked = (latestQ: any, localId: string): boolean => {
+    const tagged = srcOfTag(latestQ?.source);
+    const src: 'scratch' | 'ai' | 'thirdParty' = tagged === 'unknown' ? 'scratch' : tagged;
+    const dGate: Diff = isGeneral ? 'medium' : currentDiff;
+    const dl = isGeneral ? '' : `${dGate.charAt(0).toUpperCase()}${dGate.slice(1)} `;
+    // Typed questions must also be an enabled source; staged imports were
+    // already filtered by the picker that produced them.
+    const allowed = tagged === 'unknown' ? allowedSources.manual : true;
+    const room = isGeneral ? getSourceRemainingTotal(src) : getSourceRemaining(src, dGate, localId);
+    if (allowed && room > 0) return false;
+    if (tagged === 'unknown') {
+      toast.error(`${dl}Manual quota is already full — this slot can't take a manually-written question. Fill it from the source picker instead.`, { toastId: 'manual-cell-full' });
+      reopenSourceModalForBlankSlot();
+      return true;
+    }
+    const srcLabel = src === 'ai' ? 'AI' : src === 'thirdParty' ? 'Other Platform' : 'Manual';
+    toast.error(
+      `${dl}${srcLabel} slots are already full — this ${srcLabel} question can't be saved at ${isGeneral ? 'this exercise' : `${dGate} difficulty`}. Switch Difficulty to a level with ${srcLabel} slots left, or remove it (Clear all).`,
+      { toastId: 'source-cell-full' },
+    );
+    return true;
+  };
+
   const handleSave = async () => {
     const { valid, errors } = validate();
     if (!valid) { scrollToFirstError(errors); return; }
     const localId = ensureCurrentInFlow(); const latestQ = flowQuestionsRef.current[currentIndexRef.current];
     const serverId = serverIdMap.current.get(localId) || latestQ?._id || (isEditing && initialData?._id ? initialData._id : undefined);
     if (serverId && !hasUnsavedFormChanges) { return; }
-    // ⚡ Cell-level Manual gate — a brand-new manually-authored question may
-    // only save into a cell whose Manual (scratch) slice still has room. The
-    // blank editor stays mounted under a re-popped source picker, so without
-    // this the teacher could type past the quota and only find out from the
-    // server's 400. Staged bank/AI/doc imports carry a source tag and already
-    // hold a picker-capped review slot — they pass untouched.
-    if (!serverId && srcOfTag((latestQ as any)?.source) === 'unknown') {
-      const dGate: Diff = isGeneral ? 'medium' : (((latestQ?.difficulty) as Diff) || currentDiff);
-      if (!allowedSources.manual || getSourceRemaining('scratch', dGate, localId) <= 0) {
-        const dl = isGeneral ? '' : `${dGate.charAt(0).toUpperCase()}${dGate.slice(1)} `;
-        toast.error(`${dl}Manual quota is already full — this slot can't take a manually-written question. Fill it from the source picker instead.`, { toastId: 'manual-cell-full' });
-        reopenSourceModalForBlankSlot();
-        return;
-      }
-    }
+    if (!serverId && sourceSliceBlocked(latestQ, localId)) return;
     try { await executeSave(localId, { ...mkPayload(), __preventClose: true }, false); } catch (err) { console.error('handleSave error:', err); return; }
     setSaveOk(true);
     setTimeout(() => setSaveOk(false), 2500);
@@ -1824,6 +1869,7 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
           // Don't create new — show popup directly
           if (checkDiffComplete(undefined)) return;
           advanceAfterSave(undefined, undefined);
+          routeLandedSlot();
           return;
         }
       }
@@ -1837,26 +1883,20 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
     const localId = latestQ?.__localId ?? currentQ.__localId;
     const serverId = serverIdMap.current.get(localId) || latestQ?._id || (isEditing && initialData?._id ? initialData._id : undefined);
 
-    // Case 2: already saved, no changes — skip executeSave but still check quota
+    // Case 2: already saved, no changes ("Update & Continue" right after a
+    // Save) — skip executeSave but still check quota AND route the next slot
+    // by its configured source. This path used to stop at advanceAfterSave,
+    // so Save → Update & Continue always landed on a blank scratch editor,
+    // even when that slot's allocation is AI.
     if (serverId && !isEditMode && !hasUnsavedFormChanges) {
       if (checkDiffComplete(localId)) return;
       advanceAfterSave(serverId, localId);
+      routeLandedSlot();
       return;
     }
 
-    // ⚡ Cell-level Manual gate — same rule as handleSave: a new untagged
-    // (manually-authored) question can't bill a cell whose scratch slice is
-    // full. `localId` is excluded from the staged tally so the question being
-    // saved never blocks itself.
-    if (!serverId && srcOfTag((latestQ as any)?.source) === 'unknown') {
-      const dGate: Diff = isGeneral ? 'medium' : (((latestQ?.difficulty) as Diff) || currentDiff);
-      if (!allowedSources.manual || getSourceRemaining('scratch', dGate, localId) <= 0) {
-        const dl = isGeneral ? '' : `${dGate.charAt(0).toUpperCase()}${dGate.slice(1)} `;
-        toast.error(`${dl}Manual quota is already full — this slot can't take a manually-written question. Fill it from the source picker instead.`, { toastId: 'manual-cell-full' });
-        reopenSourceModalForBlankSlot();
-        return;
-      }
-    }
+    // Source-slice gate — same rule as handleSave.
+    if (!serverId && sourceSliceBlocked(latestQ, localId)) return;
 
     // Case 3: validate + save
     const { valid, errors } = validate();
@@ -1878,13 +1918,16 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
     if (checkDiffComplete(localId)) return;
 
     advanceAfterSave(savedId, localId);
+    routeLandedSlot();
+  };
 
-    // When the caller set autoOpenSource (e.g. AI-alone exercise), the teacher
-    // should keep landing on the SAME source modal after every save — but ONLY
-    // when the advance landed on a fresh BLANK slot. If it landed on an
-    // already-staged question (e.g. the 2nd of a generated batch awaiting
-    // review) or the difficulty-handover popup took over, the teacher keeps
-    // reviewing; the modal returns when an empty slot opens up.
+  // After Save & Continue moves on: when it landed on a fresh BLANK slot, open
+  // whatever that slot's allocation calls for (blank editor when Manual has
+  // room, else the AI / Other Platform modal). When it landed on an
+  // already-staged question (e.g. the 2nd of a generated batch awaiting
+  // review) or the difficulty-handover popup took over, the teacher keeps
+  // reviewing; the modal returns when an empty slot opens up.
+  const routeLandedSlot = () => {
     if (!landedOnBlankSlot()) return;
     reopenSourceModalForBlankSlot();
   };
@@ -3400,12 +3443,8 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                       style={{ fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-danger)', background: 'none', border: 'none', cursor: isFormDisabled ? 'not-allowed' : 'pointer', opacity: isFormDisabled ? 0.4 : 1 }}>Remove</button>
                   </div>
                   <TA value={h.hintText} onChange={v => setExtraH(p => p.map((x, idx) => idx === i ? { ...x, hintText: v } : x))} placeholder="Hint text…" rows={2} disabled={isFormDisabled} />
+                  {/* Hints no longer cost points — the Deduction input is gone. */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-sec)' }}>
-                      Deduction:
-                      <NI value={h.pointsDeduction} onChange={v => setExtraH(p => p.map((x, idx) => idx === i ? { ...x, pointsDeduction: v } : x))}
-                        min={0} max={10} disabled={isFormDisabled} cls="w-16" />
-                    </div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--lms-font)', fontSize: 11, color: 'var(--lms-text-sec)', cursor: 'pointer', userSelect: 'none' }}>
                       <input type="checkbox" checked={h.isPublic} onChange={e => setExtraH(p => p.map((x, idx) => idx === i ? { ...x, isPublic: e.target.checked } : x))} disabled={isFormDisabled} style={{ width: 12, height: 12, accentColor: 'var(--lms-orange)' }} />
                       Public
@@ -3526,6 +3565,9 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
                     //               reads without a resolver).
                     const evalMethod = (exerciseData as any)?.fullExerciseData?.evaluationMethod?.method;
                     if (evalMethod === 'manual' || evalMethod === 'ai') return null;
+                    // Only once an Execution mode is chosen (Function based or
+                    // Custom Starter) — on "Select…" there is no harness to run.
+                    if (executionType !== 'function' && startingExperience !== 'custom') return null;
                     return (
                       <button
                         type="button"
@@ -4720,6 +4762,10 @@ const executeSave = async (localId: string, payload: any, isSaveAndNext: boolean
           },
         };
       })()}
+      // Filling one difficulty's slot → the picker lists that difficulty only
+      // (the others could only ever show "quota full").
+      initialDifficultyFilter={isGeneral ? undefined : currentDiff}
+      lockDifficulty={!isGeneral}
     onEditQuestion={(question) => {
     setShowQuestionBank(false);
     setSelectedProgrammingQuestion(question);

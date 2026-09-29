@@ -1014,12 +1014,16 @@ const GroupEditModal: React.FC<{
 
 // ─── Sort options ──────────────────────────────────────────────────────────────
 export type SortKey =
+  | "recommended"
   | "date_desc" | "date_asc"
   | "name_asc"  | "name_desc"
   | "size_desc" | "size_asc"
   | "type_asc";
 
+// "recommended" is the default: folders first, then ZIP/archive files, then
+// everything else — newest first within each of the three.
 const SORT_OPTIONS: { key: SortKey; label: string; icon: React.ReactNode }[] = [
+  { key: "recommended", label: "Folders → ZIP → Newest", icon: <Folder size={11} /> },
   { key: "date_desc", label: "Date (Newest)",  icon: <ArrowDown  size={11} /> },
   { key: "date_asc",  label: "Date (Oldest)",  icon: <ArrowUp    size={11} /> },
   { key: "name_asc",  label: "Name (A → Z)",   icon: <ArrowUp    size={11} /> },
@@ -1112,8 +1116,8 @@ const FilterSection: React.FC<{
     return () => document.removeEventListener("mousedown", h);
   }, [sortOpen]);
 
-  const isDefaultSort = sortBy === "date_desc";
-  const activeSortLabel = SORT_OPTIONS.find(o => o.key === sortBy)?.label ?? "Date (Newest)";
+  const isDefaultSort = sortBy === "recommended";
+  const activeSortLabel = SORT_OPTIONS.find(o => o.key === sortBy)?.label ?? SORT_OPTIONS[0].label;
 
   const activeCount = activeFilters.fileTypes.length;
 
@@ -1328,7 +1332,7 @@ const FilterSection: React.FC<{
               {!isDefaultSort && (
                 <button
                   type="button"
-                  onClick={() => { onSortChange("date_desc"); setSortOpen(false); }}
+                  onClick={() => { onSortChange("recommended"); setSortOpen(false); }}
                   className="text-[10px] font-bold px-1.5 py-0.5 rounded"
                   style={{ color: "#ef4444", background: "rgba(239,68,68,0.08)" }}
                 >
@@ -3193,7 +3197,7 @@ export const CourseContent: React.FC<CourseContentProps> = ({
   onUpdateFile, onEditGroup, getParentNodeName, getFolderItemCount, getFolderTotalSize, onPageCreated, onBulkDelete
 }) => {
   const [activeFilters, setActiveFilters] = useState({ fileTypes: [] as string[], searchFilter: "" });
-  const [sortBy, setSortBy] = useState<SortKey>("date_desc");
+  const [sortBy, setSortBy] = useState<SortKey>("recommended");
   const [viewingPage, setViewingPage] = useState<ViewingPage | null>(null);
   const [editingPage, setEditingPage] = useState<{
     id: string; title: string; blocks: PageBlock[]; code: string;
@@ -3441,7 +3445,7 @@ export const CourseContent: React.FC<CourseContentProps> = ({
     return combined;
   }, [currentFolderContents.files, pedagogy, activeTab, activeSubcategory, localPageOverrides, folderNavState]);
 
-  // FIXED: Combined order that sorts everything by date
+  // Combined order — by default folders, then archives, then newest files (see "recommended")
   const filteredContent = useMemo(() => {
     let folders = currentFolderContents.folders;
     let files = allFiles;
@@ -3507,8 +3511,18 @@ export const CourseContent: React.FC<CourseContentProps> = ({
       return getFileMeta(f.type || "", f.name, f.isReference === true || String(f.isReference) === "true").label;
     };
 
+    // Default order's three tiers: folders, then archives, then everything else.
+    const isArchive = (f: UploadedFile) => {
+      const lt = (f.type || "").toLowerCase(), ln = (f.name || "").toLowerCase();
+      return lt.includes("zip") || /\.(zip|rar|7z|tar|gz)$/.test(ln);
+    };
+    const tierOf = (item: CombinedItem) =>
+      item.type === 'folder' ? 0 : isArchive(item.data as UploadedFile) ? 1 : 2;
+
     combined.sort((a, b) => {
       switch (sortBy) {
+        case "recommended":
+          return tierOf(a) - tierOf(b) || toDateMs(b.sortDate) - toDateMs(a.sortDate);
         case "date_desc": return toDateMs(b.sortDate) - toDateMs(a.sortDate);
         case "date_asc":  return toDateMs(a.sortDate) - toDateMs(b.sortDate);
         case "name_asc":  return getName(a).localeCompare(getName(b), undefined, { sensitivity: "base" });
@@ -3516,7 +3530,7 @@ export const CourseContent: React.FC<CourseContentProps> = ({
         case "size_desc": return getSize(b) - getSize(a);
         case "size_asc":  return getSize(a) - getSize(b);
         case "type_asc":  return getType(a).localeCompare(getType(b), undefined, { sensitivity: "base" });
-        default:          return toDateMs(b.sortDate) - toDateMs(a.sortDate);
+        default:          return tierOf(a) - tierOf(b) || toDateMs(b.sortDate) - toDateMs(a.sortDate);
       }
     });
 

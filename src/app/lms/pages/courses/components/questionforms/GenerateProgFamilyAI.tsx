@@ -308,16 +308,19 @@ Use EXACTLY ${tcCount} test cases per question. Use EXACTLY ${hintCount} hint${h
 };
 
 // ─── NORMALIZE AI RESPONSE ───────────────────────────────────────────────
-const normalizeOne = (q: any, formType: ProgFamilyType, fallbackDifficulty: Difficulty): GeneratedQuestion => ({
+// The difficulty is the one that was REQUESTED, never the model's own label.
+// Each generate call asks for exactly one difficulty (the slot being filled),
+// and the model routinely re-labels its answer — a "Medium" request coming
+// back as "hard" was staged into Hard, spent Hard's AI allowance and left the
+// Medium slot empty ("the hard AI quota is full").
+const normalizeOne = (q: any, formType: ProgFamilyType, requestedDifficulty: Difficulty): GeneratedQuestion => ({
   id: `gen-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
   selected: true,
   isEditing: false,
   questionType: formType,
   title: String(q?.title || '').slice(0, 200) || 'Untitled',
   description: String(q?.description || ''),
-  difficulty: (['easy','medium','hard'].includes(String(q?.difficulty || '').toLowerCase())
-    ? String(q.difficulty).toLowerCase() as Difficulty
-    : fallbackDifficulty),
+  difficulty: requestedDifficulty,
   constraints: Array.isArray(q?.constraints) ? q.constraints.map(String) : [],
   testCases: Array.isArray(q?.testCases) ? q.testCases.map((tc: any, i: number) => ({
     input: String(tc?.input || ''),
