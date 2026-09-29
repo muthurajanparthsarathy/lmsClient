@@ -1,0 +1,784 @@
+@font-face {
+  font-family: 'Assignment Open Sans';
+  src: url('/fonts/open-sans/open-sans-300.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Assignment Open Sans';
+  src: url('/fonts/open-sans/open-sans-400.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Assignment Open Sans';
+  src: url('/fonts/open-sans/open-sans-600.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+.reference {
+  /* Brand orange (matches `orange` in assessments/shared/tokens.ts). The
+     variable keeps its historical name so existing references resolve. */
+  --assignment-blue: #EE6A22;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Assignment Open Sans', 'Segoe UI', sans-serif;
+  color: #0f1720;
+  background: #fff;
+  font-size: 18px;
+  font-weight: 400;
+  color-scheme: light;
+}
+
+.reference.reference, .reference.reference * {
+  /* The course page sets body.lms-poppins-scope * with !important. */
+  font-family: 'Assignment Open Sans', 'Segoe UI', sans-serif !important;
+}
+
+.reference :global(.es-acc-scroll) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 26px !important;
+  scrollbar-width: thin;
+  scrollbar-color: #d4d8df transparent;
+}
+
+.header {
+  padding: 27px 0 0;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 35px;
+  padding-right: 6px;
+}
+
+.toolbar button {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--assignment-blue);
+  font-size: 18px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.toolbar button:hover { text-decoration: underline; }
+
+.reference :global(.es-acc-card) {
+  border-bottom: 1px solid #d9dfe5;
+  background: #fff;
+}
+
+.reference :global(.es-acc-head) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 65px;
+  padding: 10px 0;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.reference :global(.es-acc-badge) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 45px;
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  color: var(--assignment-blue);
+  background: #FDF0E9;
+}
+
+.reference :global(.es-acc-card[data-open='true'] .es-acc-badge) {
+  outline: 4px solid #F0A574;
+  outline-offset: 0;
+}
+
+.reference :global(.es-acc-card[data-open='true'] .es-acc-badge-chev) {
+  transform: rotate(90deg);
+}
+
+.reference :global(.es-acc-title-text) {
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1.4;
+  color: #0f1720;
+}
+
+.reference :global(.es-acc-body) { padding: 0 0 16px; }
+.reference :global(.es-acc-body-content) { min-width: 0; }
+.reference :global(.es-step) { padding: 12px 18px 24px !important; }
+.reference :global(.es-step label),
+.reference :global(.es-step label > span:not([aria-label='required'])) {
+  font-size: 18px !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+}
+
+.reference :global(.es-acc-body-content input:not([type='checkbox']):not([type='radio'])),
+.reference :global(.es-acc-body-content select),
+.reference :global(.es-acc-body-content button[aria-haspopup='listbox']) {
+  min-height: 45px;
+  font-size: 18px !important;
+  font-weight: 400 !important;
+  border-radius: 4px !important;
+  border-color: #8f959e !important;
+  color: #263746;
+}
+
+.reference :global(.es-acc-body-content textarea) {
+  font-size: 18px !important;
+  border-radius: 4px !important;
+}
+
+.reference :global(.es-acc-body-content input:disabled),
+.reference :global(.es-acc-body-content select:disabled) {
+  background: #eef0f2;
+  color: #969fa6;
+  border-color: #afb6be;
+}
+
+.reference :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid #F0A574;
+  outline-offset: 3px;
+}
+
+.reference input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #EE6A22;
+  flex-shrink: 0;
+}
+
+.availability input[type='checkbox'] {
+  appearance: none;
+  border: 1px solid #858585;
+  border-radius: 3px;
+  background: #fff;
+}
+.availability input[type='checkbox']:checked {
+  border-color: #EE6A22;
+  background: #EE6A22 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='m3 7 2.5 2.5L11 3.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+}
+
+.sectionFields { margin: 0; padding: 0; border: 0; min-width: 0; }
+.lockedNote { margin: 0 18px 16px; color: #59636d; font-size: 14px; }
+.sectionActions { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 18px; }
+.footer { display: flex; align-items: center; gap: 12px; padding: 16px 27px; border-top: 1px solid #d9dfe5; }
+.footer button, .sectionActions button { padding: 9px 18px; border: 1px solid #8f959e; border-radius: 4px; background: #fff; color: #263746; font-size: 16px; cursor: pointer; }
+.footer .primary, .sectionActions .primary { background: #EE6A22; border-color: #EE6A22; color: #fff; }
+.footer button:disabled, .sectionActions button:disabled { opacity: .5; cursor: not-allowed; }
+.saveLabel { margin-left: auto; color: #59636d; font-size: 14px; }
+.issues { padding: 10px 18px; color: #b42318; font-size: 14px; }
+
+.availability { padding: 0 30px 22px; }
+.dateRow { display: grid; grid-template-columns: 306px minmax(0, 1fr); column-gap: 32px; align-items: start; min-height: 70px; }
+.dateLabel { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 45px; font-size: 18px; }
+.help { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; flex: 0 0 19px; border: 0; border-radius: 50%; background: #EE6A22; color: #fff; font-size: 13px; font-weight: 600; cursor: help; }
+.dateControls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.enable { display: inline-flex; align-items: center; gap: 10px; width: 80px; min-height: 45px; flex-shrink: 0; font-size: 18px; font-weight: 400; white-space: nowrap; }
+.enable input:disabled { opacity: 1; }
+.dateInputs { display: flex; align-items: center; gap: 10px; }
+.dateSelect { display: inline-flex; position: relative; width: 73px; flex: 0 0 73px; }
+.monthSelect { width: 143px; flex-basis: 143px; }
+.yearSelect { width: 93px; flex-basis: 93px; }
+.dateSelect select { appearance: none; width: 100%; height: 45px; padding: 0 27px 0 15px; border: 1px solid #8f959e; border-radius: 4px; background: #fff; color: #263746; font-size: 18px; line-height: normal; cursor: pointer; }
+.dateSelect select:disabled { cursor: default; }
+.selectArrows { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; pointer-events: none; color: #343a40; }
+.selectArrows::before { content: ''; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 5px solid currentColor; }
+.selectArrows::after { content: ''; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid currentColor; }
+.dateSelect:has(select:disabled) .selectArrows { color: #777f85; }
+.calendarButton { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 45px; border: 0; background: transparent; color: #EE6A22; cursor: pointer; }
+.calendarButton:disabled { color: #737d85; cursor: default; }
+.dateError { flex-basis: 100%; color: #b42318; font-size: 14px; margin: 0 0 12px 90px; }
+.approval { margin: 8px 0 0 338px; font-size: 16px; }
+.approval summary { cursor: pointer; color: #EE6A22; padding: 8px 0; }
+.approvalContent { padding: 12px 0; display: grid; gap: 12px; }
+.approvalContent label { display: inline-flex; gap: 10px; align-items: center; }
+
+.generalFields { padding: 0 30px 22px; }
+.fieldRow { display: grid; grid-template-columns: 306px minmax(0, 1fr); column-gap: 32px; padding-bottom: 24px; align-items: start; }
+.fieldLabel { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 45px; }
+.fieldLabel label { color: #0f1720; font-size: 18px; font-weight: 400; line-height: 1.5; }
+.required { color: #b42318; margin-left: 4px; font-size: 16px; }
+.fieldControl { min-width: 0; max-width: 700px; font-size: 18px; }
+.fieldControl input:not([type='checkbox']):not([type='radio']) { height: 45px; max-width: 100%; padding: 0 15px; border: 1px solid #8f959e; border-radius: 4px; background: #fff; color: #263746; outline: none; }
+.fieldControl input[readonly] { background: #eef0f2 !important; color: #68727a !important; }
+.fieldControl input::placeholder { color: #929ba3; font-size: 18px; font-weight: 400; }
+.fieldControl input::-webkit-inner-spin-button { opacity: 1; cursor: pointer; }
+.fieldControl input:focus { border-color: #F0A574 !important; box-shadow: 0 0 0 3px #F0A57433 !important; }
+.textInput { width: 100%; }
+.shortInput { width: 250px; }
+.numberInput { width: 100px; }
+.selectControl { display: inline-flex; position: relative; max-width: 100%; vertical-align: top; }
+.selectControl select { width: 100%; height: 45px; appearance: none; padding: 0 40px 0 15px; border: 1px solid #8f959e; border-radius: 4px; background: #fff; color: #263746; font-size: 18px; font-weight: 400; }
+.inlineControls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 45px; }
+.fieldNote { margin: 6px 0 0; font-size: 14px; color: #68727a; font-weight: 400; }
+.fieldError { margin: 6px 0 0; color: #b42318; font-size: 14px; }
+.skill { display: inline-flex; align-items: center; gap: 6px; color: #263746; font-size: 18px; font-weight: 400; }
+.skill img { width: 18px; height: 18px; object-fit: contain; }
+.editorField { max-width: 850px; }
+.editorField :global(.ProseMirror) { font-size: 18px !important; font-weight: 400; line-height: 1.6; }
+
+@media (max-width: 1050px) {
+  .dateRow { grid-template-columns: 260px minmax(0, 1fr); gap: 16px; padding-bottom: 20px; }
+  .dateInputs { flex-wrap: wrap; }
+  .approval { margin-left: 276px; }
+  .fieldRow { grid-template-columns: 260px minmax(0, 1fr); column-gap: 16px; }
+}
+
+@media (max-width: 760px) {
+  .reference :global(.es-acc-scroll) { padding: 0 16px !important; }
+  .header { padding-top: 20px; }
+  .header h1 { font-size: 30px; }
+  .reference :global(.es-acc-title-text) { font-size: 26px; }
+  .reference :global(.es-acc-head) { min-height: 62px; }
+  .reference :global(.es-acc-badge) { width: 40px; height: 40px; flex-basis: 40px; }
+  .availability { padding: 0 0 16px; }
+  .generalFields { padding: 0 0 16px; }
+  .fieldRow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .fieldLabel { justify-content: flex-start; }
+  .dateRow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .dateLabel { justify-content: flex-start; }
+  .dateControls { align-items: flex-start; }
+  .dateInputs { flex: 1; flex-wrap: wrap; }
+  .dateSelect { width: 66px; flex-basis: 66px; }
+  .monthSelect { width: 143px; flex-basis: 143px; }
+  .yearSelect { width: 93px; flex-basis: 93px; }
+  .approval { margin-left: 0; }
+  .footer { padding: 12px 16px; flex-wrap: wrap; }
+  .saveLabel { display: none; }
+  .reference :global(.es-step > div[style*='grid-template-columns']) { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reference * { scroll-behavior: auto !important; transition: none !important; }
+}
+/* Compact settings workspace: shared by every section of the modal. */
+.compact { font-size: 13px; }
+.compact .header { padding: 14px 22px; border-bottom: 1px solid #dce3eb; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.breadcrumbs { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: auto; white-space: nowrap; font-size: 13.5px; font-weight: 500; color: #445468; padding-bottom: 0; scrollbar-width: none; flex: 1; }
+.breadcrumbs span { max-width: 260px; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.breadcrumbs svg { flex-shrink: 0; }
+.breadcrumbs [aria-current] { color: #EE6A22; font-weight: 600; }
+.compact .header h1 { font-size: 23px; line-height: 1.3; }
+.compact .closeButton {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; flex-shrink: 0;
+  border: none; border-radius: 50%;
+  background: #ef4444; color: #fff;
+  box-shadow: 0 1px 2px rgba(239,68,68,.28);
+  cursor: pointer;
+  transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+.compact .closeButton:hover { background: #dc2626; box-shadow: 0 3px 8px rgba(239,68,68,.35); }
+.compact .closeButton:active { transform: scale(0.96); }
+.compact .closeButton:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(239,68,68,.35); }
+/* Back button — top-left of the header, replaces the old red circular close.
+   Solid orange fill so it reads as the primary navigation control the moment
+   the modal opens. Text + arrow icon; the hover / active / focus states keep
+   the same visual weight so the button never disappears into the header. */
+.compact .backButton {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 14px 0 10px; flex-shrink: 0;
+  border: 1px solid #D65A16; border-radius: 999px;
+  background: #EE6A22; color: #ffffff;
+  font-size: 12.5px; font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(238, 106, 34, 0.35);
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+.compact .backButton span { line-height: 1; }
+.compact .backButton svg { color: #ffffff; }
+.compact .backButton:hover {
+  background: #D65A16; border-color: #B84A0F;
+  box-shadow: 0 3px 10px rgba(238, 106, 34, 0.5);
+  transform: translateY(-1px);
+}
+.compact .backButton:active { transform: scale(0.97); box-shadow: 0 1px 3px rgba(238, 106, 34, 0.35); }
+.compact .backButton:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(238, 106, 34, 0.4); border-color: #B84A0F; }
+.workspace { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); min-height: 0; flex: 1; overflow: hidden; }
+.compact .editorPane { container: settings-editor / inline-size; padding: 8px 20px 18px !important; }
+.compact :global(.es-acc-head) { min-height: 47px; padding: 7px 0; gap: 8px; }
+.compact :global(.es-acc-badge) { width: 30px; height: 30px; flex-basis: 30px; }
+.compact :global(.es-acc-badge svg) { width: 19px; height: 19px; }
+.compact :global(.es-acc-card[data-open='true'] .es-acc-badge) { outline-width: 2px; }
+.compact :global(.es-acc-title-text) { font-size: 21px; }
+.compact :global(.es-acc-body) { padding: 6px 0 10px; }
+.compact .generalFields, .compact .availability { padding: 0 12px 4px; }
+.compact .fieldRow { grid-template-columns: 180px minmax(0, 1fr); column-gap: 20px; padding-bottom: 12px; }
+.compact .fieldLabel, .compact .dateLabel { min-height: 32px; gap: 8px; }
+.compact .fieldLabel label, .compact .fieldControl, .compact .dateLabel, .compact .skill { font-size: 13px; font-weight: 400; }
+.compact .required { font-size: 12px; }
+.compact .fieldNote, .compact .fieldError, .compact .dateError { font-size: 11px; margin-top: 4px; line-height: 1.5; }
+.compact .shortInput { width: 180px; }
+/* Name field: `.fieldControl` drops its 700px cap in compact mode, which let
+   the 100%-wide text input run the full width of the pane. Cap it here so it
+   reads as a name field rather than a paragraph box. */
+.compact .textInput { width: 440px; max-width: 100%; }
+.compact .numberInput { width: 85px; }
+.compact .inlineControls { min-height: 32px; gap: 8px; }
+.compact .fieldControl input::placeholder { font-size: 13px; }
+.compact .fieldControl { max-width: none; }
+.compact :global(.es-acc-body-content input:not([type='checkbox']):not([type='radio']):not([type='color'])),
+.compact :global(.es-acc-body-content select),
+.compact :global(.es-acc-body-content button[aria-haspopup='listbox']),
+.compact :global(.es-acc-body-content [data-odrop-trigger]) {
+  height: 32px !important; min-height: 32px !important; font-size: 13px !important; font-weight: 400 !important;
+  border: 1px solid #a8b3c0 !important; border-radius: 4px !important; padding-top: 0 !important; padding-bottom: 0 !important;
+  box-shadow: none;
+}
+.compact :global(.es-acc-body-content input[type='color']) { width: 24px !important; height: 24px !important; min-height: 0; padding: 0; }
+.compact :global(.es-acc-body-content input:disabled), .compact :global(.es-acc-body-content select:disabled) { background: #eef1f4; color: #95a0ad; border-color: #c1c8d1 !important; }
+.compact :global(.es-acc-body-content input:focus), .compact :global(.es-acc-body-content select:focus), .compact :global(.es-acc-body-content textarea:focus) { border-color: #F0A574 !important; box-shadow: 0 0 0 2px #F0A5742a !important; }
+.compact :global(.es-acc-body-content textarea), .compact .editorField :global(.ProseMirror) { font-size: 13px !important; line-height: 1.6; }
+.compact :global(.es-acc-body-content label), .compact :global(.es-step label > span:not([aria-label='required'])) { font-size: 13px !important; font-weight: 400 !important; line-height: 1.5 !important; }
+.compact :global(.es-acc-body-content input[type='checkbox']) { accent-color: #EE6A22 !important; width: 14px; height: 14px; }
+.compact :global(.es-acc-body-content [role='switch'][aria-checked='true']) { background: #EE6A22 !important; }
+.compact :global(.es-step) { padding: 0 12px 8px !important; gap: 12px !important; }
+.compact :global(.es-card-h) { padding: 4px 0 6px !important; margin-bottom: 8px !important; }
+.compact :global(.es-card-h > span:first-child) { color: #263746 !important; font-size: 13px !important; font-weight: 600 !important; }
+
+/* ── Question Configuration rows — same "General" layout: label column
+     on the LEFT, control column on the RIGHT, thin hairline between
+     rows. Rows that hold a paired grid (Total Questions + Marks Per
+     Question) or a full-width `.grid` layout keep their side-by-side
+     layout untouched. */
+/* Question Configuration cards render their fields with ConfigRow
+   (same .fieldRow / .fieldLabel / .fieldControl as General), so the card
+   body just stacks rows — no grid overrides here. */
+.compact :global(.es-card-b) {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  padding: 0 !important;
+}
+.compact :global(.es-card-b) > div.es-note { padding: 8px 10px !important; margin: 0 12px 10px; }
+/* Card title strip (Questions & Scoring, Attempts …) — kept because the
+   level-based modes surface their Total / Used / Remaining tallies there;
+   styled as a quiet uppercase caption above the rows. */
+.compact :global(.es-card-h) { display: flex !important; padding: 10px 12px 2px !important; margin: 0 !important; border-bottom: none !important; }
+.compact :global(.es-card-h > span:first-child) { font-size: 11.5px !important; font-weight: 600 !important; color: #5e6e7e !important; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── Difficulty matrix (Level Based / Selection Level) ────────────────
+   Same two-column rhythm as the General rows: the row labels (Questions,
+   Mark Distribution, Marks, Calculated Total) sit in the 180px label
+   column + 20px gap, and the Easy | Medium | Hard table starts exactly
+   where every other row's control starts (12 + 200 = 212px). The frame
+   wraps only the three level columns; the label column stays plain,
+   typeset like every other field label. */
+
+/* Programming — one grid per row: .es-matrix-wrap > .es-matrix > cells */
+.compact :global(.es-matrix-wrap) { border: none !important; border-radius: 0 !important; overflow: visible !important; padding: 0 12px; }
+.compact :global(.es-matrix) { grid-template-columns: 200px repeat(3, minmax(0, 1fr)) !important; min-width: 0; }
+.compact :global(.es-matrix) > :global(.es-mcell) {
+  background: transparent !important; border: none !important;
+  padding: 10px 20px 10px 0 !important;
+  font-size: 13px !important; font-weight: 400 !important; color: #0f1720 !important;
+  display: flex; align-items: center;
+}
+.compact :global(.es-matrix) > div:nth-child(n+2) { padding: 9px 12px !important; border-bottom: 1px solid #e0e5eb !important; }
+.compact :global(.es-matrix) > div:nth-child(2) { border-left: 1px solid #c9d1da; }
+.compact :global(.es-matrix) > div:nth-child(3) { border-left: 1px solid #e0e5eb; border-right: 1px solid #e0e5eb; }
+.compact :global(.es-matrix) > div:nth-child(4) { border-right: 1px solid #c9d1da; }
+.compact :global(.es-matrix):first-child > div:nth-child(n+2) { border-top: 1px solid #c9d1da; }
+.compact :global(.es-matrix):first-child > div:nth-child(2) { border-top-left-radius: 8px; }
+.compact :global(.es-matrix):first-child > div:nth-child(4) { border-top-right-radius: 8px; }
+.compact :global(.es-matrix):last-child > div:nth-child(n+2) { border-bottom: 1px solid #c9d1da !important; }
+.compact :global(.es-matrix):last-child > div:nth-child(2) { border-bottom-left-radius: 8px; }
+.compact :global(.es-matrix):last-child > div:nth-child(4) { border-bottom-right-radius: 8px; }
+/* Notes / count errors under the matrix sit in the control column too. */
+.compact :global(.es-matrix-wrap) ~ :global(.es-note),
+.compact :global(.es-matrix-wrap) ~ p { margin: 8px 12px 0 212px !important; }
+
+/* Others — a single 4-column grid: label cells are every 4n+1 child. */
+.compact :global(.es-matrix-grid) {
+  grid-template-columns: 200px repeat(3, minmax(0, 1fr)) !important;
+  border: none !important; border-radius: 0 !important; overflow: visible !important;
+  background: transparent !important; margin: 0 12px;
+}
+.compact :global(.es-matrix-grid) > div:nth-child(4n+1) {
+  background: transparent !important; border: none !important;
+  padding: 10px 20px 10px 0 !important;
+  font-size: 13px !important; font-weight: 400 !important; color: #0f1720 !important;
+  text-transform: none !important; letter-spacing: 0 !important;
+  display: flex; align-items: center;
+}
+.compact :global(.es-matrix-grid) > div:not(:nth-child(4n+1)) { padding: 9px 12px !important; border-top: none !important; border-bottom: 1px solid #e0e5eb; }
+.compact :global(.es-matrix-grid) > div:nth-child(4n+2) { border-left: 1px solid #c9d1da; }
+.compact :global(.es-matrix-grid) > div:nth-child(4n+3) { border-left: 1px solid #e0e5eb; border-right: 1px solid #e0e5eb; }
+.compact :global(.es-matrix-grid) > div:nth-child(4n) { border-right: 1px solid #c9d1da; }
+.compact :global(.es-matrix-grid) > div:nth-child(-n+4):not(:first-child) { border-top: 1px solid #c9d1da !important; }
+.compact :global(.es-matrix-grid) > div:nth-child(2) { border-top-left-radius: 8px; }
+.compact :global(.es-matrix-grid) > div:nth-child(4) { border-top-right-radius: 8px; }
+.compact :global(.es-matrix-grid) > div:nth-last-child(-n+3) { border-bottom: 1px solid #c9d1da !important; }
+.compact :global(.es-matrix-grid) > div:nth-last-child(3) { border-bottom-left-radius: 8px; }
+.compact :global(.es-matrix-grid) > div:last-child { border-bottom-right-radius: 8px; }
+
+/* Cells are white — the level colour lives on the header dot alone, so the
+   grid reads as a table rather than a heatmap. */
+.compact :global(.es-matrix) > div:nth-child(n+2),
+.compact :global(.es-matrix-grid) > div:not(:nth-child(4n+1)) {
+  background: #fff !important;
+}
+
+/* ── Matrix control alignment ─────────────────────────────────────────
+   Left to itself each row sizes its control differently: the Questions
+   stepper is intrinsically ~90px, the Mark Distribution dropdown fills
+   the cell, and the Marks input shrinks around its "/ Question" caption.
+   Forcing every control to span its column makes all three rows start
+   and end on the same edges, per level. */
+.compact :global(.es-matrix) > div:nth-child(n+2) > *,
+.compact :global(.es-matrix-grid) > div:not(:nth-child(4n+1)) > * {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+/* Questions stepper — fill the column, let the number absorb the slack
+   so the − / + buttons stay pinned to the cell edges. */
+.compact :global(.es-stepper) { width: 100% !important; }
+.compact :global(.es-stepper) > input { flex: 1 1 auto; width: auto !important; min-width: 0; }
+/* Marks row — the input spans the whole column and the "/ Question"
+   (or "Total") caption is tucked inside its right edge, so the field ends
+   on the same line as the stepper and the dropdown in the rows above.
+   Laying the caption out as a sibling instead made the input ~70px short
+   of every other row. */
+.compact :global(.es-marks-cell) {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.compact :global(.es-marks-cell) > *:first-child { flex: 1 1 auto; min-width: 0; }
+.compact :global(.es-marks-cell) input { width: 100% !important; }
+.compact :global(.es-marks-cell) > span:last-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #8a94a0;
+}
+.compact :global(.es-acc-body-content > .px-10) { padding: 8px 12px 12px !important; }
+.compact :global(.es-acc-body-content .qsp-opt) { min-width: 0 !important; border-radius: 4px !important; min-height: 36px !important; padding: 8px 10px !important; gap: 7px !important; }
+.compact :global(.es-acc-body-content .qsp-opt[aria-checked='true']) { border-color: #EE6A22 !important; background: #FDF0E9 !important; }
+.compact :global(.es-acc-body-content .qsp-opt[aria-checked='true'] > span:first-child) { border-color: #EE6A22 !important; background: #EE6A22 !important; }
+.compact :global(.es-acc-body-content .qsp-opt[aria-checked='true'] > span:nth-child(2)) { color: #EE6A22 !important; }
+.compact :global(.es-acc-body-content .qsp-opt > span:last-child) { font-size: 12px !important; font-weight: 400 !important; }
+.compact :global(.es-acc-body-content .qsp-row) { gap: 8px !important; }
+.compact .selectArrows { right: 10px; gap: 2px; }
+.compact .selectArrows::before { border-left-width: 4px; border-right-width: 4px; border-bottom-width: 4px; }
+.compact .selectArrows::after { border-left-width: 4px; border-right-width: 4px; border-top-width: 4px; }
+.compact .selectControl select { padding: 0 30px 0 10px; }
+.compact .dateRow { grid-template-columns: 160px minmax(0, 1fr); column-gap: 14px; min-height: 46px; padding-bottom: 10px; }
+.compact .dateControls { gap: 6px; flex-wrap: nowrap; }
+.compact .enable { width: 60px; gap: 6px; min-height: 32px; font-size: 12px; }
+.compact .dateInputs { gap: 6px; flex-wrap: nowrap; }
+.compact .dateSelect { width: 62px; flex-basis: 62px; }
+.compact .monthSelect { width: 110px; flex-basis: 110px; }
+.compact .yearSelect { width: 72px; flex-basis: 72px; }
+.compact .periodSelect { width: 66px; flex-basis: 66px; }
+.compact .dateSelect select { padding: 0 18px 0 8px; }
+.compact .dateSelect .selectArrows { right: 7px; }
+.compact .calendarButton { width: 22px; height: 32px; }
+.compact .calendarButton svg { width: 16px; height: 16px; }
+.compact .approval { margin: 2px 0 0 174px; font-size: 12px; }
+.compact .approval summary { padding: 4px 0; }
+.compact .lockedNote { font-size: 12px; margin: 0 12px 10px; }
+.compact .sectionActions { padding: 8px 12px 0; }
+.compact .sectionActions button, .compact .footer button { font-size: 12px; padding: 7px 14px; }
+.compact .footer { flex-shrink: 0; padding: 9px 22px; }
+.compact .saveLabel { font-size: 11px; }
+.gradeFields { padding: 0 12px 8px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.helpWrap { display: inline-flex; align-items: center; flex-shrink: 0; }
+.compact .help, .helpWrap .help { width: 16px; height: 16px; flex-basis: 16px; font-size: 11px; line-height: 1; padding: 0; }
+.tooltip.tooltip { position: fixed; z-index: 100000; width: max-content; max-width: min(280px, calc(100vw - 16px)); padding: 9px 12px; border: 1px solid #d5dfe9; border-radius: 5px; background: #17334d; color: #fff; font-family: 'Assignment Open Sans', 'Segoe UI', sans-serif !important; font-size: 12px; font-weight: 400; line-height: 1.5; box-shadow: 0 4px 16px #17334d20; }
+.previewPane { padding: 20px 18px; border-left: 1px solid #dce3eb; background: #f6f8fb; min-width: 0; overflow: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 10px; }
+.previewPane > .previewCard { flex: 1 1 auto; }
+.previewCard { background: #fff; border: 1px solid #dce3eb; border-radius: 6px; padding: 18px; box-shadow: 0 2px 6px #17334d04; overflow-wrap: anywhere; }
+.previewEyebrow { color: #61778b; letter-spacing: .06em; font-size: 9px; font-weight: 600; }
+.previewCard h2 { color: #16344e; font-size: 20px; font-weight: 400; line-height: 1.35; margin: 9px 0 5px; }
+.previewLocation { font-size: 11px; color: #7b8796; margin: 0 0 12px; }
+.previewTags { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 16px; }
+.previewTags span { padding: 3px 7px; background: #eef5fb; color: #39627f; border-radius: 3px; font-size: 10px; text-transform: capitalize; }
+.previewStats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); border-block: 1px solid #e5eaf0; padding: 12px 0; gap: 6px; }
+.previewStats > div { display: flex; flex-direction: column; align-items: center; gap: 3px; color: #657b8f; }
+.previewStats > div + div { border-left: 1px solid #e5eaf0; }
+.previewStats strong { font-size: 19px; color: #17334d; font-weight: 400; }
+.previewStats span { font-size: 10px; }
+.previewSection { padding: 15px 0 0; }
+.previewSection h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 12px; font-weight: 600; color: #263746; }
+.previewPlaceholder { color: #929dad; font-size: 12px; line-height: 1.6; margin: 0; }
+.previewRichText { font-size: 12px; line-height: 1.7; color: #536578; }
+.previewRichText p { margin: 0 0 6px; }
+.previewRichText img { max-width: 100%; height: auto; }
+.previewRichText ul, .previewRichText ol { padding-left: 18px; }
+.previewDetails { display: grid; gap: 9px; margin: 0; font-size: 11px; line-height: 1.5; }
+.previewDetails > div { display: grid; grid-template-columns: minmax(75px, .8fr) minmax(0, 1.2fr); gap: 8px; }
+.previewDetails dt { color: #7b8796; }
+.previewDetails dd { color: #263746; text-align: right; margin: 0; }
+.previewFootnote { font-size: 10px; color: #7b8796; line-height: 1.6; margin-top: 12px; }
+@container settings-editor (max-width: 720px) {
+  .compact .fieldRow { grid-template-columns: 150px minmax(0,1fr); column-gap: 14px; }
+  .compact .dateRow { grid-template-columns: minmax(0,1fr); gap: 2px; }
+  .compact .dateLabel { min-height: 24px; justify-content: flex-start; }
+  .compact .approval { margin-left: 0; }
+  .compact :global(.es-2col), .compact :global(.es-3col) { grid-template-columns: minmax(0,1fr) !important; }
+}
+@container settings-editor (max-width: 480px) {
+  .compact .fieldRow { grid-template-columns: minmax(0,1fr); gap: 3px; }
+  .compact .fieldLabel { min-height: 25px; justify-content: flex-start; }
+  .compact .dateInputs { flex-wrap: wrap; }
+  .compact .dateControls { align-items: flex-start; }
+  .compact :global(.es-matrix-wrap) { overflow-x: auto; }
+  .compact :global(.es-matrix) { min-width: 400px; }
+  .compact :global(.es-acc-body-content .qsp-row) { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 760px) {
+  .workspace { display: flex; flex-direction: column; overflow-y: auto; }
+  .compact .editorPane { flex: none; overflow: visible; padding: 6px 14px 12px !important; }
+  .previewPane { overflow: visible; border-left: none; border-top: 1px solid #dce3eb; padding: 16px; }
+  .compact .header { padding: 10px 14px; }
+  .compact .header h1 { font-size: 21px; }
+  .compact .footer { padding: 9px 14px; }
+}
+
+/* Compact assignment editor: animated panels and fixed actions. */
+.accordionToolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:8px 0 10px; color:#6a7b8d; font-size:11px; }
+.accordionToolbar > span { font-weight:600; letter-spacing:.02em; }
+.accordionToolbar > div { display:flex; align-items:center; gap:9px; }
+.compact .accordionToolbar button { border:0; background:transparent; color:#006fbe; font-size:12px; padding:4px 0; cursor:pointer; }
+.compact .accordionToolbar button:disabled { color:#96a3af; cursor:default; }
+.accordionMotion { display:grid; grid-template-rows:0fr; opacity:0; visibility:hidden; transition:grid-template-rows 260ms ease, opacity 200ms ease, visibility 260ms; }
+.accordionMotion[data-expanded='true'] { grid-template-rows:1fr; opacity:1; visibility:visible; }
+.accordionClip { overflow:hidden; min-height:0; }
+.compact :global(.es-acc-badge-chev) { transition:transform 220ms ease; }
+.compact .footer { gap:12px; min-height:70px; }
+.draftHint { font-size:11px; color:#687b8d; margin-right:auto; }
+.compact .footer .primary { min-width:180px; min-height:44px; padding:11px 25px; font-size:14px; font-weight:600; background:#0072c6; border:1px solid #0072c6; color:white; box-shadow:0 3px 8px #006fbe26; }
+.compact .footer .primary:hover { background:#005fa7; }
+.compact .footer .primary:disabled { opacity:.55; }
+.compact .saveLabel { display:none; }
+/* Reference matrix: four aligned columns, fine dividers, colour only on dots. */
+.compact :global(.es-matrix-wrap) { padding:0 12px; overflow-x:auto !important; }
+.compact :global(.es-matrix), .compact :global(.es-matrix-grid) { grid-template-columns:180px repeat(3,minmax(150px,1fr)) !important; min-width:630px; }
+.compact :global(.es-matrix) > div, .compact :global(.es-matrix-grid) > div { border:0 !important; border-radius:0 !important; border-bottom:1px solid #e1e7ee !important; padding:10px 12px !important; background:#fff !important; }
+.compact :global(.es-matrix) > div:first-child, .compact :global(.es-matrix-grid) > div:nth-child(4n+1) { padding-left:0 !important; padding-right:20px !important; }
+.compact :global(.es-matrix) > div:nth-child(n+2), .compact :global(.es-matrix-grid) > div:not(:nth-child(4n+1)) { border-left:1px solid #e1e7ee !important; }
+.compact :global(.es-matrix):first-child > div, .compact :global(.es-matrix-grid) > div:nth-child(-n+4) { border-top:0 !important; }
+.compact :global(.es-matrix):last-child > div, .compact :global(.es-matrix-grid) > div:nth-last-child(-n+4) { border-bottom:0 !important; }
+.compact :global(.es-matrix-wrap) ~ :global(.es-note), .compact :global(.es-matrix-wrap) ~ p { margin:12px !important; }
+.compact :global(.es-note) { border-radius:5px !important; font-size:12px !important; line-height:1.6 !important; }
+.compact :global(.es-matrix):last-child > div:nth-child(n+2) > * { width:auto; }
+/* The matrix rows are children of the "Questions & Scoring" heading, so
+   indent the whole table (and any note that follows it) to show the
+   nesting. Without this the heading and its sub-rows share a left edge
+   and the grouping is invisible. */
+.compact :global(.es-matrix-wrap) { padding-left:48px !important; }
+.compact :global(.es-matrix-grid) { margin-left:48px !important; }
+.compact :global(.es-matrix-wrap) ~ :global(.es-note),
+.compact :global(.es-matrix-wrap) ~ p { margin-left:48px !important; }
+/* Evaluation method / Question flow / Attempt limit / All questions required
+   — these are top-level rows in the Question Configuration step, NOT sub
+   items of the "Questions & Scoring" card. Keep them un-indented (align
+   with the section headers themselves) and normalise the label column
+   width to 200px so every one of these rows lines up as a group. */
+.compact :global(.es-subfields) { padding-left: 0 !important; }
+.compact :global(.es-subfields) :global(.fieldRow) { grid-template-columns: 200px minmax(0, 1fr) !important; column-gap: 16px !important; }
+/* E/M/H matrix cells — wider so the number input, up/down spinner, and any
+   "/ Question" caption all fit comfortably in a single cell without the
+   input feeling squeezed. The label column stays 200px to keep it aligned
+   with the sub-fields' 200px label column. */
+.compact :global(.es-subfields ~ .es-matrix-wrap) :global(.es-matrix),
+.compact :global(.es-matrix-wrap) :global(.es-matrix) { grid-template-columns: 200px repeat(3, minmax(140px, 1fr)) !important; }
+.previewHeading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
+.previewHeading > div { display:flex; flex-direction:column; gap:3px; }
+.previewHeading strong { font-size:13px; color:#203b51; font-weight:600; }
+.previewHeading > div > span { font-size:10px; color:#7a8a99; }
+.liveBadge { display:inline-flex; align-items:center; gap:4px; font-size:10px; color:#078367; background:#e8f6f1; border:1px solid #cdeade; padding:4px 7px; border-radius:20px; }
+.previewPane > .previewCard { flex:0 0 auto; border-radius:9px; box-shadow:0 3px 12px #193c5910; }
+.calculationCard { margin-top:16px; padding:12px; border:1px solid #e0e8f0; background:#fafcfe; border-radius:6px; }
+.calculationCard h3, .readiness h3 { font-size:12px; font-weight:600; margin:0 0 10px; color:#263e53; display:flex; align-items:center; gap:6px; }
+.calculationCard > div { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:6px 0; font-size:11px; color:#6e7f8e; }
+.calculationCard strong { color:#263e53; font-weight:600; text-align:right; }
+.calculationCard small { display:block; color:#7b8997; font-size:10px; font-weight:400; margin-top:3px; }
+.levelName { text-transform:capitalize; display:flex; align-items:center; gap:5px; }
+.levelName i { width:6px; height:6px; border-radius:50%; background:#059669; }
+.levelName i[data-level='medium'] { background:#f5a500; }
+.levelName i[data-level='hard'] { background:#dc2638; }
+.calculationWarning, .calculationValid { display:flex; align-items:flex-start; gap:6px; margin:8px 0 0; padding-top:9px; border-top:1px solid #e0e8f0; font-size:11px; line-height:1.6; }
+.calculationWarning svg, .calculationValid svg { flex-shrink:0; margin-top:2px; }
+.calculationWarning { color:#a05b13; }
+.calculationValid { color:#078367; }
+.readiness { border:1px solid #eedfbd; background:#fffaf1; border-radius:6px; padding:12px; margin-top:12px; }
+.readiness p, .readiness summary, .readiness li { font-size:11px; line-height:1.7; color:#82632e; }
+.readiness p { margin:0 0 7px; }
+.readiness summary { cursor:pointer; font-weight:600; }
+.readiness ul { margin:6px 0 0; padding-left:15px; }
+.readiness li + li { margin-top:4px; }
+@media (prefers-reduced-motion:reduce) { .accordionMotion, .compact :global(.es-acc-badge-chev) { transition:none; } }
+@media (max-width:760px) { .draftHint { display:none; } .compact .footer { justify-content:flex-end; } .compact .footer .primary { min-width:150px; } }
+
+/* ── Unfinished-setup highlighting ────────────────────────────────────
+   Any value the trainer has not supplied yet reads in the danger colour,
+   and the readiness panel turns red while items remain. Ready state keeps
+   the calm amber/green treatment. */
+/* Missing values get a red pill so the eye locks onto them immediately —
+   plain red text was too easy to skim past. */
+.previewMissing {
+  color: #b42318 !important;
+  font-weight: 700 !important;
+  background: #fef3f2;
+  border: 1px solid #fbd3ce;
+  padding: 1px 8px;
+  border-radius: 999px;
+  display: inline-block;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.previewDetails dd .previewMissing { font-weight: 700; }
+.previewTags span[data-missing] {
+  background: #fef3f2;
+  color: #b42318;
+  border: 1px solid #fbd3ce;
+  font-weight: 700;
+}
+.previewStats strong .previewMissing {
+  color: #b42318 !important;
+  padding: 0 6px;
+}
+/* Placeholder RichText (description / instructions) — full-width red panel
+   instead of a subtle grey line, so the empty field is not confused with a
+   filled one. */
+p.previewPlaceholder.previewMissing {
+  display: block;
+  background: #fef3f2;
+  border: 1px dashed #f0a59c;
+  color: #b42318 !important;
+  padding: 8px 10px;
+  border-radius: 6px;
+  white-space: normal;
+  font-weight: 600 !important;
+}
+/* Section headings whose body has ANY missing values pick up a red accent
+   dot; the details rows themselves already show red pills inline. */
+.previewDetails dd:has(.previewMissing) { background: #fef3f2; border-radius: 4px; padding: 2px 6px; margin: -2px -6px; }
+
+/* Unfinished-setup panel — full-strength red treatment so the trainer
+   cannot miss it. Solid red left bar, red-tinted background, red heading
+   with icon, red list items with strong bullets. */
+.readiness[data-state='incomplete'] {
+  border: 1px solid #b42318;
+  border-left: 5px solid #b42318;
+  background: #fef3f2;
+  box-shadow: 0 1px 3px rgba(180, 35, 24, 0.12);
+  padding: 14px 14px 14px 12px;
+}
+.readiness[data-state='incomplete'] h3 {
+  color: #ffffff;
+  background: #b42318;
+  margin: -14px -14px 10px -12px;
+  padding: 8px 12px;
+  border-radius: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.readiness[data-state='incomplete'] h3 :global(svg) { color: #ffffff; stroke: #ffffff; }
+.readiness[data-state='incomplete'] p {
+  color: #7a1c11;
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+.readiness[data-state='incomplete'] summary {
+  color: #b42318;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.readiness[data-state='incomplete'] li { color: #b42318; font-weight: 600; }
+.previewIssueList { margin: 8px 0 0; padding-left: 0; list-style: none; }
+.previewIssueList li {
+  color: #b42318;
+  font-weight: 600;
+  background: #ffffff;
+  border: 1px solid #fbd3ce;
+  border-left: 3px solid #b42318;
+  padding: 6px 10px;
+  margin: 5px 0;
+  border-radius: 4px;
+  list-style: none;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.previewIssueList li::before {
+  content: '!';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  background: #b42318;
+  color: #ffffff;
+  border-radius: 50%;
+  margin-right: 8px;
+  font-weight: 700;
+  font-size: 10px;
+  vertical-align: middle;
+}
+/* Clickable issue — the whole card acts as a jump link to the offending
+   section. Underline on hover so it reads as a link, not a passive line. */
+.previewIssueButton {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.previewIssueButton:hover { text-decoration: underline; }
+.previewIssueButton:focus-visible { outline: 2px solid #b42318; outline-offset: 3px; border-radius: 2px; }
+/* Section the user just jumped to — a brief orange flash so the eye lands
+   on the right card even after the smooth-scroll finishes. */
+@keyframes es-jump-flash {
+  0%   { background: #FDF0E9; box-shadow: 0 0 0 3px #FADFCE; }
+  70%  { background: #FDF0E9; box-shadow: 0 0 0 3px #FADFCE; }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}
+.compact :global(.es-acc-card[data-flash='true']) { animation: es-jump-flash 1400ms ease-out; border-radius: 8px; }
+.readiness[data-state='ready'] { border-color: #c7ebd5; background: #f2fbf6; }
+.readiness[data-state='ready'] h3,
+.readiness[data-state='ready'] p { color: #046c4e; }
+
+/* The section the failed save jumped to gets a brief red ring so the eye
+   lands on it straight away. */
+.compact :global(.es-acc-card[data-error='true']) { outline: 2px solid #f0a59c; outline-offset: 2px; border-radius: 8px; }
+.compact :global(.es-acc-card[data-error='true'] .es-acc-title-text) { color: #b42318; }

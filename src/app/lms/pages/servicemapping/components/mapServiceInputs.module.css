@@ -1,0 +1,81 @@
+/* Map Service form: "soft rounded" controls on top of the assignment editor's
+   stylesheet (AssignmentSettings.module.css), which the wizard shares for its
+   shell, sections, rows and type. Only the CONTROLS differ: 36px, 8px radius,
+   soft grey border, a light shadow and an orange focus ring, i.e. the current
+   SaaS input style.
+
+   `.soft.soft` doubles the class so these outrank that sheet's
+   `.compact :global(.es-acc-body-content …)` rules, which set their values
+   with !important. Everything stays inside `.es-acc-body-content`, exactly the
+   scope those rules use, so nothing outside the form fields changes. */
+
+.soft.soft :global(.es-acc-body-content input:not([type='checkbox']):not([type='radio']):not([type='color'])),
+.soft.soft :global(.es-acc-body-content select),
+.soft.soft :global(.es-acc-body-content button[aria-haspopup='listbox']) {
+  height: 36px !important;
+  min-height: 36px !important;
+  font-size: 13.5px !important;
+  font-weight: 400 !important;
+  color: #101828;
+  background-color: #ffffff;
+  border: 1px solid #d0d5dd !important;
+  border-radius: 8px !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05) !important;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.soft.soft :global(.es-acc-body-content textarea) {
+  font-size: 13.5px !important;
+  border: 1px solid #d0d5dd !important;
+  border-radius: 8px !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05) !important;
+}
+
+/* Placeholder and the dropdown chevron in the same quiet grey. */
+.soft.soft :global(.es-acc-body-content input::placeholder),
+.soft.soft :global(.es-acc-body-content textarea::placeholder) {
+  color: #98a2b3 !important;
+  font-size: 13.5px !important;
+}
+.soft.soft :global(.es-acc-body-content button[aria-haspopup='listbox'] svg) {
+  color: #98a2b3;
+}
+
+.soft.soft :global(.es-acc-body-content input:not([type='checkbox']):not([type='radio']):not(:disabled):hover),
+.soft.soft :global(.es-acc-body-content select:not(:disabled):hover),
+.soft.soft :global(.es-acc-body-content button[aria-haspopup='listbox']:not(:disabled):hover) {
+  border-color: #98a2b3 !important;
+}
+
+.soft.soft :global(.es-acc-body-content input:focus),
+.soft.soft :global(.es-acc-body-content select:focus),
+.soft.soft :global(.es-acc-body-content textarea:focus),
+.soft.soft :global(.es-acc-body-content button[aria-haspopup='listbox'][aria-expanded='true']),
+.soft.soft :global(.es-acc-body-content button[aria-haspopup='listbox']:focus-visible) {
+  border-color: #f0a574 !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 0 0 4px rgba(238, 106, 34, 0.14) !important;
+  outline: none !important;
+}
+
+.soft.soft :global(.es-acc-body-content input:disabled),
+.soft.soft :global(.es-acc-body-content select:disabled),
+.soft.soft :global(.es-acc-body-content button[aria-haspopup='listbox']:disabled) {
+  background-color: #f9fafb !important;
+  color: #98a2b3 !important;
+  border-color: #eaecf0 !important;
+  box-shadow: none !important;
+}
+
+/* Invalid fields keep a clear red edge under the softer styling. */
+.soft.soft :global(.es-acc-body-content [aria-invalid='true']) {
+  border-color: #fda29b !important;
+  box-shadow: 0 0 0 4px rgba(240, 68, 56, 0.1) !important;
+}
+
+/* Checkboxes: rounded corners, orange when ticked. */
+.soft.soft :global(.es-acc-body-content input[type='checkbox']) {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  accent-color: #ee6a22 !important;
+}
