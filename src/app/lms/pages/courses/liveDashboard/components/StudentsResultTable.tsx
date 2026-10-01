@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown,
   ExternalLink, MoreVertical, ClipboardList, RefreshCw, Video, MessageSquare,
-  Zap,
+  Zap, CircleCheck,
 } from "lucide-react";
 
 import type { StudentProgress } from "../types/liveDashboard.types";
@@ -60,6 +60,7 @@ export interface StudentsResultTableProps {
   onRerunStudent?: (student: StudentProgress) => void;
   search?: string;
   statusFilter?: string;
+  toolbar?: React.ReactNode;
 }
 
 
@@ -70,7 +71,7 @@ export interface StudentsResultTableProps {
 // "Not Started" via the default in `TestStatusPill`.
 const COMPLETION_STYLES: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   submitted: { label: "Completed", bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-500" },
-  started: { label: "Started", bg: "bg-sky-50", text: "text-sky-700", dot: "bg-sky-500" },
+  started: { label: "Started", bg: "bg-violet-50", text: "text-violet-700", dot: "bg-violet-500" },
   "awaiting-approval": { label: "Needs Approval", bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" },
   terminated: { label: "Terminated", bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" },
   "not-started": { label: "Not Started", bg: "bg-slate-100", text: "text-slate-600", dot: "bg-slate-400" },
@@ -80,7 +81,9 @@ function TestStatusPill({ status }: { status: string }) {
   const s = COMPLETION_STYLES[status] || COMPLETION_STYLES["not-started"];
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${s.bg} ${s.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} aria-hidden="true" />
+      {status === "submitted"
+        ? <CircleCheck size={12} strokeWidth={2.4} aria-hidden="true" />
+        : <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} aria-hidden="true" />}
       {s.label}
     </span>
   );
@@ -260,6 +263,7 @@ export default function StudentsResultTable({
   onRerunStudent,
   search = "",
   statusFilter = "all",
+  toolbar,
 }: StudentsResultTableProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(10);
@@ -430,7 +434,8 @@ export default function StudentsResultTable({
           drops <tr> backgrounds and border-radii on WebKit, which showed as
           the "white corner behind the gray header" glitch and as rows whose
           first-column bottom border went missing after a hover repaint. */}
-      <div className="border border-gray-200 rounded-lg bg-white overflow-visible">
+      <div className="border border-indigo-100 rounded-lg bg-white overflow-visible">
+        {toolbar}
         <table className="min-w-full text-[12.5px] border-separate border-spacing-0">
           <thead>
             <tr
@@ -600,7 +605,7 @@ export default function StudentsResultTable({
                               className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11.5px] font-semibold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-colors"
                               title="Open this learner's grading console"
                             >
-                              Review
+                              {finished ? "Review" : "View"}
                               <ExternalLink size={11} strokeWidth={2.5} />
                             </button>
                           )}
@@ -713,15 +718,13 @@ export default function StudentsResultTable({
               )}
             </tbody>
           </table>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 text-[11.5px] text-gray-500 mt-1">
+      <div className="flex items-center justify-between gap-3 rounded-b-lg border-t border-indigo-100 bg-white px-3 py-2 text-[11px] text-gray-500">
         <div>
           {totalFiltered === 0
             ? "0 learners"
-            : `Showing ${startIdx + 1}–${endIdx} of ${totalFiltered} learners`}
+            : `${totalFiltered} ${totalFiltered === 1 ? "learner" : "learners"}`}
         </div>
-        <div className="flex items-center gap-2">
+        {totalFiltered > pageSize && <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -778,7 +781,8 @@ export default function StudentsResultTable({
             </select>
             <span>/ page</span>
           </label>
-        </div>
+        </div>}
+      </div>
       </div>
     </div>
   );

@@ -512,9 +512,7 @@ export default function AssessmentReportHeader({
 }: AssessmentReportHeaderProps) {
   return (
     <section
-      // Was h-145px — user asked to reduce by ~20% → 116px. Same 4-metric
-      // strip fits with tighter gaps between title and metrics.
-      className="relative h-[116px] overflow-hidden rounded-xl border border-slate-200/70 bg-white"
+      className="relative h-[158px] overflow-hidden rounded-xl border border-indigo-100 bg-[#f2f1ff]"
     >
       <img
         src={imageUrl}
@@ -524,25 +522,29 @@ export default function AssessmentReportHeader({
         style={{ width: "clamp(760px, 52vw, 960px)", transform: "translateY(-54%)" }}
       />
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white from-[0%] via-white/96 via-[30%] to-transparent to-[58%]" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#f4f3ff] from-[0%] via-[#f4f3ff]/95 via-[35%] to-transparent to-[62%]" />
       <div className="pointer-events-none absolute left-[34%] top-[-18%] h-[190%] w-[26%] rounded-full bg-white/72 blur-[52px]" />
       <div className="pointer-events-none absolute inset-y-0 left-[42%] w-[16%] bg-gradient-to-r from-white/55 to-transparent blur-xl" />
 
-      {/* Title + metrics stacked tightly (was justify-between which pushed
-          the metrics all the way down the 145px block). Gap-2 keeps them
-          close together in the shorter 116px shell. */}
-      <div className="relative z-10 flex h-full flex-col justify-center gap-2 px-6 py-3 lg:w-[58%]">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="relative z-10 flex h-full flex-col justify-between px-5 py-5 lg:w-[61%]">
+        <div className="min-w-0">
+          <div className="flex items-center  min-w-0">
           <h1
             title={title}
-            className="max-w-full truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-slate-950 xl:text-[16px]"
+              className="max-w-full truncate text-[25px] font-bold leading-tight text-slate-950"
           >
             {title}
           </h1>
           {details && <DetailsPopover details={details} />}
+            {/* <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10.5px] font-semibold text-emerald-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+              Live
+            </span> */}
+          </div>
+          {/* <p className="mt-1 text-[13px] text-slate-600">Live assessment dashboard</p> */}
         </div>
 
-        <div className="flex max-w-[620px] items-center divide-x divide-slate-300/80">
+        <div className="flex max-w-[620px] items-center divide-x divide-indigo-200/80">
           <MetricBlock
             value={counts.total}
             label="Total Students"

@@ -58,8 +58,12 @@ function CourseCount({ n }: { n: number }) {
 
 function StatusPill({ status }: { status: CourseStatus }) {
     if (!status) {
+        // Warn tone rather than brand-orange: the primary "Set up course"
+        // button sits in the same row and is already orange, so the pill
+        // signals attention with an amber wash to keep the row visually
+        // legible instead of showing two competing orange elements.
         return (
-            <span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-chip bg-brand-100 text-brand-700 ring-1 ring-inset ring-brand-500/20 text-2xs font-medium whitespace-nowrap">
+            <span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-chip bg-warn-50 text-warn-700 ring-1 ring-inset ring-warn-500/20 text-2xs font-medium whitespace-nowrap">
                 <CircleAlert size={12} />
                 Not set up
             </span>
@@ -83,9 +87,9 @@ function SetupButton({ onClick }: { onClick: () => void }) {
         <button
             type="button"
             onClick={onClick}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-chip bg-brand-strong text-white text-2xs font-semibold hover:bg-brand-800 transition-colors flex-shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+            className="inline-flex items-center gap-1 h-7 px-2.5 rounded-chip bg-brand-strong text-white text-2xs font-semibold hover:bg-brand-800 transition-colors flex-shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
         >
-            <Settings2 size={12} /> Setup Course
+            <Settings2 size={12} /> Set up course
         </button>
     )
 }
@@ -179,6 +183,10 @@ const actionBreadcrumbsFor = (course: CourseGroup, phaseFirst: boolean) => {
 
 function Collapsible({
     header,
+    // The tree opens as ONE step: only the outermost level (Degree) starts
+    // closed. Everything inside it — Department, Section, Semester and their
+    // courses — is expanded, so opening the degree reveals the whole branch.
+    // Individual call sites pass `defaultOpen={false}` for the top level.
     defaultOpen = true,
     children,
 }: {
@@ -192,13 +200,13 @@ function Collapsible({
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
-                className="flex items-center gap-2 h-9 text-left min-w-0 w-full rounded-chip px-1 -mx-1 hover:bg-row-hover transition-colors"
+                className="flex items-center gap-2 h-8 text-left min-w-0 w-full rounded-chip px-1 -mx-1 hover:bg-row-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
                 aria-expanded={open}
             >
                 <ChevronRight
-                    size={17}
-                    strokeWidth={3}
-                    className={`text-brand-500 flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+                    size={15}
+                    strokeWidth={2.5}
+                    className={`text-ink-500 flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
                 />
                 {header}
             </button>
@@ -209,14 +217,11 @@ function Collapsible({
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-                        // Clipping is required for the height animation. It used
-                        // to cut off the actions menu; that menu now portals to
-                        // the body, so nothing inside needs to escape this box.
                         className="overflow-hidden"
                     >
-                        {/* The connector rail: children hang off a hairline dropped
-                            from the chevron, so depth reads at a glance. */}
-                        <div className="ml-2 border-l border-hairline pl-4">{children}</div>
+                        {/* ~20px per level: 4px margin + 15px indent under the
+                            connector rail keeps the hierarchy compact. */}
+                        <div className="ml-1 border-l border-hairline pl-4">{children}</div>
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -239,25 +244,27 @@ function CourseWithBatches({
     status: CourseStatus
     actions: React.ReactNode
 }) {
+    // Open by default — only the Degree level starts closed; everything
+    // beneath a course row (its batches, its phases) is expanded on load.
     const [open, setOpen] = useState(true)
     return (
         <div>
-            <div className="flex items-center gap-2 py-2 rounded-chip hover:bg-row-hover transition-colors">
+            <div className="flex items-center gap-2 py-1.5 rounded-chip hover:bg-row-hover transition-colors">
                 <button
                     type="button"
                     onClick={() => setOpen((o) => !o)}
                     aria-expanded={open}
                     aria-label={open ? 'Hide batches' : 'Show batches'}
-                    className="flex-shrink-0 p-0.5 rounded-chip hover:bg-row-hover transition-colors"
+                    className="flex-shrink-0 p-0.5 rounded-chip hover:bg-row-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
                 >
                     <ChevronRight
-                        size={17}
-                        strokeWidth={3}
-                        className={`text-brand-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+                        size={15}
+                        strokeWidth={2.5}
+                        className={`text-ink-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
                     />
                 </button>
-                <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
-                    <BookOpen size={15} className="text-brand-strong" />
+                <span className="h-6 w-6 rounded-chip bg-ink-50 flex items-center justify-center flex-shrink-0">
+                    <BookOpen size={13} className="text-ink-600" />
                 </span>
 
                 <div className="min-w-0 flex-1">
@@ -288,11 +295,11 @@ function CourseWithBatches({
                         transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
                         className="overflow-hidden"
                     >
-                        <div className="ml-4 border-l border-hairline pl-4">
+                        <div className="ml-1 border-l border-hairline pl-4">
                             {batchLabels.map((b) => (
-                                <div key={b} className="flex items-center gap-2 py-1.5">
-                                    <span className="h-6 w-6 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
-                                        <Layers size={13} className="text-brand-strong" />
+                                <div key={b} className="flex items-center gap-2 py-1">
+                                    <span className="h-5 w-5 rounded-chip bg-ink-50 flex items-center justify-center flex-shrink-0">
+                                        <Layers size={11} className="text-ink-600" />
                                     </span>
                                     <span className="text-sm text-heading truncate">
                                         <span className="text-faint font-semibold">Batch : </span>
@@ -321,6 +328,9 @@ function CourseWithBatches({
  * is a NEW type on every render, and React would throw its state away.
  */
 function Expandable({
+    // Open by default: only the Degree tier at the top of the tree starts
+    // collapsed; the phase list under a Placement Training course opens
+    // together with the row.
     defaultOpen = true,
     row,
     children,
@@ -568,19 +578,20 @@ function MappingSection({
         return fromTree?.length ? { ...course, batches: fromTree } : course
     }
 
-    // The chips a course row shows. A degree course set up at department level
-    // has no batch list of its own — it runs for every section of its
-    // department + semester — so its row names those instead, one chip per
-    // section ("Section A · Batch 1, Batch 2", "Section B").
-    const rowBatches = (course: CourseGroup): { batches: string[]; batchesLabel?: string } =>
-        course.sectionGroups.length
-            ? {
-                batches: course.sectionGroups.map((g) => g.batches.length
-                    ? `${sectionLabel(g.section)} · ${g.batches.join(', ')}`
-                    : sectionLabel(g.section)),
-                batchesLabel: 'Groups',
-            }
-            : { batches: course.batches }
+    // Keep the section and batch dimensions in their own columns. Department-
+    // level courses inherit both from studentGroups; section-level courses get
+    // their section from the mapping path and batches from the course itself.
+    const rowSections = (course: CourseGroup): string[] => {
+        const sections = course.sectionGroups.length
+            ? course.sectionGroups.map((group) => sectionLabel(group.section))
+            : course.placements.map((placement) => placement.section)
+                .filter((section): section is string => Boolean(section))
+                .map(sectionLabel)
+        return Array.from(new Set(sections))
+    }
+    const rowBatches = (course: CourseGroup): string[] => course.sectionGroups.length
+        ? Array.from(new Set(course.sectionGroups.flatMap((group) => group.batches).filter(Boolean)))
+        : course.batches
 
     const clientName = typeof mapping.client === 'string' ? '' : mapping.client?.clientCompany || 'Client'
     const configured = groups.filter((g) => statusFor(g.courseName, g.path)).length
@@ -631,18 +642,11 @@ function MappingSection({
     // tree can work them out from the course alone, but the batch tree cannot —
     // which of its placements is "this row" depends on the node rendering it — so
     // it passes the list in.
-    const CourseRow = ({ course, alsoIn, batches, batchesLabel = 'Batches', expandable, open, onToggle }: {
+    const CourseRow = ({ course, alsoIn, sections, batches, expandable, open, onToggle }: {
         course: CourseGroup
         alsoIn?: string[]
-        // The batches this course runs for, shown inline as chips right after the
-        // course name so it's obvious at a glance. Used by the degree tree (each
-        // course's own MappedCourse.batches) and by phase-first rows (the batches
-        // that course's phase runs for). Chips rather than tree levels: neither
-        // shape nests anything under a batch.
+        sections?: string[]
         batches?: string[]
-        /** What the chips are called — "Batches", or "Groups" for a Degree
-         *  Program course's sections and their batches. */
-        batchesLabel?: string
         /** Set when the row has phases nested under it — draws the chevron that
          *  folds them away. Rows with nothing nested get an invisible spacer of
          *  the same width instead, so every course name in the section still
@@ -654,73 +658,86 @@ function MappingSection({
         const others = alsoIn ?? course.placements.slice(1).map(placementLabel)
         const status = statusFor(course.courseName, course.path)
         return (
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-transparent py-2 pl-1 pr-2 transition-colors hover:border-hairline hover:bg-row-hover sm:flex-nowrap">
+            // Columnar row aligned to the semester's table header. Fixed column
+            // widths on ≥sm keep Course/Section/Batches/Status/Action lined up
+            // across every row. On mobile the flex wrap stacks the fields, each
+            // with its own inline label so the information stays clear.
+            <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5 border-b border-hairline last:border-b-0 py-2 pl-1 pr-2 transition-colors hover:bg-row-hover sm:flex-nowrap sm:items-center">
                 {expandable ? (
                     <button
                         type="button"
                         onClick={onToggle}
                         aria-expanded={open}
                         aria-label={open ? 'Hide phases' : 'Show phases'}
-                        className="-mr-1 flex-shrink-0 p-0.5 rounded-chip hover:bg-row-hover transition-colors"
+                        className="-mr-1 flex-shrink-0 p-0.5 rounded-chip hover:bg-row-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
                     >
                         <ChevronRight
-                            size={17}
-                            strokeWidth={3}
-                            className={`text-brand-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+                            size={15}
+                            strokeWidth={2.5}
+                            className={`text-ink-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
                         />
                     </button>
                 ) : (
-                    <span className="-mr-1 flex-shrink-0 w-[22px]" aria-hidden />
+                    <span className="-mr-1 flex-shrink-0 w-[20px]" aria-hidden />
                 )}
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-wash text-brand-strong">
-                    <Code2 size={16} />
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-ink-50 text-ink-600">
+                    <Code2 size={13} />
                 </span>
+                {/* Course column — most space; name never truncates against
+                    other columns because those have fixed widths on ≥sm. */}
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`${SIZE.course} font-semibold text-heading truncate`}>
-                            {course.courseName}
-                            {/* The generated code only exists once a setup record
-                                does, so its presence doubles as a quiet "which
-                                record" cue. It lives inside the truncating span so
-                                a long name clips it instead of widening the row. */}
-                            {status?.courseCode && (
-                                <span className="text-faint font-normal"> ({status.courseCode})</span>
-                            )}
-                        </span>
-                        {/* Batches sit right next to the name — the reader asked to
-                            see which batches a course runs for without leaving the
-                            hierarchy. Each name is its own chip so "b1, b2" stays
-                            legible even when the row wraps. */}
-                        {batches && batches.length > 0 && (
-                            <span className="inline-flex items-center gap-1">
-                                <span className="text-2xs text-faint font-medium">{batchesLabel}:</span>
-                                {batches.map((b) => (
-                                    <span
-                                        key={b}
-                                        className="inline-flex items-center h-[20px] px-2 rounded-chip bg-brand-50 border border-brand-200 text-brand-700 text-2xs font-medium"
-                                    >
-                                        {b}
-                                    </span>
-                                ))}
-                            </span>
+                    <span className={`${SIZE.course} font-semibold text-heading block truncate`}>
+                        {course.courseName}
+                        {status?.courseCode && (
+                            <span className="text-faint font-normal"> ({status.courseCode})</span>
                         )}
-                        {/* No category chip on the row. It carries the SERVICE
-                            MODEL ("Placement Training"), which the section header
-                            above already states in full — every card in the section
-                            repeated the same word beside its own name. The Table
-                            view keeps it as a labelled column, where it reads as
-                            data rather than as noise. */}
-                        <StatusPill status={status} />
-                    </div>
-                    {/* One setup covers every placement, so the others are named
-                        here rather than becoming separate rows to configure. */}
+                    </span>
                     {others.length > 0 && (
                         <p className="text-xs text-faint mt-0.5 truncate">
                             Also in {others.join(', ')}
                         </p>
                     )}
                 </div>
-                {actionsFor(course)}
+                {/* Section column */}
+                <div className="flex items-center gap-1 flex-wrap shrink-0 sm:w-[130px]">
+                    <span className="sm:hidden text-2xs text-faint font-semibold uppercase mr-0.5">Section:</span>
+                    {sections && sections.length > 0 ? sections.map((section) => (
+                        <span
+                            key={section}
+                            className="inline-flex items-center h-[20px] px-2 rounded-chip bg-ink-50 border border-hairline text-ink-700 text-2xs font-medium"
+                        >
+                            {section}
+                        </span>
+                    )) : (
+                        <span className="text-2xs text-line-muted" aria-label="No section">—</span>
+                    )}
+                </div>
+                {/* Batches column — batch names only, never combined with sections. */}
+                <div className="flex items-center gap-1 flex-wrap shrink-0 sm:w-[180px]">
+                    <span className="sm:hidden text-2xs text-faint font-semibold uppercase mr-0.5">Batches:</span>
+                    {batches && batches.length > 0 ? (
+                        batches.map((b) => (
+                            <span
+                                key={b}
+                                className="inline-flex items-center h-[20px] px-2 rounded-chip bg-ink-50 border border-hairline text-ink-700 text-2xs font-medium"
+                            >
+                                {b}
+                            </span>
+                        ))
+                    ) : (
+                        <span className="text-2xs text-line-muted" aria-label="No batches">—</span>
+                    )}
+                </div>
+                {/* Status column */}
+                <div className="shrink-0 sm:w-[110px] flex items-center gap-1.5">
+                    <span className="sm:hidden text-2xs text-faint font-semibold uppercase">Status:</span>
+                    <StatusPill status={status} />
+                </div>
+                {/* Action column */}
+                <div className="shrink-0 sm:w-[130px] flex sm:justify-end items-center gap-1.5">
+                    <span className="sm:hidden text-2xs text-faint font-semibold uppercase">Action:</span>
+                    {actionsFor(course)}
+                </div>
             </div>
         )
     }
@@ -833,14 +850,15 @@ function MappingSection({
                 // hover, so the fixed hairline around every mapping stacked a
                 // second rectangle inside the section's own border and made a
                 // client with several mappings read as a grid of boxes.
-                <div className="bg-surface rounded-xl shadow-xs px-4 sm:px-5 py-4 space-y-0.5">
+                <div className="bg-surface rounded-xl shadow-xs px-3 sm:px-4 py-3 space-y-0">
                     {tree.map((deg) => (
                         <Collapsible
                             key={deg.degree}
+                            defaultOpen={false}
                             header={
                                 <span className="flex items-center gap-2 min-w-0">
-                                    <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
-                                        <GraduationCap size={16} className="text-brand-strong" />
+                                    <span className="h-6 w-6 rounded-chip bg-ink-50 flex items-center justify-center flex-shrink-0">
+                                        <GraduationCap size={14} className="text-ink-600" />
                                     </span>
                                     <LevelLabel label="Degree" value={deg.degree} className={SIZE.degree} />
                                 </span>
@@ -851,8 +869,8 @@ function MappingSection({
                                     key={dept.department}
                                     header={
                                         <span className="flex items-center gap-2 min-w-0">
-                                            <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
-                                                <Building2 size={15} className="text-brand-strong" />
+                                            <span className="h-6 w-6 rounded-chip bg-ink-50 flex items-center justify-center flex-shrink-0">
+                                                <Building2 size={13} className="text-ink-600" />
                                             </span>
                                             <LevelLabel label="Department" value={dept.department} className={SIZE.department} />
                                         </span>
@@ -864,15 +882,29 @@ function MappingSection({
                                                 key={sem.semester}
                                                 header={
                                                     <span className="flex items-center gap-2 min-w-0">
-                                                        <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
-                                                            <CalendarDays size={15} className="text-brand-strong" />
+                                                        <span className="h-6 w-6 rounded-chip bg-ink-50 flex items-center justify-center flex-shrink-0">
+                                                            <CalendarDays size={13} className="text-ink-600" />
                                                         </span>
                                                         <LevelLabel label="Semester" value={sem.semester} className={SIZE.semester} />
                                                         <CourseCount n={sem.courses.length} />
                                                     </span>
                                                 }
                                             >
-                                                {sem.courses.map((c) => <CourseRow key={c.key} course={c} {...rowBatches(c)} />)}
+                                                {/* Table header for this semester's course list.
+                                                    Widths match CourseRow's column widths exactly so
+                                                    Course/Section/Batches/Status/Action stack in the same
+                                                    positions as the rows below. Desktop-only — on
+                                                    mobile the rows carry inline field labels. */}
+                                                <div className="hidden sm:flex items-center gap-x-3 border-b border-hairline px-1 py-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
+                                                    <span className="w-[20px] flex-shrink-0" aria-hidden />
+                                                    <span className="w-7 flex-shrink-0" aria-hidden />
+                                                    <span className="flex-1 min-w-0">Course</span>
+                                                    <span className="w-[130px] flex-shrink-0">Section</span>
+                                                    <span className="w-[180px] flex-shrink-0">Batches</span>
+                                                    <span className="w-[110px] flex-shrink-0">Status</span>
+                                                    <span className="w-[130px] flex-shrink-0 text-right">Action</span>
+                                                </div>
+                                                {sem.courses.map((c) => <CourseRow key={c.key} course={c} sections={rowSections(c)} batches={rowBatches(c)} />)}
                                             </Collapsible>
                                         ))
                                         // A department without sections shows its
@@ -883,8 +915,8 @@ function MappingSection({
                                                 key={sec.section}
                                                 header={
                                                     <span className="flex items-center gap-2 min-w-0">
-                                                        <span className="h-7 w-7 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
-                                                            <UsersRound size={15} className="text-brand-strong" />
+                                                        <span className="h-6 w-6 rounded-chip bg-ink-50 flex items-center justify-center flex-shrink-0">
+                                                            <UsersRound size={13} className="text-ink-600" />
                                                         </span>
                                                         <LevelLabel label="Section" value={sec.section} className={SIZE.semester} />
                                                     </span>
@@ -944,11 +976,11 @@ function MappingSection({
                                     />
                                 )}
                             >
-                                <div className="ml-[40px] border-l border-hairline pl-4 pb-1">
+                                <div className="ml-[32px] border-l border-hairline pl-4 pb-1">
                                     {entry.phases.map((p, i) => (
                                         <div key={`${p.phase}-${i}`} className="flex flex-wrap items-center gap-2 py-1">
-                                            <span className="h-6 w-6 rounded-chip bg-brand-wash flex items-center justify-center flex-shrink-0">
-                                                <Layers size={13} className="text-brand-strong" />
+                                            <span className="h-5 w-5 rounded-chip bg-ink-50 flex items-center justify-center flex-shrink-0">
+                                                <Layers size={11} className="text-ink-600" />
                                             </span>
                                             <LevelLabel label="Phase" value={p.phase as string} className={SIZE.degree} />
                                             {p.batches.length > 0 && (
@@ -957,7 +989,7 @@ function MappingSection({
                                                     {p.batches.map((b) => (
                                                         <span
                                                             key={b}
-                                                            className="inline-flex items-center h-[20px] px-2 rounded-chip bg-brand-50 border border-brand-200 text-brand-700 text-2xs font-medium"
+                                                            className="inline-flex items-center h-[20px] px-2 rounded-chip bg-ink-50 border border-hairline text-ink-700 text-2xs font-medium"
                                                         >
                                                             {b}
                                                         </span>
@@ -992,7 +1024,7 @@ function MappingSection({
                                                 : 'Not tied to a semester'}
                                     </p>
                                 )}
-                                {loose.map((c) => <CourseRow key={c.key} course={c} {...rowBatches(c)} />)}
+                                {loose.map((c) => <CourseRow key={c.key} course={c} sections={rowSections(c)} batches={rowBatches(c)} />)}
                             </div>
                         )
                     })()}
@@ -1062,10 +1094,12 @@ export default function HierarchyPicker({
     onCourseEnrollment: (courseId: string) => void
     openActionsForCourseId?: string | null
 }) {
-    // Sections start OPEN: the point of grouping by client is seeing the whole
-    // client at once. State tracks what was COLLAPSED so a service arriving
-    // from a refetch is expanded for free.
-    const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+    // Every service section starts CLOSED — the client header shows the shared
+    // category and total-configured pill up top, so the tree stays quiet until
+    // the reader opens the service they care about. State tracks what the user
+    // has EXPANDED (inverse of the old collapsed set) so nothing pops open on
+    // its own after a refetch.
+    const [expanded, setExpanded] = useState<Set<string>>(new Set())
     // ONE switch for the screen: it sits in the client header and every section
     // follows it. A per-service toggle meant the same control repeated down the
     // page with nothing to say which one was in charge.
@@ -1084,7 +1118,23 @@ export default function HierarchyPicker({
         return typeof m.client === 'string' ? 'Client' : m.client?.clientCompany || 'Client'
     })()
 
-    const toggle = (id: string) => setCollapsed((prev) => {
+    // When every service under this client shares the same category
+    // (e.g. "Business to Institution"), lift it OUT of each service heading
+    // and show it once beside the client name — repeating the same phrase in
+    // three headers below "KIOT College" was pure noise. When the client's
+    // services span more than one category, this stays null and each service
+    // heading keeps its own category prefix.
+    const sharedCategory = (() => {
+        if (!mappings.length) return null
+        const values = mappings.map((m) => (m.service || '').trim())
+        // Every mapping must NAME a category, and every one must name the
+        // same one. A single blank slips the shared line off the client
+        // header (nothing to hoist) so each service still prints its own.
+        if (values.some((v) => !v)) return null
+        return new Set(values).size === 1 ? values[0] : null
+    })()
+
+    const toggle = (id: string) => setExpanded((prev) => {
         const next = new Set(prev)
         if (next.has(id)) next.delete(id); else next.add(id)
         return next
@@ -1100,11 +1150,19 @@ export default function HierarchyPicker({
     // masterData / batchConfigs / hierarchy, and a course's setup identity is
     // keyed by MAPPING id — so they are rendered as one MappingSection each,
     // under one shared header, rather than flattened into a synthetic mapping.
+    //
+    // The label DROPS the service category (m.service) when it is already
+    // shown at client level. When categories are mixed across services, the
+    // category stays in each heading so the reader can tell which is which.
     const serviceGroups = (() => {
         const bySignature = new Map<string, { label: string; mappings: ServiceMapping[] }>()
         mappings.forEach((m) => {
-            const label = [m.service, (m.serviceModels || []).join(' · '), m.year]
-                .filter(Boolean).join(' · ') || 'Service'
+            const parts = [
+                sharedCategory ? '' : m.service,
+                (m.serviceModels || []).join(' · '),
+                m.year,
+            ].filter(Boolean)
+            const label = parts.join(' · ') || 'Service'
             const entry = bySignature.get(label) ?? { label, mappings: [] }
             entry.mappings.push(m)
             bySignature.set(label, entry)
@@ -1139,8 +1197,16 @@ export default function HierarchyPicker({
                         {clientName}
                     </h1>
                     {!isLoading && mappings.length > 0 && (
-                        <p className="text-xs text-subtle mt-0.5">
-                            {mappings.length} service{mappings.length === 1 ? '' : 's'}
+                        <p className="text-xs text-subtle mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                            {sharedCategory && (
+                                <>
+                                    <span className="font-medium text-body">{sharedCategory}</span>
+                                    <span aria-hidden="true" className="text-faint">·</span>
+                                </>
+                            )}
+                            <span>
+                                {mappings.length} service{mappings.length === 1 ? '' : 's'}
+                            </span>
                         </p>
                     )}
                 </div>
@@ -1149,7 +1215,7 @@ export default function HierarchyPicker({
                     <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
                         <span className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-hairline-strong bg-surface text-xs text-subtle">
                             <CircleCheck size={12} className="text-success-500" />
-                            {configuredTotal} of {courseTotal} configured
+                            {configuredTotal} of {courseTotal} course{courseTotal === 1 ? '' : 's'} set up
                         </span>
                         <div className="inline-flex rounded-control border border-hairline-strong bg-surface overflow-hidden">
                             {([
@@ -1204,12 +1270,15 @@ export default function HierarchyPicker({
                 </div>
             ) : (
                 serviceGroups.map((g) => {
-                    const open = !collapsed.has(g.label)
                     // The focused mapping decides which SECTION opens, since a
                     // deep link names a mapping and sections are now groups.
                     const focused = Boolean(
                         focusMappingId && g.mappings.some((m) => String(m._id) === focusMappingId)
                     )
+                    // Sections start collapsed. `expanded` records what the user
+                    // has opened; a deep link to one of the mappings inside
+                    // forces this one open the first time it renders.
+                    const open = expanded.has(g.label) || focused
                     const courseCount = g.mappings.reduce((n, m) => n + groupCourses(m).length, 0)
                     // Only the mappings that actually carry courses are rendered.
                     // An empty one contributes nothing now that it no longer
@@ -1232,16 +1301,16 @@ export default function HierarchyPicker({
                                 type="button"
                                 onClick={() => toggle(g.label)}
                                 aria-expanded={open}
-                                className="w-full flex items-center gap-2 px-3 sm:px-4 py-2.5 text-left hover:bg-row-hover transition-colors"
+                                className="w-full flex items-center gap-2 px-3 sm:px-4 py-2.5 text-left hover:bg-row-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/30"
                             >
                                 <ChevronDown
                                     size={14}
-                                    className={`flex-shrink-0 text-subtle transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
+                                    className={`flex-shrink-0 text-ink-500 transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
                                 />
                                 <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-heading">
                                     {g.label}
                                 </span>
-                                <span className="flex-shrink-0 text-xs text-faint">
+                                <span className="flex-shrink-0 text-xs text-faint tabular-nums">
                                     {courseCount} course{courseCount === 1 ? '' : 's'}
                                 </span>
                             </button>

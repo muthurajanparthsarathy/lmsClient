@@ -277,7 +277,7 @@ export default function FileTree(props: FileTreeProps) {
           <button
             onClick={() => setOutputsOpen((v) => !v)}
             className="w-full flex items-center gap-1 px-2 py-1.5 text-left hover:bg-gray-100"
-            title="Files your program created when you clicked Run. Saved on the server and deleted every day at midnight."
+            title="Files your program created when you clicked Run. Saved on the server and deleted every day at midnight. They are not part of Run Testcase or Submit — add a file to the project if your program needs it there."
           >
             {outputsOpen ? <ChevronDown size={13} className="text-gray-400 flex-shrink-0" /> : <ChevronRight size={13} className="text-gray-400 flex-shrink-0" />}
             <span className="flex-1 text-2xs font-semibold uppercase tracking-wide text-gray-500 truncate">Output files</span>
@@ -285,7 +285,7 @@ export default function FileTree(props: FileTreeProps) {
           </button>
           {outputsOpen && (
             <div className="pb-1">
-              <div className="px-3 pb-1 text-2xs text-gray-400">Read-only · deleted daily</div>
+              <div className="px-3 pb-1 text-2xs text-gray-400">Read-only · deleted daily · not used by Run Testcase or Submit</div>
               {outputFiles.map((file) => {
                 const active = file.id === activeFileId
                 const rel = file.path.replace(/^\/+/, "")

@@ -44,7 +44,7 @@ import { RerunConfirmDialog } from "@/app/lms/pages/courses/reviewSubmission/com
 type UiStatus = "all" | "not-started" | "started" | "submitted";
 
 const STATUS_OPTIONS: { value: UiStatus; label: string }[] = [
-  { value: "all", label: "All Status" },
+  { value: "all", label: "All statuses" },
   // Order mirrors the metric strip above: Started → Not Started → Completed
   // so the trainer's eye doesn't have to re-map between the counts and the
   // filter. "Started" (was "In Progress") also matches the row pill label.
@@ -92,20 +92,15 @@ function StatusSelect<T extends string>({
     <div ref={rootRef} className="relative">
       <button
         type="button"
+        aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className={`relative flex h-8 min-w-[160px] items-center gap-2 rounded-md border bg-white px-2.5 text-left transition-colors ${open
-          ? "border-indigo-500 ring-2 ring-indigo-100"
-          : "border-gray-200 hover:border-gray-300"
+        className={`relative flex h-8 min-w-[132px] items-center gap-2 rounded-md border bg-white px-2.5 text-left transition-colors ${open
+          ? "border-violet-500 ring-2 ring-violet-100"
+          : "border-indigo-100 hover:border-indigo-200"
           }`}
       >
-        <span
-          className={`pointer-events-none absolute -top-[6px] left-2 bg-white px-1 text-[9.5px] font-semibold uppercase tracking-wider transition-colors ${open ? "text-indigo-600" : "text-gray-500"
-            }`}
-        >
-          {label}
-        </span>
         <span className="text-[12px] font-medium text-gray-800 truncate">
           {current?.label ?? "—"}
         </span>
@@ -238,9 +233,13 @@ export default function SessionDetail() {
         ...s,
         totalMarks: marks.totalMarks,
         totalQuestions: marks.totalQuestions,
-        completed: marks.completedQuestions,
+        // The course payload is read once (5 min stale time); the server's
+        // count keeps arriving over the socket — e.g. when a learner leaves
+        // the assignment editor. Whichever has seen more answers is current.
+        completed: Math.max(marks.completedQuestions, s.completed || 0),
         scoredMarks: marks.hasSubmitted ? marks.scoredMarks : undefined,
         submitted: s.submitted || marks.parentSubmitted,
+        parentSubmitted: marks.parentSubmitted,
       };
     });
   }, [students, courseData, courseId, assessmentId]);
@@ -468,8 +467,8 @@ export default function SessionDetail() {
     // top: 0 of that <main>. The Back/breadcrumb bar scrolls away with the
     // assessment summary; the search+filter row and the table header are the
     // two sticky layers.
-    <div className="bg-white">
-      <div className="flex items-center gap-2.5 px-6 py-2.5 border-b border-gray-100">
+    <div className="min-h-full bg-[#f6f8ff]">
+      <div className="flex items-center gap-2.5 px-6 py-2.5">
         <button
           type="button"
           onClick={goBack}
@@ -489,7 +488,7 @@ export default function SessionDetail() {
             everything they need. */}
       </div>
 
-      <div className="px-6 pt-3 pb-6 flex flex-col gap-2.5">
+      <div className="px-5 pt-2 pb-6 flex flex-col gap-3">
         {reviewNeeded > 0 && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-[12.5px]">
             <AlertTriangle size={14} className="flex-shrink-0" />
@@ -520,67 +519,6 @@ export default function SessionDetail() {
           details={assessmentDetails}
         />
 
-        {/* Sticky toolbar — search + Test Status. Once the assessment header
-            above scrolls out from under it, this row pins to top:0 of the
-            LMS <main> scroll container so trainers keep search and filter
-            reachable while the learner list scrolls underneath. Height stays
-            near 57px so the table header knows its own top-offset. Pulled
-            into the page gutter with -mx-6 / px-6 so the sticky white ground
-            covers the full panel width (otherwise learners visible in the
-            column gutters would peek through). */}
-        <div className="sticky top-0 z-30 -mx-6 px-6 py-1.5 bg-white border-b border-gray-100 flex items-center justify-start gap-2 flex-wrap">
-          <div className="relative">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, email, register no."
-              className="w-[260px] max-w-full h-8 pl-7 pr-2.5 rounded-md border border-gray-200 text-[12px] text-gray-800 placeholder:text-gray-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          <StatusSelect
-            label="Test Status"
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUS_OPTIONS}
-          />
-
-          {/* Report — opens the Generate Report modal on top of the dashboard. */}
-          <button
-            type="button"
-            onClick={() => setReportOpen(true)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-orange-200 bg-orange-50 px-2.5 text-[12px] font-semibold text-orange-700 transition-colors hover:bg-orange-100 hover:border-orange-300"
-            title="Generate a filtered learner report and export to Excel or PDF"
-          >
-            <FileBarChart2 size={13} strokeWidth={2} />
-            Report
-          </button>
-
-          {/* Rerun (all students) — pushed to the right corner of this row
-              with ml-auto. It used to live on the Repository Review page,
-              which no longer exists; the dashboard is now the only place a
-              trainer can re-score a whole exercise from. Disabled until
-              course-data lands, because the pedagogy category + subcategory
-              key the rerun endpoints need are read out of that payload. */}
-          <button
-            type="button"
-            onClick={() => setRerunAsk(null)}
-            disabled={!canRerun}
-            className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 text-[12px] font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 hover:border-indigo-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-indigo-50"
-            title={canRerun
-              ? "Re-run scoring for all students against the current test cases"
-              : "Loading exercise details…"}
-          >
-            <Zap size={13} strokeWidth={2} />
-            Rerun
-          </button>
-        </div>
-
-
-
-
         {anyError ? (
           <div className="p-8 text-center text-[13px] text-red-500">{anyError}</div>
         ) : (
@@ -599,6 +537,53 @@ export default function SessionDetail() {
             onRerunStudent={canRerun ? ((student) => setRerunAsk(student)) : undefined}
             search={search}
             statusFilter={statusFilter}
+            toolbar={(
+              <div className="sticky top-0 z-30 flex min-h-[52px] flex-wrap items-center justify-between gap-3 border-b border-indigo-100 bg-white px-3 py-2">
+                <div className="flex shrink-0 items-center gap-2.5">
+                  <h2 className="text-[15px] font-bold text-slate-950">Students</h2>
+                  <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-medium text-violet-700">
+                    {total} learners
+                  </span>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                  <div className="relative min-w-0">
+                    <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search name, email, or register no."
+                      className="h-8 w-[min(250px,24vw)] min-w-[160px] rounded-md border border-indigo-100 bg-white pl-8 pr-2.5 text-[11px] text-slate-800 outline-none placeholder:text-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                    />
+                  </div>
+                  <StatusSelect
+                    label="Filter by status"
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    options={STATUS_OPTIONS}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRerunAsk(null)}
+                    disabled={!canRerun}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-indigo-100 bg-white text-indigo-600 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    title={canRerun ? "Rerun scoring for all students" : "Loading exercise details"}
+                    aria-label="Rerun scoring for all students"
+                  >
+                    <Zap size={14} strokeWidth={2} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReportOpen(true)}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-[11px] font-semibold text-white transition-colors hover:bg-violet-700"
+                    title="Generate and export a learner report"
+                  >
+                    <FileBarChart2 size={13} strokeWidth={2} />
+                    Export report
+                  </button>
+                </div>
+              </div>
+            )}
           />
         )}
       </div>

@@ -460,15 +460,7 @@ const SUBMITTED_PARENT_STATUSES = new Set(["completed", "submitted", "solved"]);
 
 const isParentDocSubmitted = (ans: Loose): boolean => {
   const s = String(ans?.status || "").toLowerCase();
-  if (SUBMITTED_PARENT_STATUSES.has(s)) return true;
-  // Fallback: any individual question marked as a terminal state.
-  if (Array.isArray(ans?.questions)) {
-    return ans.questions.some((q: Loose) => {
-      const qs = String(q?.status || "").toLowerCase();
-      return qs === "solved" || qs === "submitted" || qs === "evaluated" || qs === "completed";
-    });
-  }
-  return false;
+  return SUBMITTED_PARENT_STATUSES.has(s);
 };
 
 /**

@@ -14,6 +14,9 @@ export interface StudentProgress {
   completionPercent: number;
   lastActivity: string;
   submitted: boolean;
+  /** Assignment answer documents may record a final parent status even when
+   *  the live attempt lifecycle still reports `active`. */
+  parentSubmitted?: boolean;
   /** Recovery & Resume — live socket-presence flag. `false` means the student's
    *  tab is currently disconnected (may still be in an active attempt). Distinct
    *  from `inProgress` which the socket already flips after the 30s grace. */

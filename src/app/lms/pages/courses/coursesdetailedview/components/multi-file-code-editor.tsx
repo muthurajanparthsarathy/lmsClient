@@ -53,8 +53,8 @@ import {
   type SupportedLanguage,
 } from "@/lib/codeLanguages"
 import {
-  runInteractivePython, isInteractiveTerminalSupported,
-  type InteractiveHandle, type OutputFile, type SkippedOutputFile,
+  runInteractivePython, isInteractiveTerminalSupported, withoutClashes,
+  type InteractiveHandle, type OutputFile, type SkippedOutputFile, type PyFile,
 } from "@/app/lms/pages/courses/reviewSubmission/components/rerun/pyodideRunner"
 import {
   buildTracedPython, parseStreamLine, type TraceStep,
@@ -78,6 +78,7 @@ import MonacoTabs from "./multi-file/MonacoTabs"
 import { type TermLine } from "./multi-file/RunTerminal"
 import BottomPanel, { type SubmitStatus, type TestResultCase, type TestResultState } from "./multi-file/BottomPanel"
 import TraceVisualizer from "./multi-file/TraceVisualizer"
+import { useAssignmentPresence } from "./useAssignmentPresence"
 
 // Backend base URL.
 //   • In local dev → https://lmsserver-yeve.onrender.com (matches server/server.js PORT 5533).
@@ -258,9 +259,11 @@ export default function MultiFileCodeEditor({
   const [awaitingInput, setAwaitingInput] = useState(false)
   const [inputPrompt, setInputPrompt] = useState("")
   const interactiveHandleRef = useRef<InteractiveHandle | null>(null)
-  // Stop pressed while a Python Run is still starting (loading the saved
-  // output files, or Pyodide) — the run must not start after all.
-  const runStopRequestedRef = useRef(false)
+  // Python Runs are numbered; Stop marks every run up to the current one as
+  // stopped, so a run still starting (loading saved files, or Pyodide) does
+  // not start after all — even if Run was clicked again meanwhile.
+  const runSeqRef = useRef(0)
+  const stoppedRunRef = useRef(0)
   const inputPromptRef = useRef("")
   // A live run on the compiler service (every language but Python, which
   // runs on Pyodide above). `interactiveActive` covers both kinds of run.
@@ -272,8 +275,11 @@ export default function MultiFileCodeEditor({
   // read-only in the Explorer. Kept apart from `files`, so drafts, Run Testcase
   // and Submit never include them.
   const [outputFiles, setOutputFiles] = useState<OutputFile[]>([])
-  // The last save in flight — the next Run waits for it before loading.
+  // Every save still in flight, and the last run until it has fully ended
+  // (a stopped run reports its files late) — the next Run waits for both
+  // before loading, so it never starts from a set about to change.
   const outputSaveRef = useRef<Promise<void>>(Promise.resolve())
+  const runSettledRef = useRef<Promise<void>>(Promise.resolve())
 
   // ─── Visualizer state (PythonTutor-style streaming trace) ───────────────────
   const [showVisualizer, setShowVisualizer] = useState(false)
@@ -312,6 +318,15 @@ export default function MultiFileCodeEditor({
   const ActivityNoun = activityNoun.charAt(0).toUpperCase() + activityNoun.slice(1)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const currentQuestion = questions[currentQuestionIndex] || null
+
+  // We Do: while this editor is open the trainer's Live Dashboard shows the
+  // learner as Started. Submitting a question doesn't finish the assignment —
+  // only Finish does. You Do reports through its exam session instead.
+  useAssignmentPresence({
+    assessmentId: exercise?._id ? String(exercise._id) : "",
+    courseId, nodeId, nodeType,
+    enabled: category === "We_Do",
+  })
 
   // The step-through visualizer: Python is traced in the browser with
   // sys.settrace (lib/pythonTracer.ts); Java, C, C++, JavaScript, TypeScript
@@ -907,12 +922,10 @@ export default function MultiFileCodeEditor({
   // One folder per exercise + question on the server (ids are ObjectIds, so
   // the key stays within the server's [A-Za-z0-9_-] rule).
   const outputKey = exercise?._id && currentQuestion?._id ? `${exercise._id}_${currentQuestion._id}` : null
-  const outputFilesRef = useRef<OutputFile[]>([])
-  useEffect(() => { outputFilesRef.current = outputFiles }, [outputFiles])
 
-  // Today's saved files, or null when they could not be loaded (a slow server
-  // must not hold up Run for long).
-  const fetchOutputFiles = useCallback(async (key: string): Promise<OutputFile[] | null> => {
+  // Today's saved files and the day they belong to, or null when they could
+  // not be loaded (a slow server must not hold up Run for long).
+  const fetchOutputFiles = useCallback(async (key: string): Promise<{ date: string; files: OutputFile[] } | null> => {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 5000)
     try {
@@ -921,7 +934,7 @@ export default function MultiFileCodeEditor({
       })
       if (!r.ok) return null
       const data = await r.json()
-      return Array.isArray(data?.files) ? data.files : null
+      return Array.isArray(data?.files) ? { date: String(data.date || ""), files: data.files } : null
     } catch { return null } finally { clearTimeout(timer) }
   }, [])
 
@@ -930,33 +943,45 @@ export default function MultiFileCodeEditor({
     setOutputFiles([])
     if (!outputKey || !liveInteraction) return
     let cancelled = false
-    void fetchOutputFiles(outputKey).then((list) => { if (!cancelled && list) setOutputFiles(list) })
+    void fetchOutputFiles(outputKey).then((loaded) => { if (!cancelled && loaded) setOutputFiles(loaded.files) })
     return () => { cancelled = true }
   }, [outputKey, liveInteraction, fetchOutputFiles])
 
   // After a Run: store the program's files on the server and report what
-  // changed in the terminal. The save always goes to the question the run
-  // started on; the terminal and Explorer only update if that is still the
-  // question on screen (`gen`).
+  // changed in the terminal. `before` is the set the run was loaded with, for
+  // `date`. The save always goes to the question the run started on; the
+  // terminal and Explorer only update if that is still the question on
+  // screen (`gen`).
   const saveOutputFiles = useCallback((
-    key: string, before: OutputFile[], after: OutputFile[], skipped: SkippedOutputFile[], gen: number,
+    key: string, date: string, before: OutputFile[], after: OutputFile[], skipped: SkippedOutputFile[],
+    projectFiles: PyFile[], gen: number,
   ) => {
     const current = () => runGenRef.current === gen
     const prev = new Map(before.map((f) => [f.path, f]))
     const next = new Map(after.map((f) => [f.path, f]))
+    const skippedPaths = new Set(skipped.map((s) => s.path))
+    // A saved file the project now overrides (same path, or a file/folder
+    // clash) was not loaded into the run: drop it without a "Deleted" line.
+    const shadowed = new Set(before.filter((f) => withoutClashes([f], projectFiles).length === 0).map((f) => f.path))
+    // One the program could not hand over (too big, over a limit) keeps its
+    // earlier saved copy instead of counting as deleted.
+    const kept = before.filter((f) => skippedPaths.has(f.path) && !shadowed.has(f.path) && !next.has(f.path))
+    const finalSet = [...after, ...kept]
     const written = after.filter((f) => {
       const old = prev.get(f.path)
       return !old || old.content !== f.content || old.encoding !== f.encoding
     })
-    const removed = before.filter((f) => !next.has(f.path))
+    const removed = before.filter((f) => !next.has(f.path) && !skippedPaths.has(f.path) && !shadowed.has(f.path))
     if (current()) {
-      setOutputFiles(after)
+      setOutputFiles(finalSet)
       if (skipped.length) {
         trimLiveTail()
-        skipped.forEach((s) => log("error", `Not saved: ${s.path} (${s.reason})`))
+        skipped.slice(0, 20).forEach((s) => log("error",
+          `Not saved: ${s.path} (${s.reason}${prev.has(s.path) && !shadowed.has(s.path) ? "; the earlier saved copy is kept" : ""})`))
+        if (skipped.length > 20) log("error", `…and ${skipped.length - 20} more files not saved.`)
       }
     }
-    if (!written.length && !removed.length) return
+    if (!written.length && !removed.length && !shadowed.size) return
 
     const save = (async () => {
       // The next Run waits for this save, so it must not hang forever.
@@ -966,7 +991,7 @@ export default function MultiFileCodeEditor({
         const r = await fetch(`${API}/api/code-files`, {
           method: "PUT",
           headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ questionId: key, files: after.map(({ path, content, encoding }) => ({ path, content, encoding })) }),
+          body: JSON.stringify({ questionId: key, date, files: finalSet.map(({ path, content, encoding }) => ({ path, content, encoding })) }),
           signal: ctrl.signal,
         })
         const data = await r.json().catch(() => ({}))
@@ -978,15 +1003,18 @@ export default function MultiFileCodeEditor({
         written.filter((f) => !refusedPaths.has(f.path)).forEach((f) => log("info", `Saved: ${f.path}`))
         removed.forEach((f) => log("info", `Deleted: ${f.path}`))
         refused.forEach((s) => log("error", `Not saved: ${s.path} (${s.reason})`))
-        if (refused.length) setOutputFiles(after.filter((f) => !refusedPaths.has(f.path)))
+        if (refused.length) setOutputFiles(finalSet.filter((f) => !refusedPaths.has(f.path)))
       } catch (e: any) {
         if (!current()) return
+        // Nothing changed on the server: show what is really saved.
+        setOutputFiles(before)
         trimLiveTail()
         const why = e?.name === "AbortError" ? "the server did not answer" : (e?.message || e)
         log("error", `Could not save the program's files on the server: ${why}`)
       } finally { clearTimeout(timer) }
     })()
-    outputSaveRef.current = save
+    const pending = outputSaveRef.current
+    outputSaveRef.current = Promise.all([pending, save]).then(() => {})
   }, [log, trimLiveTail])
 
   // ─── Interactive Python run (Pyodide, live input) ───────────────────────────
@@ -1007,7 +1035,8 @@ export default function MultiFileCodeEditor({
     setAwaitingInput(false)
     setInputPrompt("")
     inputPromptRef.current = ""
-    runStopRequestedRef.current = false
+    const myRun = ++runSeqRef.current
+    const stopRequested = () => stoppedRunRef.current >= myRun
     const terminalMode = isInteractiveTerminalSupported()
     log("system", `$ Run ${basename(entry.path)} (Python · ${terminalMode ? "live terminal" : "input via popup"})`)
 
@@ -1019,37 +1048,50 @@ export default function MultiFileCodeEditor({
     // and — for the handle-return branch — the handle is stopped without
     // being published to the shared ref.
     const myGen = runGenRef.current
+    // This run's terminal updates: not after a question switch, and not once
+    // a newer run has started (a run stopped while starting ends later).
+    const live = () => runGenRef.current === myGen && runSeqRef.current === myRun
     try {
       // Include EVERY file in the project so cross-file imports
       // (`from utils.helper import foo`) resolve against the real folder layout.
       const projectFiles = files.map((f) => ({ path: f.path, content: f.content }))
-      // Files earlier runs created today, fresh from the server (after the
-      // previous run's save lands) so a file deleted overnight stays deleted.
-      const key = outputKey
+      // Files earlier runs created today, fresh from the server — after the
+      // previous run has ended and its save has landed — so the run sees the
+      // latest set and a file deleted overnight stays deleted. If they cannot
+      // be loaded, the run neither sees nor saves them: saving would replace
+      // the saved set with one built without it.
       let preload: OutputFile[] = []
-      if (key) {
-        await outputSaveRef.current
-        preload = (await fetchOutputFiles(key)) ?? outputFilesRef.current
+      let save: { key: string; date: string } | null = null
+      if (outputKey) {
+        const previous = (async () => { await runSettledRef.current; await outputSaveRef.current })()
+        await Promise.race([previous, new Promise((resolve) => setTimeout(resolve, 25000))])
+        const loaded = await fetchOutputFiles(outputKey)
         if (runGenRef.current !== myGen) return
-        if (runStopRequestedRef.current) { log("system", "Execution stopped."); return }
-        setOutputFiles(preload)
+        if (stopRequested()) { if (live()) log("system", "Execution stopped."); return }
+        if (loaded) {
+          preload = loaded.files
+          save = { key: outputKey, date: loaded.date }
+          setOutputFiles(loaded.files)
+        } else {
+          log("error", "Could not load your saved files from the server — this run starts without them, and files it creates will not be saved.")
+        }
       }
       const handle = await runInteractivePython(entry.content, {
         onReady: () => {},
         // Pyodide hands over each printed line without its newline.
-        onStdout: (t) => { if (runGenRef.current === myGen) liveOut("stdout", `${t}\n`) },
-        onStderr: (t) => { if (runGenRef.current === myGen) liveOut("stderr", `${t}\n`) },
+        onStdout: (t) => { if (live()) liveOut("stdout", `${t}\n`) },
+        onStderr: (t) => { if (live()) liveOut("stderr", `${t}\n`) },
         // input("prompt") pauses the program: print the prompt and let the
         // student type the answer right after it.
         onInputRequest: (prompt) => {
-          if (runGenRef.current !== myGen) return
+          if (!live()) return
           inputPromptRef.current = prompt
           if (prompt) liveOut("stdout", prompt)
           setInputPrompt(prompt)
           setAwaitingInput(true)
         },
         onDone: (err) => {
-          if (runGenRef.current !== myGen) return
+          if (!live()) return
           setAwaitingInput(false)
           setInteractiveActive(false)
           interactiveHandleRef.current = null
@@ -1058,16 +1100,23 @@ export default function MultiFileCodeEditor({
           else log("success", "Process finished.")
         },
         onFiles: (created, skipped) => {
-          if (key) saveOutputFiles(key, preload, created, skipped, myGen)
+          if (save) saveOutputFiles(save.key, save.date, preload, created, skipped, projectFiles, myGen)
+        },
+        onFilesLost: () => {
+          if (runGenRef.current !== myGen) return
+          trimLiveTail()
+          log("error", "Files the program wrote before Stop could not be saved — it did not stop in time.")
         },
       }, {
         files: projectFiles,
         preloadFiles: preload,
-        collectOutputs: !!key,
+        collectOutputs: !!save,
         // Reading a file that does not exist creates it (empty) instead of
         // failing — it then shows up with the other output files.
         autoCreateOnRead: true,
       })
+      // The next Run waits until this one has ended and reported its files.
+      runSettledRef.current = handle.settled
       if (runGenRef.current !== myGen) {
         // Question switched while we were awaiting the runner. The reset
         // effect's stop() was a no-op because the handle didn't exist
@@ -1077,10 +1126,10 @@ export default function MultiFileCodeEditor({
         return
       }
       // Stop was pressed while Pyodide was loading: stop the run now.
-      if (runStopRequestedRef.current) { try { handle.stop() } catch { /* noop */ } return }
+      if (stopRequested()) { try { handle.stop() } catch { /* noop */ } return }
       interactiveHandleRef.current = handle
     } catch (e: any) {
-      if (runGenRef.current !== myGen) return
+      if (!live()) return
       setInteractiveActive(false)
       log("error", `Interactive run failed: ${e?.message || e}`)
     }
@@ -1130,7 +1179,7 @@ export default function MultiFileCodeEditor({
   const stopInteractive = useCallback(() => {
     // A live run reports "Stopped." itself once the server has ended it.
     if (liveSessionRef.current) { liveSessionRef.current.stop(); return }
-    runStopRequestedRef.current = true
+    stoppedRunRef.current = runSeqRef.current
     interactiveHandleRef.current?.stop()
     interactiveHandleRef.current = null
     setAwaitingInput(false)
@@ -1260,6 +1309,11 @@ export default function MultiFileCodeEditor({
         path: f.path,
         content: f.id === entry.id ? buildTracedPython(entry.content) : f.content,
       }))
+      // Same files as Run sees (today's saved output files, fresh from the
+      // server; missing files created on read), but only Run saves what the
+      // program writes.
+      const saved = outputKey && liveInteraction ? await fetchOutputFiles(outputKey) : null
+      if (runGenRef.current !== myGen) return
       const handle = await runInteractivePython(buildTracedPython(entry.content), {
         onReady: () => {},
         onStdout: (t) => { if (runGenRef.current === myGen) ingestTraceChunk(t) },
@@ -1277,9 +1331,7 @@ export default function MultiFileCodeEditor({
             toast.error(`Could not build the visualization. ${err.slice(0, 160)}`)
           }
         },
-        // Same files as Run sees (today's saved output files, missing files
-        // created on read), but only Run saves what the program writes.
-      }, { files: projectFiles, preloadFiles: outputFilesRef.current, autoCreateOnRead: true })
+      }, { files: projectFiles, preloadFiles: saved?.files || [], autoCreateOnRead: true })
       if (runGenRef.current !== myGen) {
         try { handle.stop() } catch { /* noop */ }
         return
@@ -1291,7 +1343,7 @@ export default function MultiFileCodeEditor({
       toast.error(`Visualizer error: ${e?.message || e}`)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLanguage, interactiveActive, vizRunning, pickPythonEntry, files, openFile, log, ingestTraceChunk])
+  }, [selectedLanguage, interactiveActive, vizRunning, pickPythonEntry, files, openFile, log, ingestTraceChunk, outputKey, liveInteraction, fetchOutputFiles])
 
   // ─── Visualize: Java, C, C++, JavaScript, TypeScript, Go ──────────────────
   // The entry file is instrumented (a trace call before each statement, same

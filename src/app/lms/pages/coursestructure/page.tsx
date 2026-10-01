@@ -322,7 +322,17 @@ export default function CourseStructurePage() {
                 activationMode="manual"
                 className="flex h-full min-h-0 min-w-0 flex-col"
             >
-                <div className="no-print shrink-0 flex items-center justify-between gap-3 flex-wrap px-4 sm:px-6 md:px-8 pt-14 md:pt-3">
+                {/* Pinned tab bar. The page's ONLY scroll container is the
+                    DashboardLayout <main> that wraps this page, so `sticky
+                    top-0` here parks the tab strip at the top of that scroll
+                    port while the client header, service sections and course
+                    hierarchies scroll normally underneath. No inner scrollers
+                    are added — HierarchyPicker still overflows into main.
+                    Opaque bg-surface matches the panel behind and prevents
+                    scrolling content from bleeding through; z-20 keeps it
+                    below the mobile burger (z-30) and below every dialog
+                    (z-popover), so overlays still cover the tabs. */}
+                <div className="no-print sticky top-0 z-20 bg-surface border-b border-hairline shrink-0 flex items-center justify-between gap-3 flex-wrap px-4 sm:px-6 md:px-8 pt-14 md:pt-3 pb-2">
                     <TabsList aria-label="Course structure sections" className="gap-1 overflow-x-auto overflow-y-hidden">
                         <TabsTrigger
                             value="courses"

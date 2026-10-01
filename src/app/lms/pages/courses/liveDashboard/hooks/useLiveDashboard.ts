@@ -63,8 +63,13 @@ export function useLiveDashboard({
     setStudents(prev => {
       const idx = prev.findIndex(s => s.id === p.studentId);
       if (idx === -1) return prev;
+      const patch = stripStudentId(p);
+      // An open assignment editor repeats its presence every 25 s — skip the
+      // re-render when the patch changes nothing.
+      const row = prev[idx] as unknown as Record<string, unknown>;
+      if (Object.entries(patch).every(([k, v]) => row[k] === v)) return prev;
       const next = prev.slice();
-      next[idx] = { ...next[idx], ...stripStudentId(p) };
+      next[idx] = { ...next[idx], ...patch };
       return next;
     });
   }, []);

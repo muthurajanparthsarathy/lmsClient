@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, Loader2, LockKeyhole, X } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, Loader2, LockKeyhole, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PERMISSION_IDS } from '@/app/lms/pages/usermanagement/components/permissions/index'
@@ -80,41 +80,48 @@ const ACTION_IMAGES: Record<CourseMenuItem, string> = {
     approval: '/assets/course-actions/approval.png',
 }
 
+// Short display names used by the primary button ("Open <name>") and,
+// where the tile label differs from the destination name, by the tile
+// itself. Keeps the button copy predictable regardless of the tile's
+// own status-dependent label.
+const SHORT_NAME: Record<CourseMenuItem, string> = {
+    view: 'Course Details',
+    edit: 'Course Details',
+    structure: 'Course Structure',
+    calendar: 'Calendar',
+    resources: 'Resources',
+    enrollment: 'Enrollment',
+    grade: 'Grades',
+    report: 'Reports',
+    feedback: 'Feedback',
+    approval: 'Approvals',
+}
+
 function ActionIllustration({
     kind,
     disabled,
     loading,
+    selected,
 }: {
     kind: CourseMenuItem
     disabled?: boolean
     loading?: boolean
+    selected?: boolean
 }) {
     return (
-        // The blue wash warms to orange under the card's hover — one of the
-        // three things (with the border and the lift) that say this tile is
-        // about to be opened by the click.
-        <div className={`relative mx-auto mb-2.5 flex h-[86px] w-full max-w-[138px] items-center justify-center overflow-hidden rounded-xl ${
-            disabled ? 'bg-ink-50' : 'bg-gradient-to-b from-blue-50/80 to-white group-hover:from-orange-50'
+        <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg ${
+            disabled ? 'bg-ink-50' : selected ? 'bg-orange-100/70' : 'bg-orange-50/60'
         }`}>
             <img
                 src={ACTION_IMAGES[kind]}
                 alt=""
                 aria-hidden="true"
                 draggable={false}
-                className={`h-[82px] w-[82px] object-contain transition-transform duration-200 group-hover:scale-105 ${
-                    disabled ? 'grayscale opacity-45' : ''
-                }`}
+                className={`h-9 w-9 object-contain ${disabled ? 'grayscale opacity-45' : ''}`}
             />
-            {disabled && (
-                <span className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-surface text-ink-300 shadow-xs">
-                    <LockKeyhole size={12} />
-                </span>
-            )}
             {loading && (
-                // Sits OVER the artwork rather than replacing anything, so the
-                // tile does not change size the moment it is clicked.
                 <span className="absolute inset-0 flex items-center justify-center bg-surface/70">
-                    <Loader2 size={22} className="animate-spin text-brand-600" />
+                    <Loader2 size={16} className="animate-spin text-brand-600" />
                 </span>
             )}
         </div>
@@ -202,6 +209,10 @@ export default function CourseActionsMenu({
     // route took to compile, which read as a dead click. The card spins in
     // place instead, and the navigation itself is what unmounts this menu.
     const [pendingKey, setPendingKey] = useState<CourseMenuItem | null>(null)
+    // Cards are now a two-step: click to select (highlights the tile),
+    // then Proceed to actually fire the action. Avoids accidental navigation
+    // and gives the user a moment to change their mind.
+    const [selectedKey, setSelectedKey] = useState<CourseMenuItem | null>(null)
     const [mounted, setMounted] = useState(false)
     const btnRef = useRef<HTMLButtonElement>(null)
     const hasStructure = status.moduleCount > 0
@@ -209,6 +220,7 @@ export default function CourseActionsMenu({
     const enrolledLabel = `${status.participantCount || 0} user${(status.participantCount || 0) === 1 ? '' : 's'}`
     const exerciseCount = Number(status.exerciseCount) || 0
     const hasSubmissions = Boolean(status.hasSubmissions)
+    const hasEnrollment = (status.participantCount || 0) > 0
     const calendarLabel = status.hasProgramCalendar ? 'Created' : 'Not created'
     // The Program Calendar unlocks ONLY when there is something to plan from:
     // at least one module WITH pedagogy hours. The calendar computes the
@@ -228,6 +240,7 @@ export default function CourseActionsMenu({
     useEffect(() => {
         if (!open) return
         setPendingKey(null)
+        setSelectedKey(null)
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
         document.addEventListener('keydown', onKey)
         const previousOverflow = document.body.style.overflow
@@ -247,29 +260,32 @@ export default function CourseActionsMenu({
         return () => clearTimeout(timer)
     }, [pendingKey])
 
+    // Enrollment badge reads "N learners" now (was "N users"): matches the
+    // domain vocabulary used elsewhere in the header and in the button copy.
+    const enrolledBadge = `${status.participantCount || 0} learner${(status.participantCount || 0) === 1 ? '' : 's'}`
+
     const ALL: Record<CourseMenuItem, { label: string; description: string; onClick: () => void; enabled: boolean; hint: string; badge?: string; opensInPlace?: boolean }> = {
-        view: { label: 'View Course Setup', description: 'Review saved course information', onClick: onView, enabled: true, hint: '' },
-        edit: { label: 'Edit Course Setup', description: 'Update basic course information', onClick: onEdit ?? onView, enabled: true, hint: '' },
+        view: { label: 'Course Details', description: '', onClick: onView, enabled: true, hint: '' },
+        edit: { label: 'Course Details', description: '', onClick: onEdit ?? onView, enabled: true, hint: '' },
         structure: {
-            label: hasStructure ? `Manage Course Structure (${moduleLabel})` : 'Add Course Structure',
-            description: 'Build modules and topics',
-            // Neither badge nor highlight: no tile is put forward as the one
-            // to take. The "Current" pill went first, then the recommended
-            // glow — orange is a hover state now, nothing more.
+            label: 'Course Structure',
+            description: '',
             onClick: onStructure, enabled: true, hint: '',
+            badge: hasStructure ? moduleLabel : undefined,
         },
         resources: {
             // Uploading needs somewhere to file the material, and that is a
-            // module in the structure — so this stays locked until there is one,
-            // exactly like the calendar waits on hours.
-            label: 'Upload Resources',
-            description: hasStructure ? 'Upload PDFs, PPTs and create exercises' : 'Available after Course Structure',
+            // module in the structure — so this stays locked until there is one.
+            label: 'Resources',
+            description: hasStructure ? '' : 'Add a module in Course Structure first — resources are filed against a module.',
             onClick: onResources ?? onStructure, enabled: hasStructure,
             hint: 'Add at least one module in Course Structure first — resources are uploaded against a module',
         },
         calendar: {
-            label: `Program Calendar (${calendarLabel})`,
-            description: canPlan ? 'Plan sessions and important dates' : 'Available after Course Structure',
+            // "(Created)" state moved off the label — the tile is either enabled
+            // or disabled, and a status word inside a button reads as clutter.
+            label: 'Calendar',
+            description: canPlan ? '' : 'Add a module with pedagogy hours in Course Structure — the calendar plans from those hours.',
             onClick: onCalendar, enabled: canPlan,
             hint: 'Add at least one module with hours in Course Structure first — the calendar plans sessions from those hours',
         },
@@ -277,15 +293,15 @@ export default function CourseActionsMenu({
             // Available as soon as the course is set up: enrollment happens per
             // batch, and the enrollment view lists this course's batches as tabs.
             label: 'Enrollment',
-            description: 'Invite and manage learners',
-            onClick: onEnrollment, enabled: true, hint: '', badge: enrolledLabel,
+            description: '',
+            onClick: onEnrollment, enabled: true, hint: '', badge: enrolledBadge,
         },
         feedback: {
             // Feedback is per-course, so it lives HERE (with course context)
             // rather than as a global sidebar item that would have to ask
             // "which course?" first.
             label: 'Feedback',
-            description: 'Manage course feedback',
+            description: '',
             onClick: onFeedback ?? (() => router.push(`/lms/pages/coursestructure/feedback?courseId=${status.id}`)),
             enabled: true, hint: '',
         },
@@ -310,7 +326,7 @@ export default function CourseActionsMenu({
             // see. Captured off window.location at click time so any query
             // params (openMappingId, filters, tabs) round-trip cleanly.
             label: 'Grades',
-            description: 'View user grades for exercises',
+            description: exerciseCount > 0 ? '' : 'No exercises to grade yet — create one from Resources first.',
             onClick: onGrade ?? (() => {
                 const here = typeof window !== 'undefined'
                     ? `${window.location.pathname}${window.location.search}${window.location.hash}`
@@ -330,8 +346,8 @@ export default function CourseActionsMenu({
             // Unlocks on the FIRST submission — one learner submitting one
             // assignment or assessment is enough. Exercises alone are not:
             // a report with every row "Not Started" has nothing to say.
-            label: 'Report',
-            description: hasSubmissions ? 'Results by exercise or by student' : 'Available after the first submission',
+            label: 'Reports',
+            description: hasSubmissions ? '' : 'Available after the first submission',
             onClick: onReport ?? (() => {
                 const here = typeof window !== 'undefined'
                     ? `${window.location.pathname}${window.location.search}${window.location.hash}`
@@ -349,11 +365,17 @@ export default function CourseActionsMenu({
             // The former standalone Approvals page is retired; this action
             // opens the same modal (ApprovalHierarchyModal) with this course
             // already pinned, so the manager configures the chain in place.
-            label: 'Set Approval',
-            description: 'Configure approval hierarchy',
+            //
+            // Locked until at least one learner is enrolled: the approval
+            // chain routes their submissions, so there is nothing to
+            // configure while enrollment is empty.
+            label: 'Approvals',
+            description: hasEnrollment ? '' : 'Enroll at least one learner — the approval chain routes their submissions.',
             onClick: onApproval ?? (() => {}),
-            enabled: Boolean(onApproval),
-            hint: 'Approval configuration is not available in this context',
+            enabled: Boolean(onApproval) && hasEnrollment,
+            hint: !onApproval
+                ? 'Approval configuration is not available in this context'
+                : 'Enroll at least one learner first — the approval chain routes their submissions.',
             // The only tile that opens a dialog on THIS page instead of
             // navigating: nothing unmounts this menu, so it must not take the
             // spinner (which waits for an unmount that would never come). It
@@ -374,13 +396,7 @@ export default function CourseActionsMenu({
     const canEditSetup = allowedItems.includes('edit')
     const setupKey: CourseMenuItem = canViewSetup ? 'view' : 'edit'
     const setupCard = canViewSetup || canEditSetup
-        ? {
-            ...ALL[setupKey],
-            key: setupKey,
-            ...(canViewSetup && canEditSetup
-                ? { label: 'View/Edit Course', description: 'Review or update course information' }
-                : {}),
-        }
+        ? { ...ALL[setupKey], key: setupKey, label: 'Course Details', description: '' }
         : null
 
     // Walk the requested order so the merged tile keeps the slot the first of
@@ -421,102 +437,132 @@ export default function CourseActionsMenu({
                         exit={{ opacity: 0, scale: 0.96, y: 10 }}
                         transition={{ duration: 0.16 }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        // max-h, not h: with the footer gone the tiles are all
-                        // that is left, and a fixed height would hang 80-odd
-                        // empty pixels under the last row. It still clamps to
-                        // the viewport, and the grid still scrolls inside it.
-                        className="flex max-h-[min(760px,calc(100vh-24px))] w-full max-w-[1080px] flex-col overflow-hidden rounded-2xl border border-hairline bg-surface shadow-2xl"
+                        // Solid warm off-white shell — opaque so the page
+                        // behind never bleeds through, but still a shade
+                        // warmer than pure white to sit next to the pale
+                        // orange selected state without a jump.
+                        // Sized to fit the 3×3 grid without hanging empty
+                        // space above the footer.
+                        className="flex max-h-[min(720px,calc(100vh-24px))] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl border border-hairline bg-[#FFF9F2] shadow-2xl"
                     >
-                        <div className="flex items-start justify-between gap-4 px-6 pb-2.5 pt-4">
+                        <div className="flex items-start justify-between gap-4 px-6 pb-2 pt-4">
                             <div className="min-w-0">
-                                {!!breadcrumbs?.length && (
-                                    <nav className="mb-2 flex max-w-3xl flex-wrap items-center gap-1 text-2xs font-semibold text-subtle" aria-label="Course path">
-                                        {breadcrumbs.map((crumb, index) => (
+                                {!!breadcrumbs?.length && breadcrumbs.length > 1 && (
+                                    <nav className="mb-1 flex max-w-3xl flex-wrap items-center gap-1 text-2xs font-semibold text-subtle" aria-label="Course path">
+                                        {breadcrumbs.slice(0, -1).map((crumb, index, arr) => (
                                             <React.Fragment key={`${crumb}-${index}`}>
-                                                <span className={index === breadcrumbs.length - 1 ? 'text-heading' : ''}>{crumb}</span>
-                                                {index < breadcrumbs.length - 1 && <ChevronDown size={12} className="-rotate-90 text-faint" />}
+                                                <span>{crumb}</span>
+                                                {index < arr.length - 1 && <ChevronDown size={12} className="-rotate-90 text-faint" />}
                                             </React.Fragment>
                                         ))}
                                     </nav>
                                 )}
-                                <h3 className="text-lg font-bold text-heading">Course Actions</h3>
-                                <p className="mt-1.5 text-sm font-semibold text-subtle">
-                                    Choose the next action for this course
-                                </p>
-                                <p className="mt-1 max-w-2xl text-xs leading-5 text-subtle">
-                                    {/* Kept to ONE rendered line on purpose: a second line here grows
-                                        the header by 20px, which is exactly what puts the card grid back
-                                        into scroll on a short viewport. */}
-                                    Manage course setup, structure, resources and learners — pick a card to open it.
-                                </p>
+                                {!!breadcrumbs?.length && (
+                                    <h2 className="text-xl font-bold leading-tight text-heading">
+                                        {(breadcrumbs[breadcrumbs.length - 1] || '').replace(/^Course:\s*/, '')}
+                                    </h2>
+                                )}
+                                <p className="mt-0.5 text-xs text-subtle">Choose an action, then open it.</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setOpen(false)}
-                                aria-label="Close course actions"
-                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-danger-500 text-white shadow-sm transition-colors hover:bg-danger-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40"
+                                aria-label="Close"
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink-100 text-ink-500 transition-colors hover:bg-ink-200 hover:text-ink-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
                             >
-                                <X size={18} strokeWidth={2.75} />
+                                <X size={16} strokeWidth={2.5} />
                             </button>
                         </div>
 
-                        {/* pt-1.5 is not spacing — it is CLEARANCE. This is the
-                            scroll container, so it clips, and the cards lift by 2px
-                            on hover: without headroom the top border and the top of
-                            the shadow of every row-1 card were cut off mid-hover.
-                            gap-x is 16.67px rather than 10px so each of the four
-                            columns comes out 5px narrower: (1032 - 3×16.67) / 4. */}
-                        <div className="grid flex-1 grid-cols-1 gap-x-[16.67px] gap-y-2.5 overflow-y-auto px-6 pb-5 pt-1.5 sm:grid-cols-2 lg:grid-cols-4">
-                            {GRID_ITEMS.map((item) => (
-                                <button
-                                    key={item.key}
-                                    type="button"
-                                    disabled={!item.enabled || Boolean(pendingKey)}
-                                    aria-busy={pendingKey === item.key}
-                                    title={item.enabled ? undefined : item.hint}
-                                    onClick={() => {
-                                        if (!item.enabled || pendingKey) return
-                                        if (item.opensInPlace) { setOpen(false); item.onClick(); return }
-                                        setPendingKey(item.key)
-                                        onBeforeNavigate?.()
-                                        item.onClick()
-                                    }}
-                                    className={`group relative min-h-[168px] rounded-xl border p-3 text-center transition-all ${
-                                        !item.enabled
-                                            ? 'cursor-not-allowed border-hairline bg-ink-50/80'
-                                            : pendingKey === item.key
-                                                ? 'border-brand-500/60 bg-surface shadow-sm ring-1 ring-brand-500/15'
-                                                : pendingKey
-                                                    // Something else is opening: no hover lift, nothing
-                                                    // else to click, so the busy card is the only thing
-                                                    // still asking for attention.
-                                                    ? 'border-hairline bg-surface opacity-60'
-                                                    : 'border-hairline bg-surface hover:-translate-y-0.5 hover:border-brand-500/35 hover:shadow-md'
-                                    }`}
-                                >
-                                    <ActionIllustration kind={item.key} disabled={!item.enabled} loading={pendingKey === item.key} />
-                                    <span className="block text-xs font-bold text-heading">
-                                        {item.label}
-                                    </span>
-                                    {/* Card sub-text always uses the SHORT `description` — for
-                                        disabled items that description was already tuned to
-                                        say "Available after X". Previously the render swapped
-                                        to `hint` (a long tooltip-worthy explanation) on disable,
-                                        which overflowed the card. The full `hint` still surfaces
-                                        via the button's `title` attribute so hover shows the
-                                        reason unchanged. The measure is wide enough to keep the
-                                        longest of them to two lines — a third line pushed the
-                                        grid past the modal and brought the scrollbar back. */}
-                                    <span className={`mx-auto mt-1 block max-w-[186px] text-2xs leading-4 ${item.enabled ? 'text-subtle' : 'text-subtle italic'}`}>
-                                        {item.description}
-                                    </span>
-                                    {item.badge && (
-                                        <span className="absolute right-3 top-3 rounded-full bg-ink-100 px-2 py-1 text-2xs font-bold text-subtle">
-                                            {item.badge}
+                        <div className="grid flex-1 auto-rows-fr grid-cols-1 gap-4 overflow-y-auto px-5 pb-4 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {GRID_ITEMS.map((item) => {
+                                const isSelected = selectedKey === item.key
+                                const isPending = pendingKey === item.key
+                                return (
+                                    <button
+                                        key={item.key}
+                                        type="button"
+                                        disabled={!item.enabled || Boolean(pendingKey)}
+                                        aria-busy={isPending}
+                                        aria-pressed={isSelected}
+                                        onClick={() => {
+                                            if (!item.enabled || pendingKey) return
+                                            setSelectedKey(item.key)
+                                        }}
+                                        // Vertically-centered flex row: icon + text share
+                                        // the mid-line, and short-text cards stay balanced
+                                        // even when a neighbour wraps to two lines.
+                                        className={`group relative flex min-h-[96px] items-center gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 ${
+                                            !item.enabled
+                                                ? 'cursor-not-allowed border-hairline bg-ink-50/60'
+                                                : isSelected
+                                                    ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500/20'
+                                                    : 'border-hairline bg-surface hover:border-orange-400/50 hover:bg-orange-50/40'
+                                        }`}
+                                    >
+                                        <ActionIllustration
+                                            kind={item.key}
+                                            disabled={!item.enabled}
+                                            loading={isPending}
+                                            selected={isSelected}
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <span className={`block text-sm font-semibold leading-tight ${item.enabled ? 'text-heading' : 'text-ink-600'}`}>
+                                                {item.label}
+                                            </span>
+                                            {item.badge && item.enabled && (
+                                                <span className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                                                    {item.badge}
+                                                </span>
+                                            )}
+                                            {item.description && (
+                                                <span className={`mt-1 block text-[11px] leading-[15px] ${item.enabled ? 'text-subtle' : 'text-ink-500'}`}>
+                                                    {item.description}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {/* Fixed-width trailing slot so the text column
+                                            never shifts between selected/unselected. */}
+                                        <span className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center">
+                                            {isSelected ? (
+                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-white">
+                                                    <Check size={12} strokeWidth={3} />
+                                                </span>
+                                            ) : !item.enabled ? (
+                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-surface text-ink-500 shadow-xs">
+                                                    <LockKeyhole size={11} />
+                                                </span>
+                                            ) : null}
                                         </span>
-                                    )}
-                                </button>
-                            ))}
+                                    </button>
+                                )
+                            })}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 border-t border-hairline bg-surface px-6 py-3">
+                            <button
+                                type="button"
+                                disabled={!selectedKey || Boolean(pendingKey)}
+                                onClick={() => {
+                                    if (!selectedKey || pendingKey) return
+                                    const item = GRID_ITEMS.find((i) => i.key === selectedKey)
+                                    if (!item || !item.enabled) return
+                                    if (item.opensInPlace) { setOpen(false); item.onClick(); return }
+                                    setPendingKey(item.key)
+                                    onBeforeNavigate?.()
+                                    item.onClick()
+                                }}
+                                className={`inline-flex min-w-[200px] items-center justify-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-all ${
+                                    !selectedKey || pendingKey
+                                        ? 'cursor-not-allowed bg-ink-100 text-ink-400'
+                                        : 'bg-orange-500 text-white hover:bg-orange-600 hover:shadow-md'
+                                }`}
+                            >
+                                {selectedKey ? `Open ${SHORT_NAME[selectedKey]}` : 'Open action'}
+                                {pendingKey
+                                    ? <Loader2 size={16} className="animate-spin" />
+                                    : <ArrowRight size={16} strokeWidth={2.5} />}
+                            </button>
                         </div>
                     </motion.div>
                 </motion.div>
